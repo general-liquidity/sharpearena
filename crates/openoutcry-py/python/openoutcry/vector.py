@@ -108,6 +108,7 @@ class OpenOutcryVectorEnv(VectorEnv):
         self._seeds = list(seeds)
         self.num_envs = len(self._seeds)
         self._autoreset_mode = autoreset_mode
+        self._pending_actions: Optional[np.ndarray] = None
         self.metadata = {
             **self.metadata,
             "autoreset_mode": _AUTORESET_ENUM.get(autoreset_mode, autoreset_mode),
@@ -215,9 +216,23 @@ class OpenOutcryVectorEnv(VectorEnv):
         }
         return obs, infos
 
-    def step(
-        self, actions: np.ndarray
+    def step_async(self, actions: np.ndarray) -> None:
+        """Stash ``actions`` for the next ``step_wait`` without advancing the env, so a
+        caller can overlap policy/LLM inference with env stepping. Raises if a previous
+        ``step_async`` is still pending (call ``step_wait`` first)."""
+        if self._pending_actions is not None:
+            raise RuntimeError("step_async called twice without an intervening step_wait")
+        self._pending_actions = actions
+
+    def step_wait(
+        self,
     ) -> tuple[dict[str, np.ndarray], np.ndarray, np.ndarray, np.ndarray, dict]:
+        """Run the batched step queued by ``step_async`` and return the 5-tuple. Raises
+        if there is no pending ``step_async``."""
+        if self._pending_actions is None:
+            raise RuntimeError("step_wait called without a pending step_async")
+        actions = self._pending_actions
+        self._pending_actions = None
         out = json.loads(self._env.step_batch(self._actions_to_decisions_json(actions)))
         obs = self._stack_obs(out["observations"])
         rewards = np.asarray(out["rewards"], dtype=np.float64)
@@ -237,6 +252,12 @@ class OpenOutcryVectorEnv(VectorEnv):
             )
             infos["final_info"] = np.array(out["final_info"], dtype=object)
         return obs, rewards, terminated, truncated, infos
+
+    def step(
+        self, actions: np.ndarray
+    ) -> tuple[dict[str, np.ndarray], np.ndarray, np.ndarray, np.ndarray, dict]:
+        self.step_async(actions)
+        return self.step_wait()
 
     def render(self):  # pragma: no cover - no visual rendering
         return None
