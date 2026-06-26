@@ -99,6 +99,30 @@ gap = openoutcry.generalization_gap(
 print(gap["gap_deflated_sharpe"])
 ```
 
+**Scale with vectorized rollouts.** `OpenOutcryVectorEnv` steps `B` independent scenario lanes in lockstep (rayon under the hood), exposing the standard `gymnasium.vector` API:
+
+```python
+import numpy as np, openoutcry
+
+vec = openoutcry.OpenOutcryVectorEnv(num_envs=64, n_symbols=4, n_days=120)
+obs, infos = vec.reset()
+actions = np.full((vec.num_envs, len(vec.symbols)), 0.25, dtype=np.float32)
+obs, rewards, terminated, truncated, infos = vec.step(actions)   # arrays of length 64
+```
+
+**Compose point-in-time-safe wrappers.** Standard gym wrappers, but the normalizers are *causal*, so no future bar ever leaks into the running statistics:
+
+```python
+import openoutcry
+from openoutcry import TimeLimit, CausalNormalizeObservation, RecordEpisodeStatistics
+
+env = RecordEpisodeStatistics(            # info["episode"] carries Sharpe + max drawdown
+    CausalNormalizeObservation(
+        TimeLimit(openoutcry.OpenOutcryEnv(n_symbols=4, n_days=120), max_episode_steps=64)
+    )
+)
+```
+
 A one-command [prime-rl](https://github.com/PrimeIntellect-ai/prime-rl) GRPO training config lives in [`examples/prime-rl/`](examples/prime-rl/); see [`docs/training.md`](docs/training.md) for the full loop (install, `vf-eval` baseline, `uv run rl`).
 
 ## Use it from anywhere
@@ -111,6 +135,18 @@ One Rust engine, scored identically across every surface, because they run the s
 | <img height="14" align="top" src="https://cdn.simpleicons.org/pypi/3776AB" />&nbsp; **Python** | `pip install openoutcry` | A `gymnasium.Env` and `gymnasium.vector` adapter, the `verifiers` training environment, point-in-time-safe wrappers, rollout traces, and an MCP server, over the pyo3 binding. |
 | <img height="14" align="top" src="https://cdn.simpleicons.org/npm/CB3837" />&nbsp; **npm** | `npm i @general-liquidity/openoutcry` | A typed JS/TS API over the engine compiled to WASM. |
 | <img height="14" align="top" src="https://cdn.simpleicons.org/webassembly/654FF0" />&nbsp; **WASM** | `openoutcry-wasm` | The wasm-bindgen bridge the npm package and Gordon (Bun) embed. |
+
+```ts
+import { runBaseline } from "@general-liquidity/openoutcry";
+
+// The identical Rust engine, in the browser or Bun: run a baseline over a seeded panel.
+const run = runBaseline({
+  agent: "momentum",
+  dataset: { synthetic: { n_symbols: 4, n_days: 120, seed: 1 } },
+  seed: 7,
+});
+console.log(run.returns.length, run.cost);   // per-period returns + realized execution cost
+```
 
 The agent itself can be written in **any** language: a conforming agent is a program that reads `MarketObservation` JSON (stdin or `POST /decide`) and writes `Decision` JSON. Reference agents in Rust, TypeScript, and Python double as the conformance smoke tests ([`crates/openoutcry/examples/`](crates/openoutcry/examples/)).
 
