@@ -188,6 +188,15 @@ def test_runmetrics_to_dict_keys():
         "tool_response_bytes",
         "realized_return",
         "max_drawdown",
+        "volatility",
+        "downside_deviation",
+        "sortino",
+        "calmar",
+        "var_95",
+        "cvar_95",
+        "tail_ratio",
+        "turnover",
+        "cost_drag",
     }
     assert d["steps"] == 2
     assert d["invalid_decisions"] == 1
