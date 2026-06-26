@@ -25,6 +25,13 @@
 pub mod contract;
 pub use contract::CONTRACT_VERSION;
 
+// --- Seeded procedural scenario generation (Procgen-style seed intervals) ------------------
+
+pub mod scenario_gen;
+pub use scenario_gen::{
+    generate_scenario, level_seed, train_test_split, DistributionMode, ScenarioSpec,
+};
+
 // --- Point-in-time simulator surface (extraction from `sharpebench-sim`) ------------------
 
 pub use sharpebench_sim::{
