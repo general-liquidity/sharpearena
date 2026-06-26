@@ -44,11 +44,25 @@ from .mandate import (
 )
 from .verifiers_env import mandate_reward
 from .baselines import run_baselines, leaderboard_markdown
-from .minari_export import to_minari
+from .minari_export import to_minari, to_minari_train_test
 from .pettingzoo_env import MultiAgentOpenOutcryEnv, make_aec_env
 from .market_env import EndogenousMarketEnv
 from .checkpoint import CheckpointableEnv, CheckpointState
 from .functional import OpenOutcryFuncEnv
+from .curriculum import CurriculumEnv, regime_curriculum
+from .preprocessing import (
+    PreprocessingConfig,
+    ExecutionNoiseConfig,
+    CANONICAL_PREPROCESSING,
+    make_preprocessed_env,
+    describe_preprocessing,
+)
+from .eval_seeds import (
+    EVAL_SEEDS,
+    evaluate_eval_set,
+    assert_no_regression,
+    EVAL_SET_VERSION,
+)
 from .registration import register_envs
 
 # Farama plugin convention: register the versioned env IDs at import time (idempotent).
@@ -104,12 +118,24 @@ __all__ = [
     "run_baselines",
     "leaderboard_markdown",
     "to_minari",
+    "to_minari_train_test",
     "MultiAgentOpenOutcryEnv",
     "make_aec_env",
     "EndogenousMarketEnv",
     "CheckpointableEnv",
     "CheckpointState",
     "OpenOutcryFuncEnv",
+    "CurriculumEnv",
+    "regime_curriculum",
+    "PreprocessingConfig",
+    "ExecutionNoiseConfig",
+    "CANONICAL_PREPROCESSING",
+    "make_preprocessed_env",
+    "describe_preprocessing",
+    "EVAL_SEEDS",
+    "evaluate_eval_set",
+    "assert_no_regression",
+    "EVAL_SET_VERSION",
     "register_envs",
 ]
 __version__ = "0.2.0"
