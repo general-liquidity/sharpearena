@@ -118,6 +118,7 @@ class EndogenousMarketEnv(ParallelEnv):
         kyle_lambda: float = 0.1,
         eta: float = 0.05,
         volume_scale: float = 1.0,
+        vol_scale: float = 0.0,
         distribution_mode: str = "calm",
         max_weight: float = 1.0,
         allow_short: bool = True,
@@ -138,6 +139,7 @@ class EndogenousMarketEnv(ParallelEnv):
         self._kyle_lambda = float(kyle_lambda)
         self._eta = float(eta)
         self._volume_scale = float(volume_scale)
+        self._vol_scale = float(vol_scale)
         self._distribution_mode = str(distribution_mode)
         self._max_weight = float(max_weight)
         self._allow_short = bool(allow_short)
@@ -161,7 +163,7 @@ class EndogenousMarketEnv(ParallelEnv):
 
     def _build_market(self) -> None:
         """(Re)construct the native shared-book market at the current scenario seed."""
-        self._market = PyMarketClearing(
+        kwargs = dict(
             n_symbols=self._n_symbols,
             n_days=self._n_days,
             seed=self._seed,
@@ -170,8 +172,19 @@ class EndogenousMarketEnv(ParallelEnv):
             kyle_lambda=self._kyle_lambda,
             eta=self._eta,
             volume_scale=self._volume_scale,
+            vol_scale=self._vol_scale,
             distribution_mode=self._distribution_mode,
         )
+        try:
+            self._market = PyMarketClearing(**kwargs)
+        except TypeError:
+            # The native binding predates the vol_scale param (parallel-build interim). Fall
+            # back to the legacy signature only when vol scaling is off, so default behavior
+            # is unchanged; a requested vol_scale > 0 still surfaces the error.
+            if self._vol_scale != 0.0:
+                raise
+            kwargs.pop("vol_scale")
+            self._market = PyMarketClearing(**kwargs)
 
     def _build_spaces(self) -> None:
         if not _HAS_GYM:  # pragma: no cover - gymnasium is a hard dep of the package

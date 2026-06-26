@@ -156,6 +156,78 @@ def test_deterministic_under_fixed_seed_and_actions():
 
 
 @needs_pz
+def test_vol_scale_zero_matches_default_behavior():
+    """vol_scale=0 (explicit) clears a byte-identical tape and fills to the default env, so
+    volatility-scaled costs are strictly opt-in."""
+    default_env = _make(n_agents=2, n_symbols=2, n_days=30, seed=7)
+    zero_env = _make(n_agents=2, n_symbols=2, n_days=30, seed=7, vol_scale=0.0)
+    default_env.reset(seed=7)
+    zero_env.reset(seed=7)
+
+    def buy(env):
+        return {a: np.full(len(env.symbols), 0.5, dtype=np.float32) for a in env.agents}
+
+    for _ in range(8):
+        _, rd, _, td, idd = default_env.step(buy(default_env))
+        _, rz, _, _, iz = zero_env.step(buy(zero_env))
+        assert rd == rz
+        np.testing.assert_array_equal(
+            np.array(idd["agent_0"]["cleared_mids"]),
+            np.array(iz["agent_0"]["cleared_mids"]),
+        )
+        for agent in idd:
+            f_default = [f["fill_price"] for f in idd[agent]["fills"]]
+            f_zero = [f["fill_price"] for f in iz[agent]["fills"]]
+            np.testing.assert_array_equal(np.array(f_default), np.array(f_zero))
+        if all(td.values()):
+            break
+    default_env.close()
+    zero_env.close()
+
+
+@needs_pz
+def test_vol_scale_positive_widens_fills_on_a_volatile_path():
+    """A positive vol_scale is accepted by the rebuilt binding and widens execution costs
+    on a volatile path: with the same path and orders only the fill price moves, so the
+    impact away from the cleared mid is at least as large and strictly larger somewhere.
+    Skips when the installed binding predates the parameter (needs a rebuild)."""
+    try:
+        vol_env = _make(
+            n_agents=2, n_symbols=2, n_days=40, seed=3,
+            distribution_mode="extreme", vol_scale=8.0,
+        )
+    except TypeError:
+        pytest.skip("native binding lacks the vol_scale parameter (needs rebuild)")
+    base_env = _make(
+        n_agents=2, n_symbols=2, n_days=40, seed=3,
+        distribution_mode="extreme", vol_scale=0.0,
+    )
+    vol_env.reset(seed=3)
+    base_env.reset(seed=3)
+
+    def buy(env):
+        return {a: np.full(len(env.symbols), 0.6, dtype=np.float32) for a in env.agents}
+
+    # The entry bar establishes the position (large flow); vol scaling widens that fill.
+    _, _, _, _, iv = vol_env.step(buy(vol_env))
+    _, _, _, _, ib = base_env.step(buy(base_env))
+    agent = "agent_0"
+    mids = ib[agent]["cleared_mids"]
+    np.testing.assert_allclose(iv[agent]["cleared_mids"], mids)
+
+    wider = 0
+    for s, (fv, fb) in enumerate(zip(iv[agent]["fills"], ib[agent]["fills"])):
+        base_impact = abs(fb["fill_price"] - mids[s])
+        vol_impact = abs(fv["fill_price"] - mids[s])
+        assert vol_impact >= base_impact - 1e-12
+        if vol_impact > base_impact + 1e-9:
+            wider += 1
+    assert wider > 0, "vol_scale>0 must widen at least one fill on a volatile path"
+    vol_env.close()
+    base_env.close()
+
+
+@needs_pz
 def test_parallel_api_test():
     from pettingzoo.test import parallel_api_test
 
