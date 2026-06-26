@@ -45,11 +45,18 @@ Beyond the core `reset`/`step` lifecycle, the environment now ships a full **rei
 | **Procedural scenarios** | A seeded generator (`ScenarioSpec` / `generate_scenario`) using Procgen's integer-seed-interval model, with `Calm` / `Hard` / `Extreme` volatility-and-jump tiers and provably disjoint `train_test_split`, cross-runtime golden-hashed for byte-identical generation. |
 | **Generalization gap** | `generalization_gap` measures train-vs-held-out deflated Sharpe over disjoint seed bands, turning "did it overfit" into one number scored by the SharpeBench kernel. |
 | **`verifiers` training env** | A PrimeIntellect `verifiers` `MultiTurnEnv` that steps the market bar-by-bar, over a multi-row scenario `Dataset`, with an `XMLParser` decision protocol and a GRPO-safe bounded reward scored by the real SharpeBench `score_run` (deflated Sharpe, pass^k, process checks). |
-| **Vectorized rollouts** | `VecTradingEnv` runs B scenario lanes in lockstep (rayon, structure-of-arrays JSON, gym3 same-step auto-reset), exposed as a `gymnasium.vector` env. |
-| **Point-in-time-safe wrappers** | Causal normalize (no future-bar leak), `TimeLimit`, `FrameStack`, `RecordEpisodeStatistics`, plus a `check_env` conformance harness that *proves* seed-determinism. |
+| **Vectorized rollouts** | `VecTradingEnv` runs B scenario lanes in lockstep (rayon, structure-of-arrays JSON, current-Gymnasium `AutoresetMode`), exposed as a `gymnasium.vector` env. |
+| **Point-in-time-safe wrappers** | Causal normalize (no future-bar leak), `TimeLimit`, `FrameStack`, `RecordEpisodeStatistics`, vector-env variants, and `flatten`/`unflatten` Dict-obs helpers, plus a `check_env` conformance harness that *proves* seed-determinism (and adopts Gymnasium's own `check_env`). |
+| **Gymnasium registration** | Versioned, namespaced IDs: `gymnasium.make("OpenOutcry/Hard-v1")` and `make_vec(...)` route to the scalar and vector envs, with `-Eval-v1` variants on a disjoint held-out seed band. |
+| **Multi-agent markets** | A PettingZoo `MultiAgentOpenOutcryEnv` (batched competition: N agents on one frozen scenario, SharpeBench-ranked), and `EndogenousMarketEnv`, a real shared-book market where aggregate flow *moves* the cleared price (Kyle permanent + Almgren-Chriss temporary impact). |
+| **Per-scenario mandates** | Each scenario samples a trading mandate (long-only, market-neutral, drawdown-capped, beat-a-benchmark); the `verifiers` rubric is mandate-conditioned, so wrong-objective behavior is penalized, not just unrewarded. |
+| **Offline-RL + checkpointing** | `to_minari` exports rollouts as a Farama [Minari](https://minari.farama.org) dataset (leak-safe, `recover_environment`-ready); `CheckpointableEnv` clones/restores/branches market state for tree search; `OpenOutcryFuncEnv` is a stateless `gymnasium.functional.FuncEnv` view. |
+| **Benchmark protocol** | A committed [`EVALUATION.md`](EVALUATION.md): the canonical eval contract, the disjoint train/held-out split, and a baseline leaderboard (deflated Sharpe to beat is 0.0; pass^k degrades Calm to Hard to Extreme). |
 | **Harness integration** | An MCP server (`reset` / `step` / `spec` tools) so any MCP agent harness drives an episode with zero glue, a `LookaheadGuard` that refuses agent operations reading future data, versioned JSONL rollout traces that re-score offline through the SharpeBench kernel, and a cost-adjusted `RunMetrics` block for leaderboard ranking. |
 
-**Not yet shipped:** the [PrimeIntellect](https://app.primeintellect.ai) Environments-Hub listing, multi-agent (shared-order-book) markets, and the Gordon conforming-agent adapter.
+The determinism-critical core (the engine, scoring, scenario generation, mandates, the market-clearing model, the execution-noise integrity knob) lives in **Rust** so a published number is byte-identical across every surface; the per-ecosystem adapters (gymnasium, PettingZoo, Minari, verifiers, MCP) are thin and live in the language each ecosystem speaks.
+
+**Not yet shipped:** the [PrimeIntellect](https://app.primeintellect.ai) Environments-Hub listing and the Gordon conforming-agent adapter.
 
 ## Quickstart
 
@@ -123,6 +130,28 @@ env = RecordEpisodeStatistics(            # info["episode"] carries Sharpe + max
 )
 ```
 
+**Register it like any Gymnasium env.** Importing `openoutcry` registers versioned IDs, so the whole RL ecosystem reaches it through muscle memory:
+
+```python
+import gymnasium, openoutcry
+env = gymnasium.make("OpenOutcry/Hard-v1")            # difficulty + version pinned in the ID
+vec = gymnasium.make_vec("OpenOutcry/Hard-v1", num_envs=8)
+```
+
+**Trade a real multi-agent market.** In `EndogenousMarketEnv` the agents' aggregate flow *moves* the price they all see (Kyle permanent + Almgren-Chriss temporary impact), not a frozen path:
+
+```python
+from openoutcry import EndogenousMarketEnv     # a PettingZoo ParallelEnv
+
+market = EndogenousMarketEnv(n_agents=3, n_symbols=4, n_days=120, seed=1)
+obs, infos = market.reset(seed=1)
+# every agent submits a target-weight order; the book clears once and the cleared
+# price reflects everyone's flow, so one agent's size moves the others' fills.
+obs, rewards, terminations, truncations, infos = market.step(
+    {a: market.action_space(a).sample() for a in market.agents}
+)
+```
+
 A one-command [prime-rl](https://github.com/PrimeIntellect-ai/prime-rl) GRPO training config lives in [`examples/prime-rl/`](examples/prime-rl/); see [`docs/training.md`](docs/training.md) for the full loop (install, `vf-eval` baseline, `uv run rl`).
 
 ## Use it from anywhere
@@ -131,8 +160,8 @@ One Rust engine, scored identically across every surface, because they run the s
 
 | Surface | Get it | What it is |
 |:--|:--|:--|
-| <img height="14" align="top" src="https://cdn.simpleicons.org/rust/DEA584" />&nbsp; **Rust crate** | `cargo add openoutcry` | The env, the procedural scenario generator, the batched `VecTradingEnv`, and the governed wire contract, re-exporting the leak-free engine. |
-| <img height="14" align="top" src="https://cdn.simpleicons.org/pypi/3776AB" />&nbsp; **Python** | `pip install openoutcry` | A `gymnasium.Env` and `gymnasium.vector` adapter, the `verifiers` training environment, point-in-time-safe wrappers, rollout traces, and an MCP server, over the pyo3 binding. |
+| <img height="14" align="top" src="https://cdn.simpleicons.org/rust/DEA584" />&nbsp; **Rust crate** | `cargo add openoutcry` | The env, the procedural scenario generator, the batched `VecTradingEnv`, the mandate / execution-noise / market-clearing cores, and the governed wire contract, re-exporting the leak-free engine. |
+| <img height="14" align="top" src="https://cdn.simpleicons.org/pypi/3776AB" />&nbsp; **Python** | `pip install openoutcry` | Gymnasium (`Env` + `vector` + registered IDs), PettingZoo (competition + endogenous market), the `verifiers` training env, Minari export, checkpointing, `FuncEnv`, point-in-time-safe wrappers, traces, and an MCP server, over the pyo3 binding. |
 | <img height="14" align="top" src="https://cdn.simpleicons.org/npm/CB3837" />&nbsp; **npm** | `npm i @general-liquidity/openoutcry` | A typed JS/TS API over the engine compiled to WASM. |
 | <img height="14" align="top" src="https://cdn.simpleicons.org/webassembly/654FF0" />&nbsp; **WASM** | `openoutcry-wasm` | The wasm-bindgen bridge the npm package and Gordon (Bun) embed. |
 
@@ -174,17 +203,18 @@ A Rust [Cargo workspace](Cargo.toml), `#![forbid(unsafe_code)]`, that **depends 
 sharpebench-sim (published 0.0.7) ... the leak-free point-in-time engine
         |
    crates/openoutcry ......... the env, scenario generator, batched VecTradingEnv,
+        |                       mandate / exec-noise / market-clearing cores, the
         |                       Gym reset/step, and the governed wire contract
         |-- crates/openoutcry-wasm   the engine as WASM (-> the npm package)
-        |-- crates/openoutcry-py     pyo3 + gymnasium + verifiers + wrappers + MCP (maturin)
+        |-- crates/openoutcry-py     pyo3 + the ecosystem adapters (maturin)
         +-- npm/openoutcry           the typed TS wrapper over the wasm
 ```
 
 | Crate / package | Role |
 |:--|:--|
-| **`openoutcry`** | `TradingEnv` (`reset`/`step`), `VecTradingEnv` (batched), the procedural scenario generator, the `Scenario`/crisis-suite bundle, the re-exported wire contract plus scored `Run`, `CONTRACT_VERSION`, the conformance kit, and reference agents. |
+| **`openoutcry`** | The Rust moat: `TradingEnv` (`reset`/`step`), `VecTradingEnv` (batched), the procedural scenario generator, the mandate and execution-noise cores, the `MarketClearing` impact engine, the `Scenario`/crisis-suite bundle, the re-exported wire contract plus scored `Run`, `CONTRACT_VERSION`, the conformance kit, and reference agents. |
 | **`openoutcry-wasm`** | Pure JSON kernels (`run_baseline`, `replay_run`, `generate_scenario`, ...) plus wasm-bindgen exports, the identical engine for JS/TS. |
-| **`openoutcry-py`** | A pyo3 extension exposing `TradingEnv` / `VecTradingEnv`, a `gymnasium.Env` and `gymnasium.vector` adapter, the `verifiers` training environment, wrappers, the generalization metric, rollout traces, and an MCP server (built by maturin). |
+| **`openoutcry-py`** | A pyo3 extension over the Rust cores plus the thin ecosystem adapters: Gymnasium (`Env`/`vector`/registration), PettingZoo (competition + endogenous market), `verifiers`, Minari export, checkpointing, `FuncEnv`, wrappers, traces, and MCP (built by maturin). Optional extras: `verifiers`, `minari`, `pettingzoo`. |
 | **`@general-liquidity/openoutcry`** | The typed npm wrapper over the WASM kernel. |
 
 ## Tech stack
@@ -195,7 +225,9 @@ sharpebench-sim (published 0.0.7) ... the leak-free point-in-time engine
 | <img height="14" align="top" src="https://cdn.simpleicons.org/webassembly/654FF0" />&nbsp; [WebAssembly](https://webassembly.org) | The engine for non-Rust hosts (`wasm-bindgen`) |
 | <img height="14" align="top" src="https://cdn.simpleicons.org/typescript/3178C6" />&nbsp; [TypeScript](https://www.typescriptlang.org) | The typed npm package |
 | <img height="14" align="top" src="https://cdn.simpleicons.org/python/3776AB" />&nbsp; [Python](https://www.python.org) | The pyo3 binding and Gymnasium adapter (built by [maturin](https://www.maturin.rs)) |
-| <img height="14" align="top" src="https://raw.githubusercontent.com/Farama-Foundation/Gymnasium/main/docs/_static/img/gymnasium_black.svg" />&nbsp; [Gymnasium](https://gymnasium.farama.org) | The RL env standard the Python adapter conforms to (`reset`/`step`/spaces/`vector`) |
+| <img height="14" align="top" src="https://raw.githubusercontent.com/Farama-Foundation/Gymnasium/main/docs/_static/img/gymnasium_black.svg" />&nbsp; [Gymnasium](https://gymnasium.farama.org) | The RL env standard the Python adapter conforms to (`reset`/`step`/spaces/`vector`/registration) |
+| <img height="14" align="top" src="https://github.com/Farama-Foundation.png" />&nbsp; [PettingZoo](https://pettingzoo.farama.org) | The multi-agent API the competition and endogenous-market envs conform to (passes `parallel_api_test`) |
+| <img height="14" align="top" src="https://github.com/Farama-Foundation.png" />&nbsp; [Minari](https://minari.farama.org) | The offline-RL dataset standard `to_minari` exports trajectories into |
 | <img height="14" align="top" src="https://github.com/PrimeIntellect-ai.png" />&nbsp; [Prime Intellect `verifiers`](https://github.com/PrimeIntellect-ai/verifiers) | The RLVR `Environment`/`Rubric` standard the training env conforms to |
 | <img height="14" align="top" src="https://github.com/serde-rs.png" />&nbsp; [serde](https://serde.rs) | Deterministic JSON for the wire contract (`float_roundtrip` for byte-exact replay) |
 | <img height="14" align="top" src="https://cdn.simpleicons.org/githubactions/2088FF" />&nbsp; GitHub Actions | CI: fmt, clippy, tests, wasm, cargo-deny, npm, maturin |
