@@ -76,6 +76,8 @@ pub use sharpebench_sim::{
     CostModel,
     CostProfile,
     Dataset,
+    // O(1) env state snapshot (clone_state / restore_state) — sharpebench-sim 0.0.8.
+    EnvState,
     // External transports — a conforming agent is just a program that reads observations
     // (stdin / `POST /decide`) and writes decisions.
     ExternalAgent,
@@ -92,8 +94,6 @@ pub use sharpebench_sim::{
     TeamAgent,
     TradingEnv,
     Window,
-    // O(1) env state snapshot (clone_state / restore_state) — sharpebench-sim 0.0.8.
-    EnvState,
 };
 
 // --- The language-agnostic wire contract (the standard OpenOutcry governs) -----------------
