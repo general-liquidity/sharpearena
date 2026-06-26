@@ -47,6 +47,11 @@ pub use mandate::{mandate_breach, sample_mandate, Mandate, MandateStyle};
 pub mod exec_noise;
 pub use exec_noise::{perturb as perturb_action, ExecNoise};
 
+// --- Limit-order-book matching engine (M3) -------------------------------------------------
+
+pub mod lob_market;
+pub use lob_market::{Fill, LadderSnapshot, OrderBook, OrderKind, RestingOrder, Side};
+
 // --- Endogenous price-impact shared-book market (M2) ---------------------------------------
 
 pub mod market;
