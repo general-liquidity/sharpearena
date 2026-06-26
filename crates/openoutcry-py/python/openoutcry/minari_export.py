@@ -48,11 +48,17 @@ action, reward, terminated, truncated, info}``.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Optional, Sequence, Union
 
 import numpy as np
 
 from .trace import _is_leaky, load_trace
+
+try:  # mirror the canonical band boundary when the binding (and thus dataset) imports
+    from .dataset import EVAL_SEED_BASE
+except Exception:  # noqa: BLE001 - keep this module importable without the native binding
+    EVAL_SEED_BASE = 1_000_000
 
 try:  # pragma: no cover - exercised only when minari is installed
     import minari  # noqa: F401
@@ -373,4 +379,143 @@ def to_minari(
     return dataset
 
 
-__all__ = ["to_minari"]
+# ---------------------------------------------------------------------------
+# Disjoint-seed-interval train/test split
+# ---------------------------------------------------------------------------
+
+_VERSION_RE = re.compile(r"^(?P<stem>.+)-v(?P<ver>\d+)$")
+
+
+def _split_dataset_id(base_dataset_id: str, split: str) -> str:
+    """Derive the ``split`` dataset id from ``base_dataset_id``.
+
+    Minari ids must end in the version (``-vN``), so the split label is inserted *before*
+    the version when present (``ns/name-v0`` → ``ns/name-train-v0``); otherwise it is
+    appended (``ns/name`` → ``ns/name-train``).
+    """
+    match = _VERSION_RE.match(base_dataset_id)
+    if match:
+        return f"{match.group('stem')}-{split}-v{match.group('ver')}"
+    return f"{base_dataset_id}-{split}"
+
+
+def _trace_scenario_seeds(records: Sequence[dict]) -> set:
+    """Distinct ``info['scenario_seed']`` values across a trace's step records."""
+    seeds: set = set()
+    for rec in _step_records(records):
+        raw = (rec.get("info") or {}).get("scenario_seed")
+        if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+            seeds.add(int(raw))
+    return seeds
+
+
+def seed_band_metadata(
+    split: str,
+    seed_start: Optional[int],
+    n: Optional[int],
+    *,
+    seed_end: Optional[int] = None,
+    eval_seed_base: int = EVAL_SEED_BASE,
+) -> dict:
+    """Flat-scalar provenance for a disjoint-seed-interval split (HDF5-attr safe).
+
+    Stamps the split side, the observed seed band, and a note that the train/test boundary
+    is a **disjoint seed interval** (leak-safe across ``EVAL_SEED_BASE``), not a random
+    episode shuffle (``minari.split_dataset``).
+    """
+    attrs: dict[str, Any] = {
+        "split": split,
+        "split_method": "disjoint_seed_interval",
+        "split_note": (
+            "train/test split by disjoint seed interval, not random episode shuffle "
+            "(minari.split_dataset); leak-safe across the EVAL_SEED_BASE boundary"
+        ),
+        "eval_seed_base": int(eval_seed_base),
+    }
+    if seed_start is not None:
+        attrs["seed_band_start"] = int(seed_start)
+    if seed_end is not None:
+        attrs["seed_band_end"] = int(seed_end)
+    if n is not None:
+        attrs["seed_band_n"] = int(n)
+    return attrs
+
+
+def _stamp_split(dataset: Any, split: str, seeds: set) -> None:
+    seed_start = min(seeds) if seeds else None
+    seed_end = max(seeds) if seeds else None
+    attrs = seed_band_metadata(split, seed_start, len(seeds) or None, seed_end=seed_end)
+    try:
+        dataset.storage.update_metadata(attrs)
+    except Exception:  # noqa: BLE001 - metadata is best-effort; the dataset is the artifact
+        pass
+
+
+def to_minari_train_test(
+    train_trace: Union[str, "os.PathLike[str]", tuple, Sequence[dict]],  # noqa: F821
+    test_trace: Union[str, "os.PathLike[str]", tuple, Sequence[dict]],  # noqa: F821
+    base_dataset_id: str,
+    *,
+    observation_space: Any,
+    action_space: Any,
+    **kwargs: Any,
+) -> tuple:
+    """Export two leak-safe Minari datasets — a ``train`` and a ``test`` split of
+    ``base_dataset_id`` — over **provably disjoint seed bands**.
+
+    The split label is inserted before the version so the ids stay valid Minari ids
+    (``ns/name-v0`` → ``ns/name-train-v0`` / ``ns/name-test-v0``; see
+    :func:`_split_dataset_id`).
+
+    Minari ships :func:`minari.split_dataset` (random episode shuffle) and
+    :func:`minari.combine_datasets`, but a random split would tear OpenOutcry's leak-safe
+    seed-interval boundary: a train scenario could land in the test set. Instead this emits
+    two datasets whose episodes come from disjoint seed intervals (train below
+    :data:`~openoutcry.dataset.EVAL_SEED_BASE`, test at/above it) and stamps each dataset's
+    metadata with the seed-band provenance.
+
+    The two traces are asserted to share no scenario seed; each side is built via
+    :func:`to_minari` (so SharpeBench scores, leak rejection, and the n+1 convention all
+    carry over). ``**kwargs`` are forwarded to both :func:`to_minari` calls.
+
+    Returns
+    -------
+    tuple[minari.MinariDataset, minari.MinariDataset]
+        ``(train_dataset, test_dataset)``.
+    """
+    _require_minari()
+
+    train_records, train_meta = _resolve_trace(train_trace)
+    test_records, test_meta = _resolve_trace(test_trace)
+
+    train_seeds = _trace_scenario_seeds(train_records)
+    test_seeds = _trace_scenario_seeds(test_records)
+    if train_seeds and test_seeds and not train_seeds.isdisjoint(test_seeds):
+        raise ValueError(
+            "train and test traces share scenario seeds "
+            f"{sorted(train_seeds & test_seeds)}; the split must be over disjoint seed "
+            "bands (train below EVAL_SEED_BASE, test at/above it), not overlapping — that "
+            "is the whole point of a seed-interval split over minari.split_dataset."
+        )
+
+    train_dataset = to_minari(
+        (train_records, train_meta),
+        _split_dataset_id(base_dataset_id, "train"),
+        observation_space=observation_space,
+        action_space=action_space,
+        **kwargs,
+    )
+    test_dataset = to_minari(
+        (test_records, test_meta),
+        _split_dataset_id(base_dataset_id, "test"),
+        observation_space=observation_space,
+        action_space=action_space,
+        **kwargs,
+    )
+
+    _stamp_split(train_dataset, "train", train_seeds)
+    _stamp_split(test_dataset, "test", test_seeds)
+    return train_dataset, test_dataset
+
+
+__all__ = ["to_minari", "to_minari_train_test", "seed_band_metadata"]
