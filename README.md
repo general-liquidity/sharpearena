@@ -36,7 +36,7 @@ The strategic bet is **interface ownership**: if every trading agent in the open
 
 ## Status: published, active (pre-1.0)
 
-Published to **crates.io**, **npm**, and **PyPI** at **v0.4.0**, depending on the **published** `sharpebench-sim 0.0.7` engine (not a vendored copy). CI is green across four surfaces: Rust (`fmt`, `clippy -D warnings`, tests, a WASM target build), `cargo-deny`, the npm package, and the Python wheel (`maturin` + `pytest`).
+Published to **crates.io**, **npm**, and **PyPI** at **v0.5.0**, depending on the **published** `sharpebench-sim 0.0.7` engine (not a vendored copy). CI is green across four surfaces: Rust (`fmt`, `clippy -D warnings`, tests, a WASM target build), `cargo-deny`, the npm package, and the Python wheel (`maturin` + `pytest`).
 
 Beyond the core `reset`/`step` lifecycle, the environment now ships a full **reinforcement-learning training surface**:
 
