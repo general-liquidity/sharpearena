@@ -133,8 +133,9 @@ sharpebench-sim (published 0.0.7) ── the leak-free point-in-time engine
 | <img height="14" align="top" src="https://cdn.simpleicons.org/webassembly/654FF0" />&nbsp; [WebAssembly](https://webassembly.org) | The engine for non-Rust hosts (`wasm-bindgen`) |
 | <img height="14" align="top" src="https://cdn.simpleicons.org/typescript/3178C6" />&nbsp; [TypeScript](https://www.typescriptlang.org) | The typed npm package |
 | <img height="14" align="top" src="https://cdn.simpleicons.org/python/3776AB" />&nbsp; [Python](https://www.python.org) | The pyo3 binding + Gymnasium adapter (built by [maturin](https://www.maturin.rs)) |
-| <img height="14" align="top" src="https://cdn.simpleicons.org/farama/8B5CF6" />&nbsp; [Gymnasium](https://gymnasium.farama.org) · [verifiers](https://github.com/PrimeIntellect-ai/verifiers) | The RL-standard interfaces the env conforms to |
-| <img height="14" align="top" src="https://cdn.simpleicons.org/serde/000000" />&nbsp; serde | Deterministic JSON for the wire contract (`float_roundtrip` for byte-exact replay) |
+| <img height="14" align="top" src="https://raw.githubusercontent.com/Farama-Foundation/Gymnasium/main/docs/_static/img/gymnasium_black.svg" />&nbsp; [Gymnasium](https://gymnasium.farama.org) | The RL env standard the Python adapter conforms to (`reset`/`step`/spaces) |
+| <img height="14" align="top" src="https://github.com/PrimeIntellect-ai.png" />&nbsp; [Prime Intellect `verifiers`](https://github.com/PrimeIntellect-ai/verifiers) | The RLVR `Environment`/`Rubric` standard the env also conforms to |
+| <img height="14" align="top" src="https://github.com/serde-rs.png" />&nbsp; [serde](https://serde.rs) | Deterministic JSON for the wire contract (`float_roundtrip` for byte-exact replay) |
 | <img height="14" align="top" src="https://cdn.simpleicons.org/githubactions/2088FF" />&nbsp; GitHub Actions | CI: fmt · clippy · tests · wasm · cargo-deny · npm · maturin |
 
 ## Governance
