@@ -138,22 +138,71 @@ class OpenOutcryEnv(gym.Env):
     def symbols(self) -> list[str]:
         return list(self._symbols)
 
+    def decision_space(self) -> dict[str, Any]:
+        """A descriptive schema of the wire-contract ``Decision`` the binding consumes.
+
+        This is the wire shape (what ``_action_to_decision_json`` emits and the native
+        ``step`` parses), distinct from the gymnasium ``action_space`` (the
+        target-weight ``Box``). Use it to validate or construct raw decisions.
+        """
+        return {
+            "orders": {
+                "symbol": "str (one of self.symbols)",
+                "action": "str: buy | sell | hold | close",
+                "target_weight": "float in [-1, 1] (signed for shorts)",
+                "confidence": "float in [0, 1]",
+                "rationale": "str (optional, default '')",
+            },
+            "reasoning": "str (optional, default '')",
+        }
+
+    def observation_space_schema(self) -> dict[str, Any]:
+        """A descriptive schema of the wire-contract ``MarketObservation`` JSON the
+        binding emits (the point-in-time shape decoded by ``_decode_obs``), distinct
+        from the gymnasium ``observation_space`` ``Dict``."""
+        return {
+            "date": "str (ISO-8601 decision date)",
+            "cash": "float",
+            "symbols": {
+                "symbol": "str",
+                "close_history": "list[float] (trailing closes, oldest first)",
+                "fundamentals": "dict[str, float] (optional)",
+                "news": "list[str] (optional, headlines on/before date)",
+            },
+            "portfolio": {
+                "symbol": "str",
+                "shares": "float",
+                "avg_price": "float",
+            },
+        }
+
     def reset(
         self, *, seed: Optional[int] = None, options: Optional[dict] = None
     ) -> tuple[dict[str, np.ndarray], dict]:
         super().reset(seed=seed)
         obs_json = self._env.reset()
-        return self._decode_obs(obs_json), {}
+        return self._decode_obs(obs_json), {"scenario_seed": self._seed}
 
     def step(
         self, action: np.ndarray
     ) -> tuple[dict[str, np.ndarray], float, bool, bool, dict]:
+        """Advance one bar.
+
+        The engine's ``done`` means *ran out of bars* (end of the point-in-time
+        window), which is **truncation**, not termination — so we map it to
+        ``truncated``. True **termination** is bankruptcy (``nav <= 0``), an absorbing
+        state. The distinction is the classic RL bootstrapping rule: a value estimate
+        bootstraps past a ``truncated`` step (the episode was merely cut short) but not
+        past a ``terminated`` one (there is no future).
+        """
         decision_json = self._action_to_decision_json(action)
         obs_json, reward, done, info_json = self._env.step(decision_json)
         obs = self._decode_obs(obs_json)
         info = json.loads(info_json)
-        # gymnasium 1.x 5-tuple: (obs, reward, terminated, truncated, info).
-        return obs, float(reward), bool(done), False, info
+        info["scenario_seed"] = self._seed
+        truncated = bool(done)
+        terminated = float(info.get("nav", 1.0)) <= 0.0
+        return obs, float(reward), terminated, truncated, info
 
     def render(self):  # pragma: no cover - no visual rendering
         return None

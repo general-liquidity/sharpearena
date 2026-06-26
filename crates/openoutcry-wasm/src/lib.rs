@@ -19,9 +19,10 @@
 //! * **Window** — `{ "start": usize, "end": usize }` (half-open `[start, end)`).
 #![forbid(unsafe_code)]
 
+use openoutcry::scenario_gen::generate_scenario;
 use openoutcry::{
     replay_run, run_backtest, tag_regime, walk_forward, Agent, BuyAndHold, CostModel, Dataset,
-    HoldAgent, Momentum, RandomAgent, Regime, RunTrajectory, Window,
+    HoldAgent, Momentum, RandomAgent, Regime, RunTrajectory, ScenarioSpec, Window,
 };
 use serde::Deserialize;
 
@@ -280,6 +281,22 @@ pub fn tag_regime_json(input_json: &str) -> Result<String, String> {
     serde_json::to_string(&serde_json::json!({ "regime": label })).map_err(|e| e.to_string())
 }
 
+/// Generate a Procgen-style procedural scenario → Dataset JSON. Input
+/// `{ "spec": ScenarioSpec, "seed": u64 }`; a blank `spec` uses the defaults
+/// (mild 4×120 Calm). Deterministic: identical `(spec, seed)` ⇒ byte-identical JSON
+/// across every runtime (the cross-runtime generalization-reproducibility guarantee).
+pub fn generate_scenario_json(input_json: &str) -> Result<String, String> {
+    #[derive(Deserialize, Default)]
+    struct GenInput {
+        #[serde(default)]
+        spec: ScenarioSpec,
+        #[serde(default)]
+        seed: u64,
+    }
+    let input: GenInput = parse_or_default(input_json)?;
+    serde_json::to_string(&generate_scenario(&input.spec, input.seed)).map_err(|e| e.to_string())
+}
+
 /// The wasm-bindgen exports. Each returns the result JSON, or a `{"error":"..."}`
 /// JSON object on failure (never throws across the boundary).
 #[cfg(target_arch = "wasm32")]
@@ -328,6 +345,11 @@ mod wasm {
     #[wasm_bindgen]
     pub fn tag_regime(input_json: &str) -> String {
         wrap(super::tag_regime_json(input_json))
+    }
+
+    #[wasm_bindgen]
+    pub fn generate_scenario(input_json: &str) -> String {
+        wrap(super::generate_scenario_json(input_json))
     }
 }
 
@@ -463,6 +485,44 @@ mod tests {
         assert_eq!(
             native.trace.events, kernel.trace.events,
             "wasm kernel must reproduce the native engine's trace"
+        );
+    }
+
+    /// The procedural-scenario JSON kernel (wrapped verbatim by the wasm-bindgen
+    /// export) must reproduce the native [`generate_scenario`] byte-for-byte, and its
+    /// FNV-1a fingerprint must equal the committed golden value — so a published
+    /// generalization number computed in the browser/Bun is reproducible in Rust.
+    #[test]
+    fn generate_scenario_kernel_matches_native_and_golden() {
+        use openoutcry::{generate_scenario, DistributionMode, ScenarioSpec};
+
+        let spec = ScenarioSpec {
+            distribution_mode: DistributionMode::Calm,
+            n_symbols: 4,
+            n_days: 120,
+            ..ScenarioSpec::default()
+        };
+        let native = serde_json::to_string(&generate_scenario(&spec, 7)).unwrap();
+
+        let input = format!(
+            r#"{{"spec":{},"seed":7}}"#,
+            serde_json::to_string(&spec).unwrap()
+        );
+        let kernel = generate_scenario_json(&input).expect("kernel scenario");
+
+        assert_eq!(
+            native, kernel,
+            "wasm scenario kernel must reproduce the native generator byte-for-byte"
+        );
+
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        for &b in kernel.as_bytes() {
+            h ^= b as u64;
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        assert_eq!(
+            h, 0xb7cf_976c_7121_9c52,
+            "cross-runtime golden fingerprint drifted from the openoutcry crate's pin"
         );
     }
 }

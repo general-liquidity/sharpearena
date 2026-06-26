@@ -19,6 +19,7 @@ use sharpebench_core::{score_agent, AgentSubmission, Run, ScoreConfig, Trace};
 #[pyclass(name = "TradingEnv")]
 pub struct PyTradingEnv {
     inner: CoreEnv,
+    seed: u64,
 }
 
 fn build_window(start: Option<usize>, end: Option<usize>, len: usize) -> Window {
@@ -95,6 +96,7 @@ impl PyTradingEnv {
         );
         Ok(PyTradingEnv {
             inner: CoreEnv::new(data, window, costs, seed),
+            seed,
         })
     }
 
@@ -143,7 +145,16 @@ impl PyTradingEnv {
         );
         Ok(PyTradingEnv {
             inner: CoreEnv::new(data, window, costs, seed),
+            seed,
         })
+    }
+
+    /// The seed that generated this environment's scenario — out-of-band provenance,
+    /// never a feature in the observation. The Python wrapper threads this into the
+    /// `info` dict so a trajectory can be tied back to its generating seed.
+    #[getter]
+    fn scenario_seed(&self) -> u64 {
+        self.seed
     }
 
     /// Reset to the start of the window; return the first point-in-time
@@ -198,11 +209,20 @@ fn score_run(returns: Vec<f64>, n_trials: u32) -> PyResult<String> {
     serde_json::to_string(&score).map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
+/// Whether `decision_json` deserializes to the wire-contract [`Decision`] type — the
+/// boundary `contains()` for actions, so a caller can validate an agent's output
+/// against the action space without stepping the environment.
+#[pyfunction]
+fn validate_decision_json(decision_json: &str) -> bool {
+    serde_json::from_str::<Decision>(decision_json).is_ok()
+}
+
 /// The `openoutcry_py` native module (imported as `openoutcry.openoutcry_py`).
 #[pymodule]
 fn openoutcry_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyTradingEnv>()?;
     m.add_function(wrap_pyfunction!(score_run, m)?)?;
+    m.add_function(wrap_pyfunction!(validate_decision_json, m)?)?;
     m.add(
         "__doc__",
         "Native pyo3 bindings for the OpenOutcry trading-agent environment.",

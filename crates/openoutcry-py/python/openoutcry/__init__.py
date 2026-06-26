@@ -10,8 +10,41 @@ The native binding exchanges the language-agnostic wire JSON at its boundary:
 takes a decision JSON string. The pure-Python layers parse/build that JSON.
 """
 
-from .openoutcry_py import TradingEnv, score_run
+from .openoutcry_py import TradingEnv, score_run, validate_decision_json
 from .gym import OpenOutcryEnv
+from .check_env import check_env, check_determinism_across_constructors
+from .wrappers import (
+    TimeLimit,
+    CausalNormalizeObservation,
+    CausalNormalizeReward,
+    FrameStack,
+    RecordEpisodeStatistics,
+)
+from .generalization import train_test_seeds, evaluate_seeds, generalization_gap
+from .verifiers_env import OpenOutcryVerifiersEnv, load_environment, build_rubric
+from .dataset import build_scenario_dataset, seed_ranges_disjoint
+from .decision_parser import parse_decision
 
-__all__ = ["TradingEnv", "score_run", "OpenOutcryEnv"]
+__all__ = [
+    "TradingEnv",
+    "score_run",
+    "validate_decision_json",
+    "OpenOutcryEnv",
+    "check_env",
+    "check_determinism_across_constructors",
+    "TimeLimit",
+    "CausalNormalizeObservation",
+    "CausalNormalizeReward",
+    "FrameStack",
+    "RecordEpisodeStatistics",
+    "train_test_seeds",
+    "evaluate_seeds",
+    "generalization_gap",
+    "OpenOutcryVerifiersEnv",
+    "load_environment",
+    "build_rubric",
+    "build_scenario_dataset",
+    "seed_ranges_disjoint",
+    "parse_decision",
+]
 __version__ = "0.1.0"
