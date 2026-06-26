@@ -528,6 +528,7 @@ impl PyMarketClearing {
         kyle_lambda = 0.1,
         eta = 0.05,
         volume_scale = 1.0,
+        vol_scale = 0.0,
         distribution_mode = "calm",
     ))]
     #[allow(clippy::too_many_arguments)]
@@ -540,6 +541,7 @@ impl PyMarketClearing {
         kyle_lambda: f64,
         eta: f64,
         volume_scale: f64,
+        vol_scale: f64,
         distribution_mode: &str,
     ) -> PyResult<Self> {
         if n_agents < 1 {
@@ -552,6 +554,7 @@ impl PyMarketClearing {
             lambda: kyle_lambda,
             eta,
             volume_scale,
+            vol_scale,
         };
         Ok(PyMarketClearing {
             inner,

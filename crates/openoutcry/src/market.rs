@@ -26,19 +26,28 @@
 //!   and `V` an ADV-like volume normalizer. The bump carries forward forever (a permanent
 //!   move of the reference price), exactly the accumulating-multiplier the spec asks for.
 //! - **Temporary impact** (Almgren-Chriss) is what agent `i` actually pays this bar:
-//!   `fill_i = cleared_mid_t * (1 + (lambda * Q_t + eta * q_i) / V)` — it pays for the
+//!   `fill_i = cleared_mid_t * (1 + f_t * (lambda * Q_t + eta * q_i) / V)` — it pays for the
 //!   crowd's flow (`lambda * Q_t`) plus its own size (`eta * q_i`). Temporary impact does
-//!   not persist; it is a per-fill execution cost.
+//!   not persist; it is a per-fill execution cost. `f_t` is an optional **volatility-scaling
+//!   factor** (`MarketParams::vol_scale`): with `vol_scale = 0` (default) `f_t = 1` and the
+//!   term is exactly the static cost above; with `vol_scale > 0`,
+//!   `f_t = min(1 + vol_scale * vol_t, 3)` where `vol_t` is the trailing mean-squared
+//!   cleared return (a `sqrt`-free variance proxy over the last `VOL_WINDOW` *past* bars),
+//!   so spreads/slippage widen in high-vol regimes and the cap bounds divergence.
 //! - **Per-agent reward** is that agent's own realized portfolio return over the bar,
 //!   marked at the cleared mids and using its **own** fill prices.
 //!
 //! ## Determinism
 //!
-//! Every step is a pure function of `(exogenous path, lambda, eta, V, capital, agents'
-//! actions in sorted order)`. Only `mul / add / div` are used — no `ln` / `exp` or other
-//! transcendentals that differ across libm builds — so a cleared path is byte-identical
-//! across Rust, WASM, and Python. Aggregation folds the per-agent sizes in canonical
-//! (sorted) agent order, so the parallel collection of actions cannot perturb `Q_t`.
+//! Every step is a pure function of `(exogenous path, lambda, eta, V, vol_scale, capital,
+//! agents' actions in sorted order)`. Only `mul / add / div` are used — no `ln` / `exp` /
+//! `sqrt` or other transcendentals that differ across libm builds — so a cleared path is
+//! byte-identical across Rust, WASM, and Python. The volatility proxy is a trailing
+//! *variance* (mean of squared returns), chosen precisely to avoid `sqrt`; its ring buffer
+//! holds only returns from past cleared bars, and `vol_scale = 0` multiplies the impact
+//! term by an exact `1.0`, so the default path is bit-for-bit the pre-vol-scaling fill.
+//! Aggregation folds the per-agent sizes in canonical (sorted) agent order, so the parallel
+//! collection of actions cannot perturb `Q_t`.
 //!
 //! ## Leak-free invariant
 //!
@@ -64,6 +73,11 @@ const LOOKBACK: usize = 20;
 /// Below this absolute size a position/NAV is treated as flat (avoids divide-by-zero in
 /// the return and average-price bookkeeping). Comparisons only — never an additive fudge.
 const EPS: f64 = 1e-12;
+/// Trailing window (in past cleared bars) of the volatility proxy used by `vol_scale`.
+const VOL_WINDOW: usize = 20;
+/// Upper bound on the volatility-scaling factor, so an extreme `vol_scale` (or a violent
+/// vol regime) cannot blow the temporary impact up without limit.
+const VOL_FACTOR_CAP: f64 = 3.0;
 
 /// The impact coefficients: Kyle's permanent `lambda`, Almgren-Chriss temporary `eta`,
 /// and the ADV-like `volume_scale` (`V`) that both are normalized by. All are in the
@@ -76,6 +90,12 @@ pub struct MarketParams {
     pub eta: f64,
     /// Volume / ADV normalizer `V` that `lambda * Q` and `eta * q_i` are divided by.
     pub volume_scale: f64,
+    /// Optional volatility scaling of the **temporary impact**. `0.0` (default) is off —
+    /// the fill is the static Kyle/Almgren-Chriss cost. When `> 0`, the temporary-impact
+    /// term is multiplied by `min(1 + vol_scale * trailing_vol, VOL_FACTOR_CAP)`, where
+    /// `trailing_vol` is the mean of squared cleared returns over the last [`VOL_WINDOW`]
+    /// *past* bars — so execution costs widen as realized volatility rises.
+    pub vol_scale: f64,
 }
 
 impl Default for MarketParams {
@@ -84,6 +104,7 @@ impl Default for MarketParams {
             lambda: 0.1,
             eta: 0.05,
             volume_scale: 1.0,
+            vol_scale: 0.0,
         }
     }
 }
@@ -130,6 +151,56 @@ struct AgentBook {
     prev_weight: Vec<f64>,
 }
 
+/// A fixed-window, running mean-of-squared-returns volatility proxy for one symbol. It is
+/// deliberately a trailing **variance** (squared returns), not a standard deviation, so it
+/// needs no `sqrt` and stays byte-identical across runtimes — only mul/add/div. Point-in-
+/// time by construction: it only ever holds returns from cleared bars strictly in the past.
+#[derive(Clone, Debug)]
+struct VolTracker {
+    /// Ring of the last [`VOL_WINDOW`] squared returns.
+    ring: [f64; VOL_WINDOW],
+    /// Next write slot (also the oldest entry once the ring is full).
+    head: usize,
+    /// Entries written so far (saturates at [`VOL_WINDOW`]).
+    count: usize,
+    /// Running sum of the squared returns currently in the ring.
+    sum_sq: f64,
+}
+
+impl VolTracker {
+    fn new() -> Self {
+        Self {
+            ring: [0.0; VOL_WINDOW],
+            head: 0,
+            count: 0,
+            sum_sq: 0.0,
+        }
+    }
+
+    /// Mean squared return over the buffered window — the vol proxy (`0.0` until the first
+    /// push, so a cold buffer applies no scaling).
+    fn proxy(&self) -> f64 {
+        if self.count == 0 {
+            0.0
+        } else {
+            self.sum_sq / self.count as f64
+        }
+    }
+
+    /// Record one realized cleared return, evicting the oldest entry once the ring is full.
+    fn push(&mut self, ret: f64) {
+        let sq = ret * ret;
+        if self.count == VOL_WINDOW {
+            self.sum_sq -= self.ring[self.head];
+        } else {
+            self.count += 1;
+        }
+        self.ring[self.head] = sq;
+        self.sum_sq += sq;
+        self.head = (self.head + 1) % VOL_WINDOW;
+    }
+}
+
 /// The shared-book market state: the running permanent-impact multiplier, the realized
 /// cleared tape, and every agent's book. Built from a [`Dataset`]; driven one bar at a
 /// time by [`clear_bar`] (or the [`MarketClearing::step`] convenience that feeds it the
@@ -146,6 +217,9 @@ pub struct MarketClearing {
     prev_mid: Vec<f64>,
     /// The realized cleared tape per symbol (grows one entry per cleared bar).
     cleared_history: Vec<Vec<f64>>,
+    /// Trailing realized-volatility proxy per symbol, fed by past cleared returns and read
+    /// by [`MarketParams::vol_scale`] to widen temporary impact in high-vol regimes.
+    vol: Vec<VolTracker>,
     agents: Vec<AgentBook>,
     /// The next bar index to clear.
     cursor: usize,
@@ -179,6 +253,20 @@ impl MarketClearing {
             .map(|series| series[..start_bar.min(series.len())].to_vec())
             .collect();
         let prev_mid: Vec<f64> = exo.iter().map(|s| s[start_bar.min(s.len() - 1)]).collect();
+        // Seed each symbol's vol proxy from its untraded burn-in tape (cleared == exogenous,
+        // all strictly before the first traded bar), so vol scaling is live from bar one.
+        let vol: Vec<VolTracker> = cleared_history
+            .iter()
+            .map(|series| {
+                let mut tracker = VolTracker::new();
+                for w in series.windows(2) {
+                    if w[0].abs() > EPS {
+                        tracker.push((w[1] - w[0]) / w[0]);
+                    }
+                }
+                tracker
+            })
+            .collect();
         let agents = (0..n_agents)
             .map(|_| AgentBook {
                 cash: capital,
@@ -195,6 +283,7 @@ impl MarketClearing {
             impact_mult: vec![1.0; n_sym],
             prev_mid,
             cleared_history,
+            vol,
             agents,
             cursor: start_bar,
             start_bar,
@@ -362,6 +451,25 @@ pub fn clear_bar(
         .map(|(m, mult)| m * mult)
         .collect();
 
+    // Volatility-scaling factor for temporary impact (one per symbol). Read the trailing
+    // vol proxy — which holds only *past* cleared returns — and form a capped multiplier.
+    // `vol_scale == 0` yields an exact `1.0`, so the fill below is byte-identical to the
+    // pre-vol-scaling formula.
+    let vol_factor: Vec<f64> = (0..n_sym)
+        .map(|s| {
+            if params.vol_scale > 0.0 {
+                let f = 1.0 + params.vol_scale * state.vol[s].proxy();
+                if f > VOL_FACTOR_CAP {
+                    VOL_FACTOR_CAP
+                } else {
+                    f
+                }
+            } else {
+                1.0
+            }
+        })
+        .collect();
+
     // (2) per-agent signed order size q = Δ(desired notional) / price, then aggregate net
     //     flow per symbol by folding the agents in canonical (sorted) order.
     let q: Vec<Vec<f64>> = agent_orders
@@ -405,7 +513,8 @@ pub fn clear_bar(
         for s in 0..n_sym {
             let qi = q[i][s];
             let mid = cleared_mid[s];
-            let fill = mid * (1.0 + (params.lambda * net_flow[s] + params.eta * qi) / v);
+            let fill =
+                mid * (1.0 + vol_factor[s] * (params.lambda * net_flow[s] + params.eta * qi) / v);
             let sym = state.symbols[s].clone();
             let book = &mut state.agents[i];
             book.cash -= qi * fill;
@@ -470,6 +579,14 @@ pub fn clear_bar(
     for (mult, flow) in state.impact_mult.iter_mut().zip(&net_flow) {
         *mult *= 1.0 + params.lambda * flow / v;
     }
+    // Fold this bar's realized cleared return into each symbol's trailing vol proxy, for the
+    // *next* bar's scaling. `prev_mid` still holds the previous bar's cleared mid here.
+    for (s, mid) in cleared_mid.iter().enumerate() {
+        let prev = state.prev_mid[s];
+        if prev.abs() > EPS {
+            state.vol[s].push((mid - prev) / prev);
+        }
+    }
     state.prev_mid.copy_from_slice(&cleared_mid);
     state.cursor += 1;
     let done = state.cursor >= state.n_bars;
@@ -530,6 +647,7 @@ mod tests {
             lambda: 0.5,
             eta: 0.0,
             volume_scale: 1.0,
+            vol_scale: 0.0,
         };
         let mut m = MarketClearing::from_dataset(&data, 4, 1.0);
         let buy = block(4, 2, 0.8);
@@ -567,6 +685,7 @@ mod tests {
             lambda: 0.2,
             eta: 0.0,
             volume_scale: 5.0,
+            vol_scale: 0.0,
         };
         let mut m = MarketClearing::from_dataset(&data, 2, 1.0);
         let mut w = 0.0;
@@ -602,6 +721,7 @@ mod tests {
             lambda: 0.3,
             eta: 0.15,
             volume_scale: 2.0,
+            vol_scale: 0.0,
         };
         let run = |weight: f64| {
             let mut m = MarketClearing::from_dataset(&data, 3, 1.0);
@@ -634,6 +754,7 @@ mod tests {
             lambda: 0.4,
             eta: 0.1,
             volume_scale: 1.0,
+            vol_scale: 0.0,
         };
         // Distinct per-agent orders so the ordering would matter if it weren't canonical.
         let agent_orders: Vec<Vec<f64>> = (0..4)
@@ -672,6 +793,7 @@ mod tests {
             lambda: 0.5,
             eta: 0.2,
             volume_scale: 1.0,
+            vol_scale: 0.0,
         };
         let mut m1 = MarketClearing::from_dataset(&data, 2, 1.0);
         let mut m2 = MarketClearing::from_dataset(&data, 2, 1.0);
@@ -740,5 +862,169 @@ mod tests {
 
     fn params_default() -> MarketParams {
         MarketParams::default()
+    }
+
+    /// A single-symbol dataset over a handcrafted close path (for calm-vs-volatile tests).
+    fn dataset_from_closes(closes: Vec<f64>) -> Dataset {
+        let dates = (0..closes.len()).map(|i| format!("t{i}")).collect();
+        let mut map = BTreeMap::new();
+        map.insert("AAA".to_string(), closes);
+        Dataset {
+            dates,
+            closes: map,
+            dividends: BTreeMap::new(),
+        }
+    }
+
+    #[test]
+    fn vol_scale_zero_matches_the_legacy_fill_formula() {
+        // vol_scale = 0 leaves the temporary-impact term exactly as before: every fill is
+        // mid * (1 + (lambda*Q + eta*q_i)/V), recomputed here from the public result fields.
+        // This pins the default path byte-for-byte against the pre-change formula.
+        let data = Dataset::synthetic(2, 40, 3);
+        let params = MarketParams {
+            lambda: 0.5,
+            eta: 0.25,
+            volume_scale: 2.0,
+            vol_scale: 0.0,
+        };
+        let mut m = MarketClearing::from_dataset(&data, 3, 1.0);
+        let orders = block(3, 2, 0.6);
+        loop {
+            let r = m.step(&orders, &params);
+            for fills in &r.fills {
+                for (s, f) in fills.iter().enumerate() {
+                    let expected = r.cleared_mids[s]
+                        * (1.0
+                            + (params.lambda * r.net_flow[s] + params.eta * f.size)
+                                / params.volume_scale);
+                    assert_eq!(
+                        f.fill_price, expected,
+                        "vol_scale=0 must be the legacy fill"
+                    );
+                }
+            }
+            if r.done {
+                break;
+            }
+        }
+    }
+
+    #[test]
+    fn vol_scaling_widens_fills_more_in_a_high_vol_stretch() {
+        // Calm path (tiny returns) vs volatile path (large alternating returns), each long
+        // enough to seed the trailing-vol buffer from the burn-in tape. With the SAME orders
+        // and path, vol scaling moves only the fill PRICE (sizing + cleared mid are
+        // untouched), so the realized widening factor equals the vol multiplier — which must
+        // be larger on the volatile path.
+        let calm = dataset_from_closes((0..30).map(|i| 100.0 + i as f64 * 0.01).collect());
+        let volatile = dataset_from_closes(
+            (0..30)
+                .map(|i| if i % 2 == 0 { 100.0 } else { 125.0 })
+                .collect(),
+        );
+        let base = MarketParams {
+            lambda: 0.4,
+            eta: 0.2,
+            volume_scale: 1.0,
+            vol_scale: 0.0,
+        };
+        let scaled = MarketParams {
+            vol_scale: 10.0,
+            ..base
+        };
+        let buy = block(2, 1, 0.8);
+
+        let widening = |data: &Dataset| {
+            let mut m0 = MarketClearing::from_dataset(data, 2, 1.0);
+            let mut mv = MarketClearing::from_dataset(data, 2, 1.0);
+            let r0 = m0.step(&buy, &base);
+            let rv = mv.step(&buy, &scaled);
+            let mid = r0.cleared_mids[0];
+            assert_eq!(
+                mid, rv.cleared_mids[0],
+                "vol scaling must not move the cleared mid"
+            );
+            let base_impact = r0.fills[0][0].fill_price - mid;
+            assert!(base_impact.abs() > EPS, "the entry bar must actually trade");
+            (rv.fills[0][0].fill_price - mid) / base_impact
+        };
+
+        let calm_factor = widening(&calm);
+        let vol_factor = widening(&volatile);
+        assert!(
+            calm_factor >= 1.0 - EPS,
+            "the factor never shrinks impact: {calm_factor}"
+        );
+        assert!(
+            vol_factor > calm_factor + 1e-6,
+            "a high-vol stretch must widen fills more than a calm one: \
+             vol={vol_factor} calm={calm_factor}"
+        );
+    }
+
+    #[test]
+    fn the_vol_factor_is_capped() {
+        // An extreme vol_scale on a volatile path saturates the cap: the realized widening
+        // factor cannot exceed VOL_FACTOR_CAP however large vol_scale (or the vol) grows.
+        let volatile = dataset_from_closes(
+            (0..30)
+                .map(|i| if i % 2 == 0 { 100.0 } else { 140.0 })
+                .collect(),
+        );
+        let base = MarketParams {
+            lambda: 0.4,
+            eta: 0.2,
+            volume_scale: 1.0,
+            vol_scale: 0.0,
+        };
+        let huge = MarketParams {
+            vol_scale: 1.0e9,
+            ..base
+        };
+        let buy = block(2, 1, 0.8);
+
+        let mut m0 = MarketClearing::from_dataset(&volatile, 2, 1.0);
+        let mut mh = MarketClearing::from_dataset(&volatile, 2, 1.0);
+        let r0 = m0.step(&buy, &base);
+        let rh = mh.step(&buy, &huge);
+        let mid = r0.cleared_mids[0];
+        let factor = (rh.fills[0][0].fill_price - mid) / (r0.fills[0][0].fill_price - mid);
+        assert!(
+            factor <= VOL_FACTOR_CAP + 1e-9,
+            "the widening factor must be capped at {VOL_FACTOR_CAP}: {factor}"
+        );
+        assert!(
+            (factor - VOL_FACTOR_CAP).abs() < 1e-6,
+            "an extreme vol_scale must saturate the cap: {factor}"
+        );
+    }
+
+    #[test]
+    fn vol_scaled_clearing_is_deterministic() {
+        // Determinism with vol_scale active: same path + params + actions reproduce
+        // byte-identical fills and observations.
+        let data = Dataset::synthetic(2, 45, 9);
+        let params = MarketParams {
+            lambda: 0.3,
+            eta: 0.15,
+            volume_scale: 2.0,
+            vol_scale: 4.0,
+        };
+        let run = || {
+            let mut m = MarketClearing::from_dataset(&data, 3, 1.0);
+            let orders = block(3, 2, 0.4);
+            let mut log: Vec<(Vec<f64>, String)> = Vec::new();
+            loop {
+                let r = m.step(&orders, &params);
+                let px: Vec<f64> = r.fills.iter().flatten().map(|f| f.fill_price).collect();
+                log.push((px, serde_json::to_string(&r.observations).unwrap()));
+                if r.done {
+                    break;
+                }
+            }
+            log
+        };
+        assert_eq!(run(), run(), "vol-scaled clearing must be deterministic");
     }
 }
