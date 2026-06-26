@@ -30,8 +30,8 @@ from .openoutcry_py import sample_mandate_json as _rs_sample_mandate_json
 
 # The constraint families a scenario can draw. ``unconstrained`` is the permissive
 # control (no structural breach); the others each carry a distinct structural rule.
-# Kept in sync with the Rust ``MandateStyle`` wire labels.
-STYLES = ("long_only", "market_neutral", "momentum", "unconstrained")
+# Kept in sync with the Rust ``MandateStyle`` wire labels (canonical draw order).
+STYLES = ("long_only", "market_neutral", "momentum", "unconstrained", "pairs_convergence")
 
 
 @dataclass(frozen=True)
@@ -39,13 +39,17 @@ class Mandate:
     """A per-scenario objective the episode is graded on satisfying.
 
     ``style`` is the structural constraint; ``max_drawdown`` an optional realized-DD cap
-    (a fraction, e.g. ``0.10`` = 10%); ``benchmark`` an optional symbol to beat (carried
-    in the prompt text — informational, not breach-scored, since the breach checker has no
-    per-symbol returns); ``text`` the human-readable rendering shown to the model.
+    (a fraction, e.g. ``0.10`` = 10%); ``max_inventory`` an optional per-bar gross-exposure
+    cap on ``Σ|w_i|`` (e.g. ``1.0`` = at most 100% gross — exceeding it draws a *squared*
+    breach, the Avellaneda-Stoikov inventory penalty); ``benchmark`` an optional symbol to
+    beat (carried in the prompt text — informational, not breach-scored, since the breach
+    checker has no per-symbol returns); ``text`` the human-readable rendering shown to the
+    model.
     """
 
     style: str
     max_drawdown: Optional[float] = None
+    max_inventory: Optional[float] = None
     benchmark: Optional[str] = None
     text: str = ""
 
@@ -54,6 +58,7 @@ class Mandate:
         return {
             "style": self.style,
             "max_drawdown": self.max_drawdown,
+            "max_inventory": self.max_inventory,
             "benchmark": self.benchmark,
             "text": self.text,
         }
@@ -63,6 +68,7 @@ class Mandate:
         return cls(
             style=str(d["style"]),
             max_drawdown=(None if d.get("max_drawdown") is None else float(d["max_drawdown"])),
+            max_inventory=(None if d.get("max_inventory") is None else float(d["max_inventory"])),
             benchmark=(None if d.get("benchmark") is None else str(d["benchmark"])),
             text=str(d.get("text", "")),
         )
@@ -107,6 +113,9 @@ def validate_mandate(obj: Union[Mandate, dict, None]) -> bool:
         return False
     if m.max_drawdown is not None and not (0.0 < float(m.max_drawdown) <= 1.0):
         return False
+    # Gross-exposure cap is a positive ceiling on Σ|w_i| (may exceed 1, e.g. 2.0 = 200%).
+    if m.max_inventory is not None and not (float(m.max_inventory) > 0.0):
+        return False
     return True
 
 
@@ -137,13 +146,16 @@ def mandate_breach(
 ) -> float:
     """A bounded breach penalty in ``[0, 1]`` (0 = clean, 1 = fully breached) — Rust kernel.
 
-    Two independent breach sources, combined by worst-case (``max``) so a clean structure
-    with a blown drawdown — or vice versa — still scores the violation:
+    Three independent breach sources, combined by worst-case (``max``) so a clean structure
+    with a blown drawdown — or a blown inventory cap — still scores the violation:
 
     * **structural** — a short under ``long_only`` (fraction of bars holding a short), or
-      net exposure away from zero under ``market_neutral`` (mean ``|net| / gross``). Read
-      off the per-step weight events. ``momentum`` / ``unconstrained`` carry no structural
-      rule.
+      net exposure away from zero under ``market_neutral`` *or* ``pairs_convergence`` (mean
+      ``|net| / gross``). Read off the per-step weight events. ``momentum`` /
+      ``unconstrained`` carry no structural rule. (``pairs_convergence`` uses a beta-free
+      dollar-neutrality proxy — see the Rust ``mandate_breach`` docs.)
+    * **inventory** — per-bar gross exposure ``Σ|w_i|`` over ``max_inventory``, normalized
+      by the cap and *squared* (Avellaneda-Stoikov), saturated at 1 per bar then meaned.
     * **drawdown** — realized max drawdown over the cap, normalized by the cap and
       saturated at 1.
 

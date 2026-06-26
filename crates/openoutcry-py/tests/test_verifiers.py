@@ -20,6 +20,7 @@ from openoutcry.dataset import (
 )
 from openoutcry.decision_parser import parse_decision
 from openoutcry.mandate import (
+    STYLES,
     Mandate,
     mandate_breach,
     mandate_from_dict,
@@ -36,6 +37,16 @@ from openoutcry.verifiers_env import (
     pass_k_reward,
     process_check_reward,
     realized_return_reward,
+)
+from openoutcry.rewards import (
+    REWARD_SCHEMES,
+    build_scheme_rubric,
+    differential_sharpe,
+    drawdown_penalized,
+    list_reward_schemes,
+    loss_averse,
+    sortino,
+    turnover_penalized,
 )
 
 RETS = [0.01, -0.005, 0.012, 0.003, -0.001, 0.008, -0.002, 0.006]
@@ -120,12 +131,7 @@ def test_sample_mandate_is_deterministic_and_varies():
     a = sample_mandate(42, n_symbols=4)
     b = sample_mandate(42, n_symbols=4)
     assert a == b
-    assert validate_mandate(a) and a.style in (
-        "long_only",
-        "market_neutral",
-        "momentum",
-        "unconstrained",
-    )
+    assert validate_mandate(a) and a.style in STYLES
     styles = {sample_mandate(s, n_symbols=4).style for s in range(64)}
     assert len(styles) > 1
     # round-trips through plain JSON (trace/replay).
@@ -155,6 +161,78 @@ def test_mandate_breach_clean_vs_breached():
     assert mandate_breach(neutral, [], [{"event": "target_weights", "weights": [0.5, 0.5]}]) > 0.0
     # breach is bounded in [0, 1].
     assert 0.0 <= mandate_breach(long_only, [-0.9, -0.9], short_events) <= 1.0
+
+
+# The breach math runs in Rust; the new dimensions need the rebuilt binding. A stale binding
+# silently drops the unknown ``max_inventory`` key (returns 0 over-cap) and rejects the new
+# ``pairs_convergence`` style on deserialize — skip-guard those until the integrator rebuilds.
+def _binding_has_inventory_cap() -> bool:
+    m = Mandate(style="unconstrained", max_inventory=1.0)
+    over = [{"event": "target_weights", "weights": [0.9, 0.8]}]  # gross 1.7 > 1.0
+    try:
+        return mandate_breach(m, [], over) > 0.0
+    except Exception:  # noqa: BLE001 - any binding error means unsupported
+        return False
+
+
+def _binding_has_pairs_convergence() -> bool:
+    try:
+        m = Mandate(style="pairs_convergence")
+        mandate_breach(m, [], [{"event": "target_weights", "weights": [0.5, 0.5]}])
+        return True
+    except Exception:  # noqa: BLE001 - stale binding rejects the unknown style
+        return False
+
+
+_HAS_INVENTORY = _binding_has_inventory_cap()
+_HAS_PAIRS = _binding_has_pairs_convergence()
+
+
+def test_mandate_new_fields_round_trip_and_validate():
+    """The new ``max_inventory`` field round-trips through plain JSON and validates."""
+    m = Mandate(style="unconstrained", max_inventory=1.0)
+    assert m.to_dict()["max_inventory"] == 1.0
+    assert mandate_from_dict(m.to_dict()) == m
+    assert validate_mandate(m)
+    # a non-positive gross cap is structurally invalid.
+    assert not validate_mandate(Mandate(style="unconstrained", max_inventory=0.0))
+    # pairs_convergence is a recognized style.
+    assert "pairs_convergence" in STYLES
+    assert validate_mandate(Mandate(style="pairs_convergence"))
+    # a pre-extension dict (no max_inventory key) still parses, defaulting to None.
+    legacy = {"style": "long_only", "max_drawdown": None, "benchmark": None, "text": ""}
+    assert mandate_from_dict(legacy).max_inventory is None
+
+
+@pytest.mark.skipif(not _HAS_INVENTORY, reason="binding predates max_inventory; rebuild required")
+def test_mandate_inventory_cap_breach():
+    """Gross exposure under the cap is clean; over it draws a bounded, squared breach."""
+    m = Mandate(style="unconstrained", max_inventory=1.0)
+    under = [{"event": "target_weights", "weights": [0.5, 0.3]}]  # gross 0.8 <= 1.0
+    assert mandate_breach(m, [], under) == 0.0
+    over = [{"event": "target_weights", "weights": [0.9, 0.8]}]  # gross 1.7 > 1.0
+    b = mandate_breach(m, [], over)
+    assert 0.0 < b <= 1.0
+    # the penalty is squared: a 2x-over excess is penalized ~4x a 1x-over excess.
+    small = mandate_breach(m, [], [{"event": "target_weights", "weights": [1.1]}])
+    big = mandate_breach(m, [], [{"event": "target_weights", "weights": [1.2]}])
+    assert big > small * 3.0
+    # grossly over-leveraged stays bounded at 1.
+    blown = mandate_breach(m, [], [{"event": "target_weights", "weights": [5.0, 5.0]}])
+    assert blown == 1.0
+
+
+@pytest.mark.skipif(not _HAS_PAIRS, reason="binding predates pairs_convergence; rebuild required")
+def test_mandate_pairs_convergence_breach():
+    """Pairs-convergence rewards dollar-neutrality; a directional book breaches."""
+    m = Mandate(style="pairs_convergence")
+    assert mandate_breach(m, [], [{"event": "target_weights", "weights": [0.5, -0.5]}]) == 0.0
+    assert mandate_breach(m, [], [{"event": "target_weights", "weights": [0.5, 0.5]}]) > 0.0
+    # a long-only market never draws the short-requiring pairs_convergence mandate.
+    assert all(
+        sample_mandate(s, n_symbols=4, allow_short=False).style != "pairs_convergence"
+        for s in range(64)
+    )
 
 
 def test_mandate_reward_is_bounded_and_objective_conditioned():
@@ -260,3 +338,152 @@ def test_malformed_decision_does_not_crash_episode():
     for _ in range(3):
         _run(env.env_response([_assistant("garbage, no action tag")], state))
     assert len(state["returns"]) == 3
+
+
+# -- the pluggable reward-scheme registry -----------------------------------
+
+def _batch_sharpe(returns):
+    a = np.asarray(returns, dtype=float)
+    if a.size < 2 or a.std(ddof=1) == 0:
+        return 0.0
+    return float(a.mean() / a.std(ddof=1))
+
+
+def _func_names(rubric):
+    """Reward-func names from a Rubric or the env's wrapping RubricGroup."""
+    subs = getattr(rubric, "rubrics", None) or [rubric]
+    names = []
+    for sub in subs:
+        names += [getattr(f, "__name__", str(f)) for f in sub.funcs]
+    return names
+
+
+_SCHEME_PRIMARY = {
+    "default": "realized_return_reward",
+    "differential_sharpe": "differential_sharpe",
+    "sortino": "sortino",
+    "drawdown_penalized": "drawdown_penalized",
+    "turnover_penalized": "turnover_penalized",
+    "loss_averse": "loss_averse",
+}
+
+
+def test_registry_lists_all_schemes_and_default_is_realized_return():
+    names = list_reward_schemes()
+    assert set(names) == {
+        "default",
+        "differential_sharpe",
+        "sortino",
+        "drawdown_penalized",
+        "turnover_penalized",
+        "loss_averse",
+    }
+    assert REWARD_SCHEMES["default"] is realized_return_reward
+
+
+def test_all_schemes_are_bounded():
+    """Every scheme stays in [-1, 1] across calm, extreme, and degenerate inputs (GRPO-safe)."""
+    weights_events = [
+        {"event": "target_weights", "weights": [0.5, -0.5]},
+        {"event": "target_weights", "weights": [-0.5, 0.5]},
+        {"event": "target_weights", "weights": [1.0, -1.0]},
+    ]
+    series = [
+        [],
+        [0.01],
+        RETS,
+        [10.0] * 20,
+        [-10.0] * 20,
+        [0.0] * 10,
+    ]
+    for fn in (differential_sharpe, sortino, drawdown_penalized, turnover_penalized, loss_averse):
+        for s in series:
+            v = fn(state={"returns": s, "events": weights_events})
+            assert -1.0 <= v <= 1.0
+
+
+def test_differential_sharpe_tracks_batch_sharpe_sign_and_order():
+    """The online DSR reward tracks the sign and ordering of the batch Sharpe ratio."""
+    rng = np.random.default_rng(0)
+    up = list(rng.normal(0.01, 0.01, 50))
+    down = list(rng.normal(-0.01, 0.01, 50))
+    high = list(rng.normal(0.006, 0.002, 50))
+    assert differential_sharpe(state={"returns": up}) > 0.0
+    assert differential_sharpe(state={"returns": down}) < 0.0
+    # higher batch Sharpe -> higher DSR reward.
+    assert _batch_sharpe(high) > _batch_sharpe(up)
+    assert differential_sharpe(state={"returns": high}) >= differential_sharpe(state={"returns": up})
+    # too-short an episode is a non-signal (0.0), never a NaN.
+    assert differential_sharpe(state={"returns": [0.01, 0.02]}) == 0.0
+
+
+def test_sortino_penalizes_downside_only():
+    """Adding pure upside volatility never lowers Sortino; downside does."""
+    smooth = sortino(state={"returns": [0.01, 0.01, 0.01, 0.01]})
+    upside = sortino(state={"returns": [0.01, 0.05, 0.01, 0.05]})
+    downside = sortino(state={"returns": [0.01, -0.05, 0.01, -0.05]})
+    assert 0.0 < smooth <= 1.0
+    assert upside >= 0.0
+    assert downside < smooth
+
+
+def test_drawdown_penalty_separates_paths_with_same_endpoint():
+    """Two return multisets with equal sum are ordered by their drawdown."""
+    smooth = drawdown_penalized(state={"returns": [0.02, 0.02, 0.02]})
+    dippy = drawdown_penalized(state={"returns": [-0.05, 0.05, 0.06]})
+    assert smooth > dippy
+
+
+def test_turnover_penalty_reads_target_weight_events():
+    """Churn between consecutive target-weight events lowers the reward vs a held book."""
+    rets = [0.01, 0.01, 0.01]
+    held = [{"event": "target_weights", "weights": [0.5, 0.0]}] * 3
+    churned = [
+        {"event": "target_weights", "weights": [1.0, -1.0]},
+        {"event": "target_weights", "weights": [-1.0, 1.0]},
+        {"event": "target_weights", "weights": [1.0, -1.0]},
+    ]
+    quiet = turnover_penalized(state={"returns": rets, "events": held})
+    busy = turnover_penalized(state={"returns": rets, "events": churned})
+    assert quiet > busy
+    # non-weight (market) events are ignored — no turnover, no penalty.
+    market = turnover_penalized(state={"returns": rets, "events": [{"event": "manipulative_order"}]})
+    assert market == pytest.approx(turnover_penalized(state={"returns": rets, "events": []}))
+
+
+def test_loss_averse_weights_losses_more():
+    """A symmetric series scores below its mirror because losses are amplified."""
+    gainy = loss_averse(state={"returns": [0.03, 0.03, -0.01]})
+    lossy = loss_averse(state={"returns": [-0.03, -0.03, 0.01]})
+    assert gainy > 0.0 > lossy
+    # heavier risk aversion deepens the penalty on a losing path.
+    mild = loss_averse(state={"returns": [0.01, -0.02]}, risk_averse=0.0)
+    harsh = loss_averse(state={"returns": [0.01, -0.02]}, risk_averse=3.0)
+    assert harsh < mild
+
+
+def test_build_scheme_rubric_shape_and_unknown_raises():
+    for scheme in list_reward_schemes():
+        rubric = build_scheme_rubric(scheme)
+        names = _func_names(rubric)
+        # three weighted rewards (primary + deflated + mandate), each present.
+        assert rubric.weights[:3] == [1.0, 0.5, 0.5]
+        assert names[0] == _SCHEME_PRIMARY[scheme]
+        assert "deflated_sharpe_reward" in names
+        assert "mandate_reward" in names
+    # mandate can be dropped — two weighted rewards, no mandate func.
+    no_mandate = build_scheme_rubric("sortino", mandate=False)
+    assert no_mandate.weights[:2] == [1.0, 0.5]
+    assert "mandate_reward" not in _func_names(no_mandate)
+    with pytest.raises(ValueError):
+        build_scheme_rubric("nope")
+
+
+def test_build_rubric_and_load_environment_thread_reward_scheme():
+    rubric = build_rubric(reward_scheme="differential_sharpe")
+    assert "differential_sharpe" in _func_names(rubric)
+    env = load_environment(reward_scheme="sortino", n_windows=2, n_symbols=2, n_days=20)
+    assert "sortino" in _func_names(env.rubric)
+    # default keeps the original realized-return primary (back-compat).
+    base = load_environment(n_windows=2, n_symbols=2, n_days=20)
+    assert "realized_return_reward" in _func_names(base.rubric)

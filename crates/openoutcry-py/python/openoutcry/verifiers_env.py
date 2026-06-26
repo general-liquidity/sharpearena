@@ -144,24 +144,17 @@ def mandate_reward(
     return float(1.0 - mandate_breach(m, rets, list(events)))
 
 
-def build_rubric(*, parser: Any = None):
-    """The reward bundle. Dense realized-return is the primary GRPO objective; the real
-    deflated Sharpe is a secondary objective; the **mandate** is a weighted reward (not a
-    metric) — the episode is graded on satisfying *its* per-scenario objective, so
-    wrong-objective behavior has to bite the gradient, which a zero-weight metric would
-    not do. ``pass^k`` / process discipline / format stay zero-weight diagnostics (gates,
-    not gradient). Raises if ``verifiers`` is unavailable."""
-    if not _HAS_VERIFIERS:
-        raise RuntimeError("verifiers is not installed; cannot build a Rubric")
-    rubric = vf.Rubric(
-        funcs=[realized_return_reward, deflated_sharpe_reward, mandate_reward],
-        weights=[1.0, 0.5, 0.5],
-        parser=parser,
-    )
-    rubric.add_metric(pass_k_reward)
-    rubric.add_metric(process_check_reward)
-    rubric.add_metric(format_reward)
-    return rubric
+def build_rubric(parser: Any = None, *, reward_scheme: str = "default", mandate: bool = True):
+    """The reward bundle. The ``reward_scheme`` selects the primary GRPO objective from the
+    pluggable registry (``"default"`` = the dense realized-return reward); the real deflated
+    Sharpe is a secondary objective; the **mandate** is a weighted reward (not a metric) — the
+    episode is graded on satisfying *its* per-scenario objective, so wrong-objective behavior
+    has to bite the gradient, which a zero-weight metric would not do. ``pass^k`` / process
+    discipline / format stay zero-weight diagnostics (gates, not gradient). Raises if
+    ``verifiers`` is unavailable."""
+    from .rewards import build_scheme_rubric
+
+    return build_scheme_rubric(reward_scheme, parser=parser, mandate=mandate)
 
 
 # ---------------------------------------------------------------------------
@@ -345,6 +338,7 @@ def load_environment(dataset: Any = None, **kwargs: Any):
     allow_short = bool(kwargs.pop("allow_short", True))
     mode = str(kwargs.pop("mode", "train"))
     seed_start = int(kwargs.pop("seed_start", 0))
+    reward_scheme = str(kwargs.pop("reward_scheme", "default"))
     max_turns = kwargs.pop("max_turns", None)
     if max_turns is None:
         # +2: one turn for the initial decision, one for the final-bar message.
@@ -365,7 +359,7 @@ def load_environment(dataset: Any = None, **kwargs: Any):
     parser = build_parser()
     return OpenOutcryVerifiersEnv(
         dataset=dataset,
-        rubric=build_rubric(parser=parser),
+        rubric=build_rubric(parser=parser, reward_scheme=reward_scheme),
         parser=parser,
         max_turns=max_turns,
         n_symbols=n_symbols,
