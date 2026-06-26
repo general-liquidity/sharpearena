@@ -160,6 +160,107 @@ def test_terminated_flag_is_synthesized_per_run(tmp_path, monkeypatch):
 
 
 @needs_full
+def test_train_test_split_export_over_disjoint_seed_bands(tmp_path, monkeypatch):
+    """`to_minari_train_test` emits `-train`/`-test` datasets stamped with disjoint-band
+    provenance, each round-tripping, from traces on disjoint seed intervals."""
+    np = pytest.importorskip("numpy")
+    pytest.importorskip("minari")
+    from openoutcry import OpenOutcryEnv
+    from openoutcry.dataset import EVAL_SEED_BASE
+
+    monkeypatch.setenv("MINARI_DATASETS_PATH", str(tmp_path / "minari"))
+
+    env = OpenOutcryEnv(n_symbols=2, n_days=30, seed=0)
+    weights = np.full(len(env.symbols), 1.0 / len(env.symbols), dtype=np.float32)
+
+    def _roll(seed: int, path: str) -> int:
+        obs, _ = env.reset(seed=seed)
+        with RolloutTraceWriter(path) as writer:
+            n = 0
+            for t in range(5):
+                nobs, reward, terminated, truncated, info = env.step(weights)
+                writer.record_step(
+                    step=t, observation=obs, decision=weights, reward=reward, info=info
+                )
+                obs = nobs
+                n += 1
+                if terminated or truncated:
+                    break
+            writer.finalize()
+        return n
+
+    train_path = str(tmp_path / "train.jsonl")  # seed in [0, n)
+    test_path = str(tmp_path / "test.jsonl")  # seed >= EVAL_SEED_BASE
+    n_train = _roll(3, train_path)
+    n_test = _roll(EVAL_SEED_BASE + 3, test_path)
+
+    train_ds, test_ds = me.to_minari_train_test(
+        train_path,
+        test_path,
+        "openoutcry/test-split-v0",
+        observation_space=env.observation_space,
+        action_space=env.action_space,
+        author="openoutcry-tests",
+    )
+
+    assert train_ds.spec.dataset_id == "openoutcry/test-split-train-v0"
+    assert test_ds.spec.dataset_id == "openoutcry/test-split-test-v0"
+    assert train_ds.total_steps == n_train and test_ds.total_steps == n_test
+
+    train_meta = train_ds.storage.metadata
+    test_meta = test_ds.storage.metadata
+    assert train_meta["split"] == "train" and test_meta["split"] == "test"
+    assert train_meta["split_method"] == "disjoint_seed_interval"
+    assert train_meta["eval_seed_base"] == EVAL_SEED_BASE
+    assert "seed interval" in train_meta["split_note"]
+    # The bands are provably disjoint across the EVAL_SEED_BASE boundary.
+    assert train_meta["seed_band_end"] < EVAL_SEED_BASE
+    assert test_meta["seed_band_start"] >= EVAL_SEED_BASE
+
+    # Each side round-trips as an offline-RL dataset.
+    assert list(train_ds.iterate_episodes())[0].rewards.shape == (n_train,)
+    assert list(test_ds.iterate_episodes())[0].rewards.shape == (n_test,)
+
+
+@needs_full
+def test_train_test_split_rejects_overlapping_seed_bands(tmp_path, monkeypatch):
+    """Sharing a scenario seed across the two traces is rejected — the split is the leak gate."""
+    np = pytest.importorskip("numpy")
+    pytest.importorskip("minari")
+    from openoutcry import OpenOutcryEnv
+
+    monkeypatch.setenv("MINARI_DATASETS_PATH", str(tmp_path / "minari"))
+
+    env = OpenOutcryEnv(n_symbols=2, n_days=30, seed=0)
+    weights = np.zeros(len(env.symbols), dtype=np.float32)
+
+    def _roll(seed: int, path: str) -> None:
+        obs, _ = env.reset(seed=seed)
+        with RolloutTraceWriter(path) as writer:
+            for t in range(3):
+                nobs, reward, _, _, info = env.step(weights)
+                writer.record_step(
+                    step=t, observation=obs, decision=weights, reward=reward, info=info
+                )
+                obs = nobs
+            writer.finalize()
+
+    same = str(tmp_path / "a.jsonl")
+    other = str(tmp_path / "b.jsonl")
+    _roll(11, same)
+    _roll(11, other)  # same seed in both -> overlapping bands
+
+    with pytest.raises(ValueError, match="disjoint seed"):
+        me.to_minari_train_test(
+            same,
+            other,
+            "openoutcry/test-overlap-v0",
+            observation_space=env.observation_space,
+            action_space=env.action_space,
+        )
+
+
+@needs_full
 def test_data_collector_works_on_live_env(tmp_path, monkeypatch):
     """Documents that `minari.DataCollector(OpenOutcryEnv(...))` captures live rollouts."""
     np = pytest.importorskip("numpy")
