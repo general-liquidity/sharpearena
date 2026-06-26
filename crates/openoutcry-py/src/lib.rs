@@ -7,6 +7,8 @@ use openoutcry::{CostModel, Dataset, Decision, TradingEnv as CoreEnv, Window};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyType;
+use pyo3::wrap_pyfunction;
+use sharpebench_core::{score_agent, AgentSubmission, Run, ScoreConfig, Trace};
 
 /// A Gym-style, steppable, leak-free trading environment.
 ///
@@ -168,10 +170,39 @@ impl PyTradingEnv {
     }
 }
 
+/// Score a sequence of per-period returns with the **same SharpeBench kernel** the
+/// benchmark uses — the real deflated Sharpe / PSR / pass^k / process verdict, not a
+/// Python reimplementation. `n_trials` folds in the agent's declared in-sample search
+/// budget (more search ⇒ more deflation). Returns the `CompositeScore` as a JSON
+/// string. This is what lets the `verifiers` rubric reward be *calibrated* rather than
+/// approximate.
+#[pyfunction]
+#[pyo3(signature = (returns, n_trials = 0))]
+fn score_run(returns: Vec<f64>, n_trials: u32) -> PyResult<String> {
+    let outcomes: Vec<bool> = returns.iter().map(|r| *r > 0.0).collect();
+    let confidences = vec![0.5_f64; returns.len()];
+    let run = Run {
+        returns,
+        trace: Trace::default(),
+        confidences,
+        outcomes,
+        cost: 0.0,
+    };
+    let submission = AgentSubmission {
+        agent_id: "verifiers-rollout".to_string(),
+        runs: vec![run],
+        in_sample_trials: n_trials,
+        candidates: Vec::new(),
+    };
+    let score = score_agent(&submission, &ScoreConfig::default());
+    serde_json::to_string(&score).map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
 /// The `openoutcry_py` native module (imported as `openoutcry.openoutcry_py`).
 #[pymodule]
 fn openoutcry_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyTradingEnv>()?;
+    m.add_function(wrap_pyfunction!(score_run, m)?)?;
     m.add(
         "__doc__",
         "Native pyo3 bindings for the OpenOutcry trading-agent environment.",

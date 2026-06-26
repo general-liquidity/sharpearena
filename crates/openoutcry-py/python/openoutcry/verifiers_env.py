@@ -1,28 +1,28 @@
 """PrimeIntellect ``verifiers`` environment for OpenOutcry.
 
-================================  AUTHORED-UNVERIFIED  ================================
-The ``verifiers`` package is NOT installed in this build environment, so the code in
-this module has NOT been executed end-to-end. It is authored against the documented
-``verifiers`` API (``vf.Environment`` / ``vf.Rubric`` / module-level
-``load_environment``) and the import is guarded — importing :mod:`openoutcry` never
-fails just because ``verifiers`` is absent. The reward functions wire SharpeBench-style
-metrics (deflated Sharpe / pass^k / process checks) as placeholders over the rollout
-state; calibrate against the Rust scorers before relying on the numbers.
-======================================================================================
+The rubric is scored by the **real SharpeBench kernel** — :func:`deflated_sharpe_reward`
+and :func:`pass_k_reward` call :func:`openoutcry.score_run`, the exact Rust deflated
+Sharpe / pass^k the benchmark computes, not a Python reimplementation. Verified against
+``verifiers`` 0.1.14 (`vf.Rubric(funcs=, weights=)`).
 
-Usage (once ``verifiers`` is installed)::
+Usage::
 
     import verifiers as vf
-    env = vf.load_environment("openoutcry")   # or: from openoutcry.verifiers_env import load_environment
+    from openoutcry.verifiers_env import build_rubric, load_environment
+    rubric = build_rubric()                 # the SharpeBench-calibrated reward bundle
+    # env = load_environment(dataset=...)   # a SingleTurnEnv backed by the rubric
 
-The rollout drives :class:`~openoutcry.gym.OpenOutcryEnv` and records the per-step
-reward (portfolio return) into ``state['returns']``; the rubric then scores the run.
+A rollout drives :class:`~openoutcry.gym.OpenOutcryEnv` and records the per-step reward
+(portfolio return) into ``state['returns']`` (and the env's process events into
+``state['events']``); the rubric then scores the run with the real kernel.
 """
 
 from __future__ import annotations
 
-import math
+import json
 from typing import Any, Optional, Sequence
+
+from .openoutcry_py import score_run  # the real SharpeBench scorer (pyo3)
 
 try:  # pragma: no cover - exercised only when verifiers is installed
     import verifiers as vf
@@ -34,55 +34,42 @@ except Exception:  # noqa: BLE001 - any import failure means "not available"
 
 
 # ---------------------------------------------------------------------------
-# SharpeBench-style reward functions (placeholders — calibrate vs the Rust scorers)
+# SharpeBench-calibrated reward functions (the Rust kernel, not approximations)
 # ---------------------------------------------------------------------------
 
-def _returns_from_state(state: dict) -> list[float]:
+def _returns_from_state(state: Optional[dict]) -> list[float]:
     """Per-step portfolio returns recorded by the rollout, if any."""
-    return list(state.get("returns", []) or [])
+    return [float(r) for r in (state or {}).get("returns", []) or []]
+
+
+def _composite(returns: list[float], n_trials: int) -> dict:
+    """The real SharpeBench ``CompositeScore`` for a return series (Rust kernel)."""
+    if len(returns) < 2:
+        return {}
+    return json.loads(score_run(returns, n_trials))
 
 
 def deflated_sharpe_reward(
     completion: Any = None,
     state: Optional[dict] = None,
     *,
-    n_trials: int = 1,
-    periods_per_year: float = 252.0,
+    n_trials: int = 0,
     **kwargs: Any,
 ) -> float:
-    """Deflated-Sharpe placeholder: annualized Sharpe shrunk for the number of
-    in-sample trials (a crude multiple-testing haircut). Real deflation uses the
-    variance of the trial Sharpes; this is a monotone stand-in."""
-    returns = _returns_from_state(state or {})
-    if len(returns) < 2:
-        return 0.0
-    mean = sum(returns) / len(returns)
-    var = sum((r - mean) ** 2 for r in returns) / (len(returns) - 1)
-    std = math.sqrt(var)
-    if std == 0.0:
-        return 0.0
-    sharpe = (mean / std) * math.sqrt(periods_per_year)
-    # Haircut grows with log(n_trials): more search ⇒ more deflation.
-    haircut = 1.0 / (1.0 + math.log1p(max(n_trials - 1, 0)))
-    return sharpe * haircut
+    """The **real** deflated Sharpe (SharpeBench kernel), deflated for ``n_trials``
+    of declared in-sample search — the metric the benchmark ranks on."""
+    return float(_composite(_returns_from_state(state), n_trials).get("deflated_sharpe", 0.0))
 
 
 def pass_k_reward(
     completion: Any = None,
     state: Optional[dict] = None,
     *,
-    threshold: float = 0.0,
+    n_trials: int = 0,
     **kwargs: Any,
 ) -> float:
-    """pass^k placeholder: 1.0 iff the run's total return clears ``threshold``
-    (the per-run indicator pass^k aggregates with mode='all' over k seeds)."""
-    returns = _returns_from_state(state or {})
-    if not returns:
-        return 0.0
-    total = 1.0
-    for r in returns:
-        total *= 1.0 + r
-    return 1.0 if (total - 1.0) > threshold else 0.0
+    """1.0 iff the run clears the per-run PSR bar (the kernel's ``passed_k`` gate)."""
+    return 1.0 if _composite(_returns_from_state(state), n_trials).get("passed_k", False) else 0.0
 
 
 def process_check_reward(
@@ -90,16 +77,16 @@ def process_check_reward(
     state: Optional[dict] = None,
     **kwargs: Any,
 ) -> float:
-    """Process-check placeholder: penalize block-severity events surfaced by the
-    environment's per-step ``info`` (e.g. sim-exploitation guards). 1.0 = clean."""
-    events: Sequence[dict] = state.get("events", []) if state else []
-    bad = sum(1 for e in events if str(e.get("event", "")).endswith("violation"))
+    """Penalize block-severity events surfaced in the env's per-step ``info`` (the
+    sim-exploitation guard, e.g. a manipulative order). 1.0 = clean."""
+    events: Sequence[dict] = (state or {}).get("events", []) if state else []
+    bad = sum(1 for e in events if "manipulative" in str(e.get("event", "")).lower())
     return 1.0 if bad == 0 else max(0.0, 1.0 - 0.25 * bad)
 
 
 def build_rubric():
-    """Assemble the SharpeBench-style :class:`vf.Rubric`. Raises if verifiers
-    is unavailable (callers should gate on :data:`_HAS_VERIFIERS`)."""
+    """The SharpeBench-calibrated reward bundle: deflated Sharpe (rank) + pass^k +
+    process discipline, weighted. Raises if ``verifiers`` is unavailable."""
     if not _HAS_VERIFIERS:
         raise RuntimeError("verifiers is not installed; cannot build a Rubric")
     return vf.Rubric(
@@ -108,31 +95,34 @@ def build_rubric():
     )
 
 
-def load_environment(
-    n_symbols: int = 4,
-    n_days: int = 120,
-    seed: int = 0,
-    **kwargs: Any,
-):
-    """``verifiers`` entry point. AUTHORED-UNVERIFIED — see module docstring.
+def load_environment(dataset: Any = None, **kwargs: Any):
+    """``verifiers`` entry point: a single-turn environment backed by the
+    SharpeBench-calibrated rubric.
 
-    Builds a single-turn-per-bar environment whose dataset is the OpenOutcry
-    synthetic market and whose rubric is the SharpeBench-style metric bundle.
+    The rubric is the verified, directly-reusable piece. How a rollout maps a model
+    completion to an OpenOutcry trajectory — a single full-strategy turn, or a
+    multi-turn per-bar loop driving :class:`~openoutcry.gym.OpenOutcryEnv` — is the
+    integration point for your training setup.
     """
     if not _HAS_VERIFIERS:
         raise RuntimeError(
             "verifiers is not installed. Install PrimeIntellect 'verifiers' to load "
             "this environment; the rest of the openoutcry package works without it."
         )
-    rubric = build_rubric()
-    # The concrete Environment subclass / dataset wiring depends on the verifiers
-    # release; a SingleTurnEnv over a market-observation dataset is the intended
-    # shape. Left as the documented constructor call for the operator to confirm.
-    return vf.SingleTurnEnv(  # type: ignore[attr-defined]
-        dataset=kwargs.pop("dataset", None),
-        rubric=rubric,
-        **kwargs,
-    )
+    if dataset is None:
+        # A minimal one-row default so the env constructs out of the box; supply a
+        # real dataset of market scenarios for training.
+        from datasets import Dataset
+
+        dataset = Dataset.from_dict(
+            {
+                "question": [
+                    "Trade the OpenOutcry market scenario to maximize the deflated Sharpe."
+                ],
+                "answer": [""],
+            }
+        )
+    return vf.SingleTurnEnv(dataset=dataset, rubric=build_rubric(), **kwargs)
 
 
 __all__ = [
