@@ -8,31 +8,30 @@ objective — a style constraint, an optional drawdown cap, an optional benchmar
 the episode is graded against. Two rollouts on the same market but different mandates
 are held to different standards.
 
-:func:`sample_mandate` is **deterministic and leak-free**: it derives the whole mandate
-from the scenario ``seed`` (known at ``reset``), never from future bars. The mandate
-round-trips through plain-JSON (:meth:`Mandate.to_dict` / :func:`mandate_from_dict`) so
-it survives a trace/replay, and :func:`mandate_breach` is a pure, numpy-light penalty in
-``[0, 1]`` (``0`` = clean, ``1`` = fully breached) the reward layer turns into ``1 -
-breach`` — bounded, hence GRPO-safe.
+The deterministic, leak-free logic — :func:`sample_mandate` (derives the whole mandate
+from the scenario ``seed``, never from future bars) and :func:`mandate_breach` (a pure
+penalty in ``[0, 1]``, ``0`` = clean, ``1`` = fully breached) — lives in the Rust core
+(``openoutcry::mandate``) so it is **byte-identical across every surface** (Rust / WASM /
+Python). This module is a thin wrapper: it reconstructs the :class:`Mandate` dataclass
+from the binding's JSON and adapts the per-bar weight *events* into the weight-vector
+shape the kernel scores. The mandate round-trips through plain-JSON
+(:meth:`Mandate.to_dict` / :func:`mandate_from_dict`) so it survives a trace/replay; the
+reward layer turns the breach into ``1 - breach`` — bounded, hence GRPO-safe.
 """
 
 from __future__ import annotations
 
-import random
+import json
 from dataclasses import dataclass
 from typing import Any, Optional, Union
 
+from .openoutcry_py import mandate_breach as _rs_mandate_breach
+from .openoutcry_py import sample_mandate_json as _rs_sample_mandate_json
+
 # The constraint families a scenario can draw. ``unconstrained`` is the permissive
 # control (no structural breach); the others each carry a distinct structural rule.
+# Kept in sync with the Rust ``MandateStyle`` wire labels.
 STYLES = ("long_only", "market_neutral", "momentum", "unconstrained")
-
-# Styles that require shorting — excluded when the env disallows shorts, so a sampled
-# mandate is never unsatisfiable-by-construction.
-_SHORT_REQUIRING = frozenset({"market_neutral"})
-
-_DRAWDOWN_CAPS = (0.05, 0.10, 0.15, 0.20)
-
-_EPS = 1e-9
 
 
 @dataclass(frozen=True)
@@ -69,43 +68,21 @@ class Mandate:
         )
 
 
-def _render_text(style: str, max_drawdown: Optional[float], benchmark: Optional[str]) -> str:
-    base = {
-        "long_only": "Long-only mandate: hold no short positions",
-        "market_neutral": "Market-neutral mandate: keep net exposure near zero (balance longs and shorts)",
-        "momentum": "Momentum mandate: lean into recent winners, cut losers",
-        "unconstrained": "Unconstrained mandate: trade freely",
-    }[style]
-    clauses = [base]
-    if max_drawdown is not None:
-        clauses.append(f"keep max drawdown under {max_drawdown:.0%}")
-    if benchmark is not None:
-        clauses.append(f"aim to beat {benchmark}")
-    return "; ".join(clauses) + "."
-
-
 def sample_mandate(
     seed: int,
     n_symbols: int = 4,
     *,
     allow_short: bool = True,
 ) -> Mandate:
-    """Deterministically draw a :class:`Mandate` from a scenario ``seed``.
+    """Deterministically draw a :class:`Mandate` from a scenario ``seed`` (Rust kernel).
 
     Leak-free: the draw depends only on ``seed`` (and the static ``n_symbols`` /
     ``allow_short`` env shape), so it is reproducible at ``reset`` and never peeks at
     future bars. When ``allow_short`` is ``False`` the short-requiring styles are dropped
     so the mandate stays satisfiable on a long-only market.
     """
-    rng = random.Random(int(seed))
-    styles = [s for s in STYLES if allow_short or s not in _SHORT_REQUIRING]
-    style = rng.choice(styles)
-    max_drawdown = rng.choice(_DRAWDOWN_CAPS) if rng.random() < 0.5 else None
-    benchmark = (
-        f"SYM{rng.randrange(max(1, int(n_symbols))):02d}" if rng.random() < 0.3 else None
-    )
-    text = _render_text(style, max_drawdown, benchmark)
-    return Mandate(style=style, max_drawdown=max_drawdown, benchmark=benchmark, text=text)
+    payload = _rs_sample_mandate_json(int(seed), int(n_symbols), bool(allow_short))
+    return Mandate.from_dict(json.loads(payload))
 
 
 def mandate_text(m: Union[Mandate, dict]) -> str:
@@ -153,28 +130,12 @@ def _weights_per_step(events: Any) -> list[list[float]]:
     return out
 
 
-def _max_drawdown(returns: list[float]) -> float:
-    """Realized max drawdown of the per-bar return series, as a positive fraction."""
-    equity = 1.0
-    peak = 1.0
-    mdd = 0.0
-    for r in returns:
-        equity *= 1.0 + float(r)
-        if equity > peak:
-            peak = equity
-        if peak > _EPS:
-            dd = (peak - equity) / peak
-            if dd > mdd:
-                mdd = dd
-    return mdd
-
-
 def mandate_breach(
     m: Union[Mandate, dict],
     returns: list[float],
     events: list[dict],
 ) -> float:
-    """A bounded breach penalty in ``[0, 1]`` (0 = clean, 1 = fully breached).
+    """A bounded breach penalty in ``[0, 1]`` (0 = clean, 1 = fully breached) — Rust kernel.
 
     Two independent breach sources, combined by worst-case (``max``) so a clean structure
     with a blown drawdown — or vice versa — still scores the violation:
@@ -186,32 +147,18 @@ def mandate_breach(
     * **drawdown** — realized max drawdown over the cap, normalized by the cap and
       saturated at 1.
 
-    Pure and numpy-light; safe on empty inputs (returns 0).
+    Pure and numpy-light; safe on empty inputs (returns 0). This wrapper adapts the event
+    dicts into the weight-vector shape the kernel scores, then delegates the math to Rust.
     """
     mandate = _as_mandate(m)
-    breaches: list[float] = []
-
     weights = _weights_per_step(events)
-    if weights:
-        if mandate.style == "long_only":
-            short_steps = sum(1 for w in weights if w and min(w) < -_EPS)
-            breaches.append(short_steps / len(weights))
-        elif mandate.style == "market_neutral":
-            nets = []
-            for w in weights:
-                gross = sum(abs(x) for x in w)
-                nets.append(abs(sum(w)) / gross if gross > _EPS else 0.0)
-            breaches.append(min(1.0, sum(nets) / len(nets)))
-
-    if mandate.max_drawdown is not None and returns:
-        cap = float(mandate.max_drawdown)
-        mdd = _max_drawdown([float(r) for r in returns])
-        if mdd > cap:
-            breaches.append(min(1.0, (mdd - cap) / max(cap, _EPS)))
-
-    if not breaches:
-        return 0.0
-    return float(min(1.0, max(breaches)))
+    return float(
+        _rs_mandate_breach(
+            json.dumps(mandate.to_dict()),
+            [float(r) for r in returns or []],
+            [[float(x) for x in w] for w in weights],
+        )
+    )
 
 
 __all__ = [

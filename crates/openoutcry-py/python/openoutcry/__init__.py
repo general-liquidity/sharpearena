@@ -46,6 +46,9 @@ from .verifiers_env import mandate_reward
 from .baselines import run_baselines, leaderboard_markdown
 from .minari_export import to_minari
 from .pettingzoo_env import MultiAgentOpenOutcryEnv, make_aec_env
+from .market_env import EndogenousMarketEnv
+from .checkpoint import CheckpointableEnv, CheckpointState
+from .functional import OpenOutcryFuncEnv
 from .registration import register_envs
 
 # Farama plugin convention: register the versioned env IDs at import time (idempotent).
@@ -103,6 +106,10 @@ __all__ = [
     "to_minari",
     "MultiAgentOpenOutcryEnv",
     "make_aec_env",
+    "EndogenousMarketEnv",
+    "CheckpointableEnv",
+    "CheckpointState",
+    "OpenOutcryFuncEnv",
     "register_envs",
 ]
 __version__ = "0.1.0"

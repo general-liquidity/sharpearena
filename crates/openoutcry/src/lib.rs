@@ -37,6 +37,21 @@ pub use scenario_gen::{
 pub mod vec_env;
 pub use vec_env::{BatchStep, LaneConfig, VecTradingEnv};
 
+// --- Per-scenario trading mandates (MiniGrid Fetch-style per-episode objective) -----------
+
+pub mod mandate;
+pub use mandate::{mandate_breach, sample_mandate, Mandate, MandateStyle};
+
+// --- Execution-noise perturbation (seeded sticky-actions / slippage; ALE-style) -----------
+
+pub mod exec_noise;
+pub use exec_noise::{perturb as perturb_action, ExecNoise};
+
+// --- Endogenous price-impact shared-book market (M2) ---------------------------------------
+
+pub mod market;
+pub use market::{clear_bar, AgentFill, ClearResult, MarketClearing, MarketParams};
+
 // --- Point-in-time simulator surface (extraction from `sharpebench-sim`) ------------------
 
 pub use sharpebench_sim::{

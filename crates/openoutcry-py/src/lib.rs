@@ -3,10 +3,12 @@
 //! (observations and decisions are JSON strings), which keeps the surface robust
 //! and identical to the language-agnostic protocol any external agent speaks.
 
+use openoutcry::exec_noise::{perturb as core_perturb_action, ExecNoise};
+use openoutcry::market::{MarketClearing, MarketParams};
 use openoutcry::vec_env::AutoresetMode;
 use openoutcry::{
-    generate_scenario, CostModel, Dataset, Decision, DistributionMode, LaneConfig, ScenarioSpec,
-    TradingEnv as CoreEnv, VecTradingEnv as CoreVecEnv, Window,
+    generate_scenario, CostModel, Dataset, Decision, DistributionMode, LaneConfig, Mandate,
+    ScenarioSpec, TradingEnv as CoreEnv, VecTradingEnv as CoreVecEnv, Window,
 };
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -451,13 +453,185 @@ fn validate_decision_json(decision_json: &str) -> bool {
     serde_json::from_str::<Decision>(decision_json).is_ok()
 }
 
+/// Deterministically sample the scenario mandate from `seed`, returned as wire JSON
+/// (`{"style","max_drawdown","benchmark","text"}`). Byte-identical to the Rust/WASM core.
+#[pyfunction]
+#[pyo3(signature = (seed, n_symbols = 4, allow_short = true))]
+fn sample_mandate_json(seed: u64, n_symbols: usize, allow_short: bool) -> PyResult<String> {
+    let m = openoutcry::mandate::sample_mandate(seed, n_symbols, allow_short);
+    serde_json::to_string(&m).map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
+/// The bounded breach penalty in `[0, 1]` for a mandate (wire JSON) over the recorded
+/// per-bar `returns` and per-bar target-`weights` vectors. `0` = clean, `1` = fully breached.
+#[pyfunction]
+fn mandate_breach(mandate_json: &str, returns: Vec<f64>, weights: Vec<Vec<f64>>) -> PyResult<f64> {
+    let m: Mandate = serde_json::from_str(mandate_json)
+        .map_err(|e| PyValueError::new_err(format!("invalid mandate JSON: {e}")))?;
+    Ok(openoutcry::mandate::mandate_breach(&m, &returns, &weights))
+}
+
+/// Perturb a `requested` action vector into a realized one via the deterministic Rust
+/// `exec_noise` core — the trading analog of ALE sticky actions. With probability
+/// `delay_prob` the `previous` action is returned (the order lands a bar late); otherwise
+/// each weight gets bounded multiplicative uniform jitter scaled by `slippage_bps`. The
+/// draw is keyed on `(seed, step_index)`, so it is byte-reproducible across runtimes.
+#[pyfunction]
+#[pyo3(signature = (seed, step_index, requested, previous, delay_prob = 0.0, slippage_bps = 0.0))]
+fn perturb_action(
+    seed: u64,
+    step_index: u64,
+    requested: Vec<f64>,
+    previous: Vec<f64>,
+    delay_prob: f64,
+    slippage_bps: f64,
+) -> Vec<f64> {
+    core_perturb_action(
+        seed,
+        step_index,
+        &requested,
+        &previous,
+        &ExecNoise {
+            delay_prob,
+            slippage_bps,
+        },
+    )
+}
+
+/// An endogenous price-impact **shared-book market** (M2): `N` agents trade one book per
+/// symbol and their aggregate flow moves the cleared price (Kyle permanent + Almgren-
+/// Chriss temporary impact). Distinct from the competition surface — here one agent's
+/// orders move the price the others see. JSON at the boundary: `reset_market()` returns
+/// the initial per-agent observations + market metadata; `step_market(orders_json)`
+/// clears one bar and returns the per-agent fills/rewards/observations.
+#[pyclass(name = "PyMarketClearing")]
+pub struct PyMarketClearing {
+    inner: MarketClearing,
+    params: MarketParams,
+    seed: u64,
+}
+
+#[pymethods]
+impl PyMarketClearing {
+    /// Synthetic `n_symbols` × `n_days` panel seeded by `seed`, for `n_agents` agents each
+    /// starting with `capital` cash, under Kyle/Almgren-Chriss coefficients.
+    #[new]
+    #[pyo3(signature = (
+        n_symbols = 4,
+        n_days = 120,
+        seed = 0,
+        n_agents = 2,
+        capital = 1.0,
+        kyle_lambda = 0.1,
+        eta = 0.05,
+        volume_scale = 1.0,
+        distribution_mode = "calm",
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        n_symbols: usize,
+        n_days: usize,
+        seed: u64,
+        n_agents: usize,
+        capital: f64,
+        kyle_lambda: f64,
+        eta: f64,
+        volume_scale: f64,
+        distribution_mode: &str,
+    ) -> PyResult<Self> {
+        if n_agents < 1 {
+            return Err(PyValueError::new_err("n_agents must be >= 1"));
+        }
+        let mode = parse_distribution_mode(distribution_mode)?;
+        let data = build_dataset(n_symbols, n_days, seed, mode);
+        let inner = MarketClearing::from_dataset(&data, n_agents, capital);
+        let params = MarketParams {
+            lambda: kyle_lambda,
+            eta,
+            volume_scale,
+        };
+        Ok(PyMarketClearing {
+            inner,
+            params,
+            seed,
+        })
+    }
+
+    #[getter]
+    fn scenario_seed(&self) -> u64 {
+        self.seed
+    }
+
+    #[getter]
+    fn symbols(&self) -> Vec<String> {
+        self.inner.symbols().to_vec()
+    }
+
+    #[getter]
+    fn num_agents(&self) -> usize {
+        self.inner.n_agents()
+    }
+
+    #[getter]
+    fn done(&self) -> bool {
+        self.inner.is_done()
+    }
+
+    /// Pre-trade per-agent observations + market metadata as a JSON string.
+    fn reset_market(&self) -> PyResult<String> {
+        let observations = observations_to_json(&self.inner.initial_observations())?;
+        let out = serde_json::json!({
+            "symbols": self.inner.symbols(),
+            "n_agents": self.inner.n_agents(),
+            "n_bars": self.inner.n_bars(),
+            "start_bar": self.inner.start_bar(),
+            "cursor": self.inner.cursor(),
+            "capital": self.inner.capital(),
+            "observations": observations,
+        });
+        Ok(out.to_string())
+    }
+
+    /// Clear one bar. `orders_json` is a JSON array of exactly `n_agents` target-weight
+    /// vectors, each length `n_symbols` (canonical agent order, sorted symbol order).
+    fn step_market(&mut self, orders_json: &str) -> PyResult<String> {
+        let agent_orders: Vec<Vec<f64>> = serde_json::from_str(orders_json)
+            .map_err(|e| PyValueError::new_err(format!("invalid orders JSON: {e}")))?;
+        if agent_orders.len() != self.inner.n_agents() {
+            return Err(PyValueError::new_err(format!(
+                "expected {} agent order vectors, got {}",
+                self.inner.n_agents(),
+                agent_orders.len()
+            )));
+        }
+        let n_sym = self.inner.symbols().len();
+        if let Some(bad) = agent_orders.iter().position(|o| o.len() != n_sym) {
+            return Err(PyValueError::new_err(format!(
+                "agent {bad} order vector has {} weights, expected {n_sym}",
+                agent_orders[bad].len()
+            )));
+        }
+        let result = self.inner.step(&agent_orders, &self.params);
+        let mut value =
+            serde_json::to_value(&result).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        if let serde_json::Value::Object(ref mut map) = value {
+            map.insert("cursor".to_string(), serde_json::json!(self.inner.cursor()));
+        }
+        Ok(value.to_string())
+    }
+}
+
 /// The `openoutcry_py` native module (imported as `openoutcry.openoutcry_py`).
 #[pymodule]
 fn openoutcry_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyTradingEnv>()?;
     m.add_class::<PyVecTradingEnv>()?;
+    m.add_class::<PyMarketClearing>()?;
     m.add_function(wrap_pyfunction!(score_run, m)?)?;
     m.add_function(wrap_pyfunction!(validate_decision_json, m)?)?;
+    m.add_function(wrap_pyfunction!(sample_mandate_json, m)?)?;
+    m.add_function(wrap_pyfunction!(mandate_breach, m)?)?;
+    m.add_function(wrap_pyfunction!(perturb_action, m)?)?;
     m.add(
         "__doc__",
         "Native pyo3 bindings for the OpenOutcry trading-agent environment.",
