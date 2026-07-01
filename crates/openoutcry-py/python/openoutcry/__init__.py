@@ -62,6 +62,12 @@ from .rewards import (
 )
 from .indicators import CausalIndicatorObservation, INDICATORS, DEFAULT_INDICATORS
 from .risk import DrawdownStopper, TurbulenceHalt, CrossSectionalDeleverage
+from .failure_taxonomy import (
+    FailureMode,
+    classify_episode_failure,
+    FailureRollup,
+    rollup_failure_modes,
+)
 from .news import SyntheticNewsObservation, news_series
 from .discrete import DiscreteAction
 from .pairs import SpreadObservation
@@ -212,6 +218,10 @@ __all__ = [
     "DrawdownStopper",
     "TurbulenceHalt",
     "CrossSectionalDeleverage",
+    "FailureMode",
+    "classify_episode_failure",
+    "FailureRollup",
+    "rollup_failure_modes",
     "SyntheticNewsObservation",
     "news_series",
     "DiscreteAction",
