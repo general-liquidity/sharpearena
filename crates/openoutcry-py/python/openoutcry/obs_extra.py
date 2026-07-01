@@ -8,6 +8,7 @@ at bars ``0..t`` and needs no change to ``gym.py``.
 
 - :class:`MultiTimescaleMomentum` — vol-normalized momentum at several horizons.
 - :class:`RollingCovarianceObservation` — trailing cross-asset return covariance.
+- :class:`KalmanTrendObservation` — constant-velocity Kalman filtered velocity + sign.
 - :class:`TimeToHorizonObservation` — fraction of the episode remaining (pure counter).
 - :class:`CounterfactualInfo` — privileged ``info``-only "other action" channel.
 """
@@ -139,6 +140,113 @@ class RollingCovarianceObservation(gym.ObservationWrapper):
         return self.observation(obs), info
 
 
+class KalmanTrendObservation(gym.ObservationWrapper):
+    """Append a per-symbol constant-velocity Kalman filtered velocity + its sign.
+
+    Runs one independent 2-state ``[level, velocity]`` Kalman filter per symbol over
+    the ``closes`` the base env emits. The transition is the constant-velocity model
+    ``F = [[1, 1], [0, 1]]`` (velocity carries the level forward) with a discrete
+    white-noise-acceleration process covariance ``Q = process_var·[[1/4, 1/2],
+    [1/2, 1]]`` and a scalar measurement variance ``R = obs_var`` on the observed
+    level. The filtered ``velocity`` is a smooth, causal trend estimate; unlike a
+    single-state slope proxy it separates level from rate-of-change, so its sign flips
+    cleanly on a genuine reversal rather than on a single noisy bar.
+
+    Emitted as ``obs["kalman_velocity"]`` of shape ``(n_symbols,)`` (the filtered
+    velocity per symbol) plus ``obs["kalman_velocity_sign"]`` of the same shape, the
+    dead-banded sign in ``{-1, 0, +1}``. Both are pure forward recursions over the
+    closes handed in (state only, no look-back buffer, never the dataset) — leak-free
+    by construction. The first bar of an episode seeds ``level = close``,
+    ``velocity = 0`` and emits the warmup sentinel ``0`` for both channels.
+
+    Parameters
+    ----------
+    env:
+        A point-in-time env whose observation space is a ``Dict`` with a ``closes``
+        key.
+    process_var:
+        White-noise-acceleration intensity ``> 0`` (default ``1e-3``). Larger tracks
+        turns faster at the cost of noise.
+    obs_var:
+        Measurement-noise variance ``R > 0`` on the observed level (default ``1.0``).
+    sign_eps:
+        Dead-band on the velocity sign; ``|velocity| <= sign_eps`` maps to ``0``
+        (default ``0.0``).
+    """
+
+    def __init__(
+        self,
+        env: gym.Env,
+        *,
+        process_var: float = 1e-3,
+        obs_var: float = 1.0,
+        sign_eps: float = 0.0,
+    ) -> None:
+        super().__init__(env)
+        self._n = _require_closes(env, "KalmanTrendObservation")
+        if float(process_var) <= 0.0:
+            raise ValueError("process_var must be > 0")
+        if float(obs_var) <= 0.0:
+            raise ValueError("obs_var must be > 0")
+        if float(sign_eps) < 0.0:
+            raise ValueError("sign_eps must be >= 0")
+        self._process_var = float(process_var)
+        self._obs_var = float(obs_var)
+        self._sign_eps = float(sign_eps)
+        self._F = np.array([[1.0, 1.0], [0.0, 1.0]], dtype=np.float64)
+        self._Q = self._process_var * np.array(
+            [[0.25, 0.5], [0.5, 1.0]], dtype=np.float64
+        )
+        self._state = np.zeros((self._n, 2), dtype=np.float64)
+        self._P = np.zeros((self._n, 2, 2), dtype=np.float64)
+        self._init = False
+
+        out_spaces = dict(env.observation_space.spaces)
+        out_spaces["kalman_velocity"] = spaces.Box(
+            low=-np.inf, high=np.inf, shape=(self._n,), dtype=np.float64
+        )
+        out_spaces["kalman_velocity_sign"] = spaces.Box(
+            low=-1.0, high=1.0, shape=(self._n,), dtype=np.float64
+        )
+        self.observation_space = spaces.Dict(out_spaces)
+
+    def _step_symbol(self, s: int, price: float) -> None:
+        x = self._F @ self._state[s]
+        P = self._F @ self._P[s] @ self._F.T + self._Q
+        innovation = price - x[0]  # H = [1, 0]
+        innovation_var = P[0, 0] + self._obs_var
+        gain = P[:, 0] / innovation_var
+        self._state[s] = x + gain * innovation
+        self._P[s] = P - np.outer(gain, P[0, :])
+
+    def observation(self, obs: dict) -> dict:
+        closes = np.asarray(obs["closes"], dtype=np.float64).reshape(-1)
+        if not self._init:
+            self._state[:, 0] = closes
+            self._state[:, 1] = 0.0
+            self._P[:] = 0.0
+            self._init = True
+            velocity = np.zeros(self._n, dtype=np.float64)
+        else:
+            for s in range(self._n):
+                self._step_symbol(s, float(closes[s]))
+            velocity = self._state[:, 1].copy()
+        sign = np.where(
+            np.abs(velocity) <= self._sign_eps, 0.0, np.sign(velocity)
+        ).astype(np.float64)
+        out = dict(obs)
+        out["kalman_velocity"] = velocity
+        out["kalman_velocity_sign"] = sign
+        return out
+
+    def reset(self, **kwargs: Any):
+        self._state = np.zeros((self._n, 2), dtype=np.float64)
+        self._P = np.zeros((self._n, 2, 2), dtype=np.float64)
+        self._init = False
+        obs, info = self.env.reset(**kwargs)
+        return self.observation(obs), info
+
+
 class TimeToHorizonObservation(gym.Wrapper):
     """Append a scalar ``(max_steps - step)/max_steps`` — the fraction of the episode
     remaining. Pure step counter (reset to ``step = 0``), deterministic, clamped to
@@ -232,6 +340,7 @@ class CounterfactualInfo(gym.Wrapper):
 __all__ = [
     "MultiTimescaleMomentum",
     "RollingCovarianceObservation",
+    "KalmanTrendObservation",
     "TimeToHorizonObservation",
     "CounterfactualInfo",
 ]

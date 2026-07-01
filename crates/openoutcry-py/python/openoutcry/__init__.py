@@ -89,6 +89,7 @@ from .forecast import (
 from .obs_extra import (
     MultiTimescaleMomentum,
     RollingCovarianceObservation,
+    KalmanTrendObservation,
     TimeToHorizonObservation,
     CounterfactualInfo,
 )
@@ -247,6 +248,7 @@ __all__ = [
     "forecast_skill_curve",
     "MultiTimescaleMomentum",
     "RollingCovarianceObservation",
+    "KalmanTrendObservation",
     "TimeToHorizonObservation",
     "CounterfactualInfo",
     "find_continuous_blocks",
