@@ -61,7 +61,7 @@ from .rewards import (
     loss_averse,
 )
 from .indicators import CausalIndicatorObservation, INDICATORS, DEFAULT_INDICATORS
-from .risk import DrawdownStopper, TurbulenceHalt
+from .risk import DrawdownStopper, TurbulenceHalt, CrossSectionalDeleverage
 from .news import SyntheticNewsObservation, news_series
 from .discrete import DiscreteAction
 from .pairs import SpreadObservation
@@ -211,6 +211,7 @@ __all__ = [
     "DEFAULT_INDICATORS",
     "DrawdownStopper",
     "TurbulenceHalt",
+    "CrossSectionalDeleverage",
     "SyntheticNewsObservation",
     "news_series",
     "DiscreteAction",
