@@ -119,6 +119,12 @@ from .eval_seeds import (
     assert_no_regression,
     EVAL_SET_VERSION,
 )
+from .realism import (
+    stylized_facts,
+    certify_realism,
+    RealismReport,
+    DEFAULT_THRESHOLDS,
+)
 from .registration import register_envs
 
 # Farama plugin convention: register the versioned env IDs at import time (idempotent).
@@ -245,6 +251,10 @@ __all__ = [
     "MISSPECIFIED_PROXY_POLICIES",
     "misspecification_gap",
     "demonstrate_punishment",
+    "stylized_facts",
+    "certify_realism",
+    "RealismReport",
+    "DEFAULT_THRESHOLDS",
     "register_envs",
 ]
 __version__ = "0.6.0"
