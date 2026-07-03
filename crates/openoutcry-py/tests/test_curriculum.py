@@ -10,7 +10,13 @@ the seed-schedule logic is exercised (the rest skips).
 import numpy as np
 import pytest
 
-from openoutcry.curriculum import CurriculumEnv, regime_curriculum, _CHAIN_STEP
+from openoutcry.curriculum import (
+    CurriculumEnv,
+    regime_curriculum,
+    _CHAIN_STEP,
+    AdaptiveScheduler,
+    AdaptiveCurriculumEnv,
+)
 
 try:
     from openoutcry import OpenOutcryEnv  # noqa: F401
@@ -53,6 +59,58 @@ def test_generated_sequential_and_chained_seeds():
     chained = [base + k * _CHAIN_STEP for k in range(n)]
     assert seq == [5, 6, 7, 8]
     assert chained == [5, 1002, 1999, 2996]
+
+
+# -- adaptive scheduler (pure logic, no binding required) ------------------------
+
+
+def test_adaptive_scheduler_zpd_weighting():
+    sched = AdaptiveScheduler([10, 20, 30])
+    for _ in range(4):
+        sched.record(10, True)  # p -> 1.0, too easy
+        sched.record(30, False)  # p -> 0.0, too hard
+    sched.record(20, True)
+    sched.record(20, False)
+    sched.record(20, True)
+    sched.record(20, False)  # p -> 0.5, zone of proximal development
+    assert sched.weight(10) == pytest.approx(0.0)
+    assert sched.weight(30) == pytest.approx(0.0)
+    assert sched.weight(20) > sched.weight(10)
+    assert sched.weight(20) > sched.weight(30)
+    assert sched.select_next() == 20
+
+
+def test_adaptive_scheduler_deterministic_given_history():
+    history = [(10, True), (30, False), (20, True), (20, False)]
+
+    def build():
+        s = AdaptiveScheduler([10, 20, 30])
+        for lv, ok in history:
+            s.record(lv, ok)
+        return s
+
+    a, b = build(), build()
+    assert a.select_next() == b.select_next()
+    for lv in (10, 20, 30):
+        assert a.weight(lv) == b.weight(lv)
+
+
+def test_adaptive_scheduler_explores_unseen_before_replaying():
+    sched = AdaptiveScheduler([5, 6, 7])
+    # All levels sit at the prior peak: ties break to the lowest index.
+    assert sched.select_next() == 5
+    sched.record(5, True)  # mastered -> weight 0
+    assert sched.select_next() == 6
+    sched.record(6, True)
+    assert sched.select_next() == 7
+
+
+def test_adaptive_scheduler_rejects_empty_and_off_schedule():
+    with pytest.raises(ValueError):
+        AdaptiveScheduler([])
+    sched = AdaptiveScheduler([1, 2])
+    with pytest.raises(KeyError):
+        sched.record(99, True)
 
 
 # -- live behavior ---------------------------------------------------------------
@@ -139,3 +197,28 @@ def test_regime_curriculum_trajectories_differ_by_tier():
     calm = first_step_returns(0)
     extreme = first_step_returns(2)
     assert calm != extreme, "extreme tier must diverge from calm"
+
+
+def _run_episode(env, seed_check=None):
+    obs, info = env.reset()
+    if seed_check is not None:
+        assert info["curriculum"]["seed"] == seed_check
+    n = env.action_space.shape[0]
+    action = np.full((n,), 1.0 / n, dtype=np.float32)
+    while True:
+        obs, _reward, terminated, truncated, info = env.step(action)
+        if terminated or truncated:
+            return info
+
+
+@_LIVE
+def test_adaptive_curriculum_env_records_outcomes_and_is_deterministic():
+    env = AdaptiveCurriculumEnv(levels=[1, 2, 3], **_KW)
+    # First reset targets the lowest-index unseen level (all sit at the prior peak).
+    info = _run_episode(env, seed_check=1)
+    assert "curriculum_solved" in info
+    assert env.scheduler.success_rate(1) in (0.0, 1.0)  # one attempt recorded
+    # A second env with the identical outcome history selects the identical next seed.
+    twin = AdaptiveCurriculumEnv(levels=[1, 2, 3], **_KW)
+    _run_episode(twin, seed_check=1)
+    assert env.scheduler.select_next() == twin.scheduler.select_next()
