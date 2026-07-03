@@ -23,6 +23,12 @@ from typing import Callable, Iterable, Optional, Sequence
 
 import numpy as np
 
+from .confidence import (
+    DEFAULT_ALPHA,
+    DEFAULT_N_BOOT,
+    DEFAULT_RESAMPLE_SEED,
+    deflated_sharpe_ci,
+)
 from .gym import OpenOutcryEnv
 from .openoutcry_py import score_run
 
@@ -313,6 +319,10 @@ def run_baselines(
     distribution_mode: str = "calm",
     max_steps: int = 512,
     n_trials: Optional[int] = None,
+    confidence: bool = True,
+    n_boot: int = DEFAULT_N_BOOT,
+    resample_seed: int = DEFAULT_RESAMPLE_SEED,
+    alpha: float = DEFAULT_ALPHA,
 ) -> list[dict]:
     """Roll every reference policy over ``seeds`` and score it with SharpeBench.
 
@@ -322,7 +332,15 @@ def run_baselines(
     ``n_trials`` defaults to the number of baseline policies — the honest declared
     in-sample search breadth, which deflates the Sharpe for multiple-comparison luck.
 
-    Returns one row per policy: ``{policy, deflated_sharpe, passed_k_rate, mean_return}``.
+    When ``confidence`` is set (default), each row also carries a seed-paired bootstrap CI
+    on the deflated Sharpe (``deflated_sharpe_ci``) and the per-seed return series
+    (``per_seed_returns``) that a paired significance test consumes — see
+    :func:`~openoutcry.confidence.pairwise_significance`. The CI's ``point`` equals the row's
+    ``deflated_sharpe`` because the deflation footprint is matched. ``n_boot`` /
+    ``resample_seed`` / ``alpha`` tune the bootstrap and are deterministic in the seed.
+
+    Returns one row per policy: ``{policy, deflated_sharpe, passed_k_rate, mean_return}``
+    plus, when ``confidence`` is set, ``{deflated_sharpe_ci, per_seed_returns}``.
     """
     seeds = list(seeds)
     trials = len(BASELINE_POLICIES) if n_trials is None else int(n_trials)
@@ -330,48 +348,72 @@ def run_baselines(
     for name, factory in BASELINE_POLICIES:
         pooled: list[float] = []
         passed: list[float] = []
+        per_seed: list[list[float]] = []
         for s in seeds:
             policy = factory()
             env = _make_env(n_symbols, n_days, s, distribution_mode)
             returns = _rollout_returns(env, policy, max_steps)
+            per_seed.append(returns)
             pooled.extend(returns)
             if len(returns) >= 2:
                 comp = json.loads(score_run(returns, trials))
                 passed.append(1.0 if comp.get("passed_k", False) else 0.0)
         composite = json.loads(score_run(pooled, trials)) if len(pooled) >= 2 else {}
-        rows.append(
-            {
-                "policy": name,
-                "deflated_sharpe": float(composite.get("deflated_sharpe", 0.0)),
-                "passed_k_rate": float(np.mean(passed)) if passed else 0.0,
-                "mean_return": float(np.mean(pooled)) if pooled else 0.0,
-            }
-        )
+        row = {
+            "policy": name,
+            "deflated_sharpe": float(composite.get("deflated_sharpe", 0.0)),
+            "passed_k_rate": float(np.mean(passed)) if passed else 0.0,
+            "mean_return": float(np.mean(pooled)) if pooled else 0.0,
+        }
+        if confidence:
+            row["deflated_sharpe_ci"] = deflated_sharpe_ci(
+                per_seed,
+                trials,
+                n_boot=n_boot,
+                resample_seed=resample_seed,
+                alpha=alpha,
+            )
+            row["per_seed_returns"] = per_seed
+        rows.append(row)
     return rows
 
 
-def leaderboard_markdown(rows: Sequence[dict]) -> str:
+def leaderboard_markdown(rows: Sequence[dict], *, show_ci: bool = False) -> str:
     """Render baseline ``rows`` as a markdown table sorted by deflated Sharpe (desc).
 
     The sort key is deflated Sharpe and *only* deflated Sharpe — the social contract
     is that entrants are ranked on the deflated, process-checked number, never raw
     return. Mean return is shown for context, not for ranking.
+
+    With ``show_ci`` set, an extra column reports the seed-paired bootstrap 95% CI on the
+    deflated Sharpe (from each row's ``deflated_sharpe_ci``), so the table shows not just the
+    ranked number but how firmly the seeds support it. Default off, so the canonical baseline
+    tables reproduce byte-identically.
     """
     ordered = sorted(rows, key=lambda r: r.get("deflated_sharpe", 0.0), reverse=True)
-    lines = [
-        "| Rank | Policy | Deflated Sharpe | pass^k rate | Mean return |",
-        "|---|---|---|---|---|",
-    ]
+    if show_ci:
+        header = "| Rank | Policy | Deflated Sharpe | 95% CI | pass^k rate | Mean return |"
+        sep = "|---|---|---|---|---|---|"
+    else:
+        header = "| Rank | Policy | Deflated Sharpe | pass^k rate | Mean return |"
+        sep = "|---|---|---|---|---|"
+    lines = [header, sep]
     for i, r in enumerate(ordered, start=1):
-        lines.append(
-            "| {rank} | {policy} | {ds:.4f} | {pk:.2f} | {mr:.6f} |".format(
-                rank=i,
-                policy=r.get("policy", "?"),
-                ds=float(r.get("deflated_sharpe", 0.0)),
-                pk=float(r.get("passed_k_rate", 0.0)),
-                mr=float(r.get("mean_return", 0.0)),
+        cells = [
+            str(i),
+            str(r.get("policy", "?")),
+            "{:.4f}".format(float(r.get("deflated_sharpe", 0.0))),
+        ]
+        if show_ci:
+            ci = r.get("deflated_sharpe_ci") or {}
+            cells.append(
+                "[{lo:.4f}, {hi:.4f}]".format(
+                    lo=float(ci.get("lo", 0.0)), hi=float(ci.get("hi", 0.0))
+                )
             )
-        )
+        cells.append("{:.2f}".format(float(r.get("passed_k_rate", 0.0))))
+        cells.append("{:.6f}".format(float(r.get("mean_return", 0.0))))
+        lines.append("| " + " | ".join(cells) + " |")
     return "\n".join(lines)
 
 

@@ -94,7 +94,8 @@ def test_leaderboard_markdown_importable_without_binding():
 
 @requires_binding
 def test_run_baselines_returns_scored_rows():
-    rows = run_baselines(n_symbols=3, n_days=40, seeds=range(4))
+    # confidence=False keeps the lean historical row shape.
+    rows = run_baselines(n_symbols=3, n_days=40, seeds=range(4), confidence=False)
     assert len(rows) == len(BASELINE_POLICIES) > 1
     names = {r["policy"] for r in rows}
     assert {"flat", "equal_weight_long", "momentum"} <= names
@@ -103,6 +104,22 @@ def test_run_baselines_returns_scored_rows():
         assert np.isfinite(r["deflated_sharpe"])
         assert 0.0 <= r["passed_k_rate"] <= 1.0
         assert np.isfinite(r["mean_return"])
+
+
+@requires_binding
+def test_run_baselines_attaches_confidence_by_default():
+    rows = run_baselines(n_symbols=3, n_days=40, seeds=range(4))
+    for r in rows:
+        assert "deflated_sharpe_ci" in r
+        assert "per_seed_returns" in r
+        ci = r["deflated_sharpe_ci"]
+        # The CI point is the same deflated Sharpe the row (and score_run) reports.
+        assert np.isclose(ci["point"], r["deflated_sharpe"])
+        # The interval brackets that point and reports a non-negative width.
+        assert ci["lo"] - 1e-9 <= ci["point"] <= ci["hi"] + 1e-9
+        assert ci["width"] >= 0.0
+        # One return series per seed was retained for the paired test.
+        assert len(r["per_seed_returns"]) == 4
 
 
 @requires_binding
