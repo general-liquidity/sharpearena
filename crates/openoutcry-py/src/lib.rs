@@ -13,7 +13,7 @@ use openoutcry::market::{MarketClearing, MarketParams};
 use openoutcry::vec_env::AutoresetMode;
 use openoutcry::{
     generate_scenario, CostModel, Dataset, Decision, DistributionMode, LaneConfig, Mandate,
-    ScenarioSpec, TradingEnv as CoreEnv, VecTradingEnv as CoreVecEnv, Window,
+    RichnessTier, ScenarioSpec, TradingEnv as CoreEnv, VecTradingEnv as CoreVecEnv, Window,
 };
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -32,6 +32,20 @@ fn parse_distribution_mode(mode: &str) -> PyResult<DistributionMode> {
         other => Err(PyValueError::new_err(format!(
             "unknown distribution_mode {other:?} (expected calm | hard | extreme | \
              cointegrated_pairs | regime_shift)"
+        ))),
+    }
+}
+
+/// Parse the wire `richness` label into a [`RichnessTier`], the information-disclosure
+/// difficulty axis orthogonal to `distribution_mode`. `standard` is the historical default
+/// disclosure, so an unset richness reproduces the prior observations byte-for-byte.
+fn parse_richness_tier(richness: &str) -> PyResult<RichnessTier> {
+    match richness {
+        "data_poor" => Ok(RichnessTier::DataPoor),
+        "standard" => Ok(RichnessTier::Standard),
+        "data_rich" => Ok(RichnessTier::DataRich),
+        other => Err(PyValueError::new_err(format!(
+            "unknown richness {other:?} (expected data_poor | standard | data_rich)"
         ))),
     }
 }
@@ -608,6 +622,7 @@ impl PyMarketClearing {
         volume_scale = 1.0,
         vol_scale = 0.0,
         distribution_mode = "calm",
+        richness = "standard",
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -621,13 +636,16 @@ impl PyMarketClearing {
         volume_scale: f64,
         vol_scale: f64,
         distribution_mode: &str,
+        richness: &str,
     ) -> PyResult<Self> {
         if n_agents < 1 {
             return Err(PyValueError::new_err("n_agents must be >= 1"));
         }
         let mode = parse_distribution_mode(distribution_mode)?;
+        let tier = parse_richness_tier(richness)?;
         let data = build_dataset(n_symbols, n_days, seed, mode);
-        let inner = MarketClearing::from_dataset(&data, n_agents, capital);
+        let inner =
+            MarketClearing::from_dataset_with_richness(&data, n_agents, capital, tier.richness());
         let params = MarketParams {
             lambda: kyle_lambda,
             eta,
@@ -644,6 +662,19 @@ impl PyMarketClearing {
     #[getter]
     fn scenario_seed(&self) -> u64 {
         self.seed
+    }
+
+    /// The active observation-richness disclosure as a JSON object
+    /// `{lookback, fundamentals, news}`, the information-poverty difficulty axis.
+    #[getter]
+    fn richness(&self) -> String {
+        let r = self.inner.richness();
+        serde_json::json!({
+            "lookback": r.lookback,
+            "fundamentals": r.fundamentals,
+            "news": r.news,
+        })
+        .to_string()
     }
 
     #[getter]
