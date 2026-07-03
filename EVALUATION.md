@@ -60,6 +60,35 @@ A leaderboard entry is incomplete unless it states all of:
    positive gap is overfit; near zero generalizes. An entry with a strong train number
    and no reported test number is presumed overfit.
 
+## Cross-regime transfer (a stronger robustness signal)
+
+The generalization gap varies the *seed band* inside one `distribution_mode`, so a policy
+that only works in calm markets but is scored solely on calm seeds still passes. The
+cross-regime transfer metric closes that hole: it holds the seed band fixed and varies the
+*regime*, scoring a policy in-distribution on one tier and **zero-shot** out-of-distribution
+on another.
+
+`cross_regime_transfer(make_env_for_seed_and_mode, train_mode, test_mode, seeds)` reports
+`in_distribution` and `out_of_distribution` aggregates plus `transfer_gap_deflated_sharpe`
+(in-distribution minus out-of-distribution). Because the seed band is identical on both
+sides, `train_mode == test_mode` reuses byte-identical envs and the gap is exactly `0` by
+construction; a large positive gap on `calm -> extreme` is a regime-specific overfit a
+within-tier gap cannot see. The Rust core exposes the protocol primitive
+`cross_regime_split(train_spec, test_mode)` (the seed-band-preserving, regime-swapping
+sibling of `train_test_split`). Reporting a `calm -> hard` and a `calm -> extreme` transfer
+gap alongside the within-tier generalization gap is strictly stronger evidence of robustness.
+
+## Adaptive curriculum (training side)
+
+For *training* (this is a training aid, not a leaderboard rule), an adaptive curriculum
+targets difficulty by the agent's online success rate instead of a fixed tier rotation.
+`AdaptiveScheduler` / `AdaptiveCurriculumEnv` (Python) and `AdaptiveCurriculum` (Rust) score
+each candidate level by the zone-of-proximal-development weight `p * (1 - p)`, up-weighting
+levels the agent solves 30-70% of the time (the richest learning signal) and down-weighting
+the trivially-solved and hopeless tails. Selection is a pure deterministic function of the
+recorded outcome history (Prioritized Level Replay), so a curriculum run replays identically
+from its outcome log.
+
 ## Baseline leaderboard (numbers to beat)
 
 These are the trivial reference policies every entrant must clear: a do-nothing `flat`,
