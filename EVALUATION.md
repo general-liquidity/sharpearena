@@ -59,6 +59,9 @@ A leaderboard entry is incomplete unless it states all of:
    reporting `train` vs `test` deflated Sharpe and `gap_deflated_sharpe`. A large
    positive gap is overfit; near zero generalizes. An entry with a strong train number
    and no reported test number is presumed overfit.
+6. **Confidence interval on the deflated Sharpe** and, when comparing entries, the
+   **paired-difference verdict** (see the next section). A ranked number with no interval,
+   or an "A beats B" claim a paired test calls tied, is a dashboard, not a result.
 
 ## Cross-regime transfer (a stronger robustness signal)
 
@@ -77,6 +80,47 @@ within-tier gap cannot see. The Rust core exposes the protocol primitive
 `cross_regime_split(train_spec, test_mode)` (the seed-band-preserving, regime-swapping
 sibling of `train_test_split`). Reporting a `calm -> hard` and a `calm -> extreme` transfer
 gap alongside the within-tier generalization gap is strictly stronger evidence of robustness.
+
+## Statistical confidence (is A > B beyond seed noise?)
+
+Deflation handles overfit-luck and pass^k handles per-run reliability, but a leaderboard has
+one more thing to defend when two entries are close: is A's deflated Sharpe really higher
+than B's, or did A just draw a kinder held-out band? That is a Ch. 19 A/B-testing question
+(Advances in Financial Machine Learning) that neither the deflated Sharpe nor pass^k answers.
+Two self-contained, deterministic tools close it, both keyed on a fixed resample seed, so a
+confidence report replays bit-for-bit.
+
+- **Seed-paired bootstrap CI on the deflated Sharpe.** The held-out seeds are the independent
+  sampling units. `deflated_sharpe_ci(per_seed_returns, n_trials)` resamples them with
+  replacement, recomputes the deflated Sharpe on each resample, and returns the percentile
+  interval `{point, lo, hi, width}`. The `point` is exactly the number the leaderboard ranks
+  on (the deflation footprint is matched), so the CI brackets it; the interval widens for a
+  noisier or shorter track, where fewer seeds carry the headline. `run_baselines` attaches
+  this to every row as `deflated_sharpe_ci`, and `leaderboard_markdown(rows, show_ci=True)`
+  prints it as a column.
+
+- **Paired-difference significance test.** `pairwise_significance(rows)` runs `paired_dsr_diff`
+  down the ranked board: each bootstrap draw feeds the **same** resampled seeds to both
+  neighbours, so the price-path luck common to both cancels and the difference isolates skill.
+  When the difference CI straddles zero the two entries are **statistically tied**; otherwise
+  the higher-ranked one wins **beyond seed noise**. `significance_markdown` renders one verdict
+  per adjacent pair.
+
+Reproduce over the baselines with:
+
+```bash
+cd crates/openoutcry-py
+python -c "from openoutcry.baselines import run_baselines, leaderboard_markdown; \
+from openoutcry.confidence import pairwise_significance, significance_markdown; \
+rows = run_baselines(n_symbols=4, n_days=120, seeds=range(16), distribution_mode='calm'); \
+print(leaderboard_markdown(rows, show_ci=True)); print(); \
+print(significance_markdown(pairwise_significance(rows)))"
+```
+
+The Rust core (`openoutcry::leaderboard_ci`) exposes the same primitives,
+`bootstrap_dsr_ci` and `paired_dsr_diff`, over per-seed return series, with the deflated
+Sharpe math ported self-contained (Bailey & López de Prado) so no extra dependency is pulled
+in to draw the interval.
 
 ## Adaptive curriculum (training side)
 
@@ -148,5 +192,7 @@ print(leaderboard_markdown(run_baselines(n_symbols=4, n_days=120, seeds=range(16
 ## The social contract
 
 Report the canonical env-ID, the tier, the cost and leakage model, and the
-generalization gap alongside your deflated Sharpe and pass^k rate. Rank on the deflated,
-process-checked number. A score with no held-out gap is a dashboard, not a result.
+generalization gap alongside your deflated Sharpe (with its bootstrap CI) and pass^k rate.
+Rank on the deflated, process-checked number, and when you claim one entry beats another,
+back it with the paired-difference verdict. A score with no held-out gap is a dashboard, not
+a result; an "A > B" with no significance test is a coin flip dressed as one.
