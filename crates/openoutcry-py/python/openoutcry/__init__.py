@@ -55,6 +55,12 @@ from .baselines import (
     MaxSharpePolicy,
     KellyVolTargetPolicy,
 )
+from .confidence import (
+    deflated_sharpe_ci,
+    paired_dsr_diff,
+    pairwise_significance,
+    significance_markdown,
+)
 from .rewards import (
     REWARD_SCHEMES,
     list_reward_schemes,
@@ -197,6 +203,10 @@ __all__ = [
     "mandate_reward",
     "run_baselines",
     "leaderboard_markdown",
+    "deflated_sharpe_ci",
+    "paired_dsr_diff",
+    "pairwise_significance",
+    "significance_markdown",
     "to_minari",
     "to_minari_train_test",
     "MultiAgentOpenOutcryEnv",

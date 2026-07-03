@@ -4,6 +4,10 @@
 //! and identical to the language-agnostic protocol any external agent speaks.
 
 use openoutcry::exec_noise::{perturb as core_perturb_action, ExecNoise};
+use openoutcry::leaderboard_ci::{
+    bootstrap_dsr_ci as core_bootstrap_dsr_ci, paired_dsr_diff as core_paired_dsr_diff,
+    KERNEL_BASE_TRIALS, TRIALS_SR_STD_DEFAULT,
+};
 use openoutcry::lob_market::{OrderBook, OrderKind, Side};
 use openoutcry::market::{MarketClearing, MarketParams};
 use openoutcry::vec_env::AutoresetMode;
@@ -465,6 +469,63 @@ fn score_run(returns: Vec<f64>, n_trials: u32) -> PyResult<String> {
     serde_json::to_string(&score).map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
+/// Seed-paired bootstrap confidence interval on the **deflated Sharpe** the leaderboard
+/// ranks on. `per_seed_returns` is one per-bar return series per held-out seed (the
+/// independent sampling units). `n_trials` is the agent's *declared* in-sample search
+/// budget; it is folded onto the scoring kernel's baseline footprint (`KERNEL_BASE_TRIALS`)
+/// so the interval brackets the same point deflated Sharpe `score_run` reports. Returns the
+/// `DsrCi` (`{point, lo, hi, width, confidence, n_boot}`) as a JSON string. Deterministic in
+/// `resample_seed`, so the report replays bit-for-bit.
+#[pyfunction]
+#[pyo3(signature = (per_seed_returns, n_trials = 0, n_boot = 2000, resample_seed = 0x5BA7_2026, alpha = 0.05))]
+fn bootstrap_dsr_ci(
+    per_seed_returns: Vec<Vec<f64>>,
+    n_trials: u32,
+    n_boot: usize,
+    resample_seed: u64,
+    alpha: f64,
+) -> PyResult<String> {
+    let effective = KERNEL_BASE_TRIALS.saturating_add(n_trials);
+    let ci = core_bootstrap_dsr_ci(
+        &per_seed_returns,
+        effective,
+        TRIALS_SR_STD_DEFAULT,
+        n_boot,
+        resample_seed,
+        alpha,
+    );
+    serde_json::to_string(&ci).map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
+/// Paired-difference significance test between two leaderboard entries scored on the **same**
+/// held-out seed band. `a_per_seed_returns[i]` and `b_per_seed_returns[i]` are the two
+/// entries' return series on the *same* seed `i`; the pairing cancels the shared price-path
+/// luck so the bootstrap difference isolates skill. Returns the `PairedDiff`
+/// (`{point_diff, lo, hi, p_value, confidence, significant, verdict, n_boot}`) as JSON;
+/// `verdict` is `"a_better"`, `"b_better"`, or `"tied"`. Deterministic in `resample_seed`.
+#[pyfunction]
+#[pyo3(signature = (a_per_seed_returns, b_per_seed_returns, n_trials = 0, n_boot = 2000, resample_seed = 0x5BA7_2026, alpha = 0.05))]
+fn paired_dsr_diff(
+    a_per_seed_returns: Vec<Vec<f64>>,
+    b_per_seed_returns: Vec<Vec<f64>>,
+    n_trials: u32,
+    n_boot: usize,
+    resample_seed: u64,
+    alpha: f64,
+) -> PyResult<String> {
+    let effective = KERNEL_BASE_TRIALS.saturating_add(n_trials);
+    let diff = core_paired_dsr_diff(
+        &a_per_seed_returns,
+        &b_per_seed_returns,
+        effective,
+        TRIALS_SR_STD_DEFAULT,
+        n_boot,
+        resample_seed,
+        alpha,
+    );
+    serde_json::to_string(&diff).map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
 /// Whether `decision_json` deserializes to the wire-contract [`Decision`] type — the
 /// boundary `contains()` for actions, so a caller can validate an agent's output
 /// against the action space without stepping the environment.
@@ -767,6 +828,8 @@ fn openoutcry_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyMarketClearing>()?;
     m.add_class::<PyOrderBook>()?;
     m.add_function(wrap_pyfunction!(score_run, m)?)?;
+    m.add_function(wrap_pyfunction!(bootstrap_dsr_ci, m)?)?;
+    m.add_function(wrap_pyfunction!(paired_dsr_diff, m)?)?;
     m.add_function(wrap_pyfunction!(validate_decision_json, m)?)?;
     m.add_function(wrap_pyfunction!(sample_mandate_json, m)?)?;
     m.add_function(wrap_pyfunction!(mandate_breach, m)?)?;

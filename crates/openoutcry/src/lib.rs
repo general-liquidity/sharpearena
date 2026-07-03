@@ -38,6 +38,11 @@ pub use scenario_gen::{
 pub mod curriculum;
 pub use curriculum::AdaptiveCurriculum;
 
+// --- Statistical-confidence layer for the leaderboard (bootstrap CI + paired A/B test) -----
+
+pub mod leaderboard_ci;
+pub use leaderboard_ci::{bootstrap_dsr_ci, deflated_sharpe, paired_dsr_diff, DsrCi, PairedDiff};
+
 // --- Vectorized, batched environment (gym3's "vectorized-first" design) -------------------
 
 pub mod vec_env;
