@@ -15,6 +15,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::richness::ObservationRichness;
 use crate::Dataset;
 
 /// How adversarial a generated scenario is. The discrete difficulty tier maps each
@@ -44,8 +45,14 @@ pub enum DistributionMode {
 
 /// A reproducible scenario family: a seed interval `[start_level, start_level +
 /// num_levels)` (`num_levels == 0` ⇒ unbounded `[start_level, u64::MAX)`), the panel
-/// dimensions, and the difficulty tier. `Default` is the mild 4×120 Calm family over
-/// the unbounded interval (matching the synthetic façade defaults).
+/// dimensions, the difficulty tier, and the observation-richness disclosure. `Default` is
+/// the mild 4×120 Calm family over the unbounded interval at the default (`Standard`)
+/// disclosure (matching the synthetic façade defaults).
+///
+/// [`distribution_mode`](Self::distribution_mode) and [`obs_richness`](Self::obs_richness)
+/// are **orthogonal** difficulty axes: the former sets how adversarial the price path is,
+/// the latter how much of it the agent is shown. Together they span a `(regime × richness)`
+/// grid (see [`ObservationRichness`]).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScenarioSpec {
     pub start_level: u64,
@@ -54,6 +61,11 @@ pub struct ScenarioSpec {
     pub n_symbols: usize,
     pub n_days: usize,
     pub distribution_mode: DistributionMode,
+    /// How much of the market the agent is shown (trailing lookback + optional
+    /// fundamentals/news). Additive and `#[serde(default)]`, so a spec serialized before
+    /// this field parses back to the historical disclosure and is byte-identical.
+    #[serde(default)]
+    pub obs_richness: ObservationRichness,
 }
 
 impl Default for ScenarioSpec {
@@ -64,6 +76,7 @@ impl Default for ScenarioSpec {
             n_symbols: 4,
             n_days: 120,
             distribution_mode: DistributionMode::Calm,
+            obs_richness: ObservationRichness::default(),
         }
     }
 }
