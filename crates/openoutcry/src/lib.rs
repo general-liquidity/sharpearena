@@ -33,6 +33,11 @@ pub use scenario_gen::{
     ScenarioSpec,
 };
 
+// --- Information-disclosure difficulty (the axis orthogonal to the regime tiers) -----------
+
+pub mod richness;
+pub use richness::{ObservationRichness, RichnessTier, DEFAULT_LOOKBACK};
+
 // --- Adaptive difficulty-targeting curriculum (Prioritized Level Replay) -------------------
 
 pub mod curriculum;

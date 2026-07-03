@@ -43,7 +43,11 @@ The Rust clearing engine is reached through the native ``PyMarketClearing`` pycl
 small documented JSON interface:
 
 * ``PyMarketClearing(n_symbols, n_days, seed, n_agents, capital, kyle_lambda, eta,
-  volume_scale, distribution_mode)``
+  volume_scale, distribution_mode, richness)``. ``richness`` (``data_poor`` | ``standard``
+  | ``data_rich``) is the information-disclosure difficulty axis, orthogonal to
+  ``distribution_mode``: it sets how much of the market each observation surfaces (trailing
+  lookback + optional fundamentals/news), never revealing a future bar. ``standard`` is the
+  historical default disclosure.
 * ``reset_market() -> json``: ``{symbols, n_agents, n_bars, start_bar, cursor, capital,
   observations:[MarketObservation, ...]}`` (observations in canonical agent order).
 * ``step_market(orders_json) -> json``: ``orders_json`` is a JSON array of shape
@@ -120,6 +124,7 @@ class EndogenousMarketEnv(ParallelEnv):
         volume_scale: float = 1.0,
         vol_scale: float = 0.0,
         distribution_mode: str = "calm",
+        richness: str = "standard",
         max_weight: float = 1.0,
         allow_short: bool = True,
     ) -> None:
@@ -141,6 +146,7 @@ class EndogenousMarketEnv(ParallelEnv):
         self._volume_scale = float(volume_scale)
         self._vol_scale = float(vol_scale)
         self._distribution_mode = str(distribution_mode)
+        self._richness = str(richness)
         self._max_weight = float(max_weight)
         self._allow_short = bool(allow_short)
 
@@ -174,17 +180,32 @@ class EndogenousMarketEnv(ParallelEnv):
             volume_scale=self._volume_scale,
             vol_scale=self._vol_scale,
             distribution_mode=self._distribution_mode,
+            richness=self._richness,
         )
         try:
             self._market = PyMarketClearing(**kwargs)
+            return
         except TypeError:
-            # The native binding predates the vol_scale param (parallel-build interim). Fall
-            # back to the legacy signature only when vol scaling is off, so default behavior
-            # is unchanged; a requested vol_scale > 0 still surfaces the error.
-            if self._vol_scale != 0.0:
-                raise
-            kwargs.pop("vol_scale")
+            pass
+        # An older native binding may predate the newest optional params (richness, then
+        # vol_scale). Drop them only when they sit at their defaults, so default behavior is
+        # unchanged; a non-default request for a missing param still surfaces the error.
+        if self._richness != "standard":
+            raise TypeError(
+                "the native binding predates the 'richness' parameter (needs a rebuild)"
+            )
+        kwargs.pop("richness")
+        try:
             self._market = PyMarketClearing(**kwargs)
+            return
+        except TypeError:
+            pass
+        if self._vol_scale != 0.0:
+            raise TypeError(
+                "the native binding predates the 'vol_scale' parameter (needs a rebuild)"
+            )
+        kwargs.pop("vol_scale")
+        self._market = PyMarketClearing(**kwargs)
 
     def _build_spaces(self) -> None:
         if not _HAS_GYM:  # pragma: no cover - gymnasium is a hard dep of the package

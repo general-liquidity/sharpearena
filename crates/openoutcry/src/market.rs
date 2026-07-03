@@ -63,16 +63,18 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+use crate::richness::ObservationRichness;
 use crate::{Dataset, MarketObservation, PositionState, SymbolSnapshot};
 
 /// Bars of trailing exogenous history burned in before the first decision, mirroring the
 /// open-loop env's warm-up so an agent's first observation already has trailing closes.
 const WARMUP: usize = 20;
-/// Trailing closes surfaced in each observation (mirrors the sim engine's `LOOKBACK`).
-const LOOKBACK: usize = 20;
 /// Below this absolute size a position/NAV is treated as flat (avoids divide-by-zero in
 /// the return and average-price bookkeeping). Comparisons only — never an additive fudge.
 const EPS: f64 = 1e-12;
+/// Trailing-return magnitude above which a derived news headline reads as a trend rather
+/// than range-bound (2%). Only consulted when [`ObservationRichness::news`] is set.
+const NEWS_THRESHOLD: f64 = 0.02;
 /// Trailing window (in past cleared bars) of the volatility proxy used by `vol_scale`.
 const VOL_WINDOW: usize = 20;
 /// Upper bound on the volatility-scaling factor, so an extreme `vol_scale` (or a violent
@@ -226,14 +228,35 @@ pub struct MarketClearing {
     /// The first bar that is cleared *with* trading (after the warm-up burn-in).
     start_bar: usize,
     n_bars: usize,
+    /// How much of the market each observation discloses (trailing lookback + optional
+    /// fundamentals/news). Default is the historical [`DEFAULT_LOOKBACK`]-bar, no-fields
+    /// disclosure (see [`ObservationRichness`]).
+    ///
+    /// [`DEFAULT_LOOKBACK`]: crate::DEFAULT_LOOKBACK
+    richness: ObservationRichness,
 }
 
 impl MarketClearing {
     /// Build an endogenous market over `data` for `n_agents`, each starting with
-    /// `capital` cash. The exogenous path is taken from `data`'s closes; the first
-    /// `WARMUP` bars are an untraded burn-in (cleared == exogenous) so the first
-    /// observation has trailing history.
+    /// `capital` cash, at the historical (default) observation disclosure. The exogenous
+    /// path is taken from `data`'s closes; the first `WARMUP` bars are an untraded burn-in
+    /// (cleared == exogenous) so the first observation has trailing history.
     pub fn from_dataset(data: &Dataset, n_agents: usize, capital: f64) -> Self {
+        Self::from_dataset_with_richness(data, n_agents, capital, ObservationRichness::default())
+    }
+
+    /// [`from_dataset`](Self::from_dataset) with an explicit observation-richness
+    /// disclosure, the information-poverty difficulty axis. `richness` controls only how
+    /// much *past / contextual* information each observation surfaces (trailing lookback,
+    /// optional fundamentals/news); it never reveals a future bar, so the leak-free
+    /// invariant is untouched. Passing [`ObservationRichness::default`] reproduces
+    /// [`from_dataset`](Self::from_dataset) byte-for-byte.
+    pub fn from_dataset_with_richness(
+        data: &Dataset,
+        n_agents: usize,
+        capital: f64,
+        richness: ObservationRichness,
+    ) -> Self {
         assert!(n_agents >= 1, "a market needs at least one agent");
         let symbols = data.symbols();
         let n_sym = symbols.len();
@@ -288,7 +311,14 @@ impl MarketClearing {
             cursor: start_bar,
             start_bar,
             n_bars,
+            richness,
         }
+    }
+
+    /// The observation-richness disclosure this market surfaces (the information-poverty
+    /// difficulty axis).
+    pub fn richness(&self) -> ObservationRichness {
+        self.richness
     }
 
     /// The sorted symbol axis (canonical order for every per-symbol vector).
@@ -351,12 +381,7 @@ impl MarketClearing {
                     .map(|(s, sym)| {
                         let mut hist = self.cleared_history[s].clone();
                         hist.push(self.exo[s][self.start_bar.min(self.exo[s].len() - 1)]);
-                        SymbolSnapshot {
-                            symbol: sym.clone(),
-                            close_history: trailing(&hist),
-                            fundamentals: BTreeMap::new(),
-                            news: Vec::new(),
-                        }
+                        self.snapshot(sym, &hist)
                     })
                     .collect();
                 self.observation(agent, &date, symbols)
@@ -406,12 +431,98 @@ impl MarketClearing {
             portfolio,
         }
     }
+
+    /// Assemble one symbol's snapshot from its full cleared/exogenous history, honoring the
+    /// market's [`ObservationRichness`]: surface the last `richness.lookback` closes, and
+    /// populate `fundamentals` / `news` from point-in-time derived context only when the
+    /// corresponding flag is set. Every input close is `<= t` (it is drawn from the cleared
+    /// tape or the current reference mid), so the snapshot is leak-free at any richness.
+    fn snapshot(&self, symbol: &str, full_history: &[f64]) -> SymbolSnapshot {
+        let close_history = trailing(full_history, self.richness.lookback);
+        let fundamentals = if self.richness.fundamentals {
+            derive_fundamentals(&close_history)
+        } else {
+            BTreeMap::new()
+        };
+        let news = if self.richness.news {
+            derive_news(symbol, &close_history)
+        } else {
+            Vec::new()
+        };
+        SymbolSnapshot {
+            symbol: symbol.to_string(),
+            close_history,
+            fundamentals,
+            news,
+        }
+    }
 }
 
-/// Trailing closes (≤ [`LOOKBACK`]) ending at the last entry of `series`.
-fn trailing(series: &[f64]) -> Vec<f64> {
-    let start = series.len().saturating_sub(LOOKBACK);
+/// Trailing closes (≤ `lookback`) ending at the last entry of `series`. `lookback` is the
+/// [`ObservationRichness::lookback`] disclosure; the historical default is
+/// [`DEFAULT_LOOKBACK`](crate::DEFAULT_LOOKBACK).
+fn trailing(series: &[f64], lookback: usize) -> Vec<f64> {
+    let start = series.len().saturating_sub(lookback);
     series[start..].to_vec()
+}
+
+/// Point-in-time fundamentals derived purely from the surfaced trailing closes (all `<= t`),
+/// so the map is leak-free by construction. Only mul/add/div/min/max are used (no
+/// transcendentals), so it stays byte-identical across runtimes. Empty when the window is
+/// too short to define a trailing return.
+fn derive_fundamentals(closes: &[f64]) -> BTreeMap<String, f64> {
+    let mut map = BTreeMap::new();
+    if closes.len() < 2 {
+        return map;
+    }
+    let first = closes[0];
+    let last = closes[closes.len() - 1];
+    let trailing_return = if first.abs() > EPS {
+        last / first - 1.0
+    } else {
+        0.0
+    };
+    let mut high = closes[0];
+    let mut low = closes[0];
+    for &c in &closes[1..] {
+        if c > high {
+            high = c;
+        }
+        if c < low {
+            low = c;
+        }
+    }
+    map.insert("trailing_return".to_string(), trailing_return);
+    map.insert("window_high".to_string(), high);
+    map.insert("window_low".to_string(), low);
+    map
+}
+
+/// A single point-in-time news headline derived purely from the surfaced trailing closes
+/// (all `<= t`), so it is leak-free. The wording is a deterministic function of the trailing
+/// return's sign and magnitude; `f64` formatting is deterministic across runtimes. Empty
+/// when the window is too short to define a trailing return.
+fn derive_news(symbol: &str, closes: &[f64]) -> Vec<String> {
+    if closes.len() < 2 {
+        return Vec::new();
+    }
+    let first = closes[0];
+    let last = closes[closes.len() - 1];
+    let ret = if first.abs() > EPS {
+        last / first - 1.0
+    } else {
+        0.0
+    };
+    let pct = ret * 100.0;
+    let bars = closes.len();
+    let headline = if ret > NEWS_THRESHOLD {
+        format!("{symbol}: uptrend, {pct:+.2}% over {bars} bars")
+    } else if ret < -NEWS_THRESHOLD {
+        format!("{symbol}: downtrend, {pct:+.2}% over {bars} bars")
+    } else {
+        format!("{symbol}: range-bound, {pct:+.2}% over {bars} bars")
+    };
+    vec![headline]
 }
 
 /// Clear one bar of the endogenous market.
@@ -563,12 +674,7 @@ pub fn clear_bar(
                 .symbols
                 .iter()
                 .enumerate()
-                .map(|(s, sym)| SymbolSnapshot {
-                    symbol: sym.clone(),
-                    close_history: trailing(&state.cleared_history[s]),
-                    fundamentals: BTreeMap::new(),
-                    news: Vec::new(),
-                })
+                .map(|(s, sym)| state.snapshot(sym, &state.cleared_history[s]))
                 .collect();
             state.observation(agent, &date, symbols)
         })
@@ -1026,5 +1132,184 @@ mod tests {
             log
         };
         assert_eq!(run(), run(), "vol-scaled clearing must be deterministic");
+    }
+
+    // --- Observation-richness (information-disclosure) axis --------------------------------
+
+    use crate::richness::{ObservationRichness, RichnessTier};
+
+    /// Roll `orders` over a market to exhaustion, collecting the serialized observations of
+    /// every step (plus the initial pre-trade observations).
+    fn rollout_observations(mut m: MarketClearing, orders: &[Vec<f64>]) -> Vec<String> {
+        let params = MarketParams::default();
+        let mut log = vec![serde_json::to_string(&m.initial_observations()).unwrap()];
+        loop {
+            let r = m.step(orders, &params);
+            log.push(serde_json::to_string(&r.observations).unwrap());
+            if r.done {
+                break;
+            }
+        }
+        log
+    }
+
+    #[test]
+    fn default_richness_is_byte_identical_to_standard_tier() {
+        // The whole additive-only guarantee: a market built with no richness setting and one
+        // built with the explicit Standard tier emit a byte-identical observation stream.
+        let data = Dataset::synthetic(3, 60, 4);
+        let orders = block(2, 3, 0.3);
+        let default_log =
+            rollout_observations(MarketClearing::from_dataset(&data, 2, 1.0), &orders);
+        let standard_log = rollout_observations(
+            MarketClearing::from_dataset_with_richness(
+                &data,
+                2,
+                1.0,
+                RichnessTier::Standard.richness(),
+            ),
+            &orders,
+        );
+        assert_eq!(
+            default_log, standard_log,
+            "Standard richness must reproduce the default observation stream byte-for-byte"
+        );
+    }
+
+    #[test]
+    fn data_poor_shows_fewer_bars_and_withholds_optional_fields() {
+        let data = Dataset::synthetic(2, 60, 7);
+        let m = MarketClearing::from_dataset_with_richness(
+            &data,
+            2,
+            1.0,
+            RichnessTier::DataPoor.richness(),
+        );
+        for obs in m.initial_observations() {
+            for snap in &obs.symbols {
+                assert!(
+                    snap.close_history.len() <= 3,
+                    "DataPoor caps the trailing history at 3 bars, got {}",
+                    snap.close_history.len()
+                );
+                assert!(
+                    snap.fundamentals.is_empty(),
+                    "DataPoor withholds fundamentals"
+                );
+                assert!(snap.news.is_empty(), "DataPoor withholds news");
+            }
+        }
+    }
+
+    #[test]
+    fn data_rich_shows_more_bars_and_populates_optional_fields() {
+        let data = Dataset::synthetic(2, 120, 9);
+        let rich = MarketClearing::from_dataset_with_richness(
+            &data,
+            2,
+            1.0,
+            RichnessTier::DataRich.richness(),
+        );
+        let standard = MarketClearing::from_dataset(&data, 2, 1.0);
+
+        let rich_obs = rich.initial_observations();
+        let std_obs = standard.initial_observations();
+        for (ro, so) in rich_obs.iter().zip(&std_obs) {
+            for (rs, ss) in ro.symbols.iter().zip(&so.symbols) {
+                assert!(
+                    rs.close_history.len() > ss.close_history.len(),
+                    "DataRich must surface strictly more history than Standard: {} vs {}",
+                    rs.close_history.len(),
+                    ss.close_history.len()
+                );
+                assert!(
+                    rs.close_history.len() <= 50,
+                    "DataRich caps the trailing history at 50 bars"
+                );
+                // Fundamentals: the three derived point-in-time context fields.
+                assert!(rs.fundamentals.contains_key("trailing_return"));
+                assert!(rs.fundamentals.contains_key("window_high"));
+                assert!(rs.fundamentals.contains_key("window_low"));
+                // News: exactly one deterministic headline mentioning the symbol.
+                assert_eq!(rs.news.len(), 1);
+                assert!(rs.news[0].contains(&rs.symbol));
+            }
+        }
+    }
+
+    #[test]
+    fn every_tier_is_leak_free_never_surfaces_a_future_bar() {
+        // Under all three tiers the last close surfaced for a symbol is exactly this bar's
+        // cleared mid (never a future bar), and the surfaced window is a suffix of the
+        // realized cleared tape whose length cannot exceed the number of cleared bars.
+        let data = Dataset::synthetic(3, 80, 2);
+        let orders = block(2, 3, 0.25);
+        for tier in RichnessTier::all() {
+            let mut m = MarketClearing::from_dataset_with_richness(&data, 2, 1.0, tier.richness());
+            let params = MarketParams::default();
+            let mut cleared_bars = m.start_bar(); // burn-in bars already on the tape
+            loop {
+                let r = m.step(&orders, &params);
+                cleared_bars += 1;
+                for obs in &r.observations {
+                    for (s, snap) in obs.symbols.iter().enumerate() {
+                        assert_eq!(
+                            *snap.close_history.last().unwrap(),
+                            r.cleared_mids[s],
+                            "{tier:?}: the last surfaced close must be this bar's cleared mid"
+                        );
+                        assert!(
+                            snap.close_history.len() <= cleared_bars,
+                            "{tier:?}: cannot surface more closes than have been cleared"
+                        );
+                    }
+                }
+                if r.done {
+                    break;
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn richness_clearing_stays_deterministic() {
+        // Populating fundamentals/news must not perturb determinism: same data + orders
+        // reproduce a byte-identical DataRich observation stream.
+        let data = Dataset::synthetic(2, 50, 5);
+        let orders = block(2, 2, 0.4);
+        let run = || {
+            rollout_observations(
+                MarketClearing::from_dataset_with_richness(
+                    &data,
+                    2,
+                    1.0,
+                    RichnessTier::DataRich.richness(),
+                ),
+                &orders,
+            )
+        };
+        assert_eq!(run(), run(), "DataRich clearing must be deterministic");
+    }
+
+    #[test]
+    fn custom_richness_overrides_lookback_independently_of_fields() {
+        // The config is not just the three presets: a bespoke ObservationRichness honors an
+        // arbitrary lookback with the optional fields still gated by their own flags.
+        let data = Dataset::synthetic(1, 60, 3);
+        let m = MarketClearing::from_dataset_with_richness(
+            &data,
+            1,
+            1.0,
+            ObservationRichness {
+                lookback: 7,
+                fundamentals: true,
+                news: false,
+            },
+        );
+        for snap in &m.initial_observations()[0].symbols {
+            assert!(snap.close_history.len() <= 7);
+            assert!(!snap.fundamentals.is_empty(), "fundamentals flag honored");
+            assert!(snap.news.is_empty(), "news flag honored independently");
+        }
     }
 }

@@ -81,6 +81,38 @@ within-tier gap cannot see. The Rust core exposes the protocol primitive
 sibling of `train_test_split`). Reporting a `calm -> hard` and a `calm -> extreme` transfer
 gap alongside the within-tier generalization gap is strictly stronger evidence of robustness.
 
+## Information disclosure (an orthogonal difficulty axis)
+
+`distribution_mode` sets how adversarial the price *path* is; it says nothing about how
+much of that market the agent is allowed to *see*. Those are independent axes. A Calm panel
+shown through a 3-bar window with no fundamentals or news can be genuinely harder than an
+Extreme panel shown through a 50-bar history with full context: the first measures
+**information efficiency** and robustness to **data poverty** (the real trading axis of
+"information edge") which the regime tiers structurally cannot probe. A scenario is
+therefore a point on a 2-D grid: `(distribution_mode × observation_richness)`.
+
+The shared-book market (`PyMarketClearing` / `EndogenousMarketEnv`) takes a `richness`
+tier orthogonal to `distribution_mode`:
+
+| Tier | Trailing lookback | Fundamentals | News |
+|---|---|---|---|
+| `data_poor` | 3 bars | no | no |
+| `standard` | 20 bars | no | no |
+| `data_rich` | 50 bars | yes | yes |
+
+`standard` is the historical default disclosure, so a scenario built without a `richness`
+setting is byte-identical to `standard`: the axis is strictly additive (no
+`CONTRACT_VERSION` bump). Richer disclosure only ever surfaces **more past / contextual**
+information: the extra bars, the derived `fundamentals` (`trailing_return`, `window_high`,
+`window_low`), and the `news` headline are all computed from the same leak-free trailing
+closes (`<= t`), so the point-in-time invariant holds at every tier, and no tier reveals a
+future bar. Sweeping the same regime across the three tiers isolates how much of an agent's
+edge is real signal-processing versus a dependence on being handed a rich observation; a
+policy whose deflated Sharpe collapses from `data_rich` to `data_poor` on an otherwise
+identical panel is riding disclosure, not skill. Report the tier alongside the
+`distribution_mode` (Rust: `MarketClearing::from_dataset_with_richness` /
+`RichnessTier`; Python: `PyMarketClearing(..., richness=...)`).
+
 ## Statistical confidence (is A > B beyond seed noise?)
 
 Deflation handles overfit-luck and pass^k handles per-run reliability, but a leaderboard has
