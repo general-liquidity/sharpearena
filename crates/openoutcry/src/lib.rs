@@ -29,8 +29,14 @@ pub use contract::CONTRACT_VERSION;
 
 pub mod scenario_gen;
 pub use scenario_gen::{
-    generate_scenario, level_seed, train_test_split, DistributionMode, ScenarioSpec,
+    cross_regime_split, generate_scenario, level_seed, train_test_split, DistributionMode,
+    ScenarioSpec,
 };
+
+// --- Adaptive difficulty-targeting curriculum (Prioritized Level Replay) -------------------
+
+pub mod curriculum;
+pub use curriculum::AdaptiveCurriculum;
 
 // --- Vectorized, batched environment (gym3's "vectorized-first" design) -------------------
 
