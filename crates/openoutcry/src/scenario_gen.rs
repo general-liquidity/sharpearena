@@ -294,6 +294,31 @@ pub fn train_test_split(
     (train, test)
 }
 
+/// Carve a **cross-regime (cross-distribution) transfer** protocol from an in-sample
+/// `train` family. The returned out-of-distribution family shares `train`'s *seed band*
+/// and panel dimensions but swaps the [`DistributionMode`] to `test_mode`. Scoring a
+/// policy that was selected on the in-distribution family against the out-of-distribution
+/// family is a **zero-shot regime-transfer** test: the seeds are held fixed so the only
+/// thing that varies is the market regime, which isolates distribution shift from seed
+/// luck.
+///
+/// This is a strictly stronger robustness probe than [`train_test_split`]'s within-tier
+/// seed gap. That split holds the *regime* fixed and varies the *seeds* (catching seed
+/// overfit); this one holds the *seeds* fixed and varies the *regime* (catching the
+/// regime-specific overfit a within-tier gap is blind to). When `test_mode` equals
+/// `train.distribution_mode` the two families are identical, so the resulting transfer
+/// gap is exactly zero by construction.
+pub fn cross_regime_split(
+    train: ScenarioSpec,
+    test_mode: DistributionMode,
+) -> (ScenarioSpec, ScenarioSpec) {
+    let test = ScenarioSpec {
+        distribution_mode: test_mode,
+        ..train.clone()
+    };
+    (train, test)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -620,5 +645,62 @@ mod tests {
         let extreme = realized_vol(&generate_scenario(&spec(DistributionMode::Extreme), 7));
         assert!(calm < hard, "calm {calm} should be < hard {hard}");
         assert!(hard < extreme, "hard {hard} should be < extreme {extreme}");
+    }
+
+    #[test]
+    fn cross_regime_split_preserves_band_swaps_mode() {
+        let train = ScenarioSpec {
+            start_level: 100,
+            num_levels: 8,
+            distribution_mode: DistributionMode::Calm,
+            ..ScenarioSpec::default()
+        };
+        let (in_dist, out_dist) = cross_regime_split(train.clone(), DistributionMode::Extreme);
+        // In-distribution family is returned unchanged; the out-of-distribution family
+        // shares the seed band and panel dims but flips the regime.
+        assert_eq!(in_dist, train);
+        assert_eq!(out_dist.start_level, train.start_level);
+        assert_eq!(out_dist.num_levels, train.num_levels);
+        assert_eq!(out_dist.n_symbols, train.n_symbols);
+        assert_eq!(out_dist.n_days, train.n_days);
+        assert_eq!(out_dist.distribution_mode, DistributionMode::Extreme);
+    }
+
+    #[test]
+    fn cross_regime_identical_mode_is_byte_identical() {
+        // test_mode == train mode => the transfer gap is zero by construction: the two
+        // families generate byte-identical panels across the whole seed band.
+        let train = ScenarioSpec {
+            start_level: 0,
+            num_levels: 6,
+            distribution_mode: DistributionMode::Hard,
+            ..ScenarioSpec::default()
+        };
+        let (in_dist, out_dist) = cross_regime_split(train.clone(), DistributionMode::Hard);
+        for index in 0..in_dist.num_levels {
+            let seed = level_seed(&in_dist, index);
+            let a = serde_json::to_string(&generate_scenario(&in_dist, seed)).unwrap();
+            let b = serde_json::to_string(&generate_scenario(&out_dist, seed)).unwrap();
+            assert_eq!(a, b, "identical-mode panels must match at seed {seed}");
+        }
+    }
+
+    #[test]
+    fn cross_regime_different_mode_diverges() {
+        // A real zero-shot shift: holding the seed fixed, calm and extreme panels differ
+        // at every level in the band.
+        let train = ScenarioSpec {
+            start_level: 0,
+            num_levels: 6,
+            distribution_mode: DistributionMode::Calm,
+            ..ScenarioSpec::default()
+        };
+        let (in_dist, out_dist) = cross_regime_split(train, DistributionMode::Extreme);
+        for index in 0..in_dist.num_levels {
+            let seed = level_seed(&in_dist, index);
+            let a = serde_json::to_string(&generate_scenario(&in_dist, seed)).unwrap();
+            let b = serde_json::to_string(&generate_scenario(&out_dist, seed)).unwrap();
+            assert_ne!(a, b, "cross-regime panels must differ at seed {seed}");
+        }
     }
 }
