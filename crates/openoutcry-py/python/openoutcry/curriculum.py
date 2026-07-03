@@ -178,4 +178,158 @@ def regime_curriculum(
     )
 
 
-__all__ = ["CurriculumEnv", "regime_curriculum"]
+# -- adaptive difficulty-targeting curriculum (Prioritized Level Replay) ----------
+
+
+class AdaptiveScheduler:
+    """Prioritized-Level-Replay difficulty targeting over a fixed candidate level set.
+
+    A fixed rotation replays trivially-solved levels and hopeless ones in equal measure.
+    PLR instead spends the next episode on a level in the agent's *zone of proximal
+    development*: one it solves *sometimes* (the 30-70%-solve band), where the learning
+    signal is richest. This tracks a per-level solve rate from recorded outcomes and
+    scores each level by the ZPD weight ``p * (1 - p)`` (Bernoulli variance): maximal at
+    ``p = 0.5``, decaying to zero as a level becomes trivially easy (``p -> 1``) or
+    hopeless (``p -> 0``). :meth:`select_next` is a **pure deterministic function of the
+    recorded history** (argmax weight, ties broken by lowest index, no RNG). Unseen levels
+    take a ``prior`` pseudo-rate (default ``0.5``, the peak) so each is explored once
+    before the mid band is replayed.
+    """
+
+    def __init__(self, levels: Sequence[int], *, prior: float = 0.5) -> None:
+        deduped: list[int] = []
+        for x in levels:
+            xi = int(x)
+            if xi not in deduped:
+                deduped.append(xi)
+        if not deduped:
+            raise ValueError("levels must be non-empty")
+        self._levels = deduped
+        self._solves: dict[int, int] = {x: 0 for x in deduped}
+        self._attempts: dict[int, int] = {x: 0 for x in deduped}
+        self._prior = float(prior)
+
+    @property
+    def levels(self) -> list[int]:
+        """The scheduled candidate levels (seeds), in tie-break order (copy)."""
+        return list(self._levels)
+
+    def success_rate(self, level: int) -> float:
+        """Observed ``solves / attempts`` for ``level``, or the ``prior`` when unseen."""
+        level = int(level)
+        if level not in self._attempts:
+            raise KeyError(f"level {level} is off-schedule")
+        a = self._attempts[level]
+        return self._prior if a == 0 else self._solves[level] / a
+
+    def weight(self, level: int) -> float:
+        """ZPD replay weight ``p * (1 - p)`` (peaks at ``p = 0.5``, zero at both tails)."""
+        p = self.success_rate(level)
+        return p * (1.0 - p)
+
+    def record(self, level: int, solved: bool) -> None:
+        """Record one episode outcome for ``level`` (``solved`` = success criterion met)."""
+        level = int(level)
+        if level not in self._attempts:
+            raise KeyError(f"level {level} is off-schedule")
+        self._attempts[level] += 1
+        self._solves[level] += 1 if solved else 0
+
+    def select_next(self) -> int:
+        """The next level to replay: highest-weight candidate, ties broken by lowest index."""
+        best = self._levels[0]
+        best_w = self.weight(best)
+        for lv in self._levels[1:]:
+            w = self.weight(lv)
+            if w > best_w:
+                best, best_w = lv, w
+        return best
+
+
+class AdaptiveCurriculumEnv(gym.Wrapper):
+    """A curriculum whose next scenario seed is chosen adaptively by the agent's online
+    success rate (Prioritized Level Replay) rather than a fixed rotation.
+
+    On every ``reset()`` the wrapper asks an :class:`AdaptiveScheduler` for the
+    highest-learning-signal (mid-difficulty) level and points the env at that seed; as the
+    episode runs it accumulates reward, and on episode end it records a solved/failed
+    outcome (``solved_fn(total_reward)``, default: a net-positive episode return) back into
+    the scheduler. The seed choice is deterministic given the observed outcome history, so
+    the same run replays identically.
+
+    Parameters
+    ----------
+    levels:
+        The candidate scenario seeds to target adaptively.
+    solved_fn:
+        ``(total_episode_return) -> bool`` success criterion. Defaults to "made money"
+        (``total > 0``), a deterministic proxy for a trading "solve".
+    prior:
+        Unseen-level pseudo success rate (default ``0.5``, the ZPD peak).
+    env_factory:
+        Optional ``(seed) -> gym.Env`` builder rebuilt per episode (e.g. to fix a
+        construction-time ``distribution_mode``). When ``None`` a single
+        :class:`OpenOutcryEnv` is built from ``env_kwargs`` and re-pointed via
+        ``reset(seed=...)``.
+    **env_kwargs:
+        Forwarded to :class:`OpenOutcryEnv` when ``env_factory`` is ``None``.
+    """
+
+    def __init__(
+        self,
+        levels: Sequence[int],
+        *,
+        solved_fn: Optional[Callable[[float], bool]] = None,
+        prior: float = 0.5,
+        env_factory: Optional[EnvFactory] = None,
+        **env_kwargs,
+    ) -> None:
+        self._scheduler = AdaptiveScheduler(levels, prior=prior)
+        self._solved_fn = solved_fn or (lambda total: total > 0.0)
+        self._env_factory = env_factory
+        self._active_seed: Optional[int] = None
+        self._episode_return = 0.0
+
+        first = self._scheduler.levels[0]
+        env = env_factory(first) if env_factory is not None else OpenOutcryEnv(**env_kwargs)
+        super().__init__(env)
+
+    @property
+    def scheduler(self) -> AdaptiveScheduler:
+        return self._scheduler
+
+    def reset(self, *, seed: Optional[int] = None, options: Optional[dict] = None):
+        """Reset onto the scheduler's next (mid-difficulty) seed; any external ``seed`` is
+        ignored so the adaptive sequence stays deterministic in the outcome history."""
+        active = self._scheduler.select_next()
+        self._active_seed = active
+        self._episode_return = 0.0
+        if self._env_factory is not None:
+            self.env = self._env_factory(active)
+            obs, info = self.env.reset()
+        else:
+            obs, info = self.env.reset(seed=active)
+        info["curriculum"] = {
+            "seed": active,
+            "success_rate": self._scheduler.success_rate(active),
+            "weight": self._scheduler.weight(active),
+        }
+        return obs, info
+
+    def step(self, action):
+        """Advance one bar; on episode end record the solved/failed outcome for the seed."""
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        self._episode_return += float(reward)
+        if bool(terminated) or bool(truncated):
+            solved = bool(self._solved_fn(self._episode_return))
+            self._scheduler.record(self._active_seed, solved)
+            info["curriculum_solved"] = solved
+        return obs, reward, terminated, truncated, info
+
+
+__all__ = [
+    "CurriculumEnv",
+    "regime_curriculum",
+    "AdaptiveScheduler",
+    "AdaptiveCurriculumEnv",
+]

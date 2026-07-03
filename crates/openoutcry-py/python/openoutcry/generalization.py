@@ -20,6 +20,7 @@ import numpy as np
 from .openoutcry_py import score_run
 
 MakeEnv = Callable[[int], object]
+MakeEnvMode = Callable[[int, str], object]
 Policy = Callable[[dict], np.ndarray]
 
 
@@ -123,4 +124,60 @@ def generalization_gap(
     }
 
 
-__all__ = ["train_test_seeds", "evaluate_seeds", "generalization_gap"]
+def cross_regime_transfer(
+    make_env_for_seed_and_mode: MakeEnvMode,
+    train_mode: str,
+    test_mode: str,
+    seeds: Sequence[int],
+    policy: Optional[Policy] = None,
+    max_steps: int = 512,
+    *,
+    n_trials: int = 0,
+) -> dict:
+    """Zero-shot cross-regime transfer gap: select on regime A, score on regime B.
+
+    :func:`generalization_gap` varies the *seed band* inside one ``distribution_mode``, so
+    a policy that only works in (say) calm markets but is scored solely on calm seeds still
+    passes. This instead varies the *regime* while holding the seed band fixed: the policy
+    is scored in-distribution on ``train_mode`` and zero-shot out-of-distribution on
+    ``test_mode`` over the **same** ``seeds``. The transfer gap (in-distribution minus
+    out-of-distribution deflated Sharpe) isolates regime-specific overfit, which a
+    within-tier seed gap is blind to, so it is a strictly stronger robustness signal.
+
+    ``make_env_for_seed_and_mode(seed, mode)`` must build a fresh env at a given scenario
+    seed and ``distribution_mode``. Because the seed band is identical across the two
+    evaluations, ``train_mode == test_mode`` reuses byte-identical envs and the transfer
+    gap is exactly ``0`` by construction.
+    """
+    seeds = list(seeds)
+    in_dist = evaluate_seeds(
+        lambda s: make_env_for_seed_and_mode(s, train_mode),
+        seeds,
+        policy,
+        max_steps,
+        n_trials=n_trials,
+    )
+    out_dist = evaluate_seeds(
+        lambda s: make_env_for_seed_and_mode(s, test_mode),
+        seeds,
+        policy,
+        max_steps,
+        n_trials=n_trials,
+    )
+    return {
+        "train_mode": train_mode,
+        "test_mode": test_mode,
+        "in_distribution": in_dist,
+        "out_of_distribution": out_dist,
+        "transfer_gap_deflated_sharpe": in_dist["deflated_sharpe"]
+        - out_dist["deflated_sharpe"],
+        "transfer_gap_mean_return": in_dist["mean_return"] - out_dist["mean_return"],
+    }
+
+
+__all__ = [
+    "train_test_seeds",
+    "evaluate_seeds",
+    "generalization_gap",
+    "cross_regime_transfer",
+]

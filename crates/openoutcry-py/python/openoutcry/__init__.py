@@ -21,7 +21,12 @@ from .wrappers import (
     FrameStack,
     RecordEpisodeStatistics,
 )
-from .generalization import train_test_seeds, evaluate_seeds, generalization_gap
+from .generalization import (
+    train_test_seeds,
+    evaluate_seeds,
+    generalization_gap,
+    cross_regime_transfer,
+)
 from .verifiers_env import OpenOutcryVerifiersEnv, load_environment, build_rubric
 from .dataset import build_scenario_dataset, seed_ranges_disjoint
 from .decision_parser import parse_decision
@@ -112,7 +117,12 @@ from .pettingzoo_env import MultiAgentOpenOutcryEnv, make_aec_env
 from .market_env import EndogenousMarketEnv
 from .checkpoint import CheckpointableEnv, CheckpointState
 from .functional import OpenOutcryFuncEnv
-from .curriculum import CurriculumEnv, regime_curriculum
+from .curriculum import (
+    CurriculumEnv,
+    regime_curriculum,
+    AdaptiveScheduler,
+    AdaptiveCurriculumEnv,
+)
 from .preprocessing import (
     PreprocessingConfig,
     ExecutionNoiseConfig,
@@ -164,6 +174,7 @@ __all__ = [
     "train_test_seeds",
     "evaluate_seeds",
     "generalization_gap",
+    "cross_regime_transfer",
     "OpenOutcryVerifiersEnv",
     "load_environment",
     "build_rubric",
@@ -196,6 +207,8 @@ __all__ = [
     "OpenOutcryFuncEnv",
     "CurriculumEnv",
     "regime_curriculum",
+    "AdaptiveScheduler",
+    "AdaptiveCurriculumEnv",
     "PreprocessingConfig",
     "ExecutionNoiseConfig",
     "CANONICAL_PREPROCESSING",

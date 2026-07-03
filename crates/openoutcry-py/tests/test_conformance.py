@@ -25,11 +25,16 @@ from openoutcry.generalization import (
     train_test_seeds,
     evaluate_seeds,
     generalization_gap,
+    cross_regime_transfer,
 )
 
 
 def _make(seed: int) -> OpenOutcryEnv:
     return OpenOutcryEnv(n_symbols=3, n_days=50, seed=seed)
+
+
+def _make_mode(seed: int, mode: str) -> OpenOutcryEnv:
+    return OpenOutcryEnv(n_symbols=3, n_days=50, seed=seed, distribution_mode=mode)
 
 
 def _equal_weight(env) -> np.ndarray:
@@ -184,3 +189,29 @@ def test_generalization_gap_end_to_end():
     assert set(out["train"]) >= {"deflated_sharpe", "passed_k_rate", "mean_return"}
     assert np.isfinite(out["gap_deflated_sharpe"])
     assert np.isfinite(out["gap_mean_return"])
+
+
+def test_cross_regime_transfer_identical_mode_is_zero_gap():
+    # Same regime on both sides reuses byte-identical envs, so the transfer gap vanishes.
+    out = cross_regime_transfer(_make_mode, "calm", "calm", seeds=[0, 1], max_steps=16)
+    assert out["transfer_gap_deflated_sharpe"] == 0.0
+    assert out["transfer_gap_mean_return"] == 0.0
+
+
+def test_cross_regime_transfer_different_mode_reports_a_gap():
+    out = cross_regime_transfer(_make_mode, "calm", "extreme", seeds=[0, 1], max_steps=16)
+    assert set(out) == {
+        "train_mode",
+        "test_mode",
+        "in_distribution",
+        "out_of_distribution",
+        "transfer_gap_deflated_sharpe",
+        "transfer_gap_mean_return",
+    }
+    assert np.isfinite(out["transfer_gap_deflated_sharpe"])
+    assert np.isfinite(out["transfer_gap_mean_return"])
+    # A genuine zero-shot shift: calm and extreme drive different reward series.
+    assert (
+        out["in_distribution"]["mean_return"]
+        != out["out_of_distribution"]["mean_return"]
+    )
