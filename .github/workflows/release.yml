@@ -75,6 +75,23 @@ jobs:
       # npm trusted publishing (OIDC) needs npm >= 11.5; provenance is automatic.
       - run: npm install -g npm@latest
 
+      # cargo-release rewrites this manifest from the workspace version (the rules live in
+      # crates/sharpearena/release.toml), so it must already equal the tag. If it does not,
+      # the publish step below reads a stale version, finds it already on the registry, and
+      # "skips" - a green run that shipped nothing. That is exactly how the sibling repo's
+      # npm package stalled at 0.0.10 while its crates went to 0.0.11.
+      - name: Assert the npm manifest matches the release tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        working-directory: npm/sharpearena
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          V=$(node -p "require('./package.json').version")
+          if [ "$V" != "$TAG" ]; then
+            echo "::error file=npm/sharpearena/package.json::version $V does not match tag $TAG - the manifest is stale, cut the release with 'cargo release' so pre-release-replacements rewrite it"
+            exit 1
+          fi
+          echo "ok   npm manifest is at $V"
+
       - name: Publish (skip if version exists)
         working-directory: npm/sharpearena
         run: |
@@ -94,6 +111,25 @@ jobs:
     environment: pypi
     steps:
       - uses: actions/checkout@v6
+
+      # Same stale-manifest trap as the npm job: `skip-existing: true` below turns an
+      # already-published version into a silent no-op, so a pyproject.toml left behind by
+      # a hand-edited bump would ship nothing and still report green. crates/sharpearena-py
+      # is excluded from the Cargo workspace, so only pre-release-replacements move it.
+      - name: Assert the Python manifest matches the release tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          fail=0
+          for f in crates/sharpearena-py/pyproject.toml crates/sharpearena-py/Cargo.toml; do
+            V=$(grep -m1 -E '^version = "' "$f" | sed 's/.*"\(.*\)".*/\1/')
+            if [ "$V" != "$TAG" ]; then
+              echo "::error file=$f::version $V does not match tag $TAG - the manifest is stale, cut the release with 'cargo release' so pre-release-replacements rewrite it"
+              fail=1
+            fi
+          done
+          exit $fail
+
       - name: Build manylinux wheels + sdist
         uses: PyO3/maturin-action@v1
         with:
@@ -114,3 +150,60 @@ jobs:
           # Idempotent re-runs: a version already on PyPI is skipped, not an error
           # (matches the crates + npm skip-if-published guards in this workflow).
           skip-existing: true
+
+  # Every publish step above is skip-if-present, which makes re-runs idempotent but also
+  # lets a surface that shipped nothing still report green. This job asks the three
+  # registries directly, so an incomplete release fails the run instead of passing quietly.
+  verify:
+    name: verify every registry serves the release
+    needs: [crates, npm, pypi]
+    if: always() && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Assert crates.io, npm and PyPI all serve the tag version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          UA="sharpearena-release (general-liquidity)" # crates.io rejects requests without a User-Agent
+          fail=0
+
+          if [ "${{ vars.PUBLISH_CRATES }}" = "true" ]; then
+            for c in sharpearena sharpearena-wasm; do
+              if curl -s -A "$UA" "https://crates.io/api/v1/crates/$c/$TAG" | grep -q "\"num\":\"$TAG\""; then
+                echo "ok   crates.io $c@$TAG"
+              else
+                echo "::error::crates.io is not serving $c@$TAG"; fail=1
+              fi
+            done
+          fi
+
+          if [ "${{ vars.PUBLISH_NPM }}" = "true" ]; then
+            ok=0
+            # the registry read-path lags a few seconds behind a publish
+            for i in $(seq 1 20); do
+              if [ "$(npm view "@general-liquidity/sharpearena@$TAG" version 2>/dev/null)" = "$TAG" ]; then ok=1; break; fi
+              sleep 5
+            done
+            if [ "$ok" = "1" ]; then
+              echo "ok   npm @general-liquidity/sharpearena@$TAG"
+            else
+              echo "::error::npm is not serving @general-liquidity/sharpearena@$TAG"; fail=1
+            fi
+          fi
+
+          if [ "${{ vars.PUBLISH_PYPI }}" = "true" ]; then
+            ok=0
+            for i in $(seq 1 20); do
+              if curl -sf -A "$UA" "https://pypi.org/pypi/sharpearena/$TAG/json" >/dev/null; then ok=1; break; fi
+              sleep 5
+            done
+            if [ "$ok" = "1" ]; then
+              echo "ok   PyPI sharpearena@$TAG"
+            else
+              echo "::error::PyPI is not serving sharpearena@$TAG"; fail=1
+            fi
+          fi
+
+          exit $fail
