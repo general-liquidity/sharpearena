@@ -9,6 +9,7 @@
   },
   "files": [
     "sharpearena_bg.wasm",
+    "sharpearena_bg.js",
     "sharpearena.js",
     "sharpearena.d.ts"
   ],

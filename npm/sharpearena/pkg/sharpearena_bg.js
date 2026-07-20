@@ -1,10 +1,8 @@
-/* @ts-self-types="./sharpearena.d.ts" */
-
 /**
  * @param {string} params_json
  * @returns {string}
  */
-function dataset_synthetic(params_json) {
+export function dataset_synthetic(params_json) {
     let deferred2_0;
     let deferred2_1;
     try {
@@ -18,7 +16,25 @@ function dataset_synthetic(params_json) {
         wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
     }
 }
-exports.dataset_synthetic = dataset_synthetic;
+
+/**
+ * @param {string} input_json
+ * @returns {string}
+ */
+export function generate_scenario(input_json) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const ptr0 = passStringToWasm0(input_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.generate_scenario(ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
 
 /**
  * @param {string} dataset_json
@@ -26,7 +42,7 @@ exports.dataset_synthetic = dataset_synthetic;
  * @param {string} costs_json
  * @returns {string}
  */
-function replay_run(dataset_json, trajectory_json, costs_json) {
+export function replay_run(dataset_json, trajectory_json, costs_json) {
     let deferred4_0;
     let deferred4_1;
     try {
@@ -44,13 +60,12 @@ function replay_run(dataset_json, trajectory_json, costs_json) {
         wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
     }
 }
-exports.replay_run = replay_run;
 
 /**
  * @param {string} config_json
  * @returns {string}
  */
-function run_baseline(config_json) {
+export function run_baseline(config_json) {
     let deferred2_0;
     let deferred2_1;
     try {
@@ -64,13 +79,12 @@ function run_baseline(config_json) {
         wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
     }
 }
-exports.run_baseline = run_baseline;
 
 /**
  * @param {string} params_json
  * @returns {string}
  */
-function stress_suite(params_json) {
+export function stress_suite(params_json) {
     let deferred2_0;
     let deferred2_1;
     try {
@@ -84,13 +98,12 @@ function stress_suite(params_json) {
         wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
     }
 }
-exports.stress_suite = stress_suite;
 
 /**
  * @param {string} input_json
  * @returns {string}
  */
-function tag_regime(input_json) {
+export function tag_regime(input_json) {
     let deferred2_0;
     let deferred2_1;
     try {
@@ -104,13 +117,12 @@ function tag_regime(input_json) {
         wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
     }
 }
-exports.tag_regime = tag_regime;
 
 /**
  * @param {string} params_json
  * @returns {string}
  */
-function walk_forward(params_json) {
+export function walk_forward(params_json) {
     let deferred2_0;
     let deferred2_1;
     try {
@@ -124,26 +136,15 @@ function walk_forward(params_json) {
         wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
     }
 }
-exports.walk_forward = walk_forward;
-function __wbg_get_imports() {
-    const import0 = {
-        __proto__: null,
-        __wbindgen_init_externref_table: function() {
-            const table = wasm.__wbindgen_externrefs;
-            const offset = table.grow(4);
-            table.set(0, undefined);
-            table.set(offset + 0, undefined);
-            table.set(offset + 1, null);
-            table.set(offset + 2, true);
-            table.set(offset + 3, false);
-        },
-    };
-    return {
-        __proto__: null,
-        "./sharpearena_bg.js": import0,
-    };
+export function __wbindgen_init_externref_table() {
+    const table = wasm.__wbindgen_externrefs;
+    const offset = table.grow(4);
+    table.set(0, undefined);
+    table.set(offset + 0, undefined);
+    table.set(offset + 1, null);
+    table.set(offset + 2, true);
+    table.set(offset + 3, false);
 }
-
 function getStringFromWasm0(ptr, len) {
     return decodeText(ptr >>> 0, len);
 }
@@ -195,7 +196,15 @@ function passStringToWasm0(arg, malloc, realloc) {
 
 let cachedTextDecoder = new TextDecoder('utf-8', { ignoreBOM: true, fatal: true });
 cachedTextDecoder.decode();
+const MAX_SAFARI_DECODE_BYTES = 2146435072;
+let numBytesDecoded = 0;
 function decodeText(ptr, len) {
+    numBytesDecoded += len;
+    if (numBytesDecoded >= MAX_SAFARI_DECODE_BYTES) {
+        cachedTextDecoder = new TextDecoder('utf-8', { ignoreBOM: true, fatal: true });
+        cachedTextDecoder.decode();
+        numBytesDecoded = len;
+    }
     return cachedTextDecoder.decode(getUint8ArrayMemory0().subarray(ptr, ptr + len));
 }
 
@@ -214,9 +223,8 @@ if (!('encodeInto' in cachedTextEncoder)) {
 
 let WASM_VECTOR_LEN = 0;
 
-const wasmPath = `${__dirname}/sharpearena_bg.wasm`;
-const wasmBytes = require('fs').readFileSync(wasmPath);
-const wasmModule = new WebAssembly.Module(wasmBytes);
-let wasmInstance = new WebAssembly.Instance(wasmModule, __wbg_get_imports());
-let wasm = wasmInstance.exports;
-wasm.__wbindgen_start();
+
+let wasm;
+export function __wbg_set_wasm(val) {
+    wasm = val;
+}

@@ -13,8 +13,8 @@ cargo build -p sharpearena-wasm --release --target wasm32-unknown-unknown
 WASM="target/wasm32-unknown-unknown/release/sharpearena_wasm.wasm"
 
 if command -v wasm-bindgen >/dev/null 2>&1; then
-  wasm-bindgen "$WASM" --out-dir pkg --target bundler
-  echo "wrote ./pkg  — import { run_baseline } from './pkg/sharpearena_wasm'"
+  wasm-bindgen "$WASM" --out-dir pkg --target bundler --out-name sharpearena
+  echo "wrote ./pkg  — import { run_baseline } from './pkg/sharpearena'"
 else
   echo "built $WASM"
   echo "To generate the JS bindings, install the CLI then re-run:"

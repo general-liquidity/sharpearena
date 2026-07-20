@@ -3,6 +3,8 @@
 
 export function dataset_synthetic(params_json: string): string;
 
+export function generate_scenario(input_json: string): string;
+
 export function replay_run(dataset_json: string, trajectory_json: string, costs_json: string): string;
 
 export function run_baseline(config_json: string): string;
