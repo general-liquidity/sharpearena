@@ -294,4 +294,4 @@ __all__ = [
     "DEFAULT_THRESHOLDS",
     "register_envs",
 ]
-__version__ = "0.6.0"
+__version__ = "0.7.0"
