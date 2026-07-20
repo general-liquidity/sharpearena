@@ -1,18 +1,18 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/openoutcry",
-    "crates/openoutcry-wasm",
+    "crates/sharpearena",
+    "crates/sharpearena-wasm",
 ]
 # pyo3 extension-module crate: it needs a Python interpreter at build time and is
 # built by maturin, not `cargo --workspace`. Excluded so the Rust-only CI stays green.
-exclude = ["crates/openoutcry-py"]
+exclude = ["crates/sharpearena-py"]
 
 [workspace.package]
-version = "0.6.1"
+version = "0.7.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/general-liquidity/openoutcry"
+repository = "https://github.com/general-liquidity/sharpearena"
 authors = ["General Liquidity, Inc."]
 
 # Lints enforced by the manifest (not just CI's `-D warnings`), so a plain

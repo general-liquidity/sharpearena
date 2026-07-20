@@ -1,0 +1,23 @@
+# Standalone (not a workspace member): a pyo3 extension-module needs a Python
+# interpreter at build time, so it is built by maturin rather than `cargo --workspace`.
+# Concrete fields (no `.workspace` inheritance) since it sits outside the workspace.
+[package]
+name = "sharpearena-py"
+version = "0.7.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Python bindings (pyo3) for SharpeArena — the leak-free trading-agent environment."
+repository = "https://github.com/general-liquidity/sharpearena"
+
+[lib]
+name = "sharpearena_py"
+crate-type = ["cdylib"]
+
+[dependencies]
+sharpearena = { path = "../sharpearena", version = "0.7.0" }
+sharpebench-core = "0.0.8"
+serde_json = "1"
+
+[dependencies.pyo3]
+version = "0.29"
+features = ["extension-module"]

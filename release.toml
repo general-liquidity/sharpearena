@@ -1,4 +1,4 @@
-# OpenOutcry release pipeline (cargo-release).
+# SharpeArena release pipeline (cargo-release).
 #
 # Always run the green checks first (cargo-release will not):
 #   cargo test --workspace && cargo clippy --workspace --all-targets && cargo deny check
@@ -14,7 +14,7 @@ shared-version = true
 consolidate-commits = true
 dependent-version = "upgrade"
 tag-name = "v{{version}}"
-tag-message = "OpenOutcry v{{version}}"
+tag-message = "SharpeArena v{{version}}"
 pre-release-commit-message = "release: v{{version}}"
 
 publish = false # CI publishes via OIDC; never publish from a dev machine

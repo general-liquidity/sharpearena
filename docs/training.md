@@ -1,7 +1,7 @@
 <!-- prettier-ignore -->
 <div align="center">
 
-# Training on OpenOutcry
+# Training on SharpeArena
 
 ### From `vf-eval` baseline to a GRPO run, on a leak-free trading floor
 
@@ -9,8 +9,8 @@
 
 ---
 
-OpenOutcry ships a real, trainable [`verifiers`](https://github.com/PrimeIntellect-ai/verifiers)
-environment: `openoutcry.load_environment()` returns an `OpenOutcryVerifiersEnv`
+SharpeArena ships a real, trainable [`verifiers`](https://github.com/PrimeIntellect-ai/verifiers)
+environment: `sharpearena.load_environment()` returns an `SharpeArenaVerifiersEnv`
 (`vf.MultiTurnEnv`) that drives the point-in-time market one bar per turn and scores the
 realized return series with the SharpeBench kernel. This guide covers running it under
 `vf-eval` and training on it with [prime-rl](https://github.com/PrimeIntellect-ai/prime-rl).
@@ -23,14 +23,14 @@ The env is a standard installed Python package; the agent contract and Rust engi
 behind a pyo3 wheel built by [maturin](https://www.maturin.rs).
 
 ```
-crates/openoutcry-py/
+crates/sharpearena-py/
   pyproject.toml                     # package metadata + [tool.verifiers.eval] + tags
-  python/openoutcry/
+  python/sharpearena/
     __init__.py
     verifiers_env.py                 # load_environment(), the rubric, the multi-turn rollout
     dataset.py                       # build_scenario_dataset() - the multi-row taskset
     gym.py                           # the underlying gymnasium.Env stepped per turn
-    openoutcry_py...pyd              # the compiled Rust kernel (SharpeBench scorer)
+    sharpearena_py...pyd              # the compiled Rust kernel (SharpeBench scorer)
 ```
 
 `load_environment(**args)` is the entry point `verifiers` and prime-rl call. It accepts
@@ -42,24 +42,24 @@ vary over.
 ## Install and discover
 
 ```bash
-pip install -e "crates/openoutcry-py[verifiers]"   # editable, with the verifiers extra
+pip install -e "crates/sharpearena-py[verifiers]"   # editable, with the verifiers extra
 ```
 
 Once published to the [PrimeIntellect](https://app.primeintellect.ai) Environments-Hub,
 the env is installable by org-qualified id:
 
 ```bash
-prime env install general-liquidity/openoutcry
+prime env install general-liquidity/sharpearena
 ```
 
 The `[project].tags` list in `pyproject.toml` feeds Hub discoverability (the `prime` CLI
 reads it at push time); the `[tool.verifiers.eval]` table sets the default
-`num_examples` / `rollouts_per_example` for a bare `vf-eval openoutcry`.
+`num_examples` / `rollouts_per_example` for a bare `vf-eval sharpearena`.
 
 ## Baseline with `vf-eval`
 
 ```bash
-vf-eval openoutcry \
+vf-eval sharpearena \
   -m Qwen/Qwen3-1.7B -n 20 \
   -a '{"n_windows": 20, "n_symbols": 4, "n_days": 120, "max_episode_bars": 16}'
 ```
@@ -70,12 +70,12 @@ The rubric's dense `realized_return_reward` is the GRPO objective; the real
 
 ## v1 taskset and the subprocess runtime
 
-Under the verifiers v1 contract the env is a **taskset** (`taskset = { id = "openoutcry" }`)
+Under the verifiers v1 contract the env is a **taskset** (`taskset = { id = "sharpearena" }`)
 composed with a harness and a runtime. With no container image declared, it runs on the
 **subprocess runtime**: prime-rl spawns a local env-server subprocess that imports the
 installed package and serves rollouts over the worker pool. That is the right default
 for a pure-Python + pyo3 env with no external services. Drive it from prime-rl with
-either the v1 `taskset = { id = "openoutcry" }` form or the legacy `id = "openoutcry"`
+either the v1 `taskset = { id = "sharpearena" }` form or the legacy `id = "sharpearena"`
 form shown in [`examples/prime-rl/rl.toml`](../examples/prime-rl/rl.toml).
 
 ## Leak-freedom: point-in-time is ours, the split is yours
@@ -90,7 +90,7 @@ Two distinct guarantees:
    `EVAL_SEED_BASE = 1_000_000`, and the two ranges are asserted disjoint
    (`seed_ranges_disjoint`).
 
-> **Caveat (openoutcry 0.1.0).** `load_environment` currently hardcodes `mode="train"`
+> **Caveat (sharpearena 0.1.0).** `load_environment` currently hardcodes `mode="train"`
 > and does not forward `mode`/`seed_start` to `build_scenario_dataset`. Passing
 > `mode = "eval"` through a prime-rl eval `args` block is a **silent no-op** (the key is
 > absorbed by the verifiers `Environment(**kwargs)` catch-all), so the eval set reuses

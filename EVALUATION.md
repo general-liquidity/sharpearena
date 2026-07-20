@@ -1,8 +1,8 @@
 <!-- prettier-ignore -->
-# OpenOutcry Evaluation Protocol (v1)
+# SharpeArena Evaluation Protocol (v1)
 
 This is the canonical, version-pinned protocol for evaluating a trading agent on
-OpenOutcry. The benchmark wins the way ALE won: one config is canonical, the env-ID
+SharpeArena. The benchmark wins the way ALE won: one config is canonical, the env-ID
 is version-pinned, the numbers to beat are published, and every entrant agrees to
 **report these settings**. Deviate from the canonical config and you are no longer on
 the leaderboard; you are running a private experiment.
@@ -18,7 +18,7 @@ the way to the number.
 
 | Setting | Value |
 |---|---|
-| Env-ID | `OpenOutcry/Calm-v1`, `OpenOutcry/Hard-v1`, `OpenOutcry/Extreme-v1` |
+| Env-ID | `SharpeArena/Calm-v1`, `SharpeArena/Hard-v1`, `SharpeArena/Extreme-v1` |
 | Tier kwarg | `distribution_mode="calm" \| "hard" \| "extreme"` |
 | Symbols | `n_symbols=4` |
 | Episode length / window | `n_days=120` point-in-time bars (the engine truncates at end-of-window) |
@@ -141,15 +141,15 @@ confidence report replays bit-for-bit.
 Reproduce over the baselines with:
 
 ```bash
-cd crates/openoutcry-py
-python -c "from openoutcry.baselines import run_baselines, leaderboard_markdown; \
-from openoutcry.confidence import pairwise_significance, significance_markdown; \
+cd crates/sharpearena-py
+python -c "from sharpearena.baselines import run_baselines, leaderboard_markdown; \
+from sharpearena.confidence import pairwise_significance, significance_markdown; \
 rows = run_baselines(n_symbols=4, n_days=120, seeds=range(16), distribution_mode='calm'); \
 print(leaderboard_markdown(rows, show_ci=True)); print(); \
 print(significance_markdown(pairwise_significance(rows)))"
 ```
 
-The Rust core (`openoutcry::leaderboard_ci`) exposes the same primitives,
+The Rust core (`sharpearena::leaderboard_ci`) exposes the same primitives,
 `bootstrap_dsr_ci` and `paired_dsr_diff`, over per-seed return series, with the deflated
 Sharpe math ported self-contained (Bailey & López de Prado) so no extra dependency is pulled
 in to draw the interval.
@@ -175,12 +175,12 @@ fully reproducible.
 Reproduce with:
 
 ```bash
-cd crates/openoutcry-py
-python -c "from openoutcry.baselines import run_baselines, leaderboard_markdown; \
+cd crates/sharpearena-py
+python -c "from sharpearena.baselines import run_baselines, leaderboard_markdown; \
 print(leaderboard_markdown(run_baselines(n_symbols=4, n_days=120, seeds=range(16), distribution_mode='calm')))"
 ```
 
-### `OpenOutcry/Calm-v1` (n_symbols=4, n_days=120, seeds=range(16))
+### `SharpeArena/Calm-v1` (n_symbols=4, n_days=120, seeds=range(16))
 
 | Rank | Policy | Deflated Sharpe | pass^k rate | Mean return |
 |---|---|---|---|---|
@@ -195,7 +195,7 @@ Sharpe to zero once the search breadth is accounted for, and `momentum` is a net
 The bar is exactly the right height: a real agent has to produce a positive,
 process-clean, deflated number that survives the held-out band, not a lucky mean return.
 
-### `OpenOutcry/Hard-v1` (n_symbols=4, n_days=120, seeds=range(16))
+### `SharpeArena/Hard-v1` (n_symbols=4, n_days=120, seeds=range(16))
 
 | Rank | Policy | Deflated Sharpe | pass^k rate | Mean return |
 |---|---|---|---|---|
@@ -203,7 +203,7 @@ process-clean, deflated number that survives the held-out band, not a lucky mean
 | 2 | equal_weight_long | 0.0000 | 0.31 | 0.000243 |
 | 3 | momentum | 0.0000 | 0.00 | -0.000844 |
 
-### `OpenOutcry/Extreme-v1` (n_symbols=4, n_days=120, seeds=range(16))
+### `SharpeArena/Extreme-v1` (n_symbols=4, n_days=120, seeds=range(16))
 
 | Rank | Policy | Deflated Sharpe | pass^k rate | Mean return |
 |---|---|---|---|---|
@@ -217,7 +217,7 @@ monotonically with difficulty** for the long baseline (Calm 0.62, Hard 0.31, Ext
 Regenerate any tier with:
 
 ```bash
-python -c "from openoutcry.baselines import run_baselines, leaderboard_markdown; \
+python -c "from sharpearena.baselines import run_baselines, leaderboard_markdown; \
 print(leaderboard_markdown(run_baselines(n_symbols=4, n_days=120, seeds=range(16), distribution_mode='extreme')))"
 ```
 

@@ -64,28 +64,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
-name = "openoutcry"
-version = "0.6.1"
-dependencies = [
- "rayon",
- "serde",
- "serde_json",
- "sharpebench-core",
- "sharpebench-protocol",
- "sharpebench-sim",
-]
-
-[[package]]
-name = "openoutcry-wasm"
-version = "0.6.1"
-dependencies = [
- "openoutcry",
- "serde",
- "serde_json",
- "wasm-bindgen",
-]
-
-[[package]]
 name = "proc-macro2"
 version = "1.0.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -170,6 +148,28 @@ dependencies = [
  "serde",
  "serde_core",
  "zmij",
+]
+
+[[package]]
+name = "sharpearena"
+version = "0.7.0"
+dependencies = [
+ "rayon",
+ "serde",
+ "serde_json",
+ "sharpebench-core",
+ "sharpebench-protocol",
+ "sharpebench-sim",
+]
+
+[[package]]
+name = "sharpearena-wasm"
+version = "0.7.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sharpearena",
+ "wasm-bindgen",
 ]
 
 [[package]]

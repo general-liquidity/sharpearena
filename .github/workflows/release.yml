@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   crates:
-    name: crates.io (openoutcry + openoutcry-wasm)
+    name: crates.io (sharpearena + sharpearena-wasm)
     if: ${{ vars.PUBLISH_CRATES == 'true' }}
     runs-on: ubuntu-latest
     environment: crates
@@ -30,17 +30,17 @@ jobs:
       # Exchanges the GitHub OIDC identity for a short-lived crates.io token.
       - uses: rust-lang/crates-io-auth-action@v1
         id: auth
-      # Publish in dependency order: `openoutcry` first (it depends only on the already
-      # published sharpebench-* crates), then `openoutcry-wasm` (depends on openoutcry).
+      # Publish in dependency order: `sharpearena` first (it depends only on the already
+      # published sharpebench-* crates), then `sharpearena-wasm` (depends on sharpearena).
       # `cargo publish -p` waits for the index, so the next crate resolves. The
       # skip-if-published guard makes a re-run idempotent.
       - name: Publish to crates.io (dependency order, idempotent)
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
         run: |
-          UA="openoutcry-release (general-liquidity)" # crates.io rejects requests without a User-Agent
+          UA="sharpearena-release (general-liquidity)" # crates.io rejects requests without a User-Agent
           V="$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')"
-          for c in openoutcry openoutcry-wasm; do
+          for c in sharpearena sharpearena-wasm; do
             if curl -s -A "$UA" "https://crates.io/api/v1/crates/$c/$V" | grep -q "\"num\":\"$V\""; then
               echo "✓ $c@$V already on crates.io — skipping"
             else
@@ -50,7 +50,7 @@ jobs:
           done
 
   npm:
-    name: npm (@general-liquidity/openoutcry)
+    name: npm (@general-liquidity/sharpearena)
     if: ${{ vars.PUBLISH_NPM == 'true' }}
     runs-on: ubuntu-latest
     environment: npm
@@ -66,7 +66,7 @@ jobs:
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
       - name: Build the WASM kernel (nodejs target)
-        run: wasm-pack build crates/openoutcry-wasm --target nodejs --out-dir ../../npm/openoutcry/pkg --out-name openoutcry
+        run: wasm-pack build crates/sharpearena-wasm --target nodejs --out-dir ../../npm/sharpearena/pkg --out-name sharpearena
 
       - uses: actions/setup-node@v6
         with:
@@ -76,19 +76,19 @@ jobs:
       - run: npm install -g npm@latest
 
       - name: Publish (skip if version exists)
-        working-directory: npm/openoutcry
+        working-directory: npm/sharpearena
         run: |
           npm install
           npm run build
           V=$(node -p "require('./package.json').version")
-          if npm view "@general-liquidity/openoutcry@$V" version >/dev/null 2>&1; then
-            echo "@general-liquidity/openoutcry@$V already published — skipping"
+          if npm view "@general-liquidity/sharpearena@$V" version >/dev/null 2>&1; then
+            echo "@general-liquidity/sharpearena@$V already published — skipping"
           else
             npm publish --access public
           fi
 
   pypi:
-    name: PyPI (openoutcry wheel)
+    name: PyPI (sharpearena wheel)
     if: ${{ vars.PUBLISH_PYPI == 'true' }}
     runs-on: ubuntu-latest
     environment: pypi
@@ -98,14 +98,14 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           command: build
-          args: --release --out dist --interpreter 3.10 3.11 3.12 3.13 --manifest-path crates/openoutcry-py/Cargo.toml
+          args: --release --out dist --interpreter 3.10 3.11 3.12 3.13 --manifest-path crates/sharpearena-py/Cargo.toml
           manylinux: auto
       - name: Build sdist
         uses: PyO3/maturin-action@v1
         with:
           command: sdist
-          args: --out dist --manifest-path crates/openoutcry-py/Cargo.toml
-      # Trusted publishing — configure the PyPI publisher for repo `openoutcry`,
+          args: --out dist --manifest-path crates/sharpearena-py/Cargo.toml
+      # Trusted publishing — configure the PyPI publisher for repo `sharpearena`,
       # workflow `release.yml`, environment `pypi`. No token needed.
       - name: Publish to PyPI (OIDC)
         uses: pypa/gh-action-pypi-publish@release/v1
