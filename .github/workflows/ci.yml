@@ -57,7 +57,7 @@ jobs:
           npm test
 
   python:
-    name: pyo3 + gymnasium (maturin)
+    name: sharpearena-py (fmt, clippy, maturin, pytest)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -69,6 +69,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      # crates/sharpearena-py is `exclude`d from the workspace, so the `rust` job's
+      # root `cargo fmt --all` / `cargo clippy --all-targets` never reach it: both
+      # resolve against workspace members only. Run them from inside the crate dir,
+      # which is the only way to lint an excluded crate.
+      - name: Format
+        working-directory: crates/sharpearena-py
+        run: cargo fmt -- --check
+      - name: Clippy (deny warnings)
+        working-directory: crates/sharpearena-py
+        run: cargo clippy --all-targets -- -D warnings
       - name: maturin develop + pytest (in a venv)
         working-directory: crates/sharpearena-py
         run: |

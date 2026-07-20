@@ -3,6 +3,10 @@
 //! (observations and decisions are JSON strings), which keeps the surface robust
 //! and identical to the language-agnostic protocol any external agent speaks.
 
+use pyo3::exceptions::PyValueError;
+use pyo3::prelude::*;
+use pyo3::types::PyType;
+use pyo3::wrap_pyfunction;
 use sharpearena::exec_noise::{perturb as core_perturb_action, ExecNoise};
 use sharpearena::leaderboard_ci::{
     bootstrap_dsr_ci as core_bootstrap_dsr_ci, paired_dsr_diff as core_paired_dsr_diff,
@@ -15,10 +19,6 @@ use sharpearena::{
     generate_scenario, CostModel, Dataset, Decision, DistributionMode, LaneConfig, Mandate,
     RichnessTier, ScenarioSpec, TradingEnv as CoreEnv, VecTradingEnv as CoreVecEnv, Window,
 };
-use pyo3::exceptions::PyValueError;
-use pyo3::prelude::*;
-use pyo3::types::PyType;
-use pyo3::wrap_pyfunction;
 use sharpebench_core::{score_agent, AgentSubmission, Run, ScoreConfig, Trace};
 
 /// Parse the wire `distribution_mode` label, rejecting unknown tiers with a `ValueError`.
@@ -811,10 +811,8 @@ impl PyOrderBook {
     fn step_book(&mut self, orders_json: &str) -> PyResult<String> {
         let arr: Vec<serde_json::Value> = serde_json::from_str(orders_json)
             .map_err(|e| PyValueError::new_err(format!("invalid orders JSON: {e}")))?;
-        let orders: Vec<(usize, OrderKind)> = arr
-            .iter()
-            .map(parse_order)
-            .collect::<PyResult<Vec<_>>>()?;
+        let orders: Vec<(usize, OrderKind)> =
+            arr.iter().map(parse_order).collect::<PyResult<Vec<_>>>()?;
         let fills = self.inner.step(&orders);
         let out = serde_json::json!({
             "fills": serde_json::to_value(&fills).map_err(|e| PyValueError::new_err(e.to_string()))?,
