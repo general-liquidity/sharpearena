@@ -1,7 +1,7 @@
 <!-- prettier-ignore -->
 <div align="center">
 
-# OpenOutcry x prime-rl
+# SharpeArena x prime-rl
 
 ### Train a small model on the leak-free trading floor in one command
 
@@ -9,7 +9,7 @@
 
 ---
 
-[`rl.toml`](rl.toml) is a committed, illustrative GRPO config that runs the OpenOutcry
+[`rl.toml`](rl.toml) is a committed, illustrative GRPO config that runs the SharpeArena
 [`verifiers`](https://github.com/PrimeIntellect-ai/verifiers) environment under
 [prime-rl](https://github.com/PrimeIntellect-ai/prime-rl). It mirrors prime-rl's own
 `examples/reverse_text` and `configs/gsm8k`: a renderer-mapped small model, a single
@@ -22,17 +22,17 @@ installed env taskset driven by an integer task index, and a held-out eval block
 
 ## 1. Install the env
 
-The OpenOutcry env is an installed Python package that exposes `load_environment`. The
+The SharpeArena env is an installed Python package that exposes `load_environment`. The
 `verifiers` extra pulls in the RLVR runtime; the wheel is built by maturin.
 
 ```bash
 # From the repo root - editable install of the Python package with the verifiers extra.
-pip install -e "crates/openoutcry-py[verifiers]"
+pip install -e "crates/sharpearena-py[verifiers]"
 # (or, once published to the PrimeIntellect Hub:)
-# prime env install general-liquidity/openoutcry
+# prime env install general-liquidity/sharpearena
 ```
 
-`vf-eval` and prime-rl resolve the env by the package name, **`openoutcry`** - the same
+`vf-eval` and prime-rl resolve the env by the package name, **`sharpearena`** - the same
 id used in [`rl.toml`](rl.toml)'s `[[orchestrator.train.env]]`.
 
 ## 2. Baseline the env before you train
@@ -41,7 +41,7 @@ Sanity-check the env and get a pre-training score with `vf-eval`. `-n` is the nu
 scenarios; `-a` is the JSON forwarded verbatim to `load_environment`:
 
 ```bash
-vf-eval openoutcry \
+vf-eval sharpearena \
   -m Qwen/Qwen3-1.7B \
   -n 20 \
   -a '{"n_windows": 20, "n_symbols": 4, "n_days": 120, "max_episode_bars": 16, "allow_short": true}'
@@ -81,7 +81,7 @@ seed band - is the operator's responsibility.
 
 `build_scenario_dataset` already supports it (`mode="train"` draws from seed base `0`,
 `mode="eval"` from `EVAL_SEED_BASE = 1_000_000`, asserted disjoint). **But** as of
-`openoutcry` 0.1.0, `load_environment` hardcodes `mode="train"` and does not forward
+`sharpearena` 0.1.0, `load_environment` hardcodes `mode="train"` and does not forward
 `mode`/`seed_start`. The `mode = "eval"` key in the `[[orchestrator.eval.env]]` `args`
 is therefore a **silent no-op today** - the eval set currently reuses the train seed
 band. Until `load_environment` forwards `mode` to `build_scenario_dataset`, do not

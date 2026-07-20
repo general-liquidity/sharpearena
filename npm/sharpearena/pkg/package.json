@@ -1,0 +1,18 @@
+{
+  "name": "sharpearena-wasm",
+  "description": "WASM bindings for the SharpeArena trading-agent environment (run baselines + recompute-to-verify via the identical engine).",
+  "version": "0.0.6",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/general-liquidity/sharpebench"
+  },
+  "files": [
+    "sharpearena_bg.wasm",
+    "sharpearena_bg.js",
+    "sharpearena.js",
+    "sharpearena.d.ts"
+  ],
+  "main": "sharpearena.js",
+  "types": "sharpearena.d.ts"
+}

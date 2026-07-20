@@ -1,6 +1,6 @@
-# OpenOutcry x prime-rl - illustrative GRPO training config.
+# SharpeArena x prime-rl - illustrative GRPO training config.
 #
-# This trains a small renderer-mapped model on the OpenOutcry verifiers env in one
+# This trains a small renderer-mapped model on the SharpeArena verifiers env in one
 # command (`uv run rl @ rl.toml`). It is illustrative: it was authored against the
 # prime-rl config schema (configs/gsm8k/rl.toml, examples/reverse_text/rl.toml,
 # examples/wordle/rl.toml) but has NOT been run by a live trainer here. The structure
@@ -14,14 +14,14 @@
 #     explicit [orchestrator.renderer] for any model not auto-resolved - set below.
 #   * GRPO needs within-group reward variance: group_size = 16, a stochastic train
 #     temperature (~1.0), and a seq_len wide enough for the multi-turn trajectory.
-#   * `args` is forwarded verbatim to `openoutcry.load_environment(**args)`.
+#   * `args` is forwarded verbatim to `sharpearena.load_environment(**args)`.
 
 max_steps = 100          # ADJUST - total optimizer steps
 seq_len = 16384          # full multi-turn trajectory budget (obs + reasoning + action) * episode bars
 
 [wandb]
-project = "openoutcry-rl"
-name = "qwen3-1.7b-openoutcry"
+project = "sharpearena-rl"
+name = "qwen3-1.7b-sharpearena"
 
 [model]
 # Small + renderer-mapped. ADJUST to any model you can serve; if it is not
@@ -40,8 +40,8 @@ max_completion_tokens = 512   # per-turn budget for <reasoning> + <action>
 # num_tasks = n_windows (the scenario-dataset length). Train scenarios use the
 # train seed band (base 0); see the eval note below for the held-out band.
 [[orchestrator.train.env]]
-id = "openoutcry"
-name = "openoutcry-train"
+id = "sharpearena"
+name = "sharpearena-train"
 args = { n_windows = 256, n_symbols = 4, n_days = 120, max_episode_bars = 16, allow_short = true }
 
 # Held-out evaluation for pass@k. group_size = 8 enables pass@1..pass@8.
@@ -52,13 +52,13 @@ interval = 25            # eval every 25 steps
 temperature = 0.7        # mild stochasticity so pass@k has something to estimate over
 
 [[orchestrator.eval.env]]
-id = "openoutcry"
-name = "openoutcry-eval"
+id = "sharpearena"
+name = "sharpearena-eval"
 group_size = 8           # pass^k reliability sampling
 num_examples = 64        # held-out scenarios scored per eval
 # IMPORTANT - leak-free split is the OPERATOR'S responsibility. `mode = "eval"` is the
 # intended knob to draw from the disjoint eval seed band (EVAL_SEED_BASE = 1_000_000,
-# see dataset.py / build_scenario_dataset). As of openoutcry 0.1.0, load_environment
+# see dataset.py / build_scenario_dataset). As of sharpearena 0.1.0, load_environment
 # hardcodes mode="train" and does NOT forward `mode`/`seed_start`, so this key is a
 # silent no-op and the eval set currently OVERLAPS the train seed band. Do not treat
 # this eval as held-out until load_environment forwards `mode` to build_scenario_dataset.

@@ -1,8 +1,8 @@
-# Releasing OpenOutcry
+# Releasing SharpeArena
 
-OpenOutcry ships from **one Rust engine** to three surfaces: the `openoutcry` crate
-(crates.io), the `@general-liquidity/openoutcry` npm package (the WASM build), and the
-`openoutcry` PyPI wheel (the pyo3 binding + Gymnasium adapter). It depends on the
+SharpeArena ships from **one Rust engine** to three surfaces: the `sharpearena` crate
+(crates.io), the `@general-liquidity/sharpearena` npm package (the WASM build), and the
+`sharpearena` PyPI wheel (the pyo3 binding + Gymnasium adapter). It depends on the
 **published** `sharpebench-*` crates (the simulator engine) rather than vendoring them.
 
 ## Cutting a version
@@ -23,14 +23,14 @@ tag triggers CI, which publishes via **OIDC Trusted Publishing** (no stored toke
 Before the first CI publish, each registry needs its trusted publisher configured —
 mirroring the SharpeBench process:
 
-- **crates.io** — `openoutcry`, `openoutcry-wasm`: a crate must exist before a trusted
+- **crates.io** — `sharpearena`, `sharpearena-wasm`: a crate must exist before a trusted
   publisher can be added, so the **first** publish of each name needs a token
-  (`cargo publish -p openoutcry` then `-p openoutcry-wasm`); then add the trusted
-  publisher (owner `general-liquidity`, repo `openoutcry`, workflow `release.yml`) and
+  (`cargo publish -p sharpearena` then `-p sharpearena-wasm`); then add the trusted
+  publisher (owner `general-liquidity`, repo `sharpearena`, workflow `release.yml`) and
   never use a token again.
-- **npm** — `@general-liquidity/openoutcry`: claim once (`npm publish --access public`),
+- **npm** — `@general-liquidity/sharpearena`: claim once (`npm publish --access public`),
   then add the trusted publisher.
-- **PyPI** — `openoutcry`: configure a trusted publisher (GitHub → repo `openoutcry`,
+- **PyPI** — `sharpearena`: configure a trusted publisher (GitHub → repo `sharpearena`,
   workflow `release.yml`, environment `pypi`); maturin builds + uploads the wheel.
 
 Then set repo variables `PUBLISH_CRATES=true`, `PUBLISH_NPM=true`, `PUBLISH_PYPI=true`

@@ -30,7 +30,7 @@ jobs:
       - name: Test
         run: cargo test --workspace
       - name: WASM target builds
-        run: cargo build -p openoutcry-wasm --target wasm32-unknown-unknown --release
+        run: cargo build -p sharpearena-wasm --target wasm32-unknown-unknown --release
 
   supply-chain:
     name: cargo-deny (licenses · advisories · bans · sources)
@@ -50,7 +50,7 @@ jobs:
         with:
           node-version: "24"
       - name: install · build · test (against the committed wasm pkg)
-        working-directory: npm/openoutcry
+        working-directory: npm/sharpearena
         run: |
           npm ci
           npm run build
@@ -70,7 +70,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: maturin develop + pytest (in a venv)
-        working-directory: crates/openoutcry-py
+        working-directory: crates/sharpearena-py
         run: |
           python -m venv .venv
           source .venv/bin/activate
