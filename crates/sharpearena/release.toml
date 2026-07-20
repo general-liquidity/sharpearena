@@ -1,0 +1,40 @@
+# Version rewrites for the non-Cargo-workspace release surfaces, attached to this crate
+# because cargo-release resolves `file` relative to the crate being processed, not to the
+# workspace root. Workspace-level rules look under crates/<first-crate>/ and abort. This
+# crate is the root of the published surface, so the rules belong here; the shared release
+# settings stay in the workspace release.toml.
+#
+# Without these the manifests keep the previous version across a bump, the publish step
+# finds that version already on the registry, and skips - reporting success while shipping
+# nothing. That is exactly how the sibling repo's npm package stalled at 0.0.10 while its
+# crates went to 0.0.11. Cargo.toml is the only place a version is authored.
+
+# npm: @general-liquidity/sharpearena. NOT workspace-inherited.
+[[pre-release-replacements]]
+file = "../../npm/sharpearena/package.json"
+search = '"version": "[0-9]+\.[0-9]+\.[0-9]+"'
+replace = '"version": "{{version}}"'
+exactly = 1
+
+# PyPI: sharpearena. crates/sharpearena-py is EXCLUDED from the workspace (pyo3
+# extension-module needs an interpreter at build time), so cargo-release never touches
+# it on its own - both its pyproject.toml and its Cargo.toml need explicit rules.
+[[pre-release-replacements]]
+file = "../../crates/sharpearena-py/pyproject.toml"
+search = '^version = "[0-9]+\.[0-9]+\.[0-9]+"'
+replace = 'version = "{{version}}"'
+exactly = 1
+
+[[pre-release-replacements]]
+file = "../../crates/sharpearena-py/Cargo.toml"
+search = '^version = "[0-9]+\.[0-9]+\.[0-9]+"'
+replace = 'version = "{{version}}"'
+exactly = 1
+
+# The pyo3 crate pins the published `sharpearena` version alongside the path dep, so it
+# must move in lockstep or the sdist resolves against a version that no longer exists.
+[[pre-release-replacements]]
+file = "../../crates/sharpearena-py/Cargo.toml"
+search = 'sharpearena = \{ path = "\.\./sharpearena", version = "[0-9]+\.[0-9]+\.[0-9]+" \}'
+replace = 'sharpearena = { path = "../sharpearena", version = "{{version}}" }'
+exactly = 1

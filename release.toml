@@ -8,7 +8,17 @@
 #   cargo release patch --execute    # bump + tag + push  (publishing happens in CI)
 #
 # Publishing is done by CI via OIDC Trusted Publishing on the `v*` tag (see
-# RELEASING.md), NOT from the local machine — so `publish = false` here.
+# RELEASING.md), NOT from the local machine — so `publish = false` here. This is not just
+# a preference: these crates are Trusted-Publishing-only on crates.io, so a token upload
+# from a laptop is refused with a 403 ("New versions of this crate can only be published
+# using Trusted Publishing") part-way through the workspace, leaving a half-published
+# release behind. The `v*` tag is the only publish path.
+#
+# The three registry manifests that are NOT Cargo-workspace-inherited (npm/sharpearena,
+# and crates/sharpearena-py, which is excluded from the workspace) are rewritten from the
+# workspace version by `pre-release-replacements`. Those rules live in
+# crates/sharpearena/release.toml, because cargo-release resolves `file` relative to each
+# crate rather than to the workspace root - a workspace-level rule aborts.
 
 shared-version = true
 consolidate-commits = true
