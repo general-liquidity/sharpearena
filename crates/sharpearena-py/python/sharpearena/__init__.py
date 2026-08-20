@@ -382,4 +382,4 @@ __all__ = [
     "outcomes_from_series",
     "summarize",
 ]
-__version__ = "0.7.0"
+__version__ = "0.8.0"
