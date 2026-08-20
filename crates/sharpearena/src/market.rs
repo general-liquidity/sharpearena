@@ -37,6 +37,24 @@
 //! - **Per-agent reward** is that agent's own realized portfolio return over the bar,
 //!   marked at the cleared mids and using its **own** fill prices.
 //!
+//! ## Robust impact: an optional elliptic uncertainty set
+//!
+//! `lambda` and `eta` above are **point estimates**, and a point estimate of impact is a
+//! strong claim: both are fitted from the same trades on the same tape, nobody observes
+//! them directly, and an agent tuned against one exact `lambda` is tuned against a number
+//! nobody knows. Following "Robust Reinforcement Learning in Finance: Modeling Market
+//! Impact with Elliptic Uncertainty Sets", [`EllipticUncertaintySet`] replaces the pair
+//! with a set and clears each bar against the **worst case inside it**.
+//!
+//! The set is entirely opt-in: [`clear_bar`] and [`MarketClearing::step`] are unchanged,
+//! and the robust entry points ([`clear_bar_robust`], [`MarketClearing::step_robust`])
+//! given `None` execute the identical float operations on the identical values. Published
+//! results and the cross-runtime golden hashes are pinned to the point-estimate dynamics,
+//! so the default path is never allowed to move.
+//!
+//! See [`EllipticUncertaintySet`] for the geometry, the closed-form worst case, and why an
+//! ellipse rather than a box is the right shape for two correlated impact coefficients.
+//!
 //! ## Determinism
 //!
 //! Every step is a pure function of `(exogenous path, lambda, eta, V, vol_scale, capital,
@@ -47,7 +65,11 @@
 //! holds only returns from past cleared bars, and `vol_scale = 0` multiplies the impact
 //! term by an exact `1.0`, so the default path is bit-for-bit the pre-vol-scaling fill.
 //! Aggregation folds the per-agent sizes in canonical (sorted) agent order, so the parallel
-//! collection of actions cannot perturb `Q_t`.
+//! collection of actions cannot perturb `Q_t`. The one square root in the crate, in
+//! [`EllipticUncertaintySet::worst_case`], is admitted deliberately: IEEE 754 mandates that
+//! `sqrt` be **correctly rounded**, so unlike `ln` / `exp` it is not an implementation-
+//! defined libm approximation and reproduces bit-for-bit on every target. There is still no
+//! RNG, no clock, and no I/O anywhere on the clearing path.
 //!
 //! ## Leak-free invariant
 //!
@@ -111,6 +133,167 @@ impl Default for MarketParams {
     }
 }
 
+/// The impact coefficients actually applied to one symbol on one bar: Kyle's permanent
+/// `lambda` and Almgren-Chriss's temporary `eta`. On the point-estimate path these are
+/// just [`MarketParams::lambda`] / [`MarketParams::eta`]; under an
+/// [`EllipticUncertaintySet`] they are that bar's worst case inside the set.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ImpactCoefficients {
+    /// Kyle's permanent price-impact coefficient applied this bar.
+    pub lambda: f64,
+    /// Almgren-Chriss's temporary impact coefficient applied this bar.
+    pub eta: f64,
+}
+
+/// An elliptic uncertainty set around the impact point estimate `(lambda, eta)`, after
+/// "Robust Reinforcement Learning in Finance: Modeling Market Impact with Elliptic
+/// Uncertainty Sets".
+///
+/// # The geometry, and why an ellipse rather than a box
+///
+/// The set is the unit level set of a covariance `S` centred on the point estimate:
+///
+/// ```text
+/// U = { theta : (theta - theta_hat)^T S^-1 (theta - theta_hat) <= 1 }
+/// S = [[ a^2,      rho*a*b ],
+///      [ rho*a*b,  b^2     ]]
+/// ```
+///
+/// with `a = lambda_radius`, `b = eta_radius`, `rho = correlation`. `a` and `b` are the
+/// half-widths of the plausible range of each coefficient on its own; `rho` says how their
+/// errors move together.
+///
+/// A box (an independent interval per coefficient) would be the wrong shape here, for two
+/// reasons. The first is statistical: `lambda` and `eta` are not measured separately. They
+/// are two coefficients of one fit to one set of executed trades, so their estimation
+/// errors are coupled, and a fit that attributes more of the observed slippage to the
+/// permanent component necessarily attributes less to the temporary one. A box asserts the
+/// two vary independently and therefore admits its corners, `(lambda_max, eta_max)` in
+/// particular, which under any nonzero correlation is a combination the data never
+/// supports. Robustness bought against a corner nobody can occupy is paid for in
+/// conservatism and returned as nothing. An ellipse is the level set of the estimator's own
+/// covariance, so it encodes the coupling directly and excludes exactly those corners.
+///
+/// The second reason is that it makes the worst case a closed form. Impact cost is linear
+/// in `theta` (see [`worst_case`](Self::worst_case)), and the maximum of a linear function
+/// over an ellipse is the classical second-order-cone expression: one matrix-vector product
+/// and one square root, no search, no iteration, no sampling. The uncertainty set therefore
+/// costs a handful of flops per symbol per bar and introduces no RNG, which is what lets it
+/// sit on a determinism-critical clearing path at all.
+///
+/// # Sign convention
+///
+/// Worst case means **most expensive for the traders**, so the set is resolved in the
+/// direction that maximises the bar's aggregate impact cost. A negative `correlation` can
+/// therefore push one coefficient below its point estimate while the other rises: that is
+/// the ellipse doing its job, and it is precisely the behaviour a box cannot express. Both
+/// resolved coefficients are floored at zero, since a negative impact coefficient would
+/// turn execution into a rebate, which is not a market this model describes.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct EllipticUncertaintySet {
+    /// Half-width `a` of the plausible range of Kyle's `lambda`, in `lambda`'s own units.
+    pub lambda_radius: f64,
+    /// Half-width `b` of the plausible range of Almgren-Chriss's `eta`, in `eta`'s units.
+    pub eta_radius: f64,
+    /// Correlation `rho` in `[-1, 1]` between the two coefficients' estimation errors.
+    /// `0` gives axis-aligned axes; `-1` or `1` degenerates the ellipse to a line segment.
+    pub correlation: f64,
+}
+
+impl EllipticUncertaintySet {
+    /// Build a set from the two half-widths and their correlation.
+    ///
+    /// Panics on a negative radius or a `correlation` outside `[-1, 1]`, either of which
+    /// would describe a matrix that is not a covariance.
+    pub fn new(lambda_radius: f64, eta_radius: f64, correlation: f64) -> Self {
+        assert!(
+            lambda_radius >= 0.0 && eta_radius >= 0.0,
+            "uncertainty radii must be non-negative"
+        );
+        assert!(
+            (-1.0..=1.0).contains(&correlation),
+            "correlation must lie in [-1, 1]"
+        );
+        Self {
+            lambda_radius,
+            eta_radius,
+            correlation,
+        }
+    }
+
+    /// A circular set: the same half-width on both coefficients, uncorrelated. The weakest
+    /// honest statement of impact uncertainty, and the natural default when no estimator
+    /// covariance is available.
+    pub fn isotropic(radius: f64) -> Self {
+        Self::new(radius, radius, 0.0)
+    }
+
+    /// The point of the set that maximises this bar's impact cost, in closed form.
+    ///
+    /// One bar's aggregate execution cost above the cleared mid is linear in
+    /// `theta = (lambda, eta)`:
+    ///
+    /// ```text
+    /// cost(theta)  ~  lambda * cost_lambda + eta * cost_eta  =  c^T theta
+    /// ```
+    ///
+    /// so [`clear_bar_robust`] passes `cost_lambda = Q^2` and `cost_eta = sum_i q_i^2` for
+    /// the symbol (both non-negative, both in the units of the cost the agents actually
+    /// pay). Maximising `c^T theta` over `U` has the standard solution
+    ///
+    /// ```text
+    /// theta_wc = theta_hat + S c / sqrt(c^T S c)
+    /// ```
+    ///
+    /// whose attained cost is `c^T theta_hat + sqrt(c^T S c)`: the point estimate plus the
+    /// support function of the ellipse in the cost direction. `c^T S c >= 0` for any `c`
+    /// because `|correlation| <= 1` makes `S` positive semidefinite, and the answer depends
+    /// on `c` only through its direction, so the units chosen for the cost do not matter.
+    ///
+    /// A degenerate direction (`c^T S c == 0`: no flow at all, a zero-radius set, or a
+    /// fully degenerate ellipse orthogonal to the cost) has no interior maximiser and falls
+    /// back to the point estimate, which is also what keeps a no-flow bar identical to the
+    /// non-robust path.
+    pub fn worst_case(
+        &self,
+        params: &MarketParams,
+        cost_lambda: f64,
+        cost_eta: f64,
+    ) -> ImpactCoefficients {
+        let point = ImpactCoefficients {
+            lambda: params.lambda,
+            eta: params.eta,
+        };
+        let a = self.lambda_radius;
+        let b = self.eta_radius;
+        let cross = self.correlation * a * b;
+        // S c
+        let sc_lambda = a * a * cost_lambda + cross * cost_eta;
+        let sc_eta = cross * cost_lambda + b * b * cost_eta;
+        // c^T S c, non-negative by positive semidefiniteness of S.
+        let quad = cost_lambda * sc_lambda + cost_eta * sc_eta;
+        if quad <= 0.0 {
+            return point;
+        }
+        let norm = quad.sqrt();
+        ImpactCoefficients {
+            lambda: floor_at_zero(point.lambda + sc_lambda / norm),
+            eta: floor_at_zero(point.eta + sc_eta / norm),
+        }
+    }
+}
+
+/// Clamp a resolved impact coefficient at zero. A negative coefficient would pay traders to
+/// execute, which is outside the Kyle / Almgren-Chriss model, so the floor is a modelling
+/// statement rather than numerical hygiene.
+fn floor_at_zero(x: f64) -> f64 {
+    if x > 0.0 {
+        x
+    } else {
+        0.0
+    }
+}
+
 /// One agent's fill in one symbol this bar: the signed size traded and the
 /// temporary-impact price it paid.
 #[derive(Clone, Debug, Serialize)]
@@ -140,6 +323,13 @@ pub struct ClearResult {
     pub observations: Vec<MarketObservation>,
     /// Whether the path is exhausted after this bar (no more bars to clear).
     pub done: bool,
+    /// The impact coefficients this bar was actually cleared at, per symbol, present only
+    /// when an [`EllipticUncertaintySet`] was supplied. `None` on the point-estimate path,
+    /// where the coefficients are by definition [`MarketParams::lambda`] /
+    /// [`MarketParams::eta`]; the field is then omitted from the serialized result
+    /// entirely, so the default wire shape is unchanged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub robust_impact: Option<Vec<ImpactCoefficients>>,
 }
 
 /// One agent's running book: cash, per-symbol holdings, per-symbol accumulated cost
@@ -396,6 +586,18 @@ impl MarketClearing {
         clear_bar(&exo_mid, agent_orders, params, self)
     }
 
+    /// [`step`](Self::step) against an optional [`EllipticUncertaintySet`]. `None` is the
+    /// point estimate and runs the identical arithmetic as [`step`](Self::step).
+    pub fn step_robust(
+        &mut self,
+        agent_orders: &[Vec<f64>],
+        params: &MarketParams,
+        uncertainty: Option<&EllipticUncertaintySet>,
+    ) -> ClearResult {
+        let exo_mid = self.exo_mid_at_cursor();
+        clear_bar_robust(&exo_mid, agent_orders, params, uncertainty, self)
+    }
+
     /// Assemble one agent's observation from a prepared symbol-snapshot list: its own
     /// cash and per-symbol holdings (with a displayed average entry price). Holdings are
     /// the agent's own — never any peer's pending state.
@@ -535,10 +737,46 @@ fn derive_news(symbol: &str, closes: &[f64]) -> Vec<String> {
 /// books its bar return, (4) extends the cleared tape and builds each agent's next
 /// observation, and (5) folds this bar's flow into the permanent-impact multiplier for the
 /// next bar. See the module docs for the equations and the leak-free argument.
+///
+/// This is the point-estimate path and is exactly [`clear_bar_robust`] with no uncertainty
+/// set. Its dynamics are frozen: published results and the cross-runtime golden hashes are
+/// pinned to them.
 pub fn clear_bar(
     exo_mid: &[f64],
     agent_orders: &[Vec<f64>],
     params: &MarketParams,
+    state: &mut MarketClearing,
+) -> ClearResult {
+    clear_bar_robust(exo_mid, agent_orders, params, None, state)
+}
+
+/// [`clear_bar`] against an optional [`EllipticUncertaintySet`] over the impact
+/// coefficients.
+///
+/// With `uncertainty = None` this *is* [`clear_bar`]: every symbol resolves to
+/// `(params.lambda, params.eta)` and the fill and permanent-impact expressions evaluate the
+/// same float operations on the same values, so the cleared path is bit-for-bit the
+/// point-estimate path and [`ClearResult::robust_impact`] is `None`.
+///
+/// With a set supplied, each symbol is cleared at that bar's worst case inside the set. The
+/// cost direction is the bar's own realised flow: `cost_lambda = Q_s^2` (what the crowd's
+/// net flow costs, `Q_s` shares moved at `lambda * Q_s / V` per share) and
+/// `cost_eta = sum_i q_i^2` (what each agent's own size costs itself). Both are aggregate
+/// quantities of the whole book rather than any one agent's, so the resolved coefficients
+/// do not depend on which agent is being evaluated, and both are non-negative, so the
+/// direction is well defined whenever anything traded. The same resolved `lambda` drives
+/// both the temporary fill and the permanent multiplier for the next bar, so the robust
+/// market stays internally consistent rather than robustifying the execution cost while
+/// leaving the price it feeds back into unrobustified.
+///
+/// The set adds no state: the coefficients are recomputed from each bar's flow, so the
+/// function remains a pure function of `(exogenous path, params, set, actions in sorted
+/// order)`, with no RNG, no clock, and no I/O.
+pub fn clear_bar_robust(
+    exo_mid: &[f64],
+    agent_orders: &[Vec<f64>],
+    params: &MarketParams,
+    uncertainty: Option<&EllipticUncertaintySet>,
     state: &mut MarketClearing,
 ) -> ClearResult {
     let n_sym = state.symbols.len();
@@ -603,6 +841,32 @@ pub fn clear_bar(
         }
     }
 
+    // (2b) resolve the impact coefficients this bar clears at. Absent an uncertainty set
+    //      that is the point estimate for every symbol and the arithmetic below is
+    //      unchanged; with one, it is the worst case in the direction of the bar's own
+    //      aggregate cost. Folded in sorted agent order, like the flow itself.
+    let robust_impact: Option<Vec<ImpactCoefficients>> = uncertainty.map(|set| {
+        (0..n_sym)
+            .map(|s| {
+                let mut own_cost = 0.0_f64;
+                for agent_q in &q {
+                    own_cost += agent_q[s] * agent_q[s];
+                }
+                set.worst_case(params, net_flow[s] * net_flow[s], own_cost)
+            })
+            .collect()
+    });
+    let impact: Vec<ImpactCoefficients> = match &robust_impact {
+        Some(resolved) => resolved.clone(),
+        None => vec![
+            ImpactCoefficients {
+                lambda: params.lambda,
+                eta: params.eta,
+            };
+            n_sym
+        ],
+    };
+
     // (3) fill each agent at its temporary-impact price, advance its book, and book the
     //     bar's realized return (marked at the cleared mids, paid at its own fills).
     let mut fills: Vec<Vec<AgentFill>> = Vec::with_capacity(n_agents);
@@ -624,8 +888,8 @@ pub fn clear_bar(
         for s in 0..n_sym {
             let qi = q[i][s];
             let mid = cleared_mid[s];
-            let fill =
-                mid * (1.0 + vol_factor[s] * (params.lambda * net_flow[s] + params.eta * qi) / v);
+            let fill = mid
+                * (1.0 + vol_factor[s] * (impact[s].lambda * net_flow[s] + impact[s].eta * qi) / v);
             let sym = state.symbols[s].clone();
             let book = &mut state.agents[i];
             book.cash -= qi * fill;
@@ -682,8 +946,8 @@ pub fn clear_bar(
 
     // (5) permanent impact accumulates into the running multiplier for the next bar; the
     //     cleared mid becomes the mark for the next bar's holding PnL.
-    for (mult, flow) in state.impact_mult.iter_mut().zip(&net_flow) {
-        *mult *= 1.0 + params.lambda * flow / v;
+    for (s, (mult, flow)) in state.impact_mult.iter_mut().zip(&net_flow).enumerate() {
+        *mult *= 1.0 + impact[s].lambda * flow / v;
     }
     // Fold this bar's realized cleared return into each symbol's trailing vol proxy, for the
     // *next* bar's scaling. `prev_mid` still holds the previous bar's cleared mid here.
@@ -705,6 +969,7 @@ pub fn clear_bar(
         fills,
         observations,
         done,
+        robust_impact,
     }
 }
 
@@ -1132,6 +1397,400 @@ mod tests {
             log
         };
         assert_eq!(run(), run(), "vol-scaled clearing must be deterministic");
+    }
+
+    // --- Elliptic impact-uncertainty axis --------------------------------------------------
+
+    /// Serialize a whole `ClearResult` (every public field, including the observations and
+    /// the fills), so a comparison is over the complete cleared bar and not a chosen subset.
+    fn result_blob(r: &ClearResult) -> String {
+        serde_json::to_string(r).unwrap()
+    }
+
+    /// Roll `orders` to exhaustion under an optional uncertainty set, collecting the full
+    /// serialized result of every bar.
+    fn robust_rollout(
+        data: &Dataset,
+        n_agents: usize,
+        params: &MarketParams,
+        uncertainty: Option<&EllipticUncertaintySet>,
+        orders: &[Vec<f64>],
+    ) -> Vec<String> {
+        let mut m = MarketClearing::from_dataset(data, n_agents, 1.0);
+        let mut log = Vec::new();
+        loop {
+            let r = m.step_robust(orders, params, uncertainty);
+            log.push(result_blob(&r));
+            if r.done {
+                break;
+            }
+        }
+        log
+    }
+
+    #[test]
+    fn absent_uncertainty_set_is_byte_identical_to_the_point_estimate() {
+        // The load-bearing guarantee: an uncertainty set is opt-in, so the robust entry
+        // point given `None` must reproduce `step` bit-for-bit over a full path, across
+        // every result field (cleared mids, net flow, rewards, NAVs, fills, observations).
+        // Published results and the cross-runtime golden hashes are pinned to this path.
+        let data = Dataset::synthetic(3, 60, 17);
+        let params = MarketParams {
+            lambda: 0.35,
+            eta: 0.18,
+            volume_scale: 2.0,
+            vol_scale: 3.0,
+        };
+        let orders: Vec<Vec<f64>> = (0..3)
+            .map(|i| vec![0.2 * (i as f64 + 1.0), -0.1 * (i as f64), 0.05])
+            .collect();
+
+        let mut legacy_market = MarketClearing::from_dataset(&data, 3, 1.0);
+        let mut legacy = Vec::new();
+        loop {
+            let r = legacy_market.step(&orders, &params);
+            assert!(
+                r.robust_impact.is_none(),
+                "the point-estimate path reports no resolved coefficients"
+            );
+            legacy.push(result_blob(&r));
+            if r.done {
+                break;
+            }
+        }
+
+        let robust_none = robust_rollout(&data, 3, &params, None, &orders);
+        assert_eq!(
+            legacy, robust_none,
+            "clear_bar_robust(None) must be byte-identical to clear_bar"
+        );
+    }
+
+    #[test]
+    fn the_point_estimate_wire_shape_omits_the_robust_field() {
+        // The serialized result is the Python/WASM wire shape. On the default path the
+        // new field is skipped entirely, so no downstream JSON consumer sees a new key.
+        let data = Dataset::synthetic(2, 30, 4);
+        let mut m = MarketClearing::from_dataset(&data, 2, 1.0);
+        let r = m.step(&block(2, 2, 0.4), &MarketParams::default());
+        assert!(!result_blob(&r).contains("robust_impact"));
+    }
+
+    #[test]
+    fn a_zero_radius_set_reproduces_the_point_estimate_path() {
+        // A set of zero width is the point estimate expressed as a (degenerate) set, so it
+        // must clear identically: c^T S c is 0, the worst case falls back, and every
+        // resolved coefficient equals the point estimate.
+        let data = Dataset::synthetic(2, 40, 11);
+        let params = MarketParams {
+            lambda: 0.3,
+            eta: 0.12,
+            volume_scale: 1.5,
+            vol_scale: 0.0,
+        };
+        let orders = block(3, 2, 0.5);
+        let set = EllipticUncertaintySet::isotropic(0.0);
+
+        let point = robust_rollout(&data, 3, &params, None, &orders);
+        let mut m = MarketClearing::from_dataset(&data, 3, 1.0);
+        let mut bar = 0;
+        loop {
+            let r = m.step_robust(&orders, &params, Some(&set));
+            for coefficients in r.robust_impact.as_ref().unwrap() {
+                assert_eq!(coefficients.lambda, params.lambda);
+                assert_eq!(coefficients.eta, params.eta);
+            }
+            // Everything but the (identical) reported coefficients must match the
+            // point-estimate bar. Compare as parsed values so field ordering is irrelevant.
+            let mut value = serde_json::to_value(&r).unwrap();
+            value.as_object_mut().unwrap().remove("robust_impact");
+            let expected: serde_json::Value = serde_json::from_str(&point[bar]).unwrap();
+            assert_eq!(
+                value, expected,
+                "a zero-radius set must clear the point-estimate path"
+            );
+            bar += 1;
+            if r.done {
+                break;
+            }
+        }
+    }
+
+    #[test]
+    fn a_no_flow_bar_falls_back_to_the_point_estimate() {
+        // With nothing traded the cost direction is the zero vector, which has no worst
+        // case. The fallback keeps a flat market on the exogenous path even under a set.
+        let data = Dataset::synthetic(2, 30, 6);
+        let params = MarketParams::default();
+        let set = EllipticUncertaintySet::new(0.5, 0.25, 0.4);
+        let mut m = MarketClearing::from_dataset(&data, 2, 1.0);
+        let flat = block(2, 2, 0.0);
+        loop {
+            let bar = m.cursor();
+            let r = m.step_robust(&flat, &params, Some(&set));
+            for coefficients in r.robust_impact.as_ref().unwrap() {
+                assert_eq!(coefficients.lambda, params.lambda);
+                assert_eq!(coefficients.eta, params.eta);
+            }
+            for (s, mid) in r.cleared_mids.iter().enumerate() {
+                assert_eq!(*mid, data.close_at(&m.symbols()[s], bar).unwrap());
+            }
+            if r.done {
+                break;
+            }
+        }
+    }
+
+    #[test]
+    fn the_worst_case_attains_the_support_function_of_the_ellipse() {
+        // The closed form is only correct if it lands on the boundary at the maximiser.
+        // Check the attained value identity c^T theta_wc = c^T theta_hat + sqrt(c^T S c),
+        // exactly the support function of the ellipse in the cost direction.
+        let params = MarketParams {
+            lambda: 0.4,
+            eta: 0.2,
+            volume_scale: 1.0,
+            vol_scale: 0.0,
+        };
+        let set = EllipticUncertaintySet::new(0.1, 0.06, 0.3);
+        let (cl, ce) = (4.0, 0.75);
+        let wc = set.worst_case(&params, cl, ce);
+        let (a, b, rho) = (set.lambda_radius, set.eta_radius, set.correlation);
+        let quad = a * a * cl * cl + 2.0 * rho * a * b * cl * ce + b * b * ce * ce;
+        let attained = cl * wc.lambda + ce * wc.eta;
+        let expected = cl * params.lambda + ce * params.eta + quad.sqrt();
+        assert!(
+            (attained - expected).abs() < 1e-12,
+            "attained {attained} != support {expected}"
+        );
+    }
+
+    #[test]
+    fn no_point_in_the_ellipse_costs_more_than_the_worst_case() {
+        // Optimality, checked directly: sweep the boundary of the ellipse (a Cholesky map
+        // of a rational parameterization of the unit circle, so the sweep needs no trig and
+        // lands exactly on the circle) and confirm nothing beats the closed form.
+        let params = MarketParams {
+            lambda: 0.5,
+            eta: 0.25,
+            volume_scale: 1.0,
+            vol_scale: 0.0,
+        };
+        for &rho in &[-0.8_f64, -0.25, 0.0, 0.25, 0.8] {
+            let set = EllipticUncertaintySet::new(0.12, 0.05, rho);
+            let (cl, ce) = (2.5_f64, 0.4_f64);
+            let wc = set.worst_case(&params, cl, ce);
+            let best = cl * wc.lambda + ce * wc.eta;
+            // Cholesky of S: L = [[a, 0], [rho*b, b*sqrt(1 - rho^2)]].
+            let (a, b) = (set.lambda_radius, set.eta_radius);
+            let l10 = rho * b;
+            let l11 = b * (1.0 - rho * rho).sqrt();
+            for k in -200..=200 {
+                let t = k as f64 / 50.0;
+                // (u, v) is exactly on the unit circle for any t.
+                let denom = 1.0 + t * t;
+                let u = (1.0 - t * t) / denom;
+                let v = 2.0 * t / denom;
+                let lambda = params.lambda + a * u;
+                let eta = params.eta + l10 * u + l11 * v;
+                let cost = cl * lambda + ce * eta;
+                assert!(
+                    cost <= best + 1e-9,
+                    "rho={rho}: boundary point costs {cost} > worst case {best}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_positively_correlated_set_raises_both_coefficients() {
+        // With non-negative correlation and a non-negative cost direction (which the bar's
+        // own flow always is: Q^2 and sum q_i^2), S c has non-negative entries, so the
+        // worst case is weakly above the point estimate on both axes and strictly above on
+        // at least one.
+        let params = MarketParams {
+            lambda: 0.3,
+            eta: 0.15,
+            volume_scale: 1.0,
+            vol_scale: 0.0,
+        };
+        let set = EllipticUncertaintySet::new(0.08, 0.04, 0.6);
+        let wc = set.worst_case(&params, 9.0, 2.0);
+        assert!(wc.lambda > params.lambda, "lambda must widen: {wc:?}");
+        assert!(wc.eta > params.eta, "eta must widen: {wc:?}");
+    }
+
+    #[test]
+    fn a_negative_correlation_is_not_a_box_corner() {
+        // The whole reason for an ellipse: with negatively correlated estimation errors,
+        // charging more permanent impact means charging less temporary impact. A box would
+        // take its corner and raise both; the ellipse pushes one down.
+        let params = MarketParams {
+            lambda: 0.3,
+            eta: 0.15,
+            volume_scale: 1.0,
+            vol_scale: 0.0,
+        };
+        let set = EllipticUncertaintySet::new(0.08, 0.04, -0.9);
+        // A cost direction dominated by the permanent leg.
+        let wc = set.worst_case(&params, 25.0, 0.5);
+        assert!(wc.lambda > params.lambda, "lambda still widens: {wc:?}");
+        assert!(
+            wc.eta < params.eta,
+            "a negatively correlated set must trade eta off against lambda: {wc:?}"
+        );
+    }
+
+    #[test]
+    fn resolved_coefficients_never_go_negative() {
+        // A wide set on a small point estimate would otherwise turn impact into a rebate.
+        let params = MarketParams {
+            lambda: 0.01,
+            eta: 0.01,
+            volume_scale: 1.0,
+            vol_scale: 0.0,
+        };
+        let set = EllipticUncertaintySet::new(5.0, 5.0, -1.0);
+        let wc = set.worst_case(&params, 1.0, 4.0);
+        assert!(wc.lambda >= 0.0 && wc.eta >= 0.0, "no rebates: {wc:?}");
+    }
+
+    #[test]
+    fn a_set_makes_the_market_strictly_more_expensive_to_trade() {
+        // The evaluation claim: an agent facing an uncertainty set is charged the worst
+        // case, so its aggregate execution cost on a trading bar is strictly higher than
+        // under the point estimate, with the sizing and the cleared mid untouched.
+        let data = Dataset::synthetic(2, 40, 21);
+        let params = MarketParams {
+            lambda: 0.3,
+            eta: 0.15,
+            volume_scale: 1.0,
+            vol_scale: 0.0,
+        };
+        let set = EllipticUncertaintySet::isotropic(0.05);
+        let buy = block(3, 2, 0.7);
+
+        let mut point_market = MarketClearing::from_dataset(&data, 3, 1.0);
+        let mut robust_market = MarketClearing::from_dataset(&data, 3, 1.0);
+        let point = point_market.step(&buy, &params);
+        let robust = robust_market.step_robust(&buy, &params, Some(&set));
+
+        assert_eq!(
+            point.cleared_mids, robust.cleared_mids,
+            "the set must not move the reference mid (it embeds only prior-bar flow)"
+        );
+        for (pf, rf) in point.fills.iter().zip(&robust.fills) {
+            for (p, r) in pf.iter().zip(rf) {
+                assert_eq!(p.size, r.size, "sizing is unchanged by the set");
+                assert!(
+                    r.fill_price > p.fill_price,
+                    "a buyer must pay strictly more under the worst case: {} vs {}",
+                    r.fill_price,
+                    p.fill_price
+                );
+            }
+        }
+        for (p, r) in point.rewards.iter().zip(&robust.rewards) {
+            assert!(r < p, "the robust bar return must be worse: {r} vs {p}");
+        }
+    }
+
+    #[test]
+    fn the_resolved_lambda_also_drives_the_permanent_multiplier() {
+        // Internal consistency: the bar's worst-case lambda feeds the next bar's reference
+        // price, not just the fill. A sustained buy therefore leaves the cleared mid above
+        // where the point estimate would have left it.
+        let data = Dataset::synthetic(1, 40, 13);
+        let params = MarketParams {
+            lambda: 0.2,
+            eta: 0.0,
+            volume_scale: 4.0,
+            vol_scale: 0.0,
+        };
+        let set = EllipticUncertaintySet::new(0.1, 0.0, 0.0);
+        let buy = block(2, 1, 0.9);
+
+        let mut point_market = MarketClearing::from_dataset(&data, 2, 1.0);
+        let mut robust_market = MarketClearing::from_dataset(&data, 2, 1.0);
+        point_market.step(&buy, &params);
+        robust_market.step_robust(&buy, &params, Some(&set));
+        // Second bar: no fresh flow, so the difference is purely the accumulated permanent
+        // impact of bar one.
+        let point = point_market.step(&buy, &params);
+        let robust = robust_market.step_robust(&buy, &params, Some(&set));
+        assert!(
+            robust.cleared_mids[0] > point.cleared_mids[0],
+            "the worst-case lambda must carry into the reference price: {} vs {}",
+            robust.cleared_mids[0],
+            point.cleared_mids[0]
+        );
+    }
+
+    #[test]
+    fn robust_impact_is_reported_per_symbol_and_varies_with_flow() {
+        // The reported coefficients are per symbol, because the cost direction is a
+        // per-symbol quantity: two symbols traded at different sizes resolve differently.
+        let data = Dataset::synthetic(2, 30, 5);
+        let params = MarketParams {
+            lambda: 0.3,
+            eta: 0.15,
+            volume_scale: 1.0,
+            vol_scale: 0.0,
+        };
+        let set = EllipticUncertaintySet::new(0.09, 0.02, 0.0);
+        let mut m = MarketClearing::from_dataset(&data, 2, 1.0);
+        // Symbol 0 is crossed (the two agents offset, so net flow is zero but both still
+        // pay their own size); symbol 1 is one-sided. Two genuinely different directions.
+        let orders = vec![vec![0.9, 0.5], vec![-0.9, 0.5]];
+        let r = m.step_robust(&orders, &params, Some(&set));
+        let resolved = r.robust_impact.as_ref().unwrap();
+        assert_eq!(resolved.len(), 2, "one coefficient pair per symbol");
+        assert_eq!(r.net_flow[0], 0.0, "the crossed symbol has no net flow");
+        assert_eq!(
+            resolved[0].lambda, params.lambda,
+            "with no net flow the cost direction is pure eta, so lambda is not stressed"
+        );
+        assert!(
+            resolved[0].eta > params.eta,
+            "the crossed symbol still stresses eta: {resolved:?}"
+        );
+        assert!(
+            resolved[1].lambda > params.lambda,
+            "the one-sided symbol stresses lambda too: {resolved:?}"
+        );
+        assert_ne!(
+            resolved[0], resolved[1],
+            "different per-symbol flow must resolve differently: {resolved:?}"
+        );
+    }
+
+    #[test]
+    fn robust_clearing_is_deterministic() {
+        // No RNG, no clock, no I/O: the same path, params, set, and actions reproduce a
+        // byte-identical stream of cleared bars.
+        let data = Dataset::synthetic(3, 50, 8);
+        let params = MarketParams {
+            lambda: 0.25,
+            eta: 0.1,
+            volume_scale: 2.0,
+            vol_scale: 2.0,
+        };
+        let set = EllipticUncertaintySet::new(0.07, 0.03, -0.4);
+        let orders = block(3, 3, 0.45);
+        let run = || robust_rollout(&data, 3, &params, Some(&set), &orders);
+        assert_eq!(run(), run(), "robust clearing must be deterministic");
+    }
+
+    #[test]
+    #[should_panic(expected = "correlation must lie in")]
+    fn an_out_of_range_correlation_is_rejected() {
+        EllipticUncertaintySet::new(0.1, 0.1, 1.5);
+    }
+
+    #[test]
+    #[should_panic(expected = "radii must be non-negative")]
+    fn a_negative_radius_is_rejected() {
+        EllipticUncertaintySet::new(-0.1, 0.1, 0.0);
     }
 
     // --- Observation-richness (information-disclosure) axis --------------------------------

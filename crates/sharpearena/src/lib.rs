@@ -71,7 +71,10 @@ pub use lob_market::{Fill, LadderSnapshot, OrderBook, OrderKind, RestingOrder, S
 // --- Endogenous price-impact shared-book market (M2) ---------------------------------------
 
 pub mod market;
-pub use market::{clear_bar, AgentFill, ClearResult, MarketClearing, MarketParams};
+pub use market::{
+    clear_bar, clear_bar_robust, AgentFill, ClearResult, EllipticUncertaintySet,
+    ImpactCoefficients, MarketClearing, MarketParams,
+};
 
 // --- Point-in-time simulator surface (extraction from `sharpebench-sim`) ------------------
 
