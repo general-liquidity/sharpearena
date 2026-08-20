@@ -14,6 +14,10 @@ edge survive on every run, not on average.
 
 Each policy is a fresh instance per episode, so stateful tilts (``momentum`` carries
 the previous closes) reset cleanly at the start of every seed.
+
+Alongside the ranked reference set, ``BEHAVIORAL_POLICIES`` holds deliberately biased
+counterparties. They are not baselines to beat and not strategies to trade: see the note
+above :class:`DispositionEffectPolicy` for what they are for.
 """
 
 from __future__ import annotations
@@ -268,6 +272,149 @@ class KellyVolTargetPolicy:
         return w.astype(np.float32)
 
 
+# -- behaviorally-biased policies -------------------------------------------
+#
+# WHAT THESE ARE FOR, read this before using one.
+#
+# Every policy above is a rational optimizer. A market populated only by optimizers is not a
+# market: it has no one to earn from, and an agent trained against it never learns to price
+# the mistakes that real order flow is made of. The policies below exist to fill that hole.
+# They implement documented cognitive biases from "Incorporating Cognitive Biases into
+# Reinforcement Learning for Financial Decision-Making" and serve two roles:
+#
+#   1. counterparties in the multi-agent envs, so an agent faces flow that is predictably
+#      wrong rather than uniformly optimal, and
+#   2. a realism floor in single-agent runs: an entrant that cannot beat a policy which is
+#      biased BY CONSTRUCTION has not demonstrated anything.
+#
+# They are NOT recommended strategies, NOT reference baselines to beat on the canonical
+# leaderboard, and NOT to be traded. They are deliberately bad in specific, named ways. They
+# are kept out of ``BASELINE_POLICIES`` on purpose: that list sets the ``n_trials`` deflation
+# footprint for the published baseline table, and adding to it would silently restate every
+# number already reported. Use ``BEHAVIORAL_POLICIES`` instead.
+
+
+class DispositionEffectPolicy:
+    """Sells winners too early and rides losers, the disposition effect.
+
+    Opens equal-weight long and anchors an entry reference price per symbol. From then on,
+    every symbol whose unrealized gain clears ``gain_threshold`` gets its weight cut by
+    ``realize_fraction`` (the winner is "taken off the table", and its reference re-anchors
+    to the price at which it was trimmed), while every symbol whose unrealized loss is worse
+    than ``loss_threshold`` is held and topped up by ``add_fraction`` (the loser is given
+    room to "come back", and the reference is deliberately NOT re-anchored, which is exactly
+    the bias). Gross exposure is renormalized to ``max_gross`` so the action stays inside the
+    env's action space.
+
+    This is a counterparty and a realism floor, not a strategy. Its expected behavior is to
+    truncate its own right tail and let its left tail run, which is a bad way to trade and a
+    useful thing for an agent to be able to trade against.
+
+    Deterministic: no RNG, no clock, state is only the entry references and the last weights.
+    """
+
+    name = "disposition_effect"
+
+    def __init__(
+        self,
+        gain_threshold: float = 0.01,
+        loss_threshold: float = 0.01,
+        realize_fraction: float = 0.5,
+        add_fraction: float = 0.25,
+        max_gross: float = 1.0,
+    ) -> None:
+        self._gain_threshold = gain_threshold
+        self._loss_threshold = loss_threshold
+        self._realize_fraction = realize_fraction
+        self._add_fraction = add_fraction
+        self._max_gross = max_gross
+        self._entry: Optional[np.ndarray] = None
+        self._weights: Optional[np.ndarray] = None
+
+    def __call__(self, obs: dict) -> np.ndarray:
+        closes = np.asarray(obs["closes"], dtype=np.float64).reshape(-1)
+        n = closes.shape[0]
+        if self._entry is None or self._weights is None or self._weights.shape[0] != n:
+            self._entry = np.where(closes == 0.0, 1.0, closes)
+            self._weights = np.full((n,), 1.0 / n)
+            return self._weights.astype(np.float32)
+        pnl = closes / self._entry - 1.0
+        w = self._weights.copy()
+        winners = pnl >= self._gain_threshold
+        losers = pnl <= -self._loss_threshold
+        w[winners] *= 1.0 - self._realize_fraction
+        w[losers] *= 1.0 + self._add_fraction
+        # Only the trimmed winners re-anchor. Losers keep the stale, underwater reference,
+        # which is what makes the position ride instead of being cut.
+        entry = self._entry.copy()
+        safe_closes = np.where(closes == 0.0, 1.0, closes)
+        entry[winners] = safe_closes[winners]
+        self._entry = entry
+        gross = float(np.abs(w).sum())
+        if gross > self._max_gross:
+            w = w * (self._max_gross / gross)
+        self._weights = w
+        return w.astype(np.float32)
+
+
+class OverconfidentPolicy:
+    """Over-trades and over-sizes on a signal far too short to support either.
+
+    Reads a ``signal_lookback``-bar trailing return (``3`` bars by default, nowhere near
+    enough to estimate a drift), multiplies it by ``overconfidence`` to size the bet as if
+    the estimate were precise, and adds a seeded ``churn`` perturbation to the target weights
+    every step so the position is rewritten constantly. The churn is the over-trading: it
+    burns cost and turnover for no informational reason, which is the documented consequence
+    of overconfidence in the behavioral finance literature and, in this arena, exactly the
+    flow that a cost-aware agent should be able to take the other side of.
+
+    This is a counterparty and a realism floor, not a strategy. Nobody should trade it.
+
+    Deterministic given ``seed``: the churn comes from a seeded ``default_rng``, never a
+    clock, so replays are byte-identical.
+    """
+
+    name = "overconfident"
+
+    def __init__(
+        self,
+        signal_lookback: int = 3,
+        overconfidence: float = 4.0,
+        churn: float = 0.35,
+        max_weight: float = 1.0,
+        max_gross: float = 1.0,
+        seed: int = 0,
+    ) -> None:
+        self._signal_lookback = signal_lookback
+        self._overconfidence = overconfidence
+        self._churn = churn
+        self._max_weight = max_weight
+        self._max_gross = max_gross
+        self._seed = seed
+        self._rng = np.random.default_rng(seed)
+        self._hist: list[np.ndarray] = []
+
+    def __call__(self, obs: dict) -> np.ndarray:
+        closes = np.asarray(obs["closes"], dtype=np.float64).reshape(-1)
+        n = closes.shape[0]
+        self._hist.append(closes)
+        if len(self._hist) < 2:
+            return np.zeros((n,), dtype=np.float32)
+        stacked = np.vstack(self._hist)
+        past = stacked[max(0, stacked.shape[0] - self._signal_lookback - 1)]
+        safe = np.where(past == 0.0, 1.0, past)
+        signal = closes / safe - 1.0
+        w = self._overconfidence * signal
+        w = w + self._churn * self._rng.normal(0.0, 1.0, size=n)
+        w = np.clip(w, -self._max_weight, self._max_weight)
+        gross = float(np.abs(w).sum())
+        if gross > self._max_gross:
+            w = w * (self._max_gross / gross)
+        return w.astype(np.float32)
+
+
+# The canonical reference set the published leaderboard ranks and deflates against. Behavioral
+# policies are intentionally excluded, see the note above ``DispositionEffectPolicy``.
 # Factories so every episode gets a fresh (state-reset) policy instance.
 BASELINE_POLICIES: list[tuple[str, Callable[[], Policy]]] = [
     (FlatPolicy.name, FlatPolicy),
@@ -276,6 +423,15 @@ BASELINE_POLICIES: list[tuple[str, Callable[[], Policy]]] = [
     (MinVariancePolicy.name, MinVariancePolicy),
     (MaxSharpePolicy.name, MaxSharpePolicy),
     (KellyVolTargetPolicy.name, KellyVolTargetPolicy),
+]
+
+
+# Biased counterparties and realism floor, kept separate from the ranked reference set so the
+# canonical baseline table's deflation footprint never moves. Drop-in wherever a ``Policy`` is
+# accepted, including as opponents in the multi-agent envs.
+BEHAVIORAL_POLICIES: list[tuple[str, Callable[[], Policy]]] = [
+    (DispositionEffectPolicy.name, DispositionEffectPolicy),
+    (OverconfidentPolicy.name, OverconfidentPolicy),
 ]
 
 
@@ -424,6 +580,9 @@ __all__ = [
     "MinVariancePolicy",
     "MaxSharpePolicy",
     "KellyVolTargetPolicy",
+    "DispositionEffectPolicy",
+    "OverconfidentPolicy",
+    "BEHAVIORAL_POLICIES",
     "trailing_covariance",
     "trailing_mean",
     "BASELINE_POLICIES",

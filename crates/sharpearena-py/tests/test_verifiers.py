@@ -365,6 +365,8 @@ _SCHEME_PRIMARY = {
     "drawdown_penalized": "drawdown_penalized",
     "turnover_penalized": "turnover_penalized",
     "loss_averse": "loss_averse",
+    "risk_aware": "risk_aware",
+    "time_inhomogeneous_vol_aversion": "time_inhomogeneous_vol_aversion",
 }
 
 
@@ -377,6 +379,8 @@ def test_registry_lists_all_schemes_and_default_is_realized_return():
         "drawdown_penalized",
         "turnover_penalized",
         "loss_averse",
+        "risk_aware",
+        "time_inhomogeneous_vol_aversion",
     }
     assert REWARD_SCHEMES["default"] is realized_return_reward
 

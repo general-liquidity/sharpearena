@@ -12,6 +12,11 @@ hardcoded rubric used. ``"default"`` reproduces the original realized-return sch
 The flagship scheme is :func:`differential_sharpe` — an online Moody-Saffell differential
 Sharpe ratio that aligns the *training* signal with the deflated-Sharpe *scoring* objective
 (agents otherwise optimize raw return but are judged on Sharpe).
+
+Two schemes price risk per bar rather than at the end of the episode: :func:`risk_aware`
+charges a causally-estimated conditional volatility at a fixed aversion, and
+:func:`time_inhomogeneous_vol_aversion` lets that aversion vary across the horizon, which is
+the one thing no other scheme here does.
 """
 
 from __future__ import annotations
@@ -193,6 +198,163 @@ def loss_averse(
     return float(np.tanh(agg))
 
 
+# Causal-risk EMA decay for the two risk-pricing schemes below. eta=0.06 (~16-bar effective
+# window) tracks the local volatility regime fast enough that the charge follows the regime
+# rather than the whole episode; the 2-bar warm-up suppresses the transient where the
+# variance estimate is still seeded at zero.
+_RISK_ETA = 0.06
+_RISK_WARMUP = 2
+
+
+def _causal_risk_path(returns: list[float], eta: float) -> list[float]:
+    """Per-bar conditional volatility estimated from bars STRICTLY BEFORE each bar.
+
+    Walks the series once, reading the running EMA variance before folding the current bar
+    into it, so the risk charged at bar ``t`` uses only information available at ``t``. That
+    causality is what makes the charge a per-step price of risk rather than a post-hoc
+    aggregate over the finished path.
+    """
+    mean_ema = 0.0
+    var_ema = 0.0
+    out: list[float] = []
+    for i, r in enumerate(returns):
+        out.append(float(np.sqrt(var_ema)) if i >= _RISK_WARMUP else 0.0)
+        dev = r - mean_ema
+        mean_ema += eta * dev
+        var_ema += eta * (dev * dev - var_ema)
+    return out
+
+
+def risk_aware(
+    completion: Any = None,
+    state: Optional[dict] = None,
+    *,
+    lam: float = 1.0,
+    eta: float = _RISK_ETA,
+    **kwargs: Any,
+) -> float:
+    """Per-bar return net of a causally-estimated risk charge, tanh-bounded.
+
+    Follows "A Risk-Aware Reinforcement Learning Reward for Financial Trading": price risk
+    INTO the per-step signal instead of settling up at the end of the episode. Each bar
+    contributes ``r_t - lam * sigma_t``, where ``sigma_t`` is the EMA conditional volatility
+    built from bars strictly before ``t``. The sum is tanh-bounded to ``[-1, 1]``.
+
+    Why this is not a re-spelling of what is already registered. ``drawdown_penalized``
+    charges one episode-terminal scalar (the path extremum) against the aggregate, so it
+    cannot separate two paths that share a worst peak-to-trough decline. ``sortino`` divides
+    by a single whole-episode downside deviation, so it is a ratio computed once, after the
+    fact, and it is blind to WHEN the volatility was carried. This scheme charges at every
+    bar against the risk prevailing at that bar, using two-sided conditional volatility
+    rather than a downside aggregate: earning a given return while sitting in a turbulent
+    stretch scores below earning it in a calm one, even when the two paths share an identical
+    max drawdown and an identical episode-wide downside deviation. That per-bar,
+    regime-local attribution is genuinely absent from the registry.
+
+    Shapes TRAINING only. The rank key stays the SharpeBench kernel (deflated Sharpe /
+    ``pass^k`` / process checks); no scheme ever feeds the scorer.
+    """
+    rets = _returns_from_state(state)
+    if not rets:
+        return 0.0
+    risk = _causal_risk_path(rets, float(eta))
+    agg = sum(r - float(lam) * s for r, s in zip(rets, risk))
+    return float(np.tanh(agg))
+
+
+_AVERSION_SHAPES = ("linear", "convex", "concave", "exponential")
+
+
+def time_aversion_schedule(
+    n: int,
+    *,
+    lam_start: float = 0.25,
+    lam_end: float = 1.5,
+    shape: str = "linear",
+    curvature: float = 2.0,
+) -> list[float]:
+    """The per-bar risk-aversion coefficients ``lam_0 .. lam_{n-1}`` over an episode.
+
+    Time enters through ``u = t / (n - 1)``, the fraction of the horizon already consumed, so
+    ``1 - u`` is the fraction of horizon remaining. ``shape`` selects how aversion travels
+    from ``lam_start`` to ``lam_end``:
+
+    * ``linear``: constant rate of change in ``u``.
+    * ``convex``: ``u ** curvature``, aversion stays low then climbs late, the profile of an
+      agent that only starts to fear volatility once the horizon is close.
+    * ``concave``: ``1 - (1 - u) ** curvature``, aversion rises early then flattens.
+    * ``exponential``: geometric interpolation, requires both endpoints strictly positive.
+
+    Exposed publicly so a caller can inspect the schedule it is training against, and so the
+    time dependence is checkable rather than buried inside a loop.
+    """
+    if shape not in _AVERSION_SHAPES:
+        raise ValueError(f"unknown shape {shape!r}; choose from {list(_AVERSION_SHAPES)}")
+    count = max(int(n), 1)
+    lo = float(lam_start)
+    hi = float(lam_end)
+    if shape == "exponential" and (lo <= 0.0 or hi <= 0.0):
+        raise ValueError("exponential shape requires lam_start > 0 and lam_end > 0")
+    k = max(float(curvature), 1e-6)
+    out: list[float] = []
+    for t in range(count):
+        u = 0.0 if count < 2 else t / (count - 1)
+        if shape == "linear":
+            lam = lo + (hi - lo) * u
+        elif shape == "convex":
+            lam = lo + (hi - lo) * (u**k)
+        elif shape == "concave":
+            lam = lo + (hi - lo) * (1.0 - (1.0 - u) ** k)
+        else:
+            lam = lo * ((hi / lo) ** u)
+        out.append(float(lam))
+    return out
+
+
+def time_inhomogeneous_vol_aversion(
+    completion: Any = None,
+    state: Optional[dict] = None,
+    *,
+    lam_start: float = 0.25,
+    lam_end: float = 1.5,
+    shape: str = "linear",
+    curvature: float = 2.0,
+    eta: float = _RISK_ETA,
+    horizon: Optional[int] = None,
+    **kwargs: Any,
+) -> float:
+    """Volatility charge whose aversion coefficient varies with time, tanh-bounded.
+
+    Follows "Time-Inhomogeneous Volatility Aversion for Financial Applications of
+    Reinforcement Learning". Every other scheme in this registry applies the SAME risk
+    treatment at bar 1 and at bar 500: ``drawdown_penalized`` has one ``lam``,
+    ``loss_averse`` one asymmetry, ``sortino`` and ``differential_sharpe`` one functional
+    form. That is a modelling assumption, not a fact about traders. Aversion to volatility is
+    not constant over a horizon, and tolerance for a drawdown at the open of a mandate is not
+    tolerance for the same drawdown with a handful of bars left to recover it.
+
+    So the per-bar charge is ``r_t - lam(t) * sigma_t``, with ``lam(t)`` drawn from
+    :func:`time_aversion_schedule` (a function of elapsed and remaining horizon) and
+    ``sigma_t`` the same causal EMA conditional volatility ``risk_aware`` uses. Pass
+    ``horizon`` when the mandate's horizon is longer than the bars actually realized, so a
+    truncated episode is priced against the horizon it was meant to run rather than against
+    its own length.
+
+    Shapes TRAINING only. The rank key stays the SharpeBench kernel (deflated Sharpe /
+    ``pass^k`` / process checks); no scheme ever feeds the scorer.
+    """
+    rets = _returns_from_state(state)
+    if not rets:
+        return 0.0
+    n = len(rets) if horizon is None else max(int(horizon), len(rets))
+    lam = time_aversion_schedule(
+        n, lam_start=lam_start, lam_end=lam_end, shape=shape, curvature=curvature
+    )
+    risk = _causal_risk_path(rets, float(eta))
+    agg = sum(r - lam[i] * risk[i] for i, r in enumerate(rets))
+    return float(np.tanh(agg))
+
+
 REWARD_SCHEMES: dict[str, Any] = {
     "default": realized_return_reward,
     "differential_sharpe": differential_sharpe,
@@ -200,6 +362,8 @@ REWARD_SCHEMES: dict[str, Any] = {
     "drawdown_penalized": drawdown_penalized,
     "turnover_penalized": turnover_penalized,
     "loss_averse": loss_averse,
+    "risk_aware": risk_aware,
+    "time_inhomogeneous_vol_aversion": time_inhomogeneous_vol_aversion,
 }
 
 
@@ -241,4 +405,7 @@ __all__ = [
     "drawdown_penalized",
     "turnover_penalized",
     "loss_averse",
+    "risk_aware",
+    "time_inhomogeneous_vol_aversion",
+    "time_aversion_schedule",
 ]
