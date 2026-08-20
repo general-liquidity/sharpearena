@@ -149,6 +149,52 @@ from .realism import (
     DEFAULT_THRESHOLDS,
 )
 from .registration import register_envs
+from .adverse_selection import (
+    AdverseSelectionParams,
+    AdverseSelectionReport,
+    MetaOrder,
+    MakerMarkout,
+    Fill,
+    run_adverse_selection,
+    compare_informed_vs_uninformed,
+    fill_markout,
+)
+from .manipulation import (
+    ManipulationParams,
+    ManipulationResult,
+    BoundaryReport,
+    SizeResponse,
+    run_manipulation_probe,
+    impact_boundary_sweep,
+    size_response,
+    pump_and_dump_schedule,
+    momentum_follower_policy,
+    DISCLAIMER,
+)
+from .ecology import (
+    run_ecology,
+    population_table,
+    replicator_step,
+    allocate_seats,
+    mutating_innovator,
+    steady_shocks,
+    regime_shocks,
+    liquidity_shocks,
+    baseline_species,
+    market_payoffs,
+    competition_payoffs,
+    detect_coalitions,
+)
+from .deferred import (
+    DeferredDesk,
+    Claim,
+    Outcome,
+    LeakedResolution,
+    UnresolvedClaim,
+    resolve_claims,
+    outcomes_from_series,
+    summarize,
+)
 
 # Farama plugin convention: register the versioned env IDs at import time (idempotent).
 register_envs()
@@ -293,5 +339,47 @@ __all__ = [
     "RealismReport",
     "DEFAULT_THRESHOLDS",
     "register_envs",
+    # Adverse selection: the maker-side risk a single-agent env cannot express.
+    "AdverseSelectionParams",
+    "AdverseSelectionReport",
+    "MetaOrder",
+    "MakerMarkout",
+    "Fill",
+    "run_adverse_selection",
+    "compare_informed_vs_uninformed",
+    "fill_markout",
+    # Manipulation: a red-team diagnostic on the impact model, not a strategy.
+    "ManipulationParams",
+    "ManipulationResult",
+    "BoundaryReport",
+    "SizeResponse",
+    "run_manipulation_probe",
+    "impact_boundary_sweep",
+    "size_response",
+    "pump_and_dump_schedule",
+    "momentum_follower_policy",
+    "DISCLAIMER",
+    # Ecology: strategies compete and populations shift.
+    "run_ecology",
+    "population_table",
+    "replicator_step",
+    "allocate_seats",
+    "mutating_innovator",
+    "steady_shocks",
+    "regime_shocks",
+    "liquidity_shocks",
+    "baseline_species",
+    "market_payoffs",
+    "competition_payoffs",
+    "detect_coalitions",
+    # Deferred resolution: predictions that settle after the episode ends.
+    "DeferredDesk",
+    "Claim",
+    "Outcome",
+    "LeakedResolution",
+    "UnresolvedClaim",
+    "resolve_claims",
+    "outcomes_from_series",
+    "summarize",
 ]
 __version__ = "0.7.0"
