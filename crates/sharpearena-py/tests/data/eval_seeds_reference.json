@@ -1,0 +1,140 @@
+{
+  "config": {
+    "kernel": "sharpebench-core 0.5.0",
+    "max_steps": 512,
+    "n_days": 120,
+    "n_symbols": 4,
+    "n_trials": 8,
+    "policy": "EqualWeightLongPolicy"
+  },
+  "eval_set_version": "sharpearena-eval-seeds-v1",
+  "schema_version": "1",
+  "tiers": {
+    "calm": {
+      "held_out_00": {
+        "deflated_sharpe": 0.9949092866837939,
+        "mean_return": 0.0005679339414326106,
+        "passed_k": true
+      },
+      "held_out_01": {
+        "deflated_sharpe": 0.9989508815928553,
+        "mean_return": 0.0006682456060890888,
+        "passed_k": true
+      },
+      "held_out_02": {
+        "deflated_sharpe": 0.9735588143438401,
+        "mean_return": 0.0004595664818851708,
+        "passed_k": true
+      },
+      "held_out_03": {
+        "deflated_sharpe": 0.5832060174194457,
+        "mean_return": 0.00016964426764419597,
+        "passed_k": false
+      },
+      "held_out_04": {
+        "deflated_sharpe": 0.757943158113743,
+        "mean_return": 0.00028418435611659855,
+        "passed_k": true
+      },
+      "held_out_05": {
+        "deflated_sharpe": 0.17390120896300865,
+        "mean_return": -2.1362163587324937e-05,
+        "passed_k": false
+      },
+      "held_out_06": {
+        "deflated_sharpe": 0.9396761130645914,
+        "mean_return": 0.0004068319754406802,
+        "passed_k": true
+      },
+      "held_out_07": {
+        "deflated_sharpe": 0.9958374671447452,
+        "mean_return": 0.0005482165663621761,
+        "passed_k": true
+      }
+    },
+    "extreme": {
+      "held_out_00": {
+        "deflated_sharpe": 0.0683124648602812,
+        "mean_return": -0.0013471910369178737,
+        "passed_k": false
+      },
+      "held_out_01": {
+        "deflated_sharpe": 0.38982724034553223,
+        "mean_return": 0.0006518262917821186,
+        "passed_k": false
+      },
+      "held_out_02": {
+        "deflated_sharpe": 0.49424734210687765,
+        "mean_return": 0.0009846337239634666,
+        "passed_k": false
+      },
+      "held_out_03": {
+        "deflated_sharpe": 0.10587545037521223,
+        "mean_return": -0.0006588004146771085,
+        "passed_k": false
+      },
+      "held_out_04": {
+        "deflated_sharpe": 0.07166174815177995,
+        "mean_return": -0.0010864183237289668,
+        "passed_k": false
+      },
+      "held_out_05": {
+        "deflated_sharpe": 0.3809052526191591,
+        "mean_return": 0.0007729707910305371,
+        "passed_k": false
+      },
+      "held_out_06": {
+        "deflated_sharpe": 0.036795129479042676,
+        "mean_return": -0.0012325121073324201,
+        "passed_k": false
+      },
+      "held_out_07": {
+        "deflated_sharpe": 0.2628567754392695,
+        "mean_return": 0.00025816926496069205,
+        "passed_k": false
+      }
+    },
+    "hard": {
+      "held_out_00": {
+        "deflated_sharpe": 0.18092334023329992,
+        "mean_return": -6.100036018189074e-05,
+        "passed_k": false
+      },
+      "held_out_01": {
+        "deflated_sharpe": 0.7732963090992632,
+        "mean_return": 0.0007897867118360713,
+        "passed_k": true
+      },
+      "held_out_02": {
+        "deflated_sharpe": 0.03212575446562976,
+        "mean_return": -0.0005445031034573047,
+        "passed_k": false
+      },
+      "held_out_03": {
+        "deflated_sharpe": 0.2433261298490319,
+        "mean_return": 4.197942580396556e-05,
+        "passed_k": false
+      },
+      "held_out_04": {
+        "deflated_sharpe": 0.3374190886744359,
+        "mean_return": 0.0001561623082651888,
+        "passed_k": false
+      },
+      "held_out_05": {
+        "deflated_sharpe": 0.12863991129361602,
+        "mean_return": -0.00014936948647353287,
+        "passed_k": false
+      },
+      "held_out_06": {
+        "deflated_sharpe": 0.2263998554002934,
+        "mean_return": 2.7609644208546428e-05,
+        "passed_k": false
+      },
+      "held_out_07": {
+        "deflated_sharpe": 0.5190994718168191,
+        "mean_return": 0.0005433996955090984,
+        "passed_k": false
+      }
+    }
+  }
+}
