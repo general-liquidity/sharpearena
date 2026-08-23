@@ -73,16 +73,16 @@ For a fast smoke test, shrink the run: `max_steps = 5`, `args.n_windows = 16`
 | `[deployment]` (not set) | Add `num_train_gpus` / `num_infer_gpus` for your topology (see prime-rl's `examples/wordle`). |
 | `args.n_windows` | The dataset length, i.e. `num_tasks`. A few hundred for a real run, >= 16 for a smoke. |
 
-## Caveat: the held-out eval split is yours to enforce
+## The held-out eval split
 
 The env is point-in-time and leak-free **within** a scenario (the data layer has no API
-to read a future bar). Leak-freedom **across** train and eval - a strictly disjoint
-seed band - is the operator's responsibility.
+to read a future bar). Across train and eval, the split is seed bands: `mode="train"`
+draws from seed base `0`, `mode="eval"` from `EVAL_SEED_BASE = 1_000_000`, and the two
+ranges are asserted disjoint (`seed_ranges_disjoint`).
 
-`build_scenario_dataset` already supports it (`mode="train"` draws from seed base `0`,
-`mode="eval"` from `EVAL_SEED_BASE = 1_000_000`, asserted disjoint). **But** as of
-`sharpearena` 0.1.0, `load_environment` hardcodes `mode="train"` and does not forward
-`mode`/`seed_start`. The `mode = "eval"` key in the `[[orchestrator.eval.env]]` `args`
-is therefore a **silent no-op today** - the eval set currently reuses the train seed
-band. Until `load_environment` forwards `mode` to `build_scenario_dataset`, do not
-report this eval as held-out. See [`docs/training.md`](../../docs/training.md).
+`load_environment` forwards `mode` and `seed_start` to `build_scenario_dataset`, so the
+`mode = "eval"` key in the `[[orchestrator.eval.env]]` `args` builds a genuinely
+held-out eval dataset from the disjoint band. Keep `mode = "eval"` on the eval env only;
+a train env stays on the default `mode="train"`. If you pass an explicit `dataset=` into
+`load_environment`, `mode`/`seed_start` are ignored and the split is whatever your
+dataset encodes. See [`docs/training.md`](../../docs/training.md).

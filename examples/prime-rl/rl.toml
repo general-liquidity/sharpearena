@@ -56,13 +56,11 @@ id = "sharpearena"
 name = "sharpearena-eval"
 group_size = 8           # pass^k reliability sampling
 num_examples = 64        # held-out scenarios scored per eval
-# IMPORTANT - leak-free split is the OPERATOR'S responsibility. `mode = "eval"` is the
-# intended knob to draw from the disjoint eval seed band (EVAL_SEED_BASE = 1_000_000,
-# see dataset.py / build_scenario_dataset). As of sharpearena 0.1.0, load_environment
-# hardcodes mode="train" and does NOT forward `mode`/`seed_start`, so this key is a
-# silent no-op and the eval set currently OVERLAPS the train seed band. Do not treat
-# this eval as held-out until load_environment forwards `mode` to build_scenario_dataset.
-# See examples/prime-rl/README.md and docs/training.md.
+# `mode = "eval"` draws the eval dataset from the disjoint eval seed band
+# (EVAL_SEED_BASE = 1_000_000, see dataset.py / build_scenario_dataset), so this eval
+# is genuinely held out from the train band (base 0). load_environment forwards
+# `mode`/`seed_start` to build_scenario_dataset. Keep `mode = "eval"` on the eval env
+# only. See examples/prime-rl/README.md and docs/training.md.
 args = { n_windows = 64, n_symbols = 4, n_days = 120, max_episode_bars = 16, allow_short = true, mode = "eval" }
 
 [trainer.optim]

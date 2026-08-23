@@ -90,12 +90,30 @@ Two distinct guarantees:
    `EVAL_SEED_BASE = 1_000_000`, and the two ranges are asserted disjoint
    (`seed_ranges_disjoint`).
 
-> **Caveat (sharpearena 0.1.0).** `load_environment` currently hardcodes `mode="train"`
-> and does not forward `mode`/`seed_start` to `build_scenario_dataset`. Passing
-> `mode = "eval"` through a prime-rl eval `args` block is a **silent no-op** (the key is
-> absorbed by the verifiers `Environment(**kwargs)` catch-all), so the eval set reuses
-> the train seed band. Until `load_environment` forwards `mode`, treat any in-config
-> eval as **not** held-out, or build the eval `Dataset` yourself with
-> `build_scenario_dataset(..., mode="eval")` and pass it into `load_environment(dataset=...)`
-> from Python. The eval block in the example config encodes the intended split and is
-> flagged accordingly.
+`load_environment` forwards `mode` and `seed_start` to `build_scenario_dataset`, so
+held-out eval works from config alone: passing `mode = "eval"` through a prime-rl eval
+`args` block builds the eval dataset from the disjoint `EVAL_SEED_BASE` band, genuinely
+held out from the train band at base `0`. The eval block in the example config uses
+exactly this. Two things remain yours to keep straight: keep `mode = "eval"` on the eval
+env only (a train env left on the default `mode="train"` draws from base `0`), and if
+you pass an explicit `dataset=` into `load_environment`, `mode`/`seed_start` are ignored
+and the split is whatever your dataset encodes.
+
+## Two disjointness mechanisms, and which is used where
+
+The repo ships two independent train/eval split conventions; they do not interact.
+
+- **The generalization-gap band split** (`generalization.py`): `train_test_seeds` places
+  train at `[seed_start, seed_start + n_train)` and test at a far-separated band
+  starting `gap = 10_000` seeds later (with `n_train = n_test = 256`, that is
+  `[0, 256)` vs `[10256, 10512)`). Used by `generalization_gap` and the Rust
+  `train_test_split`; the gap absorbs later growth of the train band.
+- **The `EVAL_SEED_BASE = 1_000_000` offset** (`dataset.py`): `mode="eval"` datasets,
+  the `-Eval-v1` Gymnasium IDs, and the frozen named seeds in `eval_seeds.py` all live
+  at or above `EVAL_SEED_BASE`, provably disjoint from the train band
+  `[0, EVAL_SEED_BASE)`. This is the split the `verifiers`/prime-rl loop and the
+  regression eval set use.
+
+Both make train and eval disjoint by construction; the band split is a measurement
+instrument (one gap number), the offset is the operational convention every eval-mode
+dataset draws from.

@@ -15,13 +15,13 @@ cargo release patch            # DRY RUN
 cargo release patch --execute  # bump shared version + rewrite pins + tag vX.Y.Z + push
 ```
 
-`release.toml` sets `publish = false` — the local machine never publishes. The `v*`
+`release.toml` sets `publish = false`: the local machine never publishes. The `v*`
 tag triggers CI, which publishes via **OIDC Trusted Publishing** (no stored tokens).
 
 Never hand-edit a version. `Cargo.toml` is the only place one is authored: the npm
 `package.json` and the two `crates/sharpearena-py` manifests (that crate is excluded from
 the Cargo workspace) are rewritten from the workspace version by `pre-release-replacements`
-in **`crates/sharpearena/release.toml`** — they live on the crate, not at the workspace
+in **`crates/sharpearena/release.toml`**; they live on the crate, not at the workspace
 root, because cargo-release resolves `file` relative to each crate being processed.
 
 Three guards keep the surfaces in lockstep, because every publish step is skip-if-present
@@ -32,21 +32,19 @@ and a stale manifest therefore ships nothing while still reporting green:
 3. The `verify` job queries crates.io, npm and PyPI after the fact and fails the run if
    any of them is not serving the tag version.
 
-## One-time publishing setup (pending)
+## The standing pipeline
 
-Before the first CI publish, each registry needs its trusted publisher configured —
-mirroring the SharpeBench process:
+The packages are live on all three registries and every publish runs through
+`release.yml` on a `v*` tag. No tokens are stored anywhere:
 
-- **crates.io** — `sharpearena`, `sharpearena-wasm`: a crate must exist before a trusted
-  publisher can be added, so the **first** publish of each name needs a token
-  (`cargo publish -p sharpearena` then `-p sharpearena-wasm`); then add the trusted
-  publisher (owner `general-liquidity`, repo `sharpearena`, workflow `release.yml`) and
-  never use a token again.
-- **npm** — `@general-liquidity/sharpearena`: claim once (`npm publish --access public`),
-  then add the trusted publisher.
-- **PyPI** — `sharpearena`: configure a trusted publisher (GitHub → repo `sharpearena`,
-  workflow `release.yml`, environment `pypi`); maturin builds + uploads the wheel.
+- **crates.io**: `sharpearena` and `sharpearena-wasm` publish via OIDC trusted
+  publishing (owner `general-liquidity`, repo `sharpearena`, workflow `release.yml`).
+- **npm**: `@general-liquidity/sharpearena` publishes via its trusted publisher.
+- **PyPI**: `sharpearena` publishes via its trusted publisher (workflow `release.yml`,
+  environment `pypi`); maturin builds and uploads the wheel.
 
-Then set repo variables `PUBLISH_CRATES=true`, `PUBLISH_NPM=true`, `PUBLISH_PYPI=true`
-and create the `crates` / `npm` / `pypi` GitHub Environments (with whatever review
-protection you want on the gate). `release.yml` is added as part of the first publish.
+Each publish job is gated by a repo variable (`PUBLISH_CRATES`, `PUBLISH_NPM`,
+`PUBLISH_PYPI`) and runs in its GitHub Environment (`crates` / `npm` / `pypi`), so a
+registry can be paused by flipping its variable without touching the workflow. After
+the publish jobs, the `verify` job queries all three registries and fails the run if
+any of them is not serving the tag version.
