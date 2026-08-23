@@ -67,9 +67,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.96.0"
+      # Pinned: `check --config` moved in later cargo-deny releases; this is the
+      # version the command is verified against.
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-deny
+          tool: cargo-deny@0.19.9
       - name: cargo-deny (crates/sharpearena-py, excluded from the workspace)
         working-directory: crates/sharpearena-py
         run: cargo deny check --config ../../deny.toml
