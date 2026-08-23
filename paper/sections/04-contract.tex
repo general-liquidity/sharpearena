@@ -1,0 +1,19 @@
+\section{The agent contract and its governance}\label{sec:contract}
+
+An agent is an external program in any language that reads a \texttt{MarketObservation} as JSON and replies with a \texttt{Decision} as JSON. The harness sends an observation, the agent returns a decision, repeat. Everything else in this paper exists to make that loop trustworthy; this section is the loop's promise of stability.
+
+\subsection{Authoritative artifacts}
+
+The contract has four authoritative artifacts, all committed. \texttt{CONTRACT\_VERSION}, currently \texttt{1.0}, is the single source of truth for the wire version and lives in the contract module of the core crate. Two JSON Schemas, draft 2020-12, define \texttt{MarketObservation} and \texttt{Decision} for non-Rust implementers. A conformance kit of fixture documents, covering the normal multi-symbol case, a single symbol, an empty-portfolio start, signed-weight shorting and a legacy decision shape, is exercised by a committed conformance test. And a governance document states the evolution rules in writing.
+
+\subsection{Additive-only evolution}
+
+The contract evolves additively. The only backwards-compatible change is a new field that is optional with a default, so an agent written against an older version keeps parsing newer observations and the harness keeps parsing older decisions. The optional fields are absent from the schemas' \texttt{required} lists by construction. Removing, renaming or retyping a field, making an optional field required, and removing or renaming an action variant are all defined as breaking and forbidden on the v1 surface. A breaking change never mutates the v1 types in place; it ships a parallel namespace with its own schemas and its own major version, and the two run side by side through a published deprecation window. Adding a new action variant is itself classified as breaking, because consumers that exhaustively match would misparse it, so it also goes through the parallel namespace rather than an additive bump.
+
+\subsection{Version semantics}
+
+\texttt{CONTRACT\_VERSION} versions the wire shape only and is deliberately decoupled from the crate and package versions, which move on their own release cadence. A major bump is a breaking change shipped as a parallel namespace. A minor bump is reserved for a batch of additive fields significant enough to advertise; a single additive field needs no bump at all, because existing agents are unaffected by definition. A package release never, on its own, bumps the contract version.
+
+\subsection{Why the contract can be trusted without trusting the host}
+
+The governance promise is social; the properties of \cref{sec:leakfree,sec:determinism,sec:replay} are technical, and together they remove the host from the trust equation. A leaderboard entry produced on this environment can be recomputed by anyone from the frozen seed and the submitted decisions, on any platform, to the byte. The host's role reduces to publishing artifacts, and the artifacts carry their own verification. The scoring rules themselves are not defined here at all: the rank key is the SharpeBench kernel's deflated Sharpe with its reliability and process gates \citep{toca2026sharpebench,bailey2014deflated}, applied to the recomputed return series, so the environment and the scorer can be audited independently and neither can quietly redefine the other.

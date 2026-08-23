@@ -1,0 +1,43 @@
+\section{Experiments}\label{sec:experiments}
+
+Eight findings are planned. Each subsection below states the experiment's definition: the entry point, the seeds, the quantity measured and the question the number answers. Every experiment is implemented as a committed script under \texttt{paper/src/} that writes its result as JSON to \texttt{paper/evidence/} and, where a figure carries the finding, a PDF under \texttt{paper/figures/}; the exact commands are listed in \cref{app:commands}. The scenario seeds are fixed in the scripts, so the evidence run is deterministic given the pinned kernel.
+
+\subsection{F1: The baseline leaderboard under the corrected kernel}\label{sec:f1}
+
+The reference-policy field, flat, equal-weight long, momentum, minimum-variance, maximum-Sharpe and fractional-Kelly volatility targeting, plus the behavioral counterparties, is rolled over sixteen scenario seeds in each of the Calm, Hard and Extreme tiers via \texttt{run\_baselines}. Each policy's pooled return series is scored by the SharpeBench \texttt{score\_run} kernel with the declared trial count equal to the field size, and each row carries a seed-paired bootstrap confidence interval on the deflated Sharpe. The question is where the honest zero sits: what a leaderboard shows when nothing on it has an edge, and whether any reference policy's interval excludes zero on any tier.
+% numbers pending evidence run
+
+\subsection{F2: Regret against the closed-form optimum}\label{sec:f2}
+
+On the Avellaneda-Stoikov market-making task, \texttt{mm\_regret} runs each candidate quoting policy and the analytically optimal policy on the same sixteen seeded episodes and reports the mean reward gap. Candidates are the optimum itself, which must score approximately zero by construction, and fixed-spread quoters across a grid of half-spreads, which ignore inventory and time-to-go. The question is the shape and magnitude of the regret curve: how much the closed-form structure is worth over naive symmetric quoting, and whether the environment's regret metric separates the policies it should provably separate.
+% numbers pending evidence run
+
+\subsection{F3: Generalization gap and cross-regime transfer}\label{sec:f3}
+
+\texttt{generalization\_gap} scores a fixed reference policy on disjoint train and held-out seed bands within each tier and reports the differenced deflated Sharpe. \texttt{cross\_regime\_transfer} then holds sixteen seeds fixed and varies the regime, producing the full three-by-three transfer matrix over Calm, Hard and Extreme, whose diagonal is zero by construction because identical regimes reuse byte-identical environments. The question is the calibration of the instrument: the within-tier gap for a policy with no learning should be small, and the off-diagonal transfer gaps should expose regime-specific structure that the within-tier gap is blind to.
+% numbers pending evidence run
+
+\subsection{F4: Stylized-facts realism certification}\label{sec:f4}
+
+For each tier, price panels are collected from eight seeded episodes and graded by \texttt{certify\_realism} against the directional bounds: positive excess kurtosis, positive absolute-return autocorrelation, positive aggregational Gaussianity and a super-Poisson Fano factor, with skew and Zumbach asymmetry reported as informational. The output is the certification table: each fact's value per tier and the pass verdict. The question is whether the generator's tape earns the right to score agents, and which tier, if any, fails which fact.
+% numbers pending evidence run
+
+\subsection{F5: The manipulation boundary and size response}\label{sec:f5}
+
+A push-and-unwind manipulator is scored against its zero-impact paired reference over eight seeds. \texttt{impact\_boundary\_sweep} sweeps permanent impact, temporary impact and follower gain, reporting where along each axis the pump stops paying, and \texttt{size\_response} sweeps the push weight, reporting whether the payoff is bounded. The question is a statement about the simulator, not about any agent: a boundary that exists at a plausible parameter value says the impact specification prices manipulation the way real books do, and a missing boundary or a monotone size response is a defect finding against the environment itself.
+% numbers pending evidence run
+
+\subsection{F6: Adverse-selection markout decomposition}\label{sec:f6}
+
+\texttt{compare\_informed\_vs\_uninformed} runs twenty-four paired episodes in which the identical meta-order flow is sided on the alpha in one leg and on a coin in the other, holding the price path fixed, and reports mean maker markout per filled unit at each horizon. The question is the non-vacuity of the adverse-selection machinery: the informed leg must mark out worse at every horizon, and the gap per unit is the price of trading against information in this market. A single seeded \texttt{run\_adverse\_selection} episode additionally decomposes markout by maker, separating the optimal quoter from the tight fixed-spread quoters that informed flow should punish hardest.
+% numbers pending evidence run
+
+\subsection{F7: Failure-mode distributions}\label{sec:f7}
+
+Every baseline rollout from the F1 field, across all tiers and seeds, is classified by \texttt{classify\_episode\_failure} into the worst-case-first taxonomy, cascade-wiped, bankrupt, stopped-out, mandate breach or clean, with a per-scenario sampled mandate and drawdown-stop events folded into the event stream, and \texttt{rollup\_failure\_modes} tallies the suite. The question is the shape of failure as stress rises: which modes appear at which tier, which policies fail structurally rather than merely unprofitably, and what the clean rate is for a field with no edge.
+% numbers pending evidence run
+
+\subsection{F8: Ecology outcomes under shocks}\label{sec:f8}
+
+\texttt{run\_ecology} seeds the replicator with the baseline species, including the behavioral counterparties, over a shared-book market via \texttt{market\_payoffs}, and runs matched trajectories under a steady control schedule and a \texttt{regime\_shocks} schedule rotating Calm, Hard and Extreme, with the innovation operator breeding parameter-perturbed variants. Reported are the population-share trajectories, extinction and innovation events, and the classified outcomes. The question is which strategies survive transitions rather than which scores best inside a regime, and whether the shocked population's composition diverges from the control's in a direction the strategy parameters explain.
+% numbers pending evidence run

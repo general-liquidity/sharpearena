@@ -1,0 +1,59 @@
+\section{Commands that produce every number}\label{app:commands}
+
+All commands run from the repository root at the tagged version, with the \texttt{sharpearena} Python package installed (the version is pinned when the evidence run executes and recorded in every evidence file). Each evidence script fixes its seeds internally, writes JSON to \texttt{paper/evidence/} and, where a figure carries the finding, a PDF to \texttt{paper/figures/}.
+
+\paragraph{The design-property checks (\cref{sec:leakfree,sec:determinism,sec:replay,sec:contract}).}
+\begin{verbatim}
+cargo test -p sharpearena                      # golden hashes, leak-free
+                                               # property tests, conformance kit
+cargo test -p sharpearena-wasm                 # native == wasm parity + golden
+npm test --prefix npm/sharpearena              # replay + tamper detection
+python -m pytest crates/sharpearena-py         # Python surface, check_env,
+                                               # seed-band disjointness
+\end{verbatim}
+
+\paragraph{F1: baseline leaderboard (\cref{sec:f1}).}
+\begin{verbatim}
+python paper/src/make-f1-baselines.py
+\end{verbatim}
+
+\paragraph{F2: regret vs the closed-form optimum (\cref{sec:f2}).}
+\begin{verbatim}
+python paper/src/make-f2-regret.py
+\end{verbatim}
+
+\paragraph{F3: generalization gap and cross-regime transfer (\cref{sec:f3}).}
+\begin{verbatim}
+python paper/src/make-f3-generalization.py
+\end{verbatim}
+
+\paragraph{F4: stylized-facts realism certification (\cref{sec:f4}).}
+\begin{verbatim}
+python paper/src/make-f4-realism.py
+\end{verbatim}
+
+\paragraph{F5: manipulation boundary and size response (\cref{sec:f5}).}
+\begin{verbatim}
+python paper/src/make-f5-manipulation.py
+\end{verbatim}
+
+\paragraph{F6: adverse-selection markouts (\cref{sec:f6}).}
+\begin{verbatim}
+python paper/src/make-f6-adverse-selection.py
+\end{verbatim}
+
+\paragraph{F7: failure-mode distributions (\cref{sec:f7}).}
+\begin{verbatim}
+python paper/src/make-f7-failures.py
+\end{verbatim}
+
+\paragraph{F8: ecology under shocks (\cref{sec:f8}).}
+\begin{verbatim}
+python paper/src/make-f8-ecology.py
+\end{verbatim}
+
+\paragraph{Regenerating every figure from the committed evidence.}
+\begin{verbatim}
+python paper/src/make-figures.py
+\end{verbatim}
+Each \texttt{make-f*} script produces its own figure at run time; \texttt{make-figures.py} re-renders all figures from the JSON already in \texttt{paper/evidence/} without re-running any experiment, so a reader can check that no figure contains a number the evidence does not.

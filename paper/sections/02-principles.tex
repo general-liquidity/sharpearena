@@ -1,0 +1,19 @@
+\section{Design principles}\label{sec:principles}
+
+Every decision in the environment traces to one of seven principles, stated here so the rest of the paper reads as their consequences.
+
+\textbf{Leak-free by construction.} The environment owns the time cursor, and the data layer exposes no operation that returns a bar after it. An agent cannot peek because there is nothing to call, not because a rule forbids it. Detection layers exist, but they sit behind the structural guarantee, never in place of it.
+
+\textbf{Deterministic across runtimes.} A published number must be byte-identical on any platform and any surface. The determinism-critical core is one Rust engine; its scenario transform uses only multiply, add, divide and max, because \texttt{ln} and \texttt{exp} differ across libm implementations. Golden hashes committed in the source pin the outputs, and the WebAssembly build asserts equality with the native engine rather than assuming it.
+
+\textbf{Recompute, do not trust.} A trajectory is evidence only if a third party can recompute it. Runs record the agent's decisions and nothing derived; replay against the frozen scenario reproduces returns byte-for-byte, and a tampered trajectory reproduces something else.
+
+\textbf{The contract is the product.} The agent interface is a tiny JSON surface that evolves additively under a written governance policy, with schemas and conformance fixtures as the authoritative artifacts. Whoever defines the interface owns the ecosystem; an interface that moves under its implementers owns nothing.
+
+\textbf{Generalization is measured, not presumed.} Scenarios are procedural functions of an integer seed, in the Procgen model \citep{cobbe2020procgen}, and the protocol fixes disjoint train, gap and held-out seed bands. Overfitting becomes one number, the train-minus-test deflated Sharpe, instead of a suspicion.
+
+\textbf{The environment produces; the kernel judges.} SharpeArena computes no rank. Scoring is delegated to the SharpeBench kernel \citep{toca2026sharpebench}, so the deflation, reliability and process gates are specified once, in one place, and the environment cannot quietly disagree with the scorer about what a good run is.
+
+\textbf{Distrust the simulator too.} A synthetic market that pays manipulation without bound, or that lets makers profit from informed flow, or that emits Gaussian tape, is an answer key for the wrong exam. The probe layer treats the simulator as a subject: realism certification against the stylized facts \citep{cont2001empirical}, payoff-boundary sweeps for manipulation, markout decomposition for adverse selection, and ecology runs that ask which strategies survive contact with each other.
+
+One consequence is worth stating before the experiments. The first three principles are properties of committed code, checkable today by running the listed tests, and this paper claims them as such. The empirical section makes no analogous claim: its eight findings are defined, seeded and scripted, and their numbers arrive when the evidence run executes against the integrated kernel.
