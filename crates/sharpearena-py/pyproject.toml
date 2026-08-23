@@ -29,6 +29,7 @@ dependencies = [
 verifiers = ["verifiers"]
 minari = ["minari"]
 pettingzoo = ["pettingzoo"]
+mcp = ["mcp"]
 
 # Defaults for `vf-eval sharpearena` (read by verifiers' eval script from this table).
 # A bare `vf-eval sharpearena` then scores 16 scenarios x 3 rollouts of the v1 taskset.

@@ -54,6 +54,9 @@ from .baselines import (
     MinVariancePolicy,
     MaxSharpePolicy,
     KellyVolTargetPolicy,
+    BEHAVIORAL_POLICIES,
+    DispositionEffectPolicy,
+    OverconfidentPolicy,
 )
 from .confidence import (
     deflated_sharpe_ci,
@@ -70,6 +73,9 @@ from .rewards import (
     drawdown_penalized,
     turnover_penalized,
     loss_averse,
+    risk_aware,
+    time_inhomogeneous_vol_aversion,
+    time_aversion_schedule,
 )
 from .indicators import CausalIndicatorObservation, INDICATORS, DEFAULT_INDICATORS
 from .risk import DrawdownStopper, TurbulenceHalt, CrossSectionalDeleverage
@@ -184,6 +190,7 @@ from .ecology import (
     market_payoffs,
     competition_payoffs,
     detect_coalitions,
+    classify_outcomes,
 )
 from .deferred import (
     DeferredDesk,
@@ -191,8 +198,11 @@ from .deferred import (
     Outcome,
     LeakedResolution,
     UnresolvedClaim,
+    ClaimRejected,
     resolve_claims,
     outcomes_from_series,
+    claims_from_json,
+    score_claim,
     summarize,
 )
 
@@ -282,6 +292,9 @@ __all__ = [
     "drawdown_penalized",
     "turnover_penalized",
     "loss_averse",
+    "risk_aware",
+    "time_inhomogeneous_vol_aversion",
+    "time_aversion_schedule",
     "CausalIndicatorObservation",
     "INDICATORS",
     "DEFAULT_INDICATORS",
@@ -300,6 +313,9 @@ __all__ = [
     "MinVariancePolicy",
     "MaxSharpePolicy",
     "KellyVolTargetPolicy",
+    "BEHAVIORAL_POLICIES",
+    "DispositionEffectPolicy",
+    "OverconfidentPolicy",
     "evaluate_per_regime",
     "radar_score",
     "PortfolioEnv",
@@ -372,14 +388,18 @@ __all__ = [
     "market_payoffs",
     "competition_payoffs",
     "detect_coalitions",
+    "classify_outcomes",
     # Deferred resolution: predictions that settle after the episode ends.
     "DeferredDesk",
     "Claim",
     "Outcome",
     "LeakedResolution",
     "UnresolvedClaim",
+    "ClaimRejected",
     "resolve_claims",
     "outcomes_from_series",
+    "claims_from_json",
+    "score_claim",
     "summarize",
 ]
 __version__ = "0.8.0"
