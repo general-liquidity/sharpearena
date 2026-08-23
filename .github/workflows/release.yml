@@ -16,17 +16,38 @@ permissions:
   contents: read
   id-token: write # OIDC for crates.io + PyPI trusted publishing, and npm provenance
 
+# One release at a time per ref. No cancel-in-progress: a half-done publish must
+# finish (or fail visibly), never be cancelled by a newer run.
+concurrency:
+  group: release-${{ github.ref }}
+
 jobs:
   crates:
     name: crates.io (sharpearena + sharpearena-wasm)
     if: ${{ vars.PUBLISH_CRATES == 'true' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment: crates
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.96.0"
+
+      # Same stale-manifest trap the npm and pypi jobs guard against: if the workspace
+      # version was not bumped to the tag, the skip-if-published loop below finds the
+      # old version already on crates.io and "skips" everything - a green run that
+      # shipped nothing.
+      - name: Assert the workspace manifest matches the release tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          V="$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')"
+          if [ "$V" != "$TAG" ]; then
+            echo "::error file=Cargo.toml::version $V does not match tag $TAG - the manifest is stale, cut the release with 'cargo release' so the workspace version moves with the tag"
+            exit 1
+          fi
+          echo "ok   workspace manifest is at $V"
       # Exchanges the GitHub OIDC identity for a short-lived crates.io token.
       - uses: rust-lang/crates-io-auth-action@v1
         id: auth
@@ -53,6 +74,7 @@ jobs:
     name: npm (@general-liquidity/sharpearena)
     if: ${{ vars.PUBLISH_NPM == 'true' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment: npm
     steps:
       - uses: actions/checkout@v6
@@ -73,6 +95,7 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
       # npm trusted publishing (OIDC) needs npm >= 11.5; provenance is automatic.
+      # No attest-build-provenance step here: OIDC trusted publishing already attaches it.
       - run: npm install -g npm@latest
 
       # cargo-release rewrites this manifest from the workspace version (the rules live in
@@ -108,7 +131,14 @@ jobs:
     name: PyPI (sharpearena wheel)
     if: ${{ vars.PUBLISH_PYPI == 'true' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     environment: pypi
+    # Job-level permissions replace the workflow-level block, so id-token must be
+    # restated here alongside the attestation grant.
+    permissions:
+      contents: read
+      id-token: write # OIDC for PyPI trusted publishing + the provenance attestation
+      attestations: write # store the attestation on the repo
     steps:
       - uses: actions/checkout@v6
 
@@ -141,6 +171,13 @@ jobs:
         with:
           command: sdist
           args: --out dist --manifest-path crates/sharpearena-py/Cargo.toml
+      # SLSA build provenance for the wheels + sdist via GitHub's native attestation:
+      # keyless, no keypair or secret to manage, verifiable with the GitHub CLI alone
+      # (gh attestation verify <wheel> --repo general-liquidity/sharpearena).
+      - name: Attest build provenance (SLSA)
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: dist/*
       # Trusted publishing — configure the PyPI publisher for repo `sharpearena`,
       # workflow `release.yml`, environment `pypi`. No token needed.
       - name: Publish to PyPI (OIDC)
@@ -159,7 +196,26 @@ jobs:
     needs: [crates, npm, pypi]
     if: always() && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
+      # `if: always()` keeps this job alive past an upstream failure so the registry
+      # probes still run, but the run as a whole must not go green when a publish job
+      # itself failed. 'skipped' is fine: the jobs are var-gated by design.
+      - name: Fail if any publish job failed
+        run: |
+          fail=0
+          for job in crates npm pypi; do
+            case "$job" in
+              crates) result="${{ needs.crates.result }}" ;;
+              npm)    result="${{ needs.npm.result }}" ;;
+              pypi)   result="${{ needs.pypi.result }}" ;;
+            esac
+            echo "$job: $result"
+            if [ "$result" = "failure" ]; then
+              echo "::error::publish job '$job' failed"; fail=1
+            fi
+          done
+          exit $fail
       - uses: actions/setup-node@v6
         with:
           node-version: 24
