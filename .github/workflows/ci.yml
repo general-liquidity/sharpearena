@@ -60,15 +60,19 @@ jobs:
         with:
           command: check
       # crates/sharpearena-py is `exclude`d from the workspace, so the check above
-      # never sees its dependency tree (pyo3 and friends). Point a second run at its
-      # manifest, reusing the root policy: the config path resolves against the
-      # repo root, which is the action's working directory.
-      - name: cargo-deny (crates/sharpearena-py, excluded from the workspace)
-        uses: EmbarkStudios/cargo-deny-action@v2
+      # never sees its dependency tree (pyo3 and friends). A second action run
+      # cannot cover it: the action's container has no 1.96.0 toolchain for the
+      # crate's rust-toolchain override and rejects a --config argument, so run
+      # the binary directly against the root policy.
+      - uses: dtolnay/rust-toolchain@master
         with:
-          command: check
-          manifest-path: crates/sharpearena-py/Cargo.toml
-          command-arguments: --config deny.toml
+          toolchain: "1.96.0"
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - name: cargo-deny (crates/sharpearena-py, excluded from the workspace)
+        working-directory: crates/sharpearena-py
+        run: cargo deny check --config ../../deny.toml
 
   npm:
     name: npm (wasm wrapper)
