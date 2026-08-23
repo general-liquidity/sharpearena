@@ -167,8 +167,9 @@ from its outcome log.
 
 ## Baseline leaderboard (numbers to beat)
 
-These are the trivial reference policies every entrant must clear: a do-nothing `flat`,
-a buy-and-hold-analog `equal_weight_long`, and a one-step `momentum` tilt. They are
+These are the reference policies every entrant must clear: a do-nothing `flat`, a
+buy-and-hold-analog `equal_weight_long`, a one-step `momentum` tilt, and the three
+portfolio baselines `min_variance`, `max_sharpe`, and `kelly_vol_target`. They are
 produced by `run_baselines` and ranked by `leaderboard_markdown`, so the table below is
 fully reproducible.
 
@@ -184,37 +185,53 @@ print(leaderboard_markdown(run_baselines(n_symbols=4, n_days=120, seeds=range(16
 
 | Rank | Policy | Deflated Sharpe | pass^k rate | Mean return |
 |---|---|---|---|---|
-| 1 | flat | 0.0000 | 0.00 | 0.000000 |
-| 2 | equal_weight_long | 0.0000 | 0.62 | 0.000356 |
-| 3 | momentum | 0.0000 | 0.00 | -0.000869 |
+| 1 | kelly_vol_target | 1.0000 | 0.75 | 0.000337 |
+| 2 | equal_weight_long | 1.0000 | 0.62 | 0.000356 |
+| 3 | min_variance | 0.9849 | 0.44 | 0.000240 |
+| 4 | flat | 0.0007 | 0.00 | 0.000000 |
+| 5 | momentum | 0.0000 | 0.00 | -0.000869 |
+| 6 | max_sharpe | 0.0000 | 0.06 | -0.001002 |
 
-Read this honestly: **the deflated Sharpe to beat is 0.0.** None of the trivial
-baselines establish a deflated edge. `equal_weight_long` drifts up on average (positive
-mean return, pass^k on 62% of seeds) but the SharpeBench kernel floors its deflated
-Sharpe to zero once the search breadth is accounted for, and `momentum` is a net loser.
-The bar is exactly the right height: a real agent has to produce a positive,
-process-clean, deflated number that survives the held-out band, not a lucky mean return.
+Read this honestly: **on Calm, drift is free deflated Sharpe, and rank-eligibility is
+what the baselines fail.** The long-drift policies saturate the deflated Sharpe on the
+calm tier (the kernel states its 0.5 deflation prior annualized and converts it at 252
+bars/year, so steady drift over 16 pooled seeds clears the expected-maximum bar), yet
+none of them passes the per-run gate on every seed (best pass^k rate 0.75), so none is
+rank-eligible. `momentum` and `max_sharpe` are net losers. The bar is exactly the right
+height: a real agent has to produce a positive, process-clean, deflated number that
+survives **every** held-out seed, not a lucky mean return.
+
+Earlier revisions of this table showed 0.0000 deflated Sharpe for every baseline on
+every tier. That was an artifact of a unit bug in the pre-0.5.0 kernel: the annualized
+deflation prior was applied per period unconverted, which set the deflation benchmark
+near an annualized Sharpe of 18 on daily bars, a bar nothing clears.
 
 ### `SharpeArena/Hard-v1` (n_symbols=4, n_days=120, seeds=range(16))
 
 | Rank | Policy | Deflated Sharpe | pass^k rate | Mean return |
 |---|---|---|---|---|
-| 1 | flat | 0.0000 | 0.00 | 0.000000 |
-| 2 | equal_weight_long | 0.0000 | 0.31 | 0.000243 |
-| 3 | momentum | 0.0000 | 0.00 | -0.000844 |
+| 1 | equal_weight_long | 0.1114 | 0.31 | 0.000243 |
+| 2 | kelly_vol_target | 0.0277 | 0.31 | 0.000118 |
+| 3 | min_variance | 0.0024 | 0.19 | 0.000051 |
+| 4 | flat | 0.0007 | 0.00 | 0.000000 |
+| 5 | max_sharpe | 0.0000 | 0.00 | -0.000928 |
+| 6 | momentum | 0.0000 | 0.00 | -0.000844 |
 
 ### `SharpeArena/Extreme-v1` (n_symbols=4, n_days=120, seeds=range(16))
 
 | Rank | Policy | Deflated Sharpe | pass^k rate | Mean return |
 |---|---|---|---|---|
-| 1 | flat | 0.0000 | 0.00 | 0.000000 |
-| 2 | equal_weight_long | 0.0000 | 0.06 | 0.000473 |
-| 3 | momentum | 0.0000 | 0.06 | -0.000306 |
+| 1 | min_variance | 0.0243 | 0.06 | 0.000585 |
+| 2 | equal_weight_long | 0.0234 | 0.06 | 0.000473 |
+| 3 | kelly_vol_target | 0.0029 | 0.12 | 0.000139 |
+| 4 | flat | 0.0007 | 0.00 | 0.000000 |
+| 5 | momentum | 0.0000 | 0.06 | -0.000306 |
+| 6 | max_sharpe | 0.0000 | 0.00 | -0.001578 |
 
-The deflated Sharpe to beat is 0.0 on every tier, but note the **pass^k rate degrades
-monotonically with difficulty** for the long baseline (Calm 0.62, Hard 0.31, Extreme
-0.06): the harder vol-and-jump tiers strip out the easy drift, exactly as intended.
-Regenerate any tier with:
+The deflated Sharpe to beat collapses from saturated on Calm to ~0.1 on Hard and ~0.02
+on Extreme, and the **pass^k rate degrades monotonically with difficulty** for the long
+baseline (Calm 0.62, Hard 0.31, Extreme 0.06): the harder vol-and-jump tiers strip out
+the easy drift, exactly as intended. Regenerate any tier with:
 
 ```bash
 python -c "from sharpearena.baselines import run_baselines, leaderboard_markdown; \

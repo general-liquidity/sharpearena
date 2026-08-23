@@ -13,7 +13,7 @@ use sharpearena::leaderboard_ci::{
     KERNEL_BASE_TRIALS, TRIALS_SR_STD_DEFAULT,
 };
 use sharpearena::lob_market::{OrderBook, OrderKind, Side};
-use sharpearena::market::{MarketClearing, MarketParams};
+use sharpearena::market::{EllipticUncertaintySet, MarketClearing, MarketParams};
 use sharpearena::vec_env::AutoresetMode;
 use sharpearena::{
     generate_scenario, CostModel, Dataset, Decision, DistributionMode, LaneConfig, Mandate,
@@ -479,7 +479,9 @@ fn score_run(returns: Vec<f64>, n_trials: u32) -> PyResult<String> {
         in_sample_trials: n_trials,
         candidates: Vec::new(),
     };
-    let score = score_agent(&submission, &ScoreConfig::default());
+    // SharpeArena scenarios are daily bars; the 0.5 deflation prior is annualized and the
+    // kernel converts it per period through this value, so name it explicitly.
+    let score = score_agent(&submission, &ScoreConfig::for_periods_per_year(252.0));
     serde_json::to_string(&score).map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
@@ -604,6 +606,38 @@ pub struct PyMarketClearing {
     inner: MarketClearing,
     params: MarketParams,
     seed: u64,
+    uncertainty: Option<EllipticUncertaintySet>,
+}
+
+/// Validate-and-build the elliptic uncertainty set from optional ctor/setter inputs.
+/// Both radii absent means the point-estimate path; a lone radius pairs with 0.0.
+/// Validated here (not via `EllipticUncertaintySet::new`) so a bad input surfaces as a
+/// Python `ValueError` instead of a Rust panic.
+fn build_uncertainty(
+    lambda_radius: Option<f64>,
+    eta_radius: Option<f64>,
+    correlation: f64,
+) -> PyResult<Option<EllipticUncertaintySet>> {
+    if lambda_radius.is_none() && eta_radius.is_none() {
+        return Ok(None);
+    }
+    let a = lambda_radius.unwrap_or(0.0);
+    let b = eta_radius.unwrap_or(0.0);
+    if a < 0.0 || b < 0.0 {
+        return Err(PyValueError::new_err(
+            "uncertainty radii must be non-negative",
+        ));
+    }
+    if !(-1.0..=1.0).contains(&correlation) {
+        return Err(PyValueError::new_err(
+            "uncertainty_correlation must lie in [-1, 1]",
+        ));
+    }
+    Ok(Some(EllipticUncertaintySet {
+        lambda_radius: a,
+        eta_radius: b,
+        correlation,
+    }))
 }
 
 #[pymethods]
@@ -623,6 +657,9 @@ impl PyMarketClearing {
         vol_scale = 0.0,
         distribution_mode = "calm",
         richness = "standard",
+        lambda_radius = None,
+        eta_radius = None,
+        uncertainty_correlation = 0.0,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -637,6 +674,9 @@ impl PyMarketClearing {
         vol_scale: f64,
         distribution_mode: &str,
         richness: &str,
+        lambda_radius: Option<f64>,
+        eta_radius: Option<f64>,
+        uncertainty_correlation: f64,
     ) -> PyResult<Self> {
         if n_agents < 1 {
             return Err(PyValueError::new_err("n_agents must be >= 1"));
@@ -652,16 +692,45 @@ impl PyMarketClearing {
             volume_scale,
             vol_scale,
         };
+        let uncertainty = build_uncertainty(lambda_radius, eta_radius, uncertainty_correlation)?;
         Ok(PyMarketClearing {
             inner,
             params,
             seed,
+            uncertainty,
         })
     }
 
     #[getter]
     fn scenario_seed(&self) -> u64 {
         self.seed
+    }
+
+    /// The active elliptic uncertainty set as JSON
+    /// (`{lambda_radius, eta_radius, correlation}`), or `None` on the point-estimate path.
+    #[getter]
+    fn uncertainty(&self) -> Option<String> {
+        self.uncertainty.as_ref().map(|u| {
+            serde_json::json!({
+                "lambda_radius": u.lambda_radius,
+                "eta_radius": u.eta_radius,
+                "correlation": u.correlation,
+            })
+            .to_string()
+        })
+    }
+
+    /// Install (or, with both radii `None`, remove) the elliptic uncertainty set used by
+    /// every subsequent [`step_market`](Self::step_market) call.
+    #[pyo3(signature = (lambda_radius = None, eta_radius = None, correlation = 0.0))]
+    fn set_uncertainty(
+        &mut self,
+        lambda_radius: Option<f64>,
+        eta_radius: Option<f64>,
+        correlation: f64,
+    ) -> PyResult<()> {
+        self.uncertainty = build_uncertainty(lambda_radius, eta_radius, correlation)?;
+        Ok(())
     }
 
     /// The active observation-richness disclosure as a JSON object
@@ -726,7 +795,11 @@ impl PyMarketClearing {
                 agent_orders[bad].len()
             )));
         }
-        let result = self.inner.step(&agent_orders, &self.params);
+        // `step_robust(.., None)` runs the identical arithmetic as `step`, so the
+        // point-estimate wire output stays byte-identical when no set is installed.
+        let result = self
+            .inner
+            .step_robust(&agent_orders, &self.params, self.uncertainty.as_ref());
         let mut value =
             serde_json::to_value(&result).map_err(|e| PyValueError::new_err(e.to_string()))?;
         if let serde_json::Value::Object(ref mut map) = value {

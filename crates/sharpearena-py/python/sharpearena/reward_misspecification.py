@@ -345,8 +345,9 @@ def demonstrate_punishment(
     """Run every flawed-reward proxy over ``seeds`` and score it with SharpeBench.
 
     Returns ``{reward_name: {deflated_sharpe, passed_k, mean_return}}`` — the falsifiable
-    demonstration that proxies optimized for the misspecified rewards score poorly on deflated
-    Sharpe (and fail ``pass^k``) despite, where applicable, a healthy raw mean return. The
+    demonstration that proxies optimized for the misspecified rewards never clear the
+    kernel's rank-eligibility (the deflated-Sharpe bar and ``pass^k`` together) despite,
+    where applicable, a healthy raw mean return. The
     proxies STAND IN for trained agents. ``n_trials`` defaults to the proxy count — the honest
     declared in-sample search breadth, which deflates Sharpe for multiple-comparison luck.
     """

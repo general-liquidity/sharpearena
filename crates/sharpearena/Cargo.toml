@@ -9,9 +9,9 @@ keywords = ["trading", "reinforcement", "environment", "backtest", "agent"]
 categories = ["science", "finance", "simulation"]
 
 [dependencies]
-sharpebench-sim = "0.0.8"
-sharpebench-protocol = "0.0.8"
-sharpebench-core = "0.0.8"
+sharpebench-sim = "0.5.0"
+sharpebench-protocol = "0.5.0"
+sharpebench-core = "0.5.0"
 serde = { version = "1", features = ["derive"] }
 
 # rayon parallelizes the batched step on native targets. Gated out of wasm32 (no

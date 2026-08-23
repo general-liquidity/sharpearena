@@ -113,11 +113,19 @@ def test_demonstrate_punishment_scorer_punishes_flawed_proxies():
         assert np.isfinite(row["deflated_sharpe"])
         assert 0.0 <= row["passed_k"] <= 1.0
 
-    # No flawed proxy wins on the real metric: deflated Sharpe stays ~0.
-    assert max(r["deflated_sharpe"] for r in table.values()) <= 0.5
+    # No flawed proxy wins on the real metric: none clears the kernel's rank-eligibility
+    # conjunction (deflated Sharpe over the 0.95 bar AND pass^k on every seed). Under the
+    # sharpebench <0.5.0 kernel the annualized 0.5 deflation prior was applied per period
+    # (a benchmark of annualized Sharpe ~18), so every proxy sat at DSR ~0 and the old
+    # assertion was simply `max DSR <= 0.5`. The corrected kernel lets a lucky proxy
+    # (win_rate here) reach a high DSR on this small demo, and it is pass^k that keeps it
+    # ineligible, which is exactly the reliability role pass^k plays in the benchmark.
+    for name, row in table.items():
+        assert row["deflated_sharpe"] < 0.95 or row["passed_k"] < 1.0, name
 
     # The wedge: the proxy with the best raw mean return looks profitable in-sample yet
-    # earns ~0 deflated Sharpe — naive reward -> high raw return, scorer does not reward it.
+    # earns a weak deflated Sharpe — naive reward -> high raw return, scorer does not
+    # reward it.
     best = max(table.values(), key=lambda r: r["mean_return"])
     assert best["mean_return"] > 0.0
     assert best["deflated_sharpe"] <= 0.5

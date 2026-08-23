@@ -24,10 +24,18 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Cross-trial Sharpe dispersion the deflation assumes, mirroring
+/// **Annualized** cross-trial Sharpe dispersion the deflation assumes, mirroring
 /// `sharpebench_core::ScoreConfig::default().trials_sr_std`. Kept in sync so a CI built
-/// here brackets the point deflated Sharpe the scoring kernel reports.
+/// here brackets the point deflated Sharpe the scoring kernel reports. Like the kernel,
+/// every public entry point here takes this in annualized units and converts it per
+/// period exactly once (dividing by `sqrt(PERIODS_PER_YEAR)`).
 pub const TRIALS_SR_STD_DEFAULT: f64 = 0.5;
+
+/// Bars per year on SharpeArena scenarios (daily bars), mirroring
+/// `sharpebench_core::ScoreConfig::default().periods_per_year`. The deflation prior is
+/// stated annualized; applied per period unconverted it set the expected-maximum bar to
+/// an annualized Sharpe of ~18 on daily bars, which nothing clears.
+pub const PERIODS_PER_YEAR: f64 = 252.0;
 
 /// The scoring kernel's own baseline multiple-testing footprint, mirroring
 /// `sharpebench_core::ScoreConfig::default().n_trials`. The effective deflation count is
@@ -197,10 +205,19 @@ fn expected_max_sharpe(trials_sr_std: f64, n_trials: u32) -> f64 {
 
 /// Deflated Sharpe Ratio: the PSR against the expected-maximum Sharpe seen by chance
 /// across `n_trials`. Near 1.0 ⇒ the edge is very unlikely to be selection luck; near
-/// 0.0 ⇒ indistinguishable from luck. Matches the scoring kernel given the same
-/// `n_trials` / `trials_sr_std`, so a bootstrap over this brackets the leaderboard point.
+/// 0.0 ⇒ indistinguishable from luck. `trials_sr_std` is **annualized** (like
+/// `ScoreConfig::trials_sr_std`) and converted per period here, so this matches the
+/// scoring kernel given the same `n_trials` / `trials_sr_std` and a bootstrap over it
+/// brackets the leaderboard point.
 pub fn deflated_sharpe(returns: &[f64], n_trials: u32, trials_sr_std: f64) -> f64 {
-    let sr_star = expected_max_sharpe(trials_sr_std, n_trials);
+    deflated_sharpe_per_period(returns, n_trials, trials_sr_std / PERIODS_PER_YEAR.sqrt())
+}
+
+/// The raw estimator over an already per-period `sr_std` — the unit-conversion-free math
+/// the bootstrap loops call after the public entry points convert the annualized prior
+/// exactly once.
+fn deflated_sharpe_per_period(returns: &[f64], n_trials: u32, per_period_sr_std: f64) -> f64 {
+    let sr_star = expected_max_sharpe(per_period_sr_std, n_trials);
     probabilistic_sharpe_ratio(returns, sr_star)
 }
 
@@ -307,9 +324,10 @@ pub fn bootstrap_dsr_ci(
     resample_seed: u64,
     alpha: f64,
 ) -> DsrCi {
+    let per_period_sr_std = trials_sr_std / PERIODS_PER_YEAR.sqrt();
     let n = per_seed.len();
     let full: Vec<f64> = per_seed.iter().flatten().copied().collect();
-    let point = deflated_sharpe(&full, n_trials, trials_sr_std);
+    let point = deflated_sharpe_per_period(&full, n_trials, per_period_sr_std);
     let confidence = 1.0 - alpha;
 
     if n == 0 || n_boot == 0 {
@@ -331,7 +349,11 @@ pub fn bootstrap_dsr_ci(
             *slot = rng.below(n);
         }
         let pooled = pool_selected(per_seed, &idx);
-        samples.push(deflated_sharpe(&pooled, n_trials, trials_sr_std));
+        samples.push(deflated_sharpe_per_period(
+            &pooled,
+            n_trials,
+            per_period_sr_std,
+        ));
     }
 
     let lo = quantile(&samples, alpha / 2.0);
@@ -366,11 +388,12 @@ pub fn paired_dsr_diff(
     resample_seed: u64,
     alpha: f64,
 ) -> PairedDiff {
+    let per_period_sr_std = trials_sr_std / PERIODS_PER_YEAR.sqrt();
     let n = a_per_seed.len().min(b_per_seed.len());
     let a_full: Vec<f64> = a_per_seed[..n].iter().flatten().copied().collect();
     let b_full: Vec<f64> = b_per_seed[..n].iter().flatten().copied().collect();
-    let point_diff = deflated_sharpe(&a_full, n_trials, trials_sr_std)
-        - deflated_sharpe(&b_full, n_trials, trials_sr_std);
+    let point_diff = deflated_sharpe_per_period(&a_full, n_trials, per_period_sr_std)
+        - deflated_sharpe_per_period(&b_full, n_trials, per_period_sr_std);
     let confidence = 1.0 - alpha;
 
     if n == 0 || n_boot == 0 {
@@ -398,8 +421,8 @@ pub fn paired_dsr_diff(
         }
         let a_pool = pool_selected(&a_per_seed[..n], &idx);
         let b_pool = pool_selected(&b_per_seed[..n], &idx);
-        let d = deflated_sharpe(&a_pool, n_trials, trials_sr_std)
-            - deflated_sharpe(&b_pool, n_trials, trials_sr_std);
+        let d = deflated_sharpe_per_period(&a_pool, n_trials, per_period_sr_std)
+            - deflated_sharpe_per_period(&b_pool, n_trials, per_period_sr_std);
         if d <= 0.0 {
             n_le += 1;
         }
@@ -483,14 +506,15 @@ mod tests {
 
     #[test]
     fn ci_is_wider_for_a_noisier_shorter_track() {
-        // Both tracks sit in the DSR's sensitive band (n_trials=3 ⇒ sr* ≈ 0.43). The
+        // Both tracks sit in the DSR's sensitive band. With the annualized prior
+        // converted at 252 periods/year, n_trials=3 puts sr* ≈ 0.027 per period. The
         // stable entry is many long seeds whose per-seed Sharpe is tightly clustered near
         // sr*, so any resample lands the same place; the noisy entry is a few short seeds
         // with widely dispersed Sharpe, so the resample composition swings the number.
         let stable: Vec<Vec<f64>> = (0..12)
-            .map(|s| seed_with_sharpe(0.42 + 0.01 * (s as f64 % 3.0), 40, s as f64))
+            .map(|s| seed_with_sharpe(0.026 + 0.001 * (s as f64 % 3.0), 40, s as f64))
             .collect();
-        let noisy: Vec<Vec<f64>> = [0.05, 0.45, 0.9]
+        let noisy: Vec<Vec<f64>> = [-0.3, 0.03, 0.35]
             .iter()
             .enumerate()
             .map(|(s, &t)| seed_with_sharpe(t, 16, s as f64))

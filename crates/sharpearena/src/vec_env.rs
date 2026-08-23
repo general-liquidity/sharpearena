@@ -380,6 +380,7 @@ mod tests {
         Decision {
             orders,
             reasoning: String::new(),
+            cost: None,
         }
     }
 

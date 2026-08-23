@@ -43,11 +43,15 @@ The Rust clearing engine is reached through the native ``PyMarketClearing`` pycl
 small documented JSON interface:
 
 * ``PyMarketClearing(n_symbols, n_days, seed, n_agents, capital, kyle_lambda, eta,
-  volume_scale, distribution_mode, richness)``. ``richness`` (``data_poor`` | ``standard``
-  | ``data_rich``) is the information-disclosure difficulty axis, orthogonal to
-  ``distribution_mode``: it sets how much of the market each observation surfaces (trailing
-  lookback + optional fundamentals/news), never revealing a future bar. ``standard`` is the
-  historical default disclosure.
+  volume_scale, distribution_mode, richness, lambda_radius, eta_radius,
+  uncertainty_correlation)``. ``richness`` (``data_poor`` | ``standard`` | ``data_rich``)
+  is the information-disclosure difficulty axis, orthogonal to ``distribution_mode``: it
+  sets how much of the market each observation surfaces (trailing lookback + optional
+  fundamentals/news), never revealing a future bar. ``standard`` is the historical default
+  disclosure. ``lambda_radius`` / ``eta_radius`` / ``uncertainty_correlation`` (both radii
+  default ``None`` = point estimate) install an elliptic uncertainty set over the impact
+  coefficients: each bar then clears at the worst-case ``(lambda, eta)`` inside the
+  ellipse and the result carries the coefficients used in ``robust_impact``.
 * ``reset_market() -> json``: ``{symbols, n_agents, n_bars, start_bar, cursor, capital,
   observations:[MarketObservation, ...]}`` (observations in canonical agent order).
 * ``step_market(orders_json) -> json``: ``orders_json`` is a JSON array of shape
@@ -91,6 +95,33 @@ def _agent_ids(n_agents: int) -> list[str]:
     return [f"agent_{i}" for i in range(int(n_agents))]
 
 
+def _normalize_uncertainty(uncertainty: Any) -> Optional[tuple[float, float, float]]:
+    """Normalize the opt-in ``uncertainty`` kwarg to ``(lambda_radius, eta_radius,
+    correlation)``. Accepts ``None`` (point estimate), a mapping with keys
+    ``lambda_radius`` / ``eta_radius`` / optional ``correlation``, or a 2- or 3-item
+    sequence in that order. Range checks live in the native binding."""
+    if uncertainty is None:
+        return None
+    if isinstance(uncertainty, dict):
+        unknown = set(uncertainty) - {"lambda_radius", "eta_radius", "correlation"}
+        if unknown:
+            raise ValueError(f"unknown uncertainty keys: {sorted(unknown)}")
+        return (
+            float(uncertainty.get("lambda_radius", 0.0)),
+            float(uncertainty.get("eta_radius", 0.0)),
+            float(uncertainty.get("correlation", 0.0)),
+        )
+    items = list(uncertainty)
+    if len(items) == 2:
+        return (float(items[0]), float(items[1]), 0.0)
+    if len(items) == 3:
+        return (float(items[0]), float(items[1]), float(items[2]))
+    raise ValueError(
+        "uncertainty must be None, a {lambda_radius, eta_radius[, correlation]} mapping, "
+        "or a (lambda_radius, eta_radius[, correlation]) sequence"
+    )
+
+
 class EndogenousMarketEnv(ParallelEnv):
     """A shared-book, endogenous-impact :class:`pettingzoo.ParallelEnv` over SharpeArena.
 
@@ -127,6 +158,7 @@ class EndogenousMarketEnv(ParallelEnv):
         richness: str = "standard",
         max_weight: float = 1.0,
         allow_short: bool = True,
+        uncertainty: Optional[Any] = None,
     ) -> None:
         if not _HAS_PETTINGZOO:
             raise RuntimeError(
@@ -149,6 +181,7 @@ class EndogenousMarketEnv(ParallelEnv):
         self._richness = str(richness)
         self._max_weight = float(max_weight)
         self._allow_short = bool(allow_short)
+        self._uncertainty = _normalize_uncertainty(uncertainty)
 
         self.possible_agents: list[str] = _agent_ids(self._n_agents)
         self.agents: list[str] = list(self.possible_agents)
@@ -182,14 +215,27 @@ class EndogenousMarketEnv(ParallelEnv):
             distribution_mode=self._distribution_mode,
             richness=self._richness,
         )
+        # Only pass the uncertainty kwargs when a set was requested, so a build without one
+        # is the exact call (and the exact native path) every prior version made.
+        if self._uncertainty is not None:
+            lam, eta_r, rho = self._uncertainty
+            kwargs.update(
+                lambda_radius=lam, eta_radius=eta_r, uncertainty_correlation=rho
+            )
         try:
             self._market = PyMarketClearing(**kwargs)
             return
         except TypeError:
             pass
-        # An older native binding may predate the newest optional params (richness, then
-        # vol_scale). Drop them only when they sit at their defaults, so default behavior is
-        # unchanged; a non-default request for a missing param still surfaces the error.
+        # An older native binding may predate the newest optional params (uncertainty, then
+        # richness, then vol_scale). Drop them only when they sit at their defaults, so
+        # default behavior is unchanged; a non-default request for a missing param still
+        # surfaces the error.
+        if self._uncertainty is not None:
+            raise TypeError(
+                "the native binding predates the 'lambda_radius'/'eta_radius' uncertainty "
+                "parameters (needs a rebuild)"
+            )
         if self._richness != "standard":
             raise TypeError(
                 "the native binding predates the 'richness' parameter (needs a rebuild)"

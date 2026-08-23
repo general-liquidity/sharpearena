@@ -115,11 +115,15 @@ pub use sharpebench_sim::{
     Window,
 };
 
+// Vol-targeted, drawdown-braked reference agent — new in sharpebench-sim 0.5.0, which
+// exposes it at module level only (hence the `agent::` path).
+pub use sharpebench_sim::agent::RiskManaged;
+
 // --- The language-agnostic wire contract (the standard SharpeArena governs) -----------------
 
 pub use sharpebench_protocol::{
-    Action, AgentTrajectory, Decision, DecisionStep, MarketObservation, Order, PositionState,
-    RunTrajectory, SymbolSnapshot,
+    Action, AgentTrajectory, Decision, DecisionCost, DecisionStep, MarketObservation, Order,
+    PositionState, RunTrajectory, SymbolSnapshot,
 };
 
 // --- The scored output (so callers read returns/trace without a second dependency) --------
