@@ -1,0 +1,1636 @@
+{
+  "finding": "F8",
+  "config": {
+    "generations": 12,
+    "field_size": 8,
+    "seed": 0,
+    "n_symbols": 4,
+    "n_days": 120,
+    "max_steps": 256,
+    "innovate_every": 4,
+    "shock_period": 4
+  },
+  "control": {
+    "species": [
+      {
+        "name": "flat",
+        "parent": null,
+        "born": 0,
+        "params": {}
+      },
+      {
+        "name": "equal_weight_long",
+        "parent": null,
+        "born": 0,
+        "params": {}
+      },
+      {
+        "name": "momentum",
+        "parent": null,
+        "born": 0,
+        "params": {}
+      },
+      {
+        "name": "min_variance",
+        "parent": null,
+        "born": 0,
+        "params": {
+          "lookback": 60
+        }
+      },
+      {
+        "name": "max_sharpe",
+        "parent": null,
+        "born": 0,
+        "params": {
+          "lookback": 60
+        }
+      },
+      {
+        "name": "kelly_vol_target",
+        "parent": null,
+        "born": 0,
+        "params": {
+          "lookback": 60,
+          "kelly_fraction": 0.25,
+          "target_vol": 0.01
+        }
+      },
+      {
+        "name": "disposition_effect",
+        "parent": null,
+        "born": 0,
+        "params": {}
+      },
+      {
+        "name": "overconfident",
+        "parent": null,
+        "born": 0,
+        "params": {}
+      },
+      {
+        "name": "kelly_vol_target~lookback4",
+        "parent": "kelly_vol_target",
+        "born": 4,
+        "params": {
+          "lookback": 75,
+          "kelly_fraction": 0.25,
+          "target_vol": 0.01
+        }
+      },
+      {
+        "name": "kelly_vol_target~target_vol8",
+        "parent": "kelly_vol_target",
+        "born": 8,
+        "params": {
+          "lookback": 60,
+          "kelly_fraction": 0.25,
+          "target_vol": 0.0125
+        }
+      },
+      {
+        "name": "kelly_vol_target~kelly_fraction12",
+        "parent": "kelly_vol_target",
+        "born": 12,
+        "params": {
+          "lookback": 60,
+          "kelly_fraction": 0.3125,
+          "target_vol": 0.01
+        }
+      }
+    ],
+    "generations": 12,
+    "field_size": 8,
+    "shares": [
+      [
+        0.125,
+        0.125,
+        0.125,
+        0.125,
+        0.125,
+        0.125,
+        0.125,
+        0.125,
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.13845029705068038,
+        0.14413308900295588,
+        0.16836732238407193,
+        0.06503426518742007,
+        0.3139000434732276,
+        0.17011498290164412,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.15498232087073932,
+        0.05002957495486747,
+        0.17745005719279278,
+        0.15063939718117816,
+        0.46689864980042234,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.19630318213519837,
+        0.0,
+        0.19535450567337367,
+        0.0,
+        0.608342312191428,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.03461928749136802,
+        0.0,
+        0.0,
+        0.0,
+        0.865380712508632,
+        0.0,
+        0.0,
+        0.1,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.08223100605909275,
+        0.0,
+        0.0,
+        0.0,
+        0.5336314176105894,
+        0.0,
+        0.0,
+        0.3841375763303179,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.860614145512398,
+        0.0,
+        0.0,
+        0.13938585448760207,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.9,
+        0.0,
+        0.0,
+        0.0,
+        0.1,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.9,
+        0.0,
+        0.0,
+        0.0,
+        0.1,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.9,
+        0.0,
+        0.0,
+        0.0,
+        0.1,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.9,
+        0.0,
+        0.0,
+        0.0,
+        0.1,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.81,
+        0.0,
+        0.0,
+        0.0,
+        0.09000000000000001,
+        0.1
+      ]
+    ],
+    "fitness": [
+      [
+        0.0,
+        0.025879583188952227,
+        0.026977422650179106,
+        0.03165915267686392,
+        0.011696586953465538,
+        0.05977412951451244,
+        0.03199677733339401,
+        -0.018544503040861304,
+        null,
+        null,
+        null
+      ],
+      [
+        null,
+        0.08108667322840613,
+        0.023837882715668668,
+        0.07623415629003416,
+        0.16981000619853504,
+        0.10836593462190658,
+        -0.05794585753337955,
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        null,
+        0.061366383580364614,
+        0.02088977313233742,
+        0.057191545008218325,
+        0.005121130505255422,
+        0.06228153213556431,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        null,
+        0.05471712602309253,
+        null,
+        0.050019505260641806,
+        null,
+        0.06334945131329195,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        null,
+        -0.00022735480471403058,
+        null,
+        null,
+        null,
+        -0.0018032227065613027,
+        null,
+        null,
+        0.001086351100081373,
+        null,
+        null
+      ],
+      [
+        null,
+        -0.03190867362097438,
+        null,
+        null,
+        null,
+        0.010079537327144061,
+        null,
+        null,
+        -0.007725326241403763,
+        null,
+        null
+      ],
+      [
+        null,
+        null,
+        null,
+        null,
+        null,
+        0.06984348558310738,
+        null,
+        null,
+        0.06657040927655689,
+        null,
+        null
+      ],
+      [
+        null,
+        null,
+        null,
+        null,
+        null,
+        0.020188021438846793,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        null,
+        null,
+        null,
+        null,
+        null,
+        0.008055984932247906,
+        null,
+        null,
+        null,
+        0.008055984932247906,
+        null
+      ],
+      [
+        null,
+        null,
+        null,
+        null,
+        null,
+        0.048988732075930574,
+        null,
+        null,
+        null,
+        0.048988732075930574,
+        null
+      ],
+      [
+        null,
+        null,
+        null,
+        null,
+        null,
+        -0.003981198800097729,
+        null,
+        null,
+        null,
+        -0.003981198800097729,
+        null
+      ],
+      [
+        null,
+        null,
+        null,
+        null,
+        null,
+        -0.005465927930676906,
+        null,
+        null,
+        null,
+        -0.005465927930676906,
+        null
+      ]
+    ],
+    "seats": [
+      [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        1,
+        1,
+        1,
+        3,
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        1,
+        2,
+        1,
+        3,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        2,
+        0,
+        1,
+        0,
+        5,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0,
+        0,
+        0,
+        6,
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0,
+        0,
+        0,
+        4,
+        0,
+        0,
+        3,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        7,
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        8,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        7,
+        0,
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        7,
+        0,
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        7,
+        0,
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        7,
+        0,
+        0,
+        0,
+        1,
+        0
+      ]
+    ],
+    "shocks": [
+      "steady",
+      "steady",
+      "steady",
+      "steady",
+      "steady",
+      "steady",
+      "steady",
+      "steady",
+      "steady",
+      "steady",
+      "steady",
+      "steady"
+    ],
+    "events": [
+      {
+        "generation": 0,
+        "kind": "shock",
+        "name": "steady",
+        "distribution_mode": "calm",
+        "impact_scale": 1.0
+      },
+      {
+        "generation": 0,
+        "kind": "extinction",
+        "name": "flat"
+      },
+      {
+        "generation": 0,
+        "kind": "extinction",
+        "name": "overconfident"
+      },
+      {
+        "generation": 1,
+        "kind": "extinction",
+        "name": "disposition_effect"
+      },
+      {
+        "generation": 2,
+        "kind": "extinction",
+        "name": "momentum"
+      },
+      {
+        "generation": 2,
+        "kind": "extinction",
+        "name": "max_sharpe"
+      },
+      {
+        "generation": 3,
+        "kind": "extinction",
+        "name": "min_variance"
+      },
+      {
+        "generation": 3,
+        "kind": "innovation",
+        "name": "kelly_vol_target~lookback4",
+        "parent": "kelly_vol_target",
+        "params": {
+          "lookback": 75,
+          "kelly_fraction": 0.25,
+          "target_vol": 0.01
+        }
+      },
+      {
+        "generation": 5,
+        "kind": "extinction",
+        "name": "equal_weight_long"
+      },
+      {
+        "generation": 6,
+        "kind": "extinction",
+        "name": "kelly_vol_target~lookback4"
+      },
+      {
+        "generation": 7,
+        "kind": "innovation",
+        "name": "kelly_vol_target~target_vol8",
+        "parent": "kelly_vol_target",
+        "params": {
+          "lookback": 60,
+          "kelly_fraction": 0.25,
+          "target_vol": 0.0125
+        }
+      },
+      {
+        "generation": 11,
+        "kind": "innovation",
+        "name": "kelly_vol_target~kelly_fraction12",
+        "parent": "kelly_vol_target",
+        "params": {
+          "lookback": 60,
+          "kelly_fraction": 0.3125,
+          "target_vol": 0.01
+        }
+      }
+    ],
+    "final_shares": {
+      "flat": 0.0,
+      "equal_weight_long": 0.0,
+      "momentum": 0.0,
+      "min_variance": 0.0,
+      "max_sharpe": 0.0,
+      "kelly_vol_target": 0.81,
+      "disposition_effect": 0.0,
+      "overconfident": 0.0,
+      "kelly_vol_target~lookback4": 0.0,
+      "kelly_vol_target~target_vol8": 0.09000000000000001,
+      "kelly_vol_target~kelly_fraction12": 0.1
+    },
+    "outcomes": {
+      "flat": {
+        "outcome": "extinct",
+        "final_share": 0.0,
+        "peak_share": 0.125,
+        "peak_generation": 0
+      },
+      "equal_weight_long": {
+        "outcome": "extinct",
+        "final_share": 0.0,
+        "peak_share": 0.19630318213519837,
+        "peak_generation": 3
+      },
+      "momentum": {
+        "outcome": "extinct",
+        "final_share": 0.0,
+        "peak_share": 0.14413308900295588,
+        "peak_generation": 1
+      },
+      "min_variance": {
+        "outcome": "extinct",
+        "final_share": 0.0,
+        "peak_share": 0.19535450567337367,
+        "peak_generation": 3
+      },
+      "max_sharpe": {
+        "outcome": "extinct",
+        "final_share": 0.0,
+        "peak_share": 0.15063939718117816,
+        "peak_generation": 2
+      },
+      "kelly_vol_target": {
+        "outcome": "dominant",
+        "final_share": 0.81,
+        "peak_share": 1.0,
+        "peak_generation": 7
+      },
+      "disposition_effect": {
+        "outcome": "extinct",
+        "final_share": 0.0,
+        "peak_share": 0.17011498290164412,
+        "peak_generation": 1
+      },
+      "overconfident": {
+        "outcome": "extinct",
+        "final_share": 0.0,
+        "peak_share": 0.125,
+        "peak_generation": 0
+      },
+      "kelly_vol_target~lookback4": {
+        "outcome": "collapsed",
+        "final_share": 0.0,
+        "peak_share": 0.3841375763303179,
+        "peak_generation": 5
+      },
+      "kelly_vol_target~target_vol8": {
+        "outcome": "persistent",
+        "final_share": 0.09000000000000001,
+        "peak_share": 0.1,
+        "peak_generation": 8
+      },
+      "kelly_vol_target~kelly_fraction12": {
+        "outcome": "persistent",
+        "final_share": 0.1,
+        "peak_share": 0.1,
+        "peak_generation": 12
+      }
+    },
+    "coalitions": [
+      {
+        "members": [
+          "kelly_vol_target",
+          "kelly_vol_target~target_vol8"
+        ],
+        "correlation": 1.0000000000000002,
+        "generations": 4
+      },
+      {
+        "members": [
+          "max_sharpe",
+          "kelly_vol_target"
+        ],
+        "correlation": 0.9967126650509882,
+        "generations": 3
+      },
+      {
+        "members": [
+          "equal_weight_long",
+          "min_variance"
+        ],
+        "correlation": 0.9912775970906317,
+        "generations": 4
+      },
+      {
+        "members": [
+          "kelly_vol_target",
+          "kelly_vol_target~lookback4"
+        ],
+        "correlation": 0.9653238872735098,
+        "generations": 3
+      },
+      {
+        "members": [
+          "equal_weight_long",
+          "kelly_vol_target"
+        ],
+        "correlation": 0.9028664804510889,
+        "generations": 6
+      },
+      {
+        "members": [
+          "min_variance",
+          "kelly_vol_target"
+        ],
+        "correlation": 0.8420970051345006,
+        "generations": 4
+      },
+      {
+        "members": [
+          "min_variance",
+          "max_sharpe"
+        ],
+        "correlation": 0.8004645000946948,
+        "generations": 3
+      },
+      {
+        "members": [
+          "equal_weight_long",
+          "max_sharpe"
+        ],
+        "correlation": 0.7503002730835341,
+        "generations": 3
+      }
+    ]
+  },
+  "shocked": {
+    "species": [
+      {
+        "name": "flat",
+        "parent": null,
+        "born": 0,
+        "params": {}
+      },
+      {
+        "name": "equal_weight_long",
+        "parent": null,
+        "born": 0,
+        "params": {}
+      },
+      {
+        "name": "momentum",
+        "parent": null,
+        "born": 0,
+        "params": {}
+      },
+      {
+        "name": "min_variance",
+        "parent": null,
+        "born": 0,
+        "params": {
+          "lookback": 60
+        }
+      },
+      {
+        "name": "max_sharpe",
+        "parent": null,
+        "born": 0,
+        "params": {
+          "lookback": 60
+        }
+      },
+      {
+        "name": "kelly_vol_target",
+        "parent": null,
+        "born": 0,
+        "params": {
+          "lookback": 60,
+          "kelly_fraction": 0.25,
+          "target_vol": 0.01
+        }
+      },
+      {
+        "name": "disposition_effect",
+        "parent": null,
+        "born": 0,
+        "params": {}
+      },
+      {
+        "name": "overconfident",
+        "parent": null,
+        "born": 0,
+        "params": {}
+      },
+      {
+        "name": "equal_weight_long~v4",
+        "parent": "equal_weight_long",
+        "born": 4,
+        "params": {}
+      },
+      {
+        "name": "equal_weight_long~v8",
+        "parent": "equal_weight_long",
+        "born": 8,
+        "params": {}
+      },
+      {
+        "name": "equal_weight_long~v12",
+        "parent": "equal_weight_long",
+        "born": 12,
+        "params": {}
+      }
+    ],
+    "generations": 12,
+    "field_size": 8,
+    "shares": [
+      [
+        0.125,
+        0.125,
+        0.125,
+        0.125,
+        0.125,
+        0.125,
+        0.125,
+        0.125,
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.13845029705068038,
+        0.14413308900295588,
+        0.16836732238407193,
+        0.06503426518742007,
+        0.3139000434732276,
+        0.17011498290164412,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.20748641495136916,
+        0.0,
+        0.17244012534352082,
+        0.0,
+        0.24476083493067033,
+        0.3753126247744396,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.22565224939637354,
+        0.0,
+        0.12532957301997613,
+        0.0,
+        0.6490181775836503,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.48695258049639584,
+        0.0,
+        0.2582787689584514,
+        0.0,
+        0.1547686505451526,
+        0.0,
+        0.0,
+        0.09999999999999998,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.6161367966220628,
+        0.0,
+        0.2573340871354526,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.12652911624248453,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.25345224308626485,
+        0.0,
+        0.6944991071606323,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.052048649753102756,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.6355950973787757,
+        0.0,
+        0.23387985298890593,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.13052504963231837,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.7466656370709105,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.15333436292908956,
+        0.1,
+        0.0
+      ],
+      [
+        0.0,
+        0.7466656370709105,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.15333436292908956,
+        0.1,
+        0.0
+      ],
+      [
+        0.0,
+        0.7466656370709105,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.15333436292908956,
+        0.1,
+        0.0
+      ],
+      [
+        0.0,
+        0.7466656370709105,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.15333436292908956,
+        0.1,
+        0.0
+      ],
+      [
+        0.0,
+        0.6719990733638195,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.1380009266361806,
+        0.09000000000000001,
+        0.1
+      ]
+    ],
+    "fitness": [
+      [
+        0.0,
+        0.025879583188952227,
+        0.026977422650179106,
+        0.03165915267686392,
+        0.011696586953465538,
+        0.05977412951451244,
+        0.03199677733339401,
+        -0.018544503040861304,
+        null,
+        null,
+        null
+      ],
+      [
+        null,
+        0.05993246240782191,
+        -0.0019537880626907533,
+        0.0463205410077292,
+        0.008995977156381674,
+        0.03930725558431947,
+        0.08023350078880132,
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        null,
+        -0.009343927398686835,
+        null,
+        -0.01768504002650506,
+        null,
+        0.026820183906938633,
+        -0.033602631277101835,
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        null,
+        0.08781716248296201,
+        null,
+        0.08560303690738191,
+        null,
+        0.04408403480761036,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        null,
+        0.17749683425533336,
+        null,
+        0.1582599398699569,
+        null,
+        0.008850065067071977,
+        null,
+        null,
+        0.17749683425533336,
+        null,
+        null
+      ],
+      [
+        null,
+        -0.037396334307794654,
+        null,
+        0.013276076831607808,
+        null,
+        null,
+        null,
+        null,
+        -0.037396334307794654,
+        null,
+        null
+      ],
+      [
+        null,
+        -0.07832757377314625,
+        null,
+        -0.08967784785083976,
+        null,
+        null,
+        null,
+        null,
+        -0.07832757377314625,
+        null,
+        null
+      ],
+      [
+        null,
+        0.09532126624879966,
+        null,
+        0.06298819674190037,
+        null,
+        null,
+        null,
+        null,
+        0.09532126624879966,
+        null,
+        null
+      ],
+      [
+        null,
+        -0.023612813715643055,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        -0.023612813715643055,
+        -0.023612813715643055,
+        null
+      ],
+      [
+        null,
+        0.3572228164043234,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        0.3572228164043234,
+        0.3572228164043234,
+        null
+      ],
+      [
+        null,
+        0.08084204360208047,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        0.08084204360208047,
+        0.08084204360208047,
+        null
+      ],
+      [
+        null,
+        -0.0990776864758135,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        -0.0990776864758135,
+        -0.0990776864758135,
+        null
+      ]
+    ],
+    "seats": [
+      [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        1,
+        1,
+        1,
+        3,
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        2,
+        0,
+        1,
+        0,
+        2,
+        3,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        2,
+        0,
+        1,
+        0,
+        5,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        4,
+        0,
+        2,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        5,
+        0,
+        2,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        2,
+        0,
+        5,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        5,
+        0,
+        2,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        6,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        0
+      ],
+      [
+        0,
+        6,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        0
+      ],
+      [
+        0,
+        6,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        0
+      ],
+      [
+        0,
+        6,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        0
+      ]
+    ],
+    "shocks": [
+      "regime:calm",
+      "regime:calm",
+      "regime:calm",
+      "regime:calm",
+      "regime:hard",
+      "regime:hard",
+      "regime:hard",
+      "regime:hard",
+      "regime:extreme",
+      "regime:extreme",
+      "regime:extreme",
+      "regime:extreme"
+    ],
+    "events": [
+      {
+        "generation": 0,
+        "kind": "shock",
+        "name": "regime:calm",
+        "distribution_mode": "calm",
+        "impact_scale": 1.0
+      },
+      {
+        "generation": 0,
+        "kind": "extinction",
+        "name": "flat"
+      },
+      {
+        "generation": 0,
+        "kind": "extinction",
+        "name": "overconfident"
+      },
+      {
+        "generation": 1,
+        "kind": "extinction",
+        "name": "momentum"
+      },
+      {
+        "generation": 1,
+        "kind": "extinction",
+        "name": "max_sharpe"
+      },
+      {
+        "generation": 2,
+        "kind": "extinction",
+        "name": "disposition_effect"
+      },
+      {
+        "generation": 3,
+        "kind": "innovation",
+        "name": "equal_weight_long~v4",
+        "parent": "equal_weight_long",
+        "params": {}
+      },
+      {
+        "generation": 4,
+        "kind": "shock",
+        "name": "regime:hard",
+        "distribution_mode": "hard",
+        "impact_scale": 1.0
+      },
+      {
+        "generation": 4,
+        "kind": "extinction",
+        "name": "kelly_vol_target"
+      },
+      {
+        "generation": 7,
+        "kind": "extinction",
+        "name": "min_variance"
+      },
+      {
+        "generation": 7,
+        "kind": "innovation",
+        "name": "equal_weight_long~v8",
+        "parent": "equal_weight_long",
+        "params": {}
+      },
+      {
+        "generation": 8,
+        "kind": "shock",
+        "name": "regime:extreme",
+        "distribution_mode": "extreme",
+        "impact_scale": 1.0
+      },
+      {
+        "generation": 11,
+        "kind": "innovation",
+        "name": "equal_weight_long~v12",
+        "parent": "equal_weight_long",
+        "params": {}
+      }
+    ],
+    "final_shares": {
+      "flat": 0.0,
+      "equal_weight_long": 0.6719990733638195,
+      "momentum": 0.0,
+      "min_variance": 0.0,
+      "max_sharpe": 0.0,
+      "kelly_vol_target": 0.0,
+      "disposition_effect": 0.0,
+      "overconfident": 0.0,
+      "equal_weight_long~v4": 0.1380009266361806,
+      "equal_weight_long~v8": 0.09000000000000001,
+      "equal_weight_long~v12": 0.1
+    },
+    "outcomes": {
+      "flat": {
+        "outcome": "extinct",
+        "final_share": 0.0,
+        "peak_share": 0.125,
+        "peak_generation": 0
+      },
+      "equal_weight_long": {
+        "outcome": "dominant",
+        "final_share": 0.6719990733638195,
+        "peak_share": 0.7466656370709105,
+        "peak_generation": 8
+      },
+      "momentum": {
+        "outcome": "extinct",
+        "final_share": 0.0,
+        "peak_share": 0.14413308900295588,
+        "peak_generation": 1
+      },
+      "min_variance": {
+        "outcome": "collapsed",
+        "final_share": 0.0,
+        "peak_share": 0.6944991071606323,
+        "peak_generation": 6
+      },
+      "max_sharpe": {
+        "outcome": "extinct",
+        "final_share": 0.0,
+        "peak_share": 0.125,
+        "peak_generation": 0
+      },
+      "kelly_vol_target": {
+        "outcome": "collapsed",
+        "final_share": 0.0,
+        "peak_share": 0.6490181775836503,
+        "peak_generation": 3
+      },
+      "disposition_effect": {
+        "outcome": "collapsed",
+        "final_share": 0.0,
+        "peak_share": 0.3753126247744396,
+        "peak_generation": 2
+      },
+      "overconfident": {
+        "outcome": "extinct",
+        "final_share": 0.0,
+        "peak_share": 0.125,
+        "peak_generation": 0
+      },
+      "equal_weight_long~v4": {
+        "outcome": "persistent",
+        "final_share": 0.1380009266361806,
+        "peak_share": 0.15333436292908956,
+        "peak_generation": 8
+      },
+      "equal_weight_long~v8": {
+        "outcome": "persistent",
+        "final_share": 0.09000000000000001,
+        "peak_share": 0.1,
+        "peak_generation": 8
+      },
+      "equal_weight_long~v12": {
+        "outcome": "persistent",
+        "final_share": 0.1,
+        "peak_share": 0.1,
+        "peak_generation": 12
+      }
+    },
+    "coalitions": [
+      {
+        "members": [
+          "equal_weight_long",
+          "equal_weight_long~v4"
+        ],
+        "correlation": 1.0000000000000002,
+        "generations": 8
+      },
+      {
+        "members": [
+          "equal_weight_long",
+          "equal_weight_long~v8"
+        ],
+        "correlation": 1.0,
+        "generations": 4
+      },
+      {
+        "members": [
+          "equal_weight_long~v4",
+          "equal_weight_long~v8"
+        ],
+        "correlation": 1.0,
+        "generations": 4
+      },
+      {
+        "members": [
+          "equal_weight_long",
+          "disposition_effect"
+        ],
+        "correlation": 0.9969535257315951,
+        "generations": 3
+      },
+      {
+        "members": [
+          "min_variance",
+          "disposition_effect"
+        ],
+        "correlation": 0.9768972817058055,
+        "generations": 3
+      },
+      {
+        "members": [
+          "equal_weight_long",
+          "min_variance"
+        ],
+        "correlation": 0.9558362033106023,
+        "generations": 8
+      },
+      {
+        "members": [
+          "min_variance",
+          "equal_weight_long~v4"
+        ],
+        "correlation": 0.9536014519379916,
+        "generations": 4
+      }
+    ]
+  },
+  "control_table": "| species | parent | born | g0 | g1 | g2 | g3 | g4 | g5 | g6 | g7 | g8 | g9 | g10 | g11 | g12 | outcome |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n| flat |  | 0 | 0.125 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | extinct |\n| equal_weight_long |  | 0 | 0.125 | 0.138 | 0.155 | 0.196 | 0.035 | 0.082 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | extinct |\n| momentum |  | 0 | 0.125 | 0.144 | 0.050 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | extinct |\n| min_variance |  | 0 | 0.125 | 0.168 | 0.177 | 0.195 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | extinct |\n| max_sharpe |  | 0 | 0.125 | 0.065 | 0.151 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | extinct |\n| kelly_vol_target |  | 0 | 0.125 | 0.314 | 0.467 | 0.608 | 0.865 | 0.534 | 0.861 | 1.000 | 0.900 | 0.900 | 0.900 | 0.900 | 0.810 | dominant |\n| disposition_effect |  | 0 | 0.125 | 0.170 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | extinct |\n| overconfident |  | 0 | 0.125 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | extinct |\n| kelly_vol_target~lookback4 | kelly_vol_target | 4 | 0.000 | 0.000 | 0.000 | 0.000 | 0.100 | 0.384 | 0.139 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | collapsed |\n| kelly_vol_target~target_vol8 | kelly_vol_target | 8 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.100 | 0.100 | 0.100 | 0.100 | 0.090 | persistent |\n| kelly_vol_target~kelly_fraction12 | kelly_vol_target | 12 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.100 | persistent |",
+  "shocked_table": "| species | parent | born | g0 | g1 | g2 | g3 | g4 | g5 | g6 | g7 | g8 | g9 | g10 | g11 | g12 | outcome |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n| flat |  | 0 | 0.125 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | extinct |\n| equal_weight_long |  | 0 | 0.125 | 0.138 | 0.207 | 0.226 | 0.487 | 0.616 | 0.253 | 0.636 | 0.747 | 0.747 | 0.747 | 0.747 | 0.672 | dominant |\n| momentum |  | 0 | 0.125 | 0.144 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | extinct |\n| min_variance |  | 0 | 0.125 | 0.168 | 0.172 | 0.125 | 0.258 | 0.257 | 0.694 | 0.234 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | collapsed |\n| max_sharpe |  | 0 | 0.125 | 0.065 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | extinct |\n| kelly_vol_target |  | 0 | 0.125 | 0.314 | 0.245 | 0.649 | 0.155 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | collapsed |\n| disposition_effect |  | 0 | 0.125 | 0.170 | 0.375 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | collapsed |\n| overconfident |  | 0 | 0.125 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | extinct |\n| equal_weight_long~v4 | equal_weight_long | 4 | 0.000 | 0.000 | 0.000 | 0.000 | 0.100 | 0.127 | 0.052 | 0.131 | 0.153 | 0.153 | 0.153 | 0.153 | 0.138 | persistent |\n| equal_weight_long~v8 | equal_weight_long | 8 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.100 | 0.100 | 0.100 | 0.100 | 0.090 | persistent |\n| equal_weight_long~v12 | equal_weight_long | 12 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.100 | persistent |"
+}

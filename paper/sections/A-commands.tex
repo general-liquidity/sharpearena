@@ -1,55 +1,68 @@
 \section{Commands that produce every number}\label{app:commands}
 
-All commands run from the repository root at the tagged version, with the \texttt{sharpearena} Python package installed (the version is pinned when the evidence run executes and recorded in every evidence file). Each evidence script fixes its seeds internally, writes JSON to \texttt{paper/evidence/} and, where a figure carries the finding, a PDF to \texttt{paper/figures/}.
+All commands run from the repository root at the tagged version, with the \texttt{sharpearena} Python package installed. The package version is recorded in every evidence file (\texttt{sharpearena} 0.8.0 over the SharpeBench 0.5.0 kernel for this run). Each evidence script fixes its seeds internally, writes JSON to \texttt{paper/evidence/} and, where a figure carries the finding, a PDF to \texttt{paper/figures/}.
 
 \paragraph{The design-property checks (\cref{sec:leakfree,sec:determinism,sec:replay,sec:contract}).}
 \begin{verbatim}
-cargo test -p sharpearena                      # golden hashes, leak-free
-                                               # property tests, conformance kit
-cargo test -p sharpearena-wasm                 # native == wasm parity + golden
-npm test --prefix npm/sharpearena              # replay + tamper detection
-python -m pytest crates/sharpearena-py         # Python surface, check_env,
-                                               # seed-band disjointness
+cargo test -p sharpearena              # golden hashes, leak-free
+                                       # property tests, conformance kit
+cargo test -p sharpearena-wasm         # native == wasm parity + golden
+npm test --prefix npm/sharpearena      # replay + tamper detection
+python -m pytest crates/sharpearena-py # Python surface, check_env,
+                                       # seed-band disjointness
 \end{verbatim}
 
 \paragraph{F1: baseline leaderboard (\cref{sec:f1}).}
 \begin{verbatim}
 python paper/src/make-f1-baselines.py
+  -> paper/evidence/f1-baselines.json, paper/figures/f1-baselines.pdf
 \end{verbatim}
 
 \paragraph{F2: regret vs the closed-form optimum (\cref{sec:f2}).}
 \begin{verbatim}
 python paper/src/make-f2-regret.py
+  -> paper/evidence/f2-regret.json, paper/figures/f2-regret.pdf
 \end{verbatim}
 
 \paragraph{F3: generalization gap and cross-regime transfer (\cref{sec:f3}).}
 \begin{verbatim}
 python paper/src/make-f3-generalization.py
+  -> paper/evidence/f3-generalization.json,
+     paper/figures/f3-transfer-matrix.pdf
 \end{verbatim}
 
 \paragraph{F4: stylized-facts realism certification (\cref{sec:f4}).}
 \begin{verbatim}
 python paper/src/make-f4-realism.py
+  -> paper/evidence/f4-realism.json, paper/figures/f4-realism.pdf
 \end{verbatim}
 
 \paragraph{F5: manipulation boundary and size response (\cref{sec:f5}).}
 \begin{verbatim}
 python paper/src/make-f5-manipulation.py
+  -> paper/evidence/f5-manipulation.json,
+     paper/figures/f5-boundaries.pdf, paper/figures/f5-size-response.pdf
 \end{verbatim}
 
 \paragraph{F6: adverse-selection markouts (\cref{sec:f6}).}
 \begin{verbatim}
 python paper/src/make-f6-adverse-selection.py
+  -> paper/evidence/f6-adverse-selection.json,
+     paper/figures/f6-markouts.pdf
 \end{verbatim}
 
 \paragraph{F7: failure-mode distributions (\cref{sec:f7}).}
 \begin{verbatim}
 python paper/src/make-f7-failures.py
+  -> paper/evidence/f7-failures.json, paper/figures/f7-failures.pdf
 \end{verbatim}
 
 \paragraph{F8: ecology under shocks (\cref{sec:f8}).}
 \begin{verbatim}
 python paper/src/make-f8-ecology.py
+  -> paper/evidence/f8-ecology.json,
+     paper/figures/f8-ecology-control.pdf,
+     paper/figures/f8-ecology-shocked.pdf
 \end{verbatim}
 
 \paragraph{Regenerating every figure from the committed evidence.}

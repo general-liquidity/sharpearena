@@ -38,6 +38,15 @@ The strategic bet is **interface ownership**: if every trading agent in the open
 
 Published to **crates.io**, **npm**, and **PyPI** (the badges above show the live versions), depending on the **published** sharpebench engine (not a vendored copy). CI is green across four surfaces: Rust (`fmt`, `clippy -D warnings`, tests, a WASM target build), `cargo-deny`, the npm package, and the Python wheel (`maturin` + `pytest`).
 
+**What the evidence shows.** The eight-experiment evidence run in [`paper/`](paper/) (every number from a committed script, JSON evidence, and fixed seeds) reports, among its findings:
+
+- **The corrected deflation prior rewrites the baseline board.** The pre-0.5.0 kernel scored every baseline **0.0000** deflated Sharpe on every tier: a unit bug, an annualized prior applied per period, a bar near annualized Sharpe 18. Corrected, drift saturates the deflated Sharpe at **1.0000** on Calm, and still **nothing is rank-eligible**: no baseline passes pass^k on every seed (best rate 0.75), and Hard/Extreme collapse the score to 0.11/0.02. The eligibility conjunction, not a mis-united floor, is what gates.
+- **Market-making agents are scored on regret against a provable optimum.** The env ships the closed-form Avellaneda-Stoikov policy; its regret is **0.0 by construction**, and fixed-spread quoting pays a U-shaped regret: **84.6** at a 0.05 half-spread, a minimum of **0.037** at 0.5, back up to **58.8** at 4.0.
+- **Cross-regime transfer exposes what the within-tier gap cannot.** The calm-trained reference loses **0.88** of deflated Sharpe zero-shot on Hard and **0.97** on Extreme, while its within-tier generalization gap sits near zero (+0.0012 on Calm), the expected control for an unfitted policy.
+- **Manipulation never pays.** The red-team pump-and-unwind probe is unprofitable at **every** tested impact coefficient (Kyle lambda 0 to 0.8, eta 0 to 0.8, follower gain 0 to 120) and the size response is bounded and decreasing: the loss deepens ~linearly with push size.
+
+The rest (stylized-facts certification including its honest failures, adverse-selection markouts, failure-mode distributions, ecology under regime shocks) is in the paper's Experiments section, with the exact command per number in its appendix.
+
 Beyond the core `reset`/`step` lifecycle, the environment now ships a full **reinforcement-learning training surface**:
 
 | Capability | What it is |

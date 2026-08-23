@@ -1,43 +1,276 @@
 \section{Experiments}\label{sec:experiments}
 
-Eight findings are planned. Each subsection below states the experiment's definition: the entry point, the seeds, the quantity measured and the question the number answers. Every experiment is implemented as a committed script under \texttt{paper/src/} that writes its result as JSON to \texttt{paper/evidence/} and, where a figure carries the finding, a PDF under \texttt{paper/figures/}; the exact commands are listed in \cref{app:commands}. The scenario seeds are fixed in the scripts, so the evidence run is deterministic given the pinned kernel.
+Eight findings. Each subsection states the experiment's definition (the entry point, the seeds, the quantity measured), then reports the numbers from the committed evidence run. Every experiment is a committed script under \texttt{paper/src/} that writes its result as JSON to \texttt{paper/evidence/} and its figure as a PDF under \texttt{paper/figures/}; the exact commands are listed in \cref{app:commands}. Scenario seeds are fixed in the scripts, so the evidence run is deterministic given the pinned kernel (SharpeBench 0.5.0 under \texttt{sharpearena} 0.8.0, the version recorded in the evidence).
 
-\subsection{F1: The baseline leaderboard under the corrected kernel}\label{sec:f1}
+\subsection{F1: The corrected deflation prior rewrites the baseline board}\label{sec:f1}
 
-The reference-policy field, flat, equal-weight long, momentum, minimum-variance, maximum-Sharpe and fractional-Kelly volatility targeting, plus the behavioral counterparties, is rolled over sixteen scenario seeds in each of the Calm, Hard and Extreme tiers via \texttt{run\_baselines}. Each policy's pooled return series is scored by the SharpeBench \texttt{score\_run} kernel with the declared trial count equal to the field size, and each row carries a seed-paired bootstrap confidence interval on the deflated Sharpe. The question is where the honest zero sits: what a leaderboard shows when nothing on it has an edge, and whether any reference policy's interval excludes zero on any tier.
-% numbers pending evidence run
+The reference-policy field (flat, equal-weight long, momentum, minimum-variance, maximum-Sharpe, fractional-Kelly volatility targeting) is rolled over sixteen scenario seeds in each of the Calm, Hard and Extreme tiers via \texttt{run\_baselines}. Each policy's pooled return series is scored by the SharpeBench \texttt{score\_run} kernel with the declared trial count equal to the field size, and each row carries a seed-paired bootstrap 95\% confidence interval on the deflated Sharpe (2{,}000 resamples).
+
+Under the pre-0.5.0 kernel this board was all zeros: every baseline scored a deflated Sharpe of 0.0000 on every tier. That was not strictness. The kernel applied its annualized 0.5 deflation prior per period without conversion, which set the bar near an annualized Sharpe of 18 on daily bars, a level nothing clears. This is the same unit bug the companion SharpeBench paper reports as its Finding 1 \citep{toca2026sharpebench}; the 0.5.0 kernel states the prior annualized and converts it once at 252 periods per year.
+
+\begin{table}[t]
+\centering
+\caption{Baseline leaderboard under the corrected kernel: deflated Sharpe (DSR) and pass\textsuperscript{$k$} rate per tier, 16 seeds each. No policy is rank-eligible on any tier: eligibility requires pass\textsuperscript{$k$} on every seed, and the best rate is 0.75.}
+\label{tab:f1}
+\small
+\setlength{\tabcolsep}{4.5pt}
+\begin{tabular}{l rr rr rr}
+\toprule
+ & \multicolumn{2}{c}{Calm} & \multicolumn{2}{c}{Hard} & \multicolumn{2}{c}{Extreme} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+Policy & DSR & pass$^k$ & DSR & pass$^k$ & DSR & pass$^k$ \\
+\midrule
+kelly\_vol\_target & 1.0000 & 0.75 & 0.0277 & 0.31 & 0.0029 & 0.12 \\
+equal\_weight\_long & 1.0000 & 0.62 & 0.1114 & 0.31 & 0.0234 & 0.06 \\
+min\_variance & 0.9849 & 0.44 & 0.0024 & 0.19 & 0.0243 & 0.06 \\
+flat & 0.0007 & 0.00 & 0.0007 & 0.00 & 0.0007 & 0.00 \\
+momentum & 0.0000 & 0.00 & 0.0000 & 0.00 & 0.0000 & 0.06 \\
+max\_sharpe & 0.0000 & 0.06 & 0.0000 & 0.00 & 0.0000 & 0.00 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\Cref{tab:f1} and \cref{fig:f1} show the corrected board. On Calm, drift is free deflated Sharpe: \texttt{kelly\_vol\_target} and \texttt{equal\_weight\_long} saturate the DSR at 1.0000 (bootstrap CIs $[0.9798, 1.0000]$ and $[0.8343, 1.0000]$) and \texttt{min\_variance} reaches 0.9849, though with a near-vacuous interval of $[0.0264, 1.0000]$. Yet nothing on the board is rank-eligible, because no policy passes the per-run gate on every seed; the best pass\textsuperscript{$k$} rate is 0.75. On Hard the best DSR collapses to 0.1114 and on Extreme to 0.0243, and the long baseline's pass\textsuperscript{$k$} rate degrades monotonically with stress (0.62, 0.31, 0.06). \texttt{momentum} and \texttt{max\_sharpe} lose money outright on every tier (mean per-bar returns down to $-1.6 \times 10^{-3}$ on Extreme).
+
+The reading: eligibility is a conjunction, and each leg catches what the other misses. Deflation alone would crown drift on Calm; pass\textsuperscript{$k$} alone would miss the overfit breadth the deflation discounts. The earlier all-zeros board looked strict but was measuring a unit error. The corrected board is the honest zero: the number a real agent has to beat is a positive, deflated Sharpe that survives every held-out seed, and no reference policy produces one.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{f1-baselines}
+\caption{Deflated Sharpe per baseline per tier with seed-paired bootstrap CIs. Calm saturates the long baselines; Hard and Extreme collapse them toward zero.}
+\label{fig:f1}
+\end{figure}
 
 \subsection{F2: Regret against the closed-form optimum}\label{sec:f2}
 
-On the Avellaneda-Stoikov market-making task, \texttt{mm\_regret} runs each candidate quoting policy and the analytically optimal policy on the same sixteen seeded episodes and reports the mean reward gap. Candidates are the optimum itself, which must score approximately zero by construction, and fixed-spread quoters across a grid of half-spreads, which ignore inventory and time-to-go. The question is the shape and magnitude of the regret curve: how much the closed-form structure is worth over naive symmetric quoting, and whether the environment's regret metric separates the policies it should provably separate.
-% numbers pending evidence run
+On the Avellaneda-Stoikov market-making task, \texttt{mm\_regret} runs each candidate quoting policy and the analytically optimal policy on the same sixteen seeded episodes ($\sigma = 2.0$, $\gamma = 0.1$, $\kappa = 1.5$, 200 steps) and reports the mean reward gap to the optimum. Candidates are the optimum itself and fixed-spread quoters over a grid of half-spreads.
+
+The optimum's regret is 0.0 by construction, which validates the metric's zero point. The fixed-spread curve is U-shaped (\cref{fig:f2}): regret is 84.6 at a half-spread of 0.05 (quoting too tight, filled constantly, run over by inventory), falls to a minimum of 0.037 at 0.5, and rises again to 36.6 at 2.0 and 58.8 at 4.0 (quoting too wide, earning nothing). The best fixed spread comes within 0.04 of the optimum on this parameterization, but only at the one grid point that happens to match the closed-form spread; every other choice pays double-digit regret for ignoring inventory and time-to-go.
+
+The point of shipping the optimum is that agents on this task are scored on regret, not raw PnL. A market-making leaderboard ranked on PnL rewards whichever policy drew the friendliest flow; regret against a provable optimum on the same episodes removes that luck axis entirely.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.7\linewidth]{f2-regret}
+\caption{Mean regret versus the closed-form Avellaneda-Stoikov optimum over 16 paired episodes. Fixed-spread quoting is U-shaped in the half-spread; the optimum defines zero.}
+\label{fig:f2}
+\end{figure}
 
 \subsection{F3: Generalization gap and cross-regime transfer}\label{sec:f3}
 
-\texttt{generalization\_gap} scores a fixed reference policy on disjoint train and held-out seed bands within each tier and reports the differenced deflated Sharpe. \texttt{cross\_regime\_transfer} then holds sixteen seeds fixed and varies the regime, producing the full three-by-three transfer matrix over Calm, Hard and Extreme, whose diagonal is zero by construction because identical regimes reuse byte-identical environments. The question is the calibration of the instrument: the within-tier gap for a policy with no learning should be small, and the off-diagonal transfer gaps should expose regime-specific structure that the within-tier gap is blind to.
-% numbers pending evidence run
+\texttt{generalization\_gap} scores the default reference policy (equal-weight long) on disjoint train and held-out seed bands (16 seeds each, separated by a 10{,}000-seed gap) within each tier. \texttt{cross\_regime\_transfer} then holds sixteen seeds fixed and varies the regime, producing the full three-by-three transfer matrix whose diagonal is zero by construction, because identical regimes reuse byte-identical environments.
+
+\begin{table}[t]
+\centering
+\caption{Left: within-tier generalization gap (train minus test deflated Sharpe) for the equal-weight reference. Right: cross-regime transfer gap (in-distribution minus zero-shot out-of-distribution DSR), rows train, columns test.}
+\label{tab:f3}
+\small
+\begin{tabular}{lrrr}
+\toprule
+Tier & Train DSR & Test DSR & Gap \\
+\midrule
+Calm & 1.0000 & 0.9988 & $+0.0012$ \\
+Hard & 0.1231 & 0.4618 & $-0.3388$ \\
+Extreme & 0.0269 & 0.1280 & $-0.1012$ \\
+\bottomrule
+\end{tabular}
+\hspace{1.5em}
+\begin{tabular}{lrrr}
+\toprule
+ & Calm & Hard & Extreme \\
+\midrule
+Calm & 0.000 & $+0.877$ & $+0.973$ \\
+Hard & $-0.877$ & 0.000 & $+0.096$ \\
+Extreme & $-0.973$ & $-0.096$ & 0.000 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\Cref{tab:f3} reports both. The within-tier gaps are the expected control: the reference policy has no fitted parameters, so it cannot overfit its train band, and the instrument correctly reads near zero on Calm ($+0.0012$) and noise-signed values on the stressed tiers (the negative Hard and Extreme gaps mean the held-out band happened to be kinder; with no learning, the gap is pure seed noise, and its magnitude, up to 0.34 on Hard, calibrates how much band luck a 16-seed evaluation carries).
+
+The transfer matrix (\cref{fig:f3}) is where regime structure appears. Training regime Calm and testing zero-shot on Hard costs $0.877$ of deflated Sharpe; Calm to Extreme costs $0.973$, essentially the whole score. The matrix is antisymmetric because the policy is fixed, and its off-diagonal magnitude is the quantity a within-tier gap is structurally blind to: a policy scored only on calm seeds can carry a saturated DSR into a leaderboard while being worth 0.03 under stress. Both metrics are cheap, and the protocol requires reporting both.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.62\linewidth]{f3-transfer-matrix}
+\caption{Cross-regime transfer matrix for the reference policy: out-of-distribution deflated Sharpe with the seed band held fixed.}
+\label{fig:f3}
+\end{figure}
 
 \subsection{F4: Stylized-facts realism certification}\label{sec:f4}
 
-For each tier, price panels are collected from eight seeded episodes and graded by \texttt{certify\_realism} against the directional bounds: positive excess kurtosis, positive absolute-return autocorrelation, positive aggregational Gaussianity and a super-Poisson Fano factor, with skew and Zumbach asymmetry reported as informational. The output is the certification table: each fact's value per tier and the pass verdict. The question is whether the generator's tape earns the right to score agents, and which tier, if any, fails which fact.
-% numbers pending evidence run
+For each tier, price panels from eight seeded episodes are graded by \texttt{certify\_realism} against the directional bounds: positive excess kurtosis, positive absolute-return autocorrelation, positive aggregational Gaussianity, and a super-Poisson Fano factor, with gain/loss skew and Zumbach asymmetry reported as informational \citep{cont2001empirical}.
+
+\begin{table}[t]
+\centering
+\caption{Stylized-facts certification per tier: mean fact value over 8 seeds, per-fact pass counts, and the all-facts pass rate. Calm is near-Gaussian by design and fails the fat-tail facts; the stressed tiers pass them.}
+\label{tab:f4}
+\small
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{l rr rr rr r}
+\toprule
+ & \multicolumn{2}{c}{Excess kurtosis} & \multicolumn{2}{c}{$|r|$ autocorr} & \multicolumn{2}{c}{Fano factor} & All facts \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+Tier & mean & pass & mean & pass & mean & pass & pass rate \\
+\midrule
+Calm & $-0.97$ & 0/8 & $+0.0002$ & 5/8 & 1.19 & 7/8 & 0.000 \\
+Hard & $+16.30$ & 8/8 & $-0.0107$ & 1/8 & 0.85 & 0/8 & 0.000 \\
+Extreme & $+11.38$ & 8/8 & $-0.0118$ & 1/8 & 0.79 & 1/8 & 0.125 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\Cref{tab:f4} and \cref{fig:f4} report the certification honestly, and it is a mixed verdict. The fat-tail facts split cleanly by tier, as they should: Calm's returns are platykurtic (mean excess kurtosis $-0.97$, aggregational Gaussianity $-0.58$; a low-volatility, jump-free regime is expected to sit near Gaussian, and the gate correctly refuses to certify it as fat-tailed tape), while Hard and Extreme pass excess kurtosis and aggregational Gaussianity on all eight seeds (means $+16.3$ and $+11.4$ excess kurtosis). But the full conjunction almost never passes: 0/8 on Calm, 0/8 on Hard, 1/8 on Extreme. The binding facts on the stressed tiers are volatility clustering (absolute-return autocorrelation is slightly negative at this 121-bar episode length) and the Fano factor, which drops sub-Poisson exactly when jumps concentrate variance in few bars. This is a finding against the generator, stated as such: the vol-and-jump construction buys fat tails without buying persistent volatility, and a future generator revision must add clustering (for example a stochastic-volatility driver) before the certification gate passes at tier level.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{f4-realism}
+\caption{Per-seed stylized-fact values by tier against the certification bounds.}
+\label{fig:f4}
+\end{figure}
 
 \subsection{F5: The manipulation boundary and size response}\label{sec:f5}
 
-A push-and-unwind manipulator is scored against its zero-impact paired reference over eight seeds. \texttt{impact\_boundary\_sweep} sweeps permanent impact, temporary impact and follower gain, reporting where along each axis the pump stops paying, and \texttt{size\_response} sweeps the push weight, reporting whether the payoff is bounded. The question is a statement about the simulator, not about any agent: a boundary that exists at a plausible parameter value says the impact specification prices manipulation the way real books do, and a missing boundary or a monotone size response is a defect finding against the environment itself.
-% numbers pending evidence run
+A push-and-unwind manipulator is scored against its zero-impact paired reference (identical seed and schedule, $\lambda = \eta = 0$) over eight seeds, so \texttt{impact\_pnl} attributes profit specifically to having moved the price. \texttt{impact\_boundary\_sweep} sweeps permanent impact (Kyle $\lambda$), temporary impact ($\eta$) and the momentum-follower gain; \texttt{size\_response} sweeps the push weight.
+
+\begin{table}[t]
+\centering
+\caption{Manipulation probe. Left: impact PnL (in units of $10^{-4}$, per-bar) at the endpoints of each swept axis; every axis is unprofitable everywhere, so no profitability boundary exists to report. Right: size response in the push weight.}
+\label{tab:f5}
+\small
+\begin{tabular}{lrrl}
+\toprule
+Axis & Low end & High end & Boundary \\
+\midrule
+Kyle $\lambda$ (0 to 0.8) & $-1.3$ & $-31.7$ & none \\
+$\eta$ (0 to 0.8) & $-2.2$ & $-22.4$ & none \\
+Follower gain (0 to 120) & $-2.6$ & $-6.7$ & none \\
+\bottomrule
+\end{tabular}
+\hspace{1.2em}
+\begin{tabular}{lr}
+\toprule
+Push weight & Impact PnL ($10^{-4}$) \\
+\midrule
+0.10 & $-0.14$ \\
+0.25 & $-0.50$ \\
+0.50 & $-1.53$ \\
+1.00 & $-5.14$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The result (\cref{tab:f5}, \cref{fig:f5}) is the red-team outcome the impact specification should produce. On every axis the pump loses money at every sampled coefficient, including the realistic center of the grid ($\lambda = 0.1$, $\eta = 0.05$: impact PnL $-3.4 \times 10^{-4}$), and the loss deepens monotonically as impact or follower gain rises: more impact means a worse average entry on the push and a worse exit on the unwind, and the follower population never front-loads enough momentum flow to pay for it. The size response is bounded and decreasing: the least-bad size is the smallest sampled push weight (0.1, $-0.14 \times 10^{-4}$) and the loss grows roughly linearly to $-5.1 \times 10^{-4}$ at full size. There is no interior optimum where manipulation pays and scales. Had the sweep found a profitable region at plausible coefficients, that would be a defect finding against the environment; instead the probe certifies that the Kyle-plus-Almgren-Chriss book prices this manipulation as a cost at every tested point. The module ships with an explicit disclaimer: it is a diagnostic on the simulator, not a strategy.
+
+\begin{figure}[t]
+\centering
+\begin{subfigure}[t]{0.55\linewidth}
+\includegraphics[width=\linewidth]{f5-boundaries}
+\caption{Boundary sweeps per impact axis.}
+\end{subfigure}\hfill
+\begin{subfigure}[t]{0.42\linewidth}
+\includegraphics[width=\linewidth]{f5-size-response}
+\caption{Size response in the push weight.}
+\end{subfigure}
+\caption{The manipulation probe: impact-attributed PnL is negative everywhere and worsens with impact strength and with size.}
+\label{fig:f5}
+\end{figure}
 
 \subsection{F6: Adverse-selection markout decomposition}\label{sec:f6}
 
-\texttt{compare\_informed\_vs\_uninformed} runs twenty-four paired episodes in which the identical meta-order flow is sided on the alpha in one leg and on a coin in the other, holding the price path fixed, and reports mean maker markout per filled unit at each horizon. The question is the non-vacuity of the adverse-selection machinery: the informed leg must mark out worse at every horizon, and the gap per unit is the price of trading against information in this market. A single seeded \texttt{run\_adverse\_selection} episode additionally decomposes markout by maker, separating the optimal quoter from the tight fixed-spread quoters that informed flow should punish hardest.
-% numbers pending evidence run
+\texttt{compare\_informed\_vs\_uninformed} runs twenty-four paired episodes in which the identical meta-order flow is sided on the alpha in one leg and on a coin flip in the other, holding schedule, sizes and price path fixed, and reports mean maker markout per filled unit at horizons of 1, 5 and 20 bars.
+
+\begin{table}[t]
+\centering
+\caption{Maker markout per filled unit against informed versus paired-uninformed flow, 24 paired episodes. The gap is the price of trading against information, and it grows with horizon.}
+\label{tab:f6}
+\small
+\begin{tabular}{lrrr}
+\toprule
+Horizon (bars) & Informed & Uninformed & Gap \\
+\midrule
+1 & 0.689 & 0.761 & 0.072 \\
+5 & 0.489 & 0.791 & 0.302 \\
+20 & 0.386 & 0.823 & 0.436 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The machinery is non-vacuous in the required direction at every horizon (\cref{tab:f6}, \cref{fig:f6}): makers filled by informed flow mark out worse than the paired-uninformed control at $h = 1$, 5 and 20, and the per-unit gap widens from 0.072 to 0.436 as the information realizes, which is the signature shape of adverse selection (the loss is in the drift after the fill, not in the fill itself).
+
+The single-episode maker decomposition sharpens this. The wider quoter (\texttt{maker\_0}, 135 fills) keeps a positive markout at $h = 20$ (0.526 per unit, toxic-fill rate 0.296): the flow is not selecting against it. The tighter quoter (\texttt{maker\_1}, 92 fills) shows the subsidised pattern: aggregate markout is still positive at $h = 20$ (0.197 per unit) but its meta-order fills alone lose 0.197 per unit on 62\% of its filled quantity, with a toxic-fill rate of 0.533 at $h = 20$, so noise flow is paying for the informed flow. Spread capture and adverse drift decompose exactly ($\texttt{spread\_capture} + \texttt{adverse\_drift} = \texttt{markout}$): \texttt{maker\_1} captures 82.8 of spread and gives back 64.7 to adverse drift by $h = 20$.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.7\linewidth]{f6-markouts}
+\caption{Markout per filled unit by horizon: informed flow versus the paired-uninformed control.}
+\label{fig:f6}
+\end{figure}
 
 \subsection{F7: Failure-mode distributions}\label{sec:f7}
 
-Every baseline rollout from the F1 field, across all tiers and seeds, is classified by \texttt{classify\_episode\_failure} into the worst-case-first taxonomy, cascade-wiped, bankrupt, stopped-out, mandate breach or clean, with a per-scenario sampled mandate and drawdown-stop events folded into the event stream, and \texttt{rollup\_failure\_modes} tallies the suite. The question is the shape of failure as stress rises: which modes appear at which tier, which policies fail structurally rather than merely unprofitably, and what the clean rate is for a field with no edge.
-% numbers pending evidence run
+Every rollout of the eight-policy field (the six reference policies plus the two behavioral counterparties), across all three tiers and sixteen seeds (384 episodes), is classified by \texttt{classify\_episode\_failure} into the worst-case-first taxonomy: cascade-wiped, bankrupt, stopped-out, mandate breach (structural, drawdown or inventory), or clean, with a per-scenario sampled mandate and a 50\% drawdown stop in force.
+
+\begin{table}[t]
+\centering
+\caption{Failure-mode counts per tier, 128 episodes each (8 policies $\times$ 16 seeds). No episode reaches bankruptcy or a cascade wipe; failure is dominated by mandate breaches, and drawdown breaches triple from Calm to Extreme.}
+\label{tab:f7}
+\small
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{lrrrrrrr}
+\toprule
+Tier & Clean & Stopped out & Mandate struct. & Mandate DD & Mandate inv. & Bankrupt & Clean rate \\
+\midrule
+Calm & 72 & 0 & 36 & 11 & 9 & 0 & 0.56 \\
+Hard & 68 & 0 & 36 & 14 & 10 & 0 & 0.53 \\
+Extreme & 50 & 5 & 31 & 32 & 10 & 0 & 0.39 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\Cref{tab:f7} and \cref{fig:f7} show the shape of failure as stress rises. The clean rate falls from 0.56 on Calm to 0.39 on Extreme. Structural mandate breaches are roughly flat across tiers (36, 36, 31), which is correct: a shorting policy under a sampled long-only mandate breaks the rule regardless of the weather. The stress-sensitive modes are the drawdown family: mandate drawdown breaches triple from 11 on Calm to 32 on Extreme, and hard stop-outs at the 50\% line appear only on Extreme (5 episodes, four of them \texttt{max\_sharpe}). No policy in this field ever reaches bankruptcy or a cascade wipe; the taxonomy's worst states are reachable but not by these baselines at this stop level. Per policy, \texttt{flat} is clean 48/48 by construction, while \texttt{overconfident} is the worst citizen on Calm (7 of its 16 episodes end in a drawdown breach) and \texttt{max\_sharpe} is the worst on Extreme (3 clean of 16). The headline for entrants: on this field, half of everything that goes wrong is process, not PnL, which is exactly the half a return-ranked board never sees.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{f7-failures}
+\caption{Failure-mode distribution per tier per policy over 384 classified episodes.}
+\label{fig:f7}
+\end{figure}
 
 \subsection{F8: Ecology outcomes under shocks}\label{sec:f8}
 
-\texttt{run\_ecology} seeds the replicator with the baseline species, including the behavioral counterparties, over a shared-book market via \texttt{market\_payoffs}, and runs matched trajectories under a steady control schedule and a \texttt{regime\_shocks} schedule rotating Calm, Hard and Extreme, with the innovation operator breeding parameter-perturbed variants. Reported are the population-share trajectories, extinction and innovation events, and the classified outcomes. The question is which strategies survive transitions rather than which scores best inside a regime, and whether the shocked population's composition diverges from the control's in a direction the strategy parameters explain.
-% numbers pending evidence run
+\texttt{run\_ecology} seeds the replicator with the eight baseline species over a shared-book market via \texttt{market\_payoffs} (12 generations, field size 8, innovation every 4 generations breeding parameter-perturbed variants of the leader) and runs matched trajectories under a steady all-Calm control schedule and a \texttt{regime\_shocks} schedule rotating Calm (generations 0 to 3), Hard (4 to 7) and Extreme (8 to 11).
+
+\begin{table}[t]
+\centering
+\caption{Classified ecology outcomes, control versus shocked (11 species each: 8 founders plus 3 bred variants).}
+\label{tab:f8}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lrrrrl}
+\toprule
+Schedule & Dom. & Pers. & Coll. & Ext. & Dominant species (final share) \\
+\midrule
+Control (all Calm) & 1 & 2 & 1 & 7 & kelly\_vol\_target (0.81) \\
+Shocked (Calm/Hard/Extreme) & 1 & 3 & 3 & 4 & equal\_weight\_long (0.67) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The two schedules select different winners from the same founding field (\cref{tab:f8}, \cref{fig:f8}). Under the control, \texttt{kelly\_vol\_target} sweeps the board: it peaks at a 1.00 share by generation 7 and ends dominant at 0.81, with its own bred variants (\texttt{target\_vol8}, \texttt{kelly\_fraction12}) holding the persistent remainder and all seven other founders extinct. Under the shock schedule the same species collapses: it peaks at 0.649 in generation 3, the last Calm generation, and is gone by generation 5 once the regime turns Hard. Dominance passes to \texttt{equal\_weight\_long} (final share 0.67, peak 0.75 in generation 8), with its three bred variants persistent (combined 0.33) and the behavioral counterparties eliminated early on both schedules (\texttt{overconfident} is extinct by generation 1 in both). \texttt{detect\_coalitions} flags 8 coalitions in the control and 7 under shocks; the strongest are parent-variant pairs at correlation 1.00, the bred clones moving with their parent, with the tightest cross-species pair at 0.997.
+
+The direction of the divergence is explained by the strategy parameters: volatility targeting is the sharpest exploiter of a stationary calm regime and precisely the leverage profile that a Hard transition liquidates, while the unlevered long book survives the rotation. That is the finding the ecology probe exists to produce: which strategies survive transitions is a different question from which scores best inside a regime, and one generation of regime change reorders the answer.
+
+\begin{figure}[t]
+\centering
+\begin{subfigure}[t]{0.49\linewidth}
+\includegraphics[width=\linewidth]{f8-ecology-control}
+\caption{Control: steady Calm.}
+\end{subfigure}\hfill
+\begin{subfigure}[t]{0.49\linewidth}
+\includegraphics[width=\linewidth]{f8-ecology-shocked}
+\caption{Shocked: Calm, then Hard, then Extreme.}
+\end{subfigure}
+\caption{Population-share trajectories over 12 replicator generations. The regime rotation replaces the calm-regime winner with the unlevered long book.}
+\label{fig:f8}
+\end{figure}

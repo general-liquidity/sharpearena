@@ -1,0 +1,140 @@
+{
+  "finding": "F5",
+  "config": {
+    "seeds": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "base_params": {
+      "n_symbols": 1,
+      "n_days": 80,
+      "n_followers": 3,
+      "kyle_lambda": 0.1,
+      "eta": 0.05,
+      "push_weight": 0.8,
+      "follower_gain": 30.0
+    }
+  },
+  "boundaries": {
+    "kyle_lambda": {
+      "axis": "kyle_lambda",
+      "values": [
+        0.0,
+        0.05,
+        0.1,
+        0.2,
+        0.4,
+        0.8
+      ],
+      "impact_pnl": [
+        -0.00012669766168091345,
+        -0.0002315368224599934,
+        -0.0003442350340720629,
+        -0.0005954257070149016,
+        -0.0012194146596404692,
+        -0.003174813985810404
+      ],
+      "profitable": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "boundary": null,
+      "profitable_everywhere": false,
+      "unprofitable_everywhere": true,
+      "disclaimer": "sharpearena.manipulation is a red-team diagnostic on the simulator's impact model. It is not a strategy, not a recommended policy, and not trading advice."
+    },
+    "eta": {
+      "axis": "eta",
+      "values": [
+        0.0,
+        0.05,
+        0.1,
+        0.2,
+        0.4,
+        0.8
+      ],
+      "impact_pnl": [
+        -0.00021759006972371653,
+        -0.0003442350340720629,
+        -0.00047087999842049255,
+        -0.0007241699271172825,
+        -0.0012307497845109594,
+        -0.00224390949929823
+      ],
+      "profitable": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "boundary": null,
+      "profitable_everywhere": false,
+      "unprofitable_everywhere": true,
+      "disclaimer": "sharpearena.manipulation is a red-team diagnostic on the simulator's impact model. It is not a strategy, not a recommended policy, and not trading advice."
+    },
+    "follower_gain": {
+      "axis": "follower_gain",
+      "values": [
+        0.0,
+        5.0,
+        15.0,
+        30.0,
+        60.0,
+        120.0
+      ],
+      "impact_pnl": [
+        -0.0002554917762511155,
+        -0.00026969630120848853,
+        -0.00029879784822199607,
+        -0.0003442350340720629,
+        -0.0004419591018037239,
+        -0.0006713769148172233
+      ],
+      "profitable": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "boundary": null,
+      "profitable_everywhere": false,
+      "unprofitable_everywhere": true,
+      "disclaimer": "sharpearena.manipulation is a red-team diagnostic on the simulator's impact model. It is not a strategy, not a recommended policy, and not trading advice."
+    }
+  },
+  "size_response": {
+    "push_weights": [
+      0.1,
+      0.25,
+      0.5,
+      0.75,
+      1.0
+    ],
+    "impact_pnl": [
+      -1.3799647836140738e-05,
+      -5.016039219758739e-05,
+      -0.0001525189941278815,
+      -0.00030706448964426536,
+      -0.0005137855634183008
+    ],
+    "peak_push_weight": 0.1,
+    "peak_impact_pnl": -1.3799647836140738e-05,
+    "bounded": true,
+    "monotone_increasing": false,
+    "disclaimer": "sharpearena.manipulation is a red-team diagnostic on the simulator's impact model. It is not a strategy, not a recommended policy, and not trading advice."
+  }
+}
