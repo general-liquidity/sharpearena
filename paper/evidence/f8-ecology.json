@@ -3,7 +3,17 @@
   "config": {
     "generations": 12,
     "field_size": 8,
-    "seed": 0,
+    "seeds": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "detail_seed": 0,
     "n_symbols": 4,
     "n_days": 120,
     "max_steps": 256,
@@ -1632,5 +1642,206 @@
     ]
   },
   "control_table": "| species | parent | born | g0 | g1 | g2 | g3 | g4 | g5 | g6 | g7 | g8 | g9 | g10 | g11 | g12 | outcome |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n| flat |  | 0 | 0.125 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | extinct |\n| equal_weight_long |  | 0 | 0.125 | 0.138 | 0.155 | 0.196 | 0.035 | 0.082 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | extinct |\n| momentum |  | 0 | 0.125 | 0.144 | 0.050 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | extinct |\n| min_variance |  | 0 | 0.125 | 0.168 | 0.177 | 0.195 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | extinct |\n| max_sharpe |  | 0 | 0.125 | 0.065 | 0.151 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | extinct |\n| kelly_vol_target |  | 0 | 0.125 | 0.314 | 0.467 | 0.608 | 0.865 | 0.534 | 0.861 | 1.000 | 0.900 | 0.900 | 0.900 | 0.900 | 0.810 | dominant |\n| disposition_effect |  | 0 | 0.125 | 0.170 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | extinct |\n| overconfident |  | 0 | 0.125 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | extinct |\n| kelly_vol_target~lookback4 | kelly_vol_target | 4 | 0.000 | 0.000 | 0.000 | 0.000 | 0.100 | 0.384 | 0.139 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | collapsed |\n| kelly_vol_target~target_vol8 | kelly_vol_target | 8 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.100 | 0.100 | 0.100 | 0.100 | 0.090 | persistent |\n| kelly_vol_target~kelly_fraction12 | kelly_vol_target | 12 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.100 | persistent |",
-  "shocked_table": "| species | parent | born | g0 | g1 | g2 | g3 | g4 | g5 | g6 | g7 | g8 | g9 | g10 | g11 | g12 | outcome |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n| flat |  | 0 | 0.125 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | extinct |\n| equal_weight_long |  | 0 | 0.125 | 0.138 | 0.207 | 0.226 | 0.487 | 0.616 | 0.253 | 0.636 | 0.747 | 0.747 | 0.747 | 0.747 | 0.672 | dominant |\n| momentum |  | 0 | 0.125 | 0.144 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | extinct |\n| min_variance |  | 0 | 0.125 | 0.168 | 0.172 | 0.125 | 0.258 | 0.257 | 0.694 | 0.234 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | collapsed |\n| max_sharpe |  | 0 | 0.125 | 0.065 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | extinct |\n| kelly_vol_target |  | 0 | 0.125 | 0.314 | 0.245 | 0.649 | 0.155 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | collapsed |\n| disposition_effect |  | 0 | 0.125 | 0.170 | 0.375 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | collapsed |\n| overconfident |  | 0 | 0.125 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | extinct |\n| equal_weight_long~v4 | equal_weight_long | 4 | 0.000 | 0.000 | 0.000 | 0.000 | 0.100 | 0.127 | 0.052 | 0.131 | 0.153 | 0.153 | 0.153 | 0.153 | 0.138 | persistent |\n| equal_weight_long~v8 | equal_weight_long | 8 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.100 | 0.100 | 0.100 | 0.100 | 0.090 | persistent |\n| equal_weight_long~v12 | equal_weight_long | 12 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.100 | persistent |"
+  "shocked_table": "| species | parent | born | g0 | g1 | g2 | g3 | g4 | g5 | g6 | g7 | g8 | g9 | g10 | g11 | g12 | outcome |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n| flat |  | 0 | 0.125 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | extinct |\n| equal_weight_long |  | 0 | 0.125 | 0.138 | 0.207 | 0.226 | 0.487 | 0.616 | 0.253 | 0.636 | 0.747 | 0.747 | 0.747 | 0.747 | 0.672 | dominant |\n| momentum |  | 0 | 0.125 | 0.144 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | extinct |\n| min_variance |  | 0 | 0.125 | 0.168 | 0.172 | 0.125 | 0.258 | 0.257 | 0.694 | 0.234 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | collapsed |\n| max_sharpe |  | 0 | 0.125 | 0.065 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | extinct |\n| kelly_vol_target |  | 0 | 0.125 | 0.314 | 0.245 | 0.649 | 0.155 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | collapsed |\n| disposition_effect |  | 0 | 0.125 | 0.170 | 0.375 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | collapsed |\n| overconfident |  | 0 | 0.125 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | extinct |\n| equal_weight_long~v4 | equal_weight_long | 4 | 0.000 | 0.000 | 0.000 | 0.000 | 0.100 | 0.127 | 0.052 | 0.131 | 0.153 | 0.153 | 0.153 | 0.153 | 0.138 | persistent |\n| equal_weight_long~v8 | equal_weight_long | 8 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.100 | 0.100 | 0.100 | 0.100 | 0.090 | persistent |\n| equal_weight_long~v12 | equal_weight_long | 12 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.100 | persistent |",
+  "multi_seed": {
+    "per_seed": {
+      "0": {
+        "control": {
+          "winner": "kelly_vol_target",
+          "winner_root": "kelly_vol_target",
+          "winner_final_share": 0.81,
+          "outcome_counts": {
+            "extinct": 7,
+            "dominant": 1,
+            "collapsed": 1,
+            "persistent": 2
+          }
+        },
+        "shocked": {
+          "winner": "equal_weight_long",
+          "winner_root": "equal_weight_long",
+          "winner_final_share": 0.6719990733638195,
+          "outcome_counts": {
+            "extinct": 4,
+            "dominant": 1,
+            "collapsed": 3,
+            "persistent": 3
+          }
+        }
+      },
+      "1": {
+        "control": {
+          "winner": "kelly_vol_target",
+          "winner_root": "kelly_vol_target",
+          "winner_final_share": 0.81,
+          "outcome_counts": {
+            "extinct": 5,
+            "collapsed": 3,
+            "dominant": 1,
+            "persistent": 2
+          }
+        },
+        "shocked": {
+          "winner": "kelly_vol_target",
+          "winner_root": "kelly_vol_target",
+          "winner_final_share": 0.9,
+          "outcome_counts": {
+            "extinct": 6,
+            "collapsed": 3,
+            "dominant": 1,
+            "persistent": 1
+          }
+        }
+      },
+      "2": {
+        "control": {
+          "winner": "kelly_vol_target",
+          "winner_root": "kelly_vol_target",
+          "winner_final_share": 0.81,
+          "outcome_counts": {
+            "extinct": 7,
+            "collapsed": 1,
+            "dominant": 1,
+            "persistent": 2
+          }
+        },
+        "shocked": {
+          "winner": "kelly_vol_target",
+          "winner_root": "kelly_vol_target",
+          "winner_final_share": 0.9,
+          "outcome_counts": {
+            "extinct": 6,
+            "collapsed": 3,
+            "dominant": 1,
+            "persistent": 1
+          }
+        }
+      },
+      "3": {
+        "control": {
+          "winner": "kelly_vol_target",
+          "winner_root": "kelly_vol_target",
+          "winner_final_share": 0.81,
+          "outcome_counts": {
+            "extinct": 7,
+            "collapsed": 1,
+            "dominant": 1,
+            "persistent": 2
+          }
+        },
+        "shocked": {
+          "winner": "kelly_vol_target",
+          "winner_root": "kelly_vol_target",
+          "winner_final_share": 0.9,
+          "outcome_counts": {
+            "extinct": 6,
+            "collapsed": 3,
+            "dominant": 1,
+            "persistent": 1
+          }
+        }
+      },
+      "4": {
+        "control": {
+          "winner": "flat~v12",
+          "winner_root": "flat",
+          "winner_final_share": 0.1,
+          "outcome_counts": {
+            "persistent": 11
+          }
+        },
+        "shocked": {
+          "winner": "kelly_vol_target",
+          "winner_root": "kelly_vol_target",
+          "winner_final_share": 0.9,
+          "outcome_counts": {
+            "extinct": 7,
+            "collapsed": 2,
+            "dominant": 1,
+            "persistent": 1
+          }
+        }
+      },
+      "5": {
+        "control": {
+          "winner": "equal_weight_long",
+          "winner_root": "equal_weight_long",
+          "winner_final_share": 0.81,
+          "outcome_counts": {
+            "extinct": 5,
+            "dominant": 1,
+            "collapsed": 3,
+            "persistent": 2
+          }
+        },
+        "shocked": {
+          "winner": "kelly_vol_target",
+          "winner_root": "kelly_vol_target",
+          "winner_final_share": 0.9,
+          "outcome_counts": {
+            "extinct": 5,
+            "collapsed": 4,
+            "dominant": 1,
+            "persistent": 1
+          }
+        }
+      },
+      "6": {
+        "control": {
+          "winner": "equal_weight_long",
+          "winner_root": "equal_weight_long",
+          "winner_final_share": 0.81,
+          "outcome_counts": {
+            "extinct": 6,
+            "dominant": 1,
+            "collapsed": 2,
+            "persistent": 2
+          }
+        },
+        "shocked": {
+          "winner": "kelly_vol_target",
+          "winner_root": "kelly_vol_target",
+          "winner_final_share": 0.9,
+          "outcome_counts": {
+            "extinct": 6,
+            "collapsed": 3,
+            "dominant": 1,
+            "persistent": 1
+          }
+        }
+      },
+      "7": {
+        "control": {
+          "winner": "flat~v12",
+          "winner_root": "flat",
+          "winner_final_share": 0.1,
+          "outcome_counts": {
+            "persistent": 11
+          }
+        },
+        "shocked": {
+          "winner": "kelly_vol_target~target_vol8",
+          "winner_root": "kelly_vol_target",
+          "winner_final_share": 0.9,
+          "outcome_counts": {
+            "extinct": 7,
+            "collapsed": 2,
+            "dominant": 1,
+            "persistent": 1
+          }
+        }
+      }
+    },
+    "control_winner_distribution": {
+      "kelly_vol_target": 4,
+      "flat": 2,
+      "equal_weight_long": 2
+    },
+    "shocked_winner_distribution": {
+      "equal_weight_long": 1,
+      "kelly_vol_target": 7
+    },
+    "winner_replaced_count": 5,
+    "n_seeds": 8
+  }
 }

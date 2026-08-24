@@ -28,6 +28,11 @@ TIERS = ("calm", "hard", "extreme")
 SEEDS = list(range(16))
 N_SYMBOLS = 4
 N_DAYS = 120
+# Bootstrap parameters, stated explicitly on the committed command surface.
+# These equal the library defaults in sharpearena.confidence
+# (DEFAULT_N_BOOT, DEFAULT_RESAMPLE_SEED): percentile bootstrap, alpha 0.05.
+N_BOOT = 2000
+RESAMPLE_SEED = 0x5BA7_2026
 
 
 def _version() -> str:
@@ -51,6 +56,8 @@ def main() -> None:
             seeds=SEEDS,
             distribution_mode=tier,
             confidence=True,
+            n_boot=N_BOOT,
+            resample_seed=RESAMPLE_SEED,
         )
         tiers[tier] = {
             "rows": rows,
@@ -65,6 +72,12 @@ def main() -> None:
             "n_days": N_DAYS,
             "seeds": SEEDS,
             "tiers": list(TIERS),
+            "bootstrap": {
+                "n_boot": N_BOOT,
+                "resample_seed": RESAMPLE_SEED,
+                "alpha": 0.05,
+                "convention": "seed-paired percentile bootstrap on the deflated Sharpe",
+            },
         },
         "tiers": tiers,
     }

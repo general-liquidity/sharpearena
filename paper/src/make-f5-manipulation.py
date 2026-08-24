@@ -4,12 +4,18 @@
 ``impact_boundary_sweep`` sweeps one impact axis (permanent impact, temporary
 impact, follower gain) and reports where the pump-and-unwind round trip stops
 paying against its zero-impact paired reference; ``size_response`` sweeps the
-push weight and reports whether the payoff is bounded. Writes JSON plus two
-figures. These probes diagnose the simulator's impact specification, not agents.
+push weight and reports whether the payoff is bounded. The sweep APIs return
+seed means only, so the script additionally collects per-seed impact PnL at
+every grid point via the public ``run_manipulation_probe`` and serializes
+per-seed vectors plus t-based 95% CIs (asserting the per-seed means reproduce
+the API sweeps). Writes JSON plus two figures. These probes diagnose the
+simulator's impact specification, not agents.
 """
 from __future__ import annotations
 
 import json
+import math
+from dataclasses import replace
 from pathlib import Path
 
 import matplotlib
@@ -17,7 +23,12 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from sharpearena import ManipulationParams, impact_boundary_sweep, size_response
+from sharpearena import (
+    ManipulationParams,
+    impact_boundary_sweep,
+    run_manipulation_probe,
+    size_response,
+)
 
 PAPER = Path(__file__).resolve().parents[1]
 EVIDENCE = PAPER / "evidence"
@@ -46,6 +57,41 @@ def main() -> None:
     }
     size = size_response(params=params, seeds=SEEDS).to_dict()
 
+    # Per-seed impact PnL at every grid point (t-based 95% CI, df = 7).
+    t_crit = 2.365
+    def _per_seed(p: ManipulationParams) -> list[float]:
+        return [
+            run_manipulation_probe(params=p, seed=s).impact_pnl for s in SEEDS
+        ]
+
+    def _stats(values: list[float]) -> dict:
+        n = len(values)
+        mean = sum(values) / n
+        std = math.sqrt(sum((v - mean) ** 2 for v in values) / (n - 1))
+        half = t_crit * std / math.sqrt(n)
+        return {"mean": mean, "std": std, "ci95_lo": mean - half, "ci95_hi": mean + half}
+
+    dispersion: dict[str, dict] = {}
+    for axis, rep in boundaries.items():
+        rows = [_per_seed(replace(params, **{axis: v})) for v in rep["values"]]
+        for row, mean in zip(rows, rep["impact_pnl"]):
+            assert abs(sum(row) / len(row) - mean) < 1e-12
+        dispersion[axis] = {
+            "values": rep["values"],
+            "per_seed_impact_pnl": rows,
+            "stats": [_stats(r) for r in rows],
+        }
+    size_rows = [
+        _per_seed(replace(params, push_weight=w)) for w in size["push_weights"]
+    ]
+    for row, mean in zip(size_rows, size["impact_pnl"]):
+        assert abs(sum(row) / len(row) - mean) < 1e-12
+    dispersion["push_weight"] = {
+        "values": size["push_weights"],
+        "per_seed_impact_pnl": size_rows,
+        "stats": [_stats(r) for r in size_rows],
+    }
+
     out = {
         "finding": "F5",
         "config": {
@@ -62,6 +108,8 @@ def main() -> None:
         },
         "boundaries": boundaries,
         "size_response": size,
+        "dispersion": dispersion,
+        "ci_convention": "t-based 95% over per-seed impact PnL, df=7",
     }
     (EVIDENCE / "f5-manipulation.json").write_text(json.dumps(out, indent=2))
 

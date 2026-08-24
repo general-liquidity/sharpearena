@@ -63,20 +63,31 @@ def f2() -> None:
     if data is None:
         return
     fixed = data["fixed_spread_regret"]
+    disp = data.get("regret_dispersion", {})
     xs = [float(k) for k in fixed]
     ys = [fixed[k] for k in fixed]
+    keys = list(fixed)
     order = np.argsort(xs)
     xs = [xs[i] for i in order]
     ys = [ys[i] for i in order]
+    keys = [keys[i] for i in order]
     fig, ax = plt.subplots(figsize=(6, 4))
-    ax.plot(xs, ys, marker="o", label="fixed-spread quoter")
+    if disp:
+        lo = [ys[i] - disp[k]["ci95_lo"] for i, k in enumerate(keys)]
+        hi = [disp[k]["ci95_hi"] - ys[i] for i, k in enumerate(keys)]
+        ax.errorbar(
+            xs, ys, yerr=[lo, hi], marker="o", capsize=3,
+            label="fixed-spread quoter",
+        )
+    else:
+        ax.plot(xs, ys, marker="o", label="fixed-spread quoter")
     ax.axhline(
         data["optimal_regret"], linestyle="--", color="black", linewidth=0.8,
-        label="A-S closed-form optimum",
+        label="A-S closed-form reference",
     )
     ax.set_xscale("log")
     ax.set_xlabel("fixed half-spread (price units)")
-    ax.set_ylabel("mean regret vs optimum")
+    ax.set_ylabel("mean regret vs closed-form reference")
     ax.legend(frameon=False)
     fig.tight_layout()
     fig.savefig(FIGURES / "f2-regret.pdf")

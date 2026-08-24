@@ -17,6 +17,7 @@ python -m pytest crates/sharpearena-py # Python surface, check_env,
 python paper/src/make-f1-baselines.py
   -> paper/evidence/f1-baselines.json, paper/figures/f1-baselines.pdf
 \end{verbatim}
+The script passes the bootstrap parameters explicitly ($B = 2000$ percentile resamples, $\alpha = 0.05$, resample seed \texttt{0x5BA7\_2026}) and serializes them in the evidence config; they equal the library defaults defined in \texttt{crates/sharpearena-py/python/sharpearena/confidence.py} (\texttt{DEFAULT\_N\_BOOT}, \texttt{DEFAULT\_RESAMPLE\_SEED}), which reuse the scoring kernel's canonical bootstrap seed.
 
 \paragraph{F2: regret vs the closed-form optimum (\cref{sec:f2}).}
 \begin{verbatim}
@@ -57,13 +58,16 @@ python paper/src/make-f7-failures.py
   -> paper/evidence/f7-failures.json, paper/figures/f7-failures.pdf
 \end{verbatim}
 
-\paragraph{F8: ecology under shocks (\cref{sec:f8}).}
+\paragraph{F8: ecology under shocks, 8 seeds per schedule (\cref{sec:f8}).}
 \begin{verbatim}
 python paper/src/make-f8-ecology.py
   -> paper/evidence/f8-ecology.json,
      paper/figures/f8-ecology-control.pdf,
      paper/figures/f8-ecology-shocked.pdf
 \end{verbatim}
+The evidence carries the full seed-0 reports (the figures' source) plus, under \texttt{multi\_seed}, per-seed winners, outcome counts and the cross-seed winner distributions behind \cref{tab:f8}.
+
+\paragraph{Dispersion layers.} The F2, F3, F5 and F6 scripts serialize the per-episode or per-seed vectors behind every reported interval into their evidence JSONs (\texttt{per\_episode\_regret}, \texttt{per\_seed\_returns} with \texttt{band\_dsr\_ci} and \texttt{transfer\_gap\_ci}, \texttt{dispersion}, and \texttt{per\_episode\_markout\_per\_unit} with \texttt{gap\_stats} respectively), each with its CI convention recorded in the file, so every interval in \cref{sec:experiments} is recomputable from the committed evidence.
 
 \paragraph{Regenerating every figure from the committed evidence.}
 \begin{verbatim}

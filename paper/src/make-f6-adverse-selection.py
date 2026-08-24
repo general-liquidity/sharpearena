@@ -4,12 +4,19 @@
 ``compare_informed_vs_uninformed`` runs paired episodes (identical flow, sided
 on alpha vs a coin, price path held fixed) and reports mean maker markout per
 filled unit per horizon; one seeded ``run_adverse_selection`` episode
-additionally decomposes markout by maker. Writes JSON plus a figure.
+additionally decomposes markout by maker. The aggregate API pools quantities
+over episodes, so the script additionally reruns the public
+``run_adverse_selection`` per episode and leg to serialize per-episode
+markout-per-unit vectors and t-based 95% CIs on the per-episode paired gap
+(the per-episode ratio is episode markout over episode filled quantity; the
+API's pooled aggregate is the quantity-weighted counterpart). Writes JSON plus
+a figure.
 """
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
+import math
+from dataclasses import asdict, replace
 from pathlib import Path
 
 import matplotlib
@@ -44,6 +51,44 @@ def main() -> None:
     detail = run_adverse_selection(params=params, seed=DETAIL_SEED)
     per_maker = [asdict(m) for m in detail.makers]
 
+    # Per-episode markout per unit, per leg, per horizon (t-based 95% CI, df = 23).
+    horizons = list(params.markout_horizons)
+    t_crit = 2.069
+
+    def _episode_per_unit(informed: bool, seed: int) -> dict[int, float]:
+        report = run_adverse_selection(
+            params=replace(params, informed=informed), seed=seed
+        )
+        qty = sum(m.filled_qty for m in report.makers)
+        return {
+            h: sum(m.markout[h] for m in report.makers) / qty for h in horizons
+        }
+
+    per_episode = {"informed": [], "uninformed": [], "gap": []}
+    for i in range(N_EPISODES):
+        inf = _episode_per_unit(True, SEED_BASE + i)
+        uni = _episode_per_unit(False, SEED_BASE + i)
+        per_episode["informed"].append({str(h): inf[h] for h in horizons})
+        per_episode["uninformed"].append({str(h): uni[h] for h in horizons})
+        per_episode["gap"].append({str(h): uni[h] - inf[h] for h in horizons})
+
+    def _stats(values: list[float]) -> dict:
+        n = len(values)
+        mean = sum(values) / n
+        std = math.sqrt(sum((v - mean) ** 2 for v in values) / (n - 1))
+        half = t_crit * std / math.sqrt(n)
+        return {
+            "mean": mean,
+            "std": std,
+            "ci95_lo": mean - half,
+            "ci95_hi": mean + half,
+            "excludes_zero": mean - half > 0.0 or mean + half < 0.0,
+        }
+
+    gap_stats = {
+        str(h): _stats([row[str(h)] for row in per_episode["gap"]]) for h in horizons
+    }
+
     out = {
         "finding": "F6",
         "config": {"n_episodes": N_EPISODES, "seed_base": SEED_BASE, "detail_seed": DETAIL_SEED},
@@ -62,6 +107,12 @@ def main() -> None:
             },
         },
         "detail_episode_makers": per_maker,
+        "per_episode_markout_per_unit": per_episode,
+        "gap_stats": gap_stats,
+        "ci_convention": (
+            "t-based 95% over per-episode paired gaps (episode markout over "
+            "episode filled quantity), df=23"
+        ),
     }
     (EVIDENCE / "f6-adverse-selection.json").write_text(json.dumps(out, indent=2, default=str))
 
