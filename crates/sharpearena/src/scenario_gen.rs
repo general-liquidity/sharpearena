@@ -75,6 +75,22 @@ pub struct ScenarioSpec {
     /// the unclustered generator.
     #[serde(default)]
     pub vol_clustering: f64,
+    /// Opt-in probability of beginning a deterministic jump burst on a bar.
+    /// Zero preserves the historical generator byte for byte. Together with
+    /// [`jump_burst_persistence`](Self::jump_burst_persistence), this is the
+    /// calibration knob for fat tails in Calm and super-Poisson large-move
+    /// arrivals in Hard, rather than an undocumented change to either tier.
+    #[serde(default)]
+    pub jump_burst_probability: f64,
+    /// Conditional probability that a jump burst continues for one more bar.
+    /// `0.0` makes jump starts isolated; values toward one make large moves
+    /// arrive in clusters and increase the Fano intermittency statistic.
+    #[serde(default)]
+    pub jump_burst_persistence: f64,
+    /// Absolute simple-return size of each extra burst jump. A value of zero
+    /// disables the post-pass even if a probability was serialized by mistake.
+    #[serde(default)]
+    pub jump_burst_size: f64,
 }
 
 impl Default for ScenarioSpec {
@@ -87,6 +103,9 @@ impl Default for ScenarioSpec {
             distribution_mode: DistributionMode::Calm,
             obs_richness: ObservationRichness::default(),
             vol_clustering: 0.0,
+            jump_burst_probability: 0.0,
+            jump_burst_persistence: 0.0,
+            jump_burst_size: 0.0,
         }
     }
 }
@@ -193,6 +212,57 @@ fn vol_cluster(mut base: Dataset, strength: f64) -> Dataset {
             series[i + 1] = price;
             let dev = (adjusted - mean).max(mean - adjusted);
             state = CLUSTER_PERSISTENCE * state + (1.0 - CLUSTER_PERSISTENCE) * dev;
+        }
+    }
+    base
+}
+
+/// Opt-in clustered jump post-pass. An inactive bar begins a burst with
+/// `start_probability`; once active, each following bar stays in the burst with
+/// `persistence`. The first formulation calibrates *arrival* and *clustering*
+/// independently: a user can add rare isolated Calm jumps, or retain the same
+/// marginal jump scale while making the Hard tier's exceedances intermittent.
+///
+/// It deliberately runs after the tier and volatility-clustering transforms.
+/// The generated jump is a simple-return addition, prices remain positive by
+/// the same `-0.95` floor as [`amplify`], and the only randomness is this
+/// deterministic SplitMix64 stream. With all three knobs at zero the function
+/// is never called, preserving existing cross-runtime golden bytes.
+fn burst_jumps(
+    mut base: Dataset,
+    seed: u64,
+    start_probability: f64,
+    persistence: f64,
+    size: f64,
+) -> Dataset {
+    let mut rng = SplitMix64::new(seed ^ 0x4A55_4D50_4255_5253);
+    for series in base.closes.values_mut() {
+        if series.len() < 2 {
+            continue;
+        }
+        let rets: Vec<f64> = (1..series.len())
+            .map(|t| series[t] / series[t - 1] - 1.0)
+            .collect();
+        let mut price = series[0];
+        let mut active = false;
+        for (i, r) in rets.iter().enumerate() {
+            let p = if active {
+                persistence
+            } else {
+                start_probability
+            };
+            active = rng.next_unit() < p;
+            let jump = if active {
+                if rng.next_unit() < 0.5 {
+                    size
+                } else {
+                    -size
+                }
+            } else {
+                0.0
+            };
+            price *= 1.0 + (*r + jump).max(-0.95);
+            series[i + 1] = price;
         }
     }
     base
@@ -319,10 +389,21 @@ pub fn generate_scenario(spec: &ScenarioSpec, seed: u64) -> Dataset {
         DistributionMode::CointegratedPairs => cointegrated_pairs(base, seed),
         DistributionMode::RegimeShift => regime_shift(base, seed),
     };
-    if spec.vol_clustering > 0.0 {
+    let clustered = if spec.vol_clustering > 0.0 {
         vol_cluster(tiered, spec.vol_clustering)
     } else {
         tiered
+    };
+    if spec.jump_burst_probability > 0.0 && spec.jump_burst_size > 0.0 {
+        burst_jumps(
+            clustered,
+            seed,
+            spec.jump_burst_probability.clamp(0.0, 1.0),
+            spec.jump_burst_persistence.clamp(0.0, 1.0),
+            spec.jump_burst_size,
+        )
+    } else {
+        clustered
     }
 }
 
@@ -759,6 +840,45 @@ mod tests {
             for &p in series {
                 assert!(p.is_finite() && p > 0.0, "price {p} must be finite and > 0");
             }
+        }
+    }
+
+    #[test]
+    fn jump_burst_zero_is_byte_identical() {
+        let plain = ScenarioSpec {
+            distribution_mode: DistributionMode::Calm,
+            ..golden_spec()
+        };
+        // A persisted setting with a zero start probability is still off.
+        let disabled = ScenarioSpec {
+            jump_burst_probability: 0.0,
+            jump_burst_persistence: 0.95,
+            jump_burst_size: 0.08,
+            ..plain.clone()
+        };
+        assert_eq!(
+            serde_json::to_string(&generate_scenario(&plain, 19)).unwrap(),
+            serde_json::to_string(&generate_scenario(&disabled, 19)).unwrap()
+        );
+    }
+
+    #[test]
+    fn jump_bursts_are_deterministic_and_keep_prices_positive() {
+        let spec = ScenarioSpec {
+            distribution_mode: DistributionMode::Calm,
+            jump_burst_probability: 0.03,
+            jump_burst_persistence: 0.80,
+            jump_burst_size: 0.08,
+            ..golden_spec()
+        };
+        let a = generate_scenario(&spec, 19);
+        let b = generate_scenario(&spec, 19);
+        assert_eq!(
+            serde_json::to_string(&a).unwrap(),
+            serde_json::to_string(&b).unwrap()
+        );
+        for series in a.closes.values() {
+            assert!(series.iter().all(|p| p.is_finite() && *p > 0.0));
         }
     }
 

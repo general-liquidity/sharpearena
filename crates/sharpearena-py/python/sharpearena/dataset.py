@@ -55,6 +55,9 @@ def build_scenario_dataset(
     regime: Optional[str] = None,
     allow_short: bool = True,
     vol_clustering: float = 0.0,
+    jump_burst_probability: float = 0.0,
+    jump_burst_persistence: float = 0.0,
+    jump_burst_size: float = 0.0,
 ):
     """A ``datasets.Dataset`` of ``n_windows`` point-in-time scenarios.
 
@@ -63,9 +66,9 @@ def build_scenario_dataset(
     "n_days", "mode", "mandate", "regime"?, "vol_clustering"?}``). The mandate is sampled
     deterministically from the row seed (leak-free) and carried as a plain-JSON dict.
     ``mode`` selects the train/eval seed range; the two ranges are disjoint by
-    construction. ``vol_clustering`` is a pass-through knob for the generator's opt-in
-    volatility-clustering post-pass; it is recorded in ``info`` only when nonzero, so
-    default rows are unchanged.
+    construction. ``vol_clustering`` and ``jump_burst_*`` are opt-in generator knobs;
+    they are recorded in ``info`` only when nonzero, so default rows are unchanged and an
+    evaluator can replay the exact calibrated tape.
     """
     if n_windows < 1:
         raise ValueError("n_windows must be >= 1")
@@ -99,6 +102,12 @@ def build_scenario_dataset(
             info["regime"] = regime
         if float(vol_clustering) != 0.0:
             info["vol_clustering"] = float(vol_clustering)
+        if float(jump_burst_probability) != 0.0:
+            info["jump_burst_probability"] = float(jump_burst_probability)
+        if float(jump_burst_persistence) != 0.0:
+            info["jump_burst_persistence"] = float(jump_burst_persistence)
+        if float(jump_burst_size) != 0.0:
+            info["jump_burst_size"] = float(jump_burst_size)
         infos.append(info)
 
     return Dataset.from_dict(

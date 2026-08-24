@@ -60,9 +60,17 @@ fn build_dataset(
     seed: u64,
     mode: DistributionMode,
     vol_clustering: f64,
+    jump_burst_probability: f64,
+    jump_burst_persistence: f64,
+    jump_burst_size: f64,
 ) -> Dataset {
     match mode {
-        DistributionMode::Calm if vol_clustering == 0.0 => {
+        DistributionMode::Calm
+            if vol_clustering == 0.0
+                && jump_burst_probability == 0.0
+                && jump_burst_persistence == 0.0
+                && jump_burst_size == 0.0 =>
+        {
             Dataset::synthetic(n_symbols, n_days, seed)
         }
         m => generate_scenario(
@@ -71,6 +79,9 @@ fn build_dataset(
                 n_days,
                 distribution_mode: m,
                 vol_clustering,
+                jump_burst_probability,
+                jump_burst_persistence,
+                jump_burst_size,
                 ..ScenarioSpec::default()
             },
             seed,
@@ -144,6 +155,9 @@ impl PyTradingEnv {
         distribution_mode = "calm",
         exec_seed = None,
         vol_clustering = 0.0,
+        jump_burst_probability = 0.0,
+        jump_burst_persistence = 0.0,
+        jump_burst_size = 0.0,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -160,9 +174,21 @@ impl PyTradingEnv {
         distribution_mode: &str,
         exec_seed: Option<u64>,
         vol_clustering: f64,
+        jump_burst_probability: f64,
+        jump_burst_persistence: f64,
+        jump_burst_size: f64,
     ) -> PyResult<Self> {
         let mode = parse_distribution_mode(distribution_mode)?;
-        let data = build_dataset(n_symbols, n_days, seed, mode, vol_clustering);
+        let data = build_dataset(
+            n_symbols,
+            n_days,
+            seed,
+            mode,
+            vol_clustering,
+            jump_burst_probability,
+            jump_burst_persistence,
+            jump_burst_size,
+        );
         let window = build_window(window_start, window_end, data.len());
         if window.start >= window.end || window.end > data.len() {
             return Err(PyValueError::new_err(format!(
@@ -324,6 +350,9 @@ impl PyVecTradingEnv {
         exec_seed = None,
         autoreset_mode = "next_step",
         vol_clustering = 0.0,
+        jump_burst_probability = 0.0,
+        jump_burst_persistence = 0.0,
+        jump_burst_size = 0.0,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -341,6 +370,9 @@ impl PyVecTradingEnv {
         exec_seed: Option<u64>,
         autoreset_mode: &str,
         vol_clustering: f64,
+        jump_burst_probability: f64,
+        jump_burst_persistence: f64,
+        jump_burst_size: f64,
     ) -> PyResult<Self> {
         if seeds.is_empty() {
             return Err(PyValueError::new_err("seeds must be non-empty"));
@@ -379,6 +411,9 @@ impl PyVecTradingEnv {
                 exec_seed,
                 distribution_mode: mode,
                 vol_clustering,
+                jump_burst_probability,
+                jump_burst_persistence,
+                jump_burst_size,
                 window,
                 costs,
             })
@@ -732,7 +767,7 @@ impl PyMarketClearing {
         }
         let mode = parse_distribution_mode(distribution_mode)?;
         let tier = parse_richness_tier(richness)?;
-        let data = build_dataset(n_symbols, n_days, seed, mode, 0.0);
+        let data = build_dataset(n_symbols, n_days, seed, mode, 0.0, 0.0, 0.0, 0.0);
         let inner =
             MarketClearing::from_dataset_with_richness(&data, n_agents, capital, tier.richness());
         let params = MarketParams {

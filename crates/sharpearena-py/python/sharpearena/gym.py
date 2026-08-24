@@ -60,6 +60,9 @@ class SharpeArenaEnv(gym.Env):
         allow_short: bool = True,
         distribution_mode: str = "calm",
         vol_clustering: float = 0.0,
+        jump_burst_probability: float = 0.0,
+        jump_burst_persistence: float = 0.0,
+        jump_burst_size: float = 0.0,
         mode: str = "train",
         env_kwargs: Optional[dict] = None,
     ) -> None:
@@ -74,6 +77,9 @@ class SharpeArenaEnv(gym.Env):
         self._csv_text = csv_text
         self._distribution_mode = distribution_mode
         self._vol_clustering = float(vol_clustering)
+        self._jump_burst_probability = float(jump_burst_probability)
+        self._jump_burst_persistence = float(jump_burst_persistence)
+        self._jump_burst_size = float(jump_burst_size)
         self._seed_offset = _EVAL_SEED_BASE if mode == "eval" else 0
         self._kwargs: dict[str, Any] = dict(env_kwargs or {})
         self._resolved_seeds: dict[str, int] = {}
@@ -137,6 +143,9 @@ class SharpeArenaEnv(gym.Env):
             window_end=self._window_end,
             distribution_mode=self._distribution_mode,
             vol_clustering=self._vol_clustering,
+            jump_burst_probability=self._jump_burst_probability,
+            jump_burst_persistence=self._jump_burst_persistence,
+            jump_burst_size=self._jump_burst_size,
             exec_seed=exec_seed,
             **self._kwargs,
         )

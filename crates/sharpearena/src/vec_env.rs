@@ -37,6 +37,12 @@ pub struct LaneConfig {
     /// Opt-in volatility-clustering strength (`0.0` = off; see
     /// [`ScenarioSpec::vol_clustering`]).
     pub vol_clustering: f64,
+    /// Opt-in extra jump-burst start probability (zero keeps historical bytes).
+    pub jump_burst_probability: f64,
+    /// Conditional continuation probability of an extra jump burst.
+    pub jump_burst_persistence: f64,
+    /// Absolute simple-return size of an extra burst jump.
+    pub jump_burst_size: f64,
     pub window: Option<Window>,
     pub costs: CostModel,
 }
@@ -53,6 +59,9 @@ impl LaneConfig {
             exec_seed: None,
             distribution_mode: DistributionMode::Calm,
             vol_clustering: 0.0,
+            jump_burst_probability: 0.0,
+            jump_burst_persistence: 0.0,
+            jump_burst_size: 0.0,
             window: None,
             costs: CostModel::default(),
         }
@@ -61,7 +70,12 @@ impl LaneConfig {
     fn build(&self) -> TradingEnv {
         let data = match self.distribution_mode {
             // The unclustered Calm fast path stays byte-identical to the historical build.
-            DistributionMode::Calm if self.vol_clustering == 0.0 => {
+            DistributionMode::Calm
+                if self.vol_clustering == 0.0
+                    && self.jump_burst_probability == 0.0
+                    && self.jump_burst_persistence == 0.0
+                    && self.jump_burst_size == 0.0 =>
+            {
                 Dataset::synthetic(self.n_symbols, self.n_days, self.seed)
             }
             mode => generate_scenario(
@@ -70,6 +84,9 @@ impl LaneConfig {
                     n_days: self.n_days,
                     distribution_mode: mode,
                     vol_clustering: self.vol_clustering,
+                    jump_burst_probability: self.jump_burst_probability,
+                    jump_burst_persistence: self.jump_burst_persistence,
+                    jump_burst_size: self.jump_burst_size,
                     ..ScenarioSpec::default()
                 },
                 self.seed,
