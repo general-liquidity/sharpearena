@@ -248,13 +248,14 @@ def pump_and_dump_schedule(p: ManipulationParams) -> Callable[[int], float]:
 class AsymmetricSchedule:
     """An asymmetric round trip: accumulate over ``up_bars``, unwind over ``down_bars``.
 
-    The positive-control family for the concave-impact ablation. Under non-linear
-    permanent impact the profitable round trips Huberman-Stanzl (2004) and Gatheral (2010)
-    exhibit are *asymmetric*: under a concave impact function, slicing a leg into ``n``
-    pieces moves the price by a factor ``n**(1 - exponent)`` more than one block of the
-    same size, so accumulating slowly and liquidating in a block (or the reverse) is the
-    shape that theory says can pay. The symmetric :func:`pump_and_dump_schedule` never
-    searches that shape; this family does.
+    The positive-control family for the concave-impact ablation. Under the
+    nonlinear permanent-impact assumptions studied in the cited manipulation
+    literature, asymmetric round trips are a relevant failure mode. For a
+    concave power law, the *sum of impact increments* from splitting normalized
+    flow into ``n`` equal pieces is ``n**(1 - exponent)`` times the one-block
+    increment; price compounding and temporary impact still determine whether a
+    particular simulated trip is profitable. The symmetric
+    :func:`pump_and_dump_schedule` never searches this shape; this family does.
 
     ``up_bars`` / ``down_bars`` set the duration ratio of the two legs. ``size_split`` is
     the block fraction: the share of each leg's notional executed in a single bar at the

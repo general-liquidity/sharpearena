@@ -120,9 +120,11 @@ def replay_tape(seed: int, tier: str) -> np.ndarray:
     return np.vstack(rows)
 
 
-def _noise_seed(seed: int, strength: float) -> int:
-    # Deterministic in (seed, strength) so bisection points replay bit for bit.
-    return (int(seed) * 1_000_003 + int(round(strength * 100_000))) % (2**32)
+def _noise_seed(seed: int, variant: str) -> int:
+    # Common random numbers across strengths: changing s mixes the same eps path
+    # with the same truth path, rather than silently changing the experiment.
+    variant_offset = 0 if variant == "sign_follow" else 0x9E37_79B9
+    return (int(seed) * 1_000_003 + variant_offset) % (2**32)
 
 
 def rollout(seed: int, tier: str, strength: float, variant: str) -> dict:
@@ -134,7 +136,7 @@ def rollout(seed: int, tier: str, strength: float, variant: str) -> dict:
     sigma = rets.std(axis=0, ddof=1)
     sigma = np.where(sigma > 0.0, sigma, 1.0)
     z = rets / sigma
-    rng = np.random.default_rng(_noise_seed(seed, strength))
+    rng = np.random.default_rng(_noise_seed(seed, variant))
     eps = rng.standard_normal(rets.shape)
     signal = strength * z + math.sqrt(1.0 - strength * strength) * eps
 
@@ -220,14 +222,37 @@ def score_strength(seeds: list[int], tier: str, strength: float, variant: str) -
 
 
 def locate_boundary(seeds: list[int], tier: str, rows: list[dict], variant: str) -> dict:
-    """Bisect between the largest ineligible strength below the first eligible coarse
-    point and that point, to ``BISECT_RESOLUTION``. Records every point evaluated."""
+    """Refine a threshold only when the observed coarse eligibility set is monotone."""
     eligible_idx = [i for i, r in enumerate(rows) if r["eligible"]]
     if not eligible_idx:
-        return {"attained": False, "note": "no strength in the grid is eligible"}
+        return {
+            "attained": False,
+            "threshold_identified": False,
+            "accepted_strengths": [],
+            "note": "no strength in the grid is eligible",
+        }
+    non_monotone = any(
+        rows[i]["eligible"] and not rows[i + 1]["eligible"] for i in range(len(rows) - 1)
+    )
+    accepted = [r["strength"] for r in rows if r["eligible"]]
+    if non_monotone:
+        return {
+            "attained": True,
+            "threshold_identified": False,
+            "accepted_strengths": accepted,
+            "grid_non_monotone": True,
+            "note": "eligibility is non-monotone on the coarse grid; no threshold is reported",
+        }
     first = eligible_idx[0]
     if first == 0:
-        return {"attained": True, "lo": None, "hi": rows[0]["strength"], "points": []}
+        return {
+            "attained": True,
+            "threshold_identified": True,
+            "lo": None,
+            "hi": rows[0]["strength"],
+            "accepted_strengths": accepted,
+            "points": [],
+        }
     lo, hi = rows[first - 1], rows[first]
     points: list[dict] = []
     while hi["strength"] - lo["strength"] > BISECT_RESOLUTION:
@@ -238,11 +263,9 @@ def locate_boundary(seeds: list[int], tier: str, rows: list[dict], variant: str)
             hi = row
         else:
             lo = row
-    non_monotone = any(
-        rows[i]["eligible"] and not rows[i + 1]["eligible"] for i in range(len(rows) - 1)
-    )
     return {
         "attained": True,
+        "threshold_identified": True,
         "lo": lo["strength"],
         "hi": hi["strength"],
         "binding_gates": lo["failing_gates"],
@@ -252,7 +275,8 @@ def locate_boundary(seeds: list[int], tier: str, rows: list[dict], variant: str)
         "hi_row": {k: hi[k] for k in ("strength", "pass_k_rate", "n_seeds_passing",
                                       "min_seed_psr", "deflated_sharpe", "bootstrap_p",
                                       "signal_accuracy")},
-        "grid_non_monotone": non_monotone,
+        "accepted_strengths": accepted,
+        "grid_non_monotone": False,
         "points": points,
     }
 

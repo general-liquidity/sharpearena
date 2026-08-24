@@ -62,11 +62,11 @@
 //! quasi-arbitrage-free specification), so a manipulation probe run against the linear
 //! model can only ever confirm theory: it cannot fail. To make that probe falsifiable,
 //! the concave entry points ([`clear_bar_concave`], [`MarketClearing::step_concave`])
-//! accept an `impact_exponent` applied to the **permanent (Kyle) flow term only**:
-//! `Q` is replaced by `sign(Q) * |Q|^exponent` in both the temporary fill's crowd term
+//! accept an `impact_exponent` applied to the **permanent (Kyle) normalized-flow term**:
+//! `Q/V` is replaced by `sign(Q/V) * |Q/V|^exponent` in the temporary fill's crowd term
 //! and the permanent multiplier update, while the Almgren-Chriss own-size term `eta * q_i`
-//! stays linear. `exponent = 1.0` is the exact legacy value: the substitution then returns
-//! `Q` itself (the same bits, no `powf` evaluated), so the arithmetic is byte-identical to
+//! stays linear and divided by `V`. `exponent = 1.0` uses the exact legacy expression
+//! `(lambda * Q + eta * q_i) / V`, so the arithmetic is byte-identical to
 //! [`clear_bar`] / [`clear_bar_robust`]. Exponents below one make permanent impact concave
 //! in flow, the square-root-law regime under which Huberman-Stanzl predict manipulation
 //! can become profitable.
@@ -127,8 +127,10 @@ const VOL_WINDOW: usize = 20;
 const VOL_FACTOR_CAP: f64 = 3.0;
 
 /// The impact coefficients: Kyle's permanent `lambda`, Almgren-Chriss temporary `eta`,
-/// and the ADV-like `volume_scale` (`V`) that both are normalized by. All are in the
-/// natural units of `net_flow` (signed shares); pick them for your notional scale.
+/// and the ADV-like `volume_scale` (`V`) that defines dimensionless flow. The linear
+/// path is `(lambda * Q + eta * q_i) / V`. On the opt-in nonlinear path, permanent
+/// impact is `lambda * sign(Q/V) * |Q/V|^kappa`; this normalization keeps `lambda`
+/// comparable when the share/notional unit is rescaled.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MarketParams {
     /// Kyle's permanent price-impact coefficient (per unit normalized net flow).
@@ -983,15 +985,16 @@ pub fn clear_bar_concave(
         for s in 0..n_sym {
             let qi = q[i][s];
             let mid = cleared_mid[s];
-            // `signed_pow(_, 1.0)` returns the flow itself (same bits), keeping the
-            // linear path byte-identical; a non-unit exponent makes the crowd term
-            // concave/convex in flow while the own-size term stays linear.
-            let fill = mid
-                * (1.0
-                    + vol_factor[s]
-                        * (impact[s].lambda * signed_pow(net_flow[s], impact_exponent)
-                            + impact[s].eta * qi)
-                        / v);
+            // Keep the published linear arithmetic byte-identical. A nonlinear
+            // exponent acts on dimensionless crowd flow Q/V; the own-size term remains
+            // linear and normalized by V.
+            let impact_term = if impact_exponent == 1.0 {
+                (impact[s].lambda * net_flow[s] + impact[s].eta * qi) / v
+            } else {
+                impact[s].lambda * signed_pow(net_flow[s] / v, impact_exponent)
+                    + impact[s].eta * qi / v
+            };
+            let fill = mid * (1.0 + vol_factor[s] * impact_term);
             let sym = state.symbols[s].clone();
             let book = &mut state.agents[i];
             book.cash -= qi * fill;
@@ -1049,7 +1052,12 @@ pub fn clear_bar_concave(
     // (5) permanent impact accumulates into the running multiplier for the next bar; the
     //     cleared mid becomes the mark for the next bar's holding PnL.
     for (s, (mult, flow)) in state.impact_mult.iter_mut().zip(&net_flow).enumerate() {
-        *mult *= 1.0 + impact[s].lambda * signed_pow(*flow, impact_exponent) / v;
+        let permanent = if impact_exponent == 1.0 {
+            impact[s].lambda * *flow / v
+        } else {
+            impact[s].lambda * signed_pow(*flow / v, impact_exponent)
+        };
+        *mult *= 1.0 + permanent;
     }
     // Fold this bar's realized cleared return into each symbol's trailing vol proxy, for the
     // *next* bar's scaling. `prev_mid` still holds the previous bar's cleared mid here.
@@ -1965,6 +1973,27 @@ mod tests {
         let r = m.step_concave(&buy, &params, None, exponent);
         let mid = r.cleared_mids[0];
         (r.fills[0][0].fill_price - mid, r.net_flow[0])
+    }
+
+    #[test]
+    fn nonlinear_impact_is_invariant_to_a_common_flow_unit_rescaling() {
+        let run = |capital: f64, volume_scale: f64| {
+            let data = dataset_from_closes(vec![100.0; 30]);
+            let params = MarketParams {
+                lambda: 0.5,
+                eta: 0.0,
+                volume_scale,
+                vol_scale: 0.0,
+            };
+            let mut market = MarketClearing::from_dataset(&data, 2, capital);
+            market.step_concave(&block(2, 1, 0.8), &params, None, 0.5)
+        };
+        let base = run(100.0, 1.0);
+        let rescaled = run(1_000.0, 10.0);
+        let base_fraction = base.fills[0][0].fill_price / base.cleared_mids[0] - 1.0;
+        let rescaled_fraction = rescaled.fills[0][0].fill_price / rescaled.cleared_mids[0] - 1.0;
+        assert!((base_fraction - rescaled_fraction).abs() < 1e-12);
+        assert!((base.net_flow[0] / 1.0 - rescaled.net_flow[0] / 10.0).abs() < 1e-12);
     }
 
     #[test]

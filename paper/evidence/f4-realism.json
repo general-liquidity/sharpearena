@@ -33,13 +33,12 @@
             "zumbach_asymmetry": 0.06603831319072777,
             "gain_loss_skew": -0.10802461432290283,
             "aggregational_gaussianity": -0.6377870401635017,
-            "fano_factor": 1.1458333333333333
+            "fano_factor": 1.25
           },
           "checks": {
             "excess_kurtosis": false,
             "abs_return_autocorr": false,
-            "aggregational_gaussianity": false,
-            "fano_factor": true
+            "aggregational_gaussianity": false
           },
           "passed": false
         },
@@ -52,13 +51,12 @@
             "zumbach_asymmetry": -0.028866350085255912,
             "gain_loss_skew": 0.0006457915832179867,
             "aggregational_gaussianity": -0.8824055952043757,
-            "fano_factor": 1.6875
+            "fano_factor": 1.8409090909090906
           },
           "checks": {
             "excess_kurtosis": false,
             "abs_return_autocorr": true,
-            "aggregational_gaussianity": false,
-            "fano_factor": true
+            "aggregational_gaussianity": false
           },
           "passed": false
         },
@@ -71,13 +69,12 @@
             "zumbach_asymmetry": -0.09604739769775779,
             "gain_loss_skew": -0.10913820622538292,
             "aggregational_gaussianity": -0.7020111810382632,
-            "fano_factor": 1.1458333333333335
+            "fano_factor": 1.2500000000000002
           },
           "checks": {
             "excess_kurtosis": false,
             "abs_return_autocorr": true,
-            "aggregational_gaussianity": false,
-            "fano_factor": true
+            "aggregational_gaussianity": false
           },
           "passed": false
         },
@@ -90,13 +87,12 @@
             "zumbach_asymmetry": 0.08627101860976921,
             "gain_loss_skew": 0.006706881374060979,
             "aggregational_gaussianity": -0.5889494071991126,
-            "fano_factor": 1.2374999999999998
+            "fano_factor": 1.3499999999999996
           },
           "checks": {
             "excess_kurtosis": false,
             "abs_return_autocorr": true,
-            "aggregational_gaussianity": false,
-            "fano_factor": true
+            "aggregational_gaussianity": false
           },
           "passed": false
         },
@@ -109,13 +105,12 @@
             "zumbach_asymmetry": -0.10643799003711582,
             "gain_loss_skew": 0.03210865874540761,
             "aggregational_gaussianity": -0.40224036350556713,
-            "fano_factor": 1.361111111111111
+            "fano_factor": 1.4848484848484846
           },
           "checks": {
             "excess_kurtosis": false,
             "abs_return_autocorr": false,
-            "aggregational_gaussianity": false,
-            "fano_factor": true
+            "aggregational_gaussianity": false
           },
           "passed": false
         },
@@ -128,13 +123,12 @@
             "zumbach_asymmetry": 0.019359958036558593,
             "gain_loss_skew": 0.06482280811048916,
             "aggregational_gaussianity": -0.4823344997648571,
-            "fano_factor": 0.8958333333333334
+            "fano_factor": 0.9772727272727273
           },
           "checks": {
             "excess_kurtosis": false,
             "abs_return_autocorr": false,
-            "aggregational_gaussianity": false,
-            "fano_factor": false
+            "aggregational_gaussianity": false
           },
           "passed": false
         },
@@ -147,13 +141,12 @@
             "zumbach_asymmetry": 0.02109200011131926,
             "gain_loss_skew": 0.04671762136982485,
             "aggregational_gaussianity": -0.24783863498543612,
-            "fano_factor": 1.0624999999999998
+            "fano_factor": 1.159090909090909
           },
           "checks": {
             "excess_kurtosis": false,
             "abs_return_autocorr": true,
-            "aggregational_gaussianity": false,
-            "fano_factor": true
+            "aggregational_gaussianity": false
           },
           "passed": false
         },
@@ -166,13 +159,12 @@
             "zumbach_asymmetry": 0.017093025011948267,
             "gain_loss_skew": 0.025406082666334956,
             "aggregational_gaussianity": -0.6742107739066594,
-            "fano_factor": 1.0000000000000002
+            "fano_factor": 1.090909090909091
           },
           "checks": {
             "excess_kurtosis": false,
             "abs_return_autocorr": true,
-            "aggregational_gaussianity": false,
-            "fano_factor": true
+            "aggregational_gaussianity": false
           },
           "passed": false
         }
@@ -181,7 +173,7 @@
         "abs_return_autocorr": 0.00022459426941299414,
         "aggregational_gaussianity": -0.5772221869709717,
         "excess_kurtosis": -0.9749071954239517,
-        "fano_factor": 1.192013888888889,
+        "fano_factor": 1.3003787878787878,
         "gain_loss_skew": -0.005094372087368779,
         "zumbach_asymmetry": -0.002687177857475802
       },
@@ -198,13 +190,12 @@
             "zumbach_asymmetry": 0.0025790285162071783,
             "gain_loss_skew": -0.6630529285245855,
             "aggregational_gaussianity": 15.967222833949183,
-            "fano_factor": 0.7916666666666667
+            "fano_factor": 0.8636363636363636
           },
           "checks": {
             "excess_kurtosis": true,
             "abs_return_autocorr": false,
-            "aggregational_gaussianity": true,
-            "fano_factor": false
+            "aggregational_gaussianity": true
           },
           "passed": false
         },
@@ -217,13 +208,12 @@
             "zumbach_asymmetry": 0.04024271644437237,
             "gain_loss_skew": -2.666808675210776,
             "aggregational_gaussianity": 14.49428277468088,
-            "fano_factor": 0.8541666666666667
+            "fano_factor": 0.9318181818181819
           },
           "checks": {
             "excess_kurtosis": true,
             "abs_return_autocorr": false,
-            "aggregational_gaussianity": true,
-            "fano_factor": false
+            "aggregational_gaussianity": true
           },
           "passed": false
         },
@@ -236,15 +226,14 @@
             "zumbach_asymmetry": 0.052091971825170336,
             "gain_loss_skew": 0.5405121168706858,
             "aggregational_gaussianity": 16.980742473128863,
-            "fano_factor": 0.8333333333333333
+            "fano_factor": 0.909090909090909
           },
           "checks": {
             "excess_kurtosis": true,
             "abs_return_autocorr": true,
-            "aggregational_gaussianity": true,
-            "fano_factor": false
+            "aggregational_gaussianity": true
           },
-          "passed": false
+          "passed": true
         },
         {
           "seed": 3,
@@ -255,13 +244,12 @@
             "zumbach_asymmetry": -0.004594333017267527,
             "gain_loss_skew": 1.498333318139165,
             "aggregational_gaussianity": 14.146182393927031,
-            "fano_factor": 0.8708333333333331
+            "fano_factor": 0.9499999999999997
           },
           "checks": {
             "excess_kurtosis": true,
             "abs_return_autocorr": false,
-            "aggregational_gaussianity": true,
-            "fano_factor": false
+            "aggregational_gaussianity": true
           },
           "passed": false
         },
@@ -274,13 +262,12 @@
             "zumbach_asymmetry": -0.058547561949653354,
             "gain_loss_skew": -0.894836266326336,
             "aggregational_gaussianity": 10.19040807457056,
-            "fano_factor": 0.7708333333333333
+            "fano_factor": 0.8409090909090908
           },
           "checks": {
             "excess_kurtosis": true,
             "abs_return_autocorr": false,
-            "aggregational_gaussianity": true,
-            "fano_factor": false
+            "aggregational_gaussianity": true
           },
           "passed": false
         },
@@ -293,13 +280,12 @@
             "zumbach_asymmetry": -0.07282730618410341,
             "gain_loss_skew": -1.1504337255157249,
             "aggregational_gaussianity": 12.477168255281523,
-            "fano_factor": 0.9166666666666666
+            "fano_factor": 1.0
           },
           "checks": {
             "excess_kurtosis": true,
             "abs_return_autocorr": false,
-            "aggregational_gaussianity": true,
-            "fano_factor": false
+            "aggregational_gaussianity": true
           },
           "passed": false
         },
@@ -312,13 +298,12 @@
             "zumbach_asymmetry": -0.032205577877549324,
             "gain_loss_skew": 1.105406533504964,
             "aggregational_gaussianity": 17.551464214040603,
-            "fano_factor": 0.8958333333333333
+            "fano_factor": 0.9772727272727273
           },
           "checks": {
             "excess_kurtosis": true,
             "abs_return_autocorr": false,
-            "aggregational_gaussianity": true,
-            "fano_factor": false
+            "aggregational_gaussianity": true
           },
           "passed": false
         },
@@ -331,13 +316,12 @@
             "zumbach_asymmetry": 0.009639049025131793,
             "gain_loss_skew": 0.9304793233911031,
             "aggregational_gaussianity": 14.374989883232345,
-            "fano_factor": 0.8333333333333333
+            "fano_factor": 0.9090909090909091
           },
           "checks": {
             "excess_kurtosis": true,
             "abs_return_autocorr": false,
-            "aggregational_gaussianity": true,
-            "fano_factor": false
+            "aggregational_gaussianity": true
           },
           "passed": false
         }
@@ -346,11 +330,11 @@
         "abs_return_autocorr": -0.010714173202720948,
         "aggregational_gaussianity": 14.522807612851373,
         "excess_kurtosis": 16.300561387635696,
-        "fano_factor": 0.8458333333333332,
+        "fano_factor": 0.9227272727272726,
         "gain_loss_skew": -0.16255003795893802,
         "zumbach_asymmetry": -0.00795275165221149
       },
-      "pass_rate": 0.0
+      "pass_rate": 0.125
     },
     "extreme": {
       "per_seed": [
@@ -363,13 +347,12 @@
             "zumbach_asymmetry": -0.02255943128766623,
             "gain_loss_skew": -0.030082583477185385,
             "aggregational_gaussianity": 9.043981236004193,
-            "fano_factor": 0.7172619047619048
+            "fano_factor": 0.7824675324675324
           },
           "checks": {
             "excess_kurtosis": true,
             "abs_return_autocorr": false,
-            "aggregational_gaussianity": true,
-            "fano_factor": false
+            "aggregational_gaussianity": true
           },
           "passed": false
         },
@@ -382,13 +365,12 @@
             "zumbach_asymmetry": -0.04092697845319422,
             "gain_loss_skew": -1.1793672403178834,
             "aggregational_gaussianity": 8.126422164615711,
-            "fano_factor": 0.7047619047619047
+            "fano_factor": 0.7688311688311688
           },
           "checks": {
             "excess_kurtosis": true,
             "abs_return_autocorr": false,
-            "aggregational_gaussianity": true,
-            "fano_factor": false
+            "aggregational_gaussianity": true
           },
           "passed": false
         },
@@ -401,13 +383,12 @@
             "zumbach_asymmetry": 0.007693082577963025,
             "gain_loss_skew": -1.0721415642714225,
             "aggregational_gaussianity": 10.437611708230913,
-            "fano_factor": 0.7777777777777778
+            "fano_factor": 0.8484848484848485
           },
           "checks": {
             "excess_kurtosis": true,
             "abs_return_autocorr": false,
-            "aggregational_gaussianity": true,
-            "fano_factor": false
+            "aggregational_gaussianity": true
           },
           "passed": false
         },
@@ -420,13 +401,12 @@
             "zumbach_asymmetry": 0.049280418171518355,
             "gain_loss_skew": -0.07811533192820186,
             "aggregational_gaussianity": 8.435195815578638,
-            "fano_factor": 0.5922619047619047
+            "fano_factor": 0.6461038961038961
           },
           "checks": {
             "excess_kurtosis": true,
             "abs_return_autocorr": false,
-            "aggregational_gaussianity": true,
-            "fano_factor": false
+            "aggregational_gaussianity": true
           },
           "passed": false
         },
@@ -439,13 +419,12 @@
             "zumbach_asymmetry": 0.026296771738580388,
             "gain_loss_skew": -0.9020079502634958,
             "aggregational_gaussianity": 9.142048281503719,
-            "fano_factor": 0.8345238095238093
+            "fano_factor": 0.9103896103896104
           },
           "checks": {
             "excess_kurtosis": true,
             "abs_return_autocorr": false,
-            "aggregational_gaussianity": true,
-            "fano_factor": false
+            "aggregational_gaussianity": true
           },
           "passed": false
         },
@@ -458,13 +437,12 @@
             "zumbach_asymmetry": 0.09617357238408317,
             "gain_loss_skew": -1.7322195553287743,
             "aggregational_gaussianity": 13.634244179156196,
-            "fano_factor": 0.8333333333333334
+            "fano_factor": 0.9090909090909091
           },
           "checks": {
             "excess_kurtosis": true,
             "abs_return_autocorr": false,
-            "aggregational_gaussianity": true,
-            "fano_factor": false
+            "aggregational_gaussianity": true
           },
           "passed": false
         },
@@ -477,13 +455,12 @@
             "zumbach_asymmetry": -0.012773034975495964,
             "gain_loss_skew": -1.2056094917934985,
             "aggregational_gaussianity": 8.462063111189488,
-            "fano_factor": 1.1693181818181817
+            "fano_factor": 1.2756198347107437
           },
           "checks": {
             "excess_kurtosis": true,
             "abs_return_autocorr": true,
-            "aggregational_gaussianity": true,
-            "fano_factor": true
+            "aggregational_gaussianity": true
           },
           "passed": true
         },
@@ -496,13 +473,12 @@
             "zumbach_asymmetry": 0.09906801373546927,
             "gain_loss_skew": 0.1985629356324199,
             "aggregational_gaussianity": 11.223767170937391,
-            "fano_factor": 0.675595238095238
+            "fano_factor": 0.737012987012987
           },
           "checks": {
             "excess_kurtosis": true,
             "abs_return_autocorr": false,
-            "aggregational_gaussianity": true,
-            "fano_factor": false
+            "aggregational_gaussianity": true
           },
           "passed": false
         }
@@ -511,7 +487,7 @@
         "abs_return_autocorr": -0.011819491833680387,
         "aggregational_gaussianity": 9.813166708402031,
         "excess_kurtosis": 11.384234722600006,
-        "fano_factor": 0.7881042568542568,
+        "fano_factor": 0.859750098386462,
         "gain_loss_skew": -0.7501225977185052,
         "zumbach_asymmetry": 0.025281551736407223
       },
@@ -530,13 +506,12 @@
             "zumbach_asymmetry": 0.02058994968666445,
             "gain_loss_skew": -0.1476965598096733,
             "aggregational_gaussianity": -0.6044332452127483,
-            "fano_factor": 1.8333333333333333
+            "fano_factor": 1.9999999999999998
           },
           "checks": {
             "excess_kurtosis": false,
             "abs_return_autocorr": true,
-            "aggregational_gaussianity": false,
-            "fano_factor": true
+            "aggregational_gaussianity": false
           },
           "passed": false
         },
@@ -549,13 +524,12 @@
             "zumbach_asymmetry": -0.0862686405929347,
             "gain_loss_skew": 0.06247758588209151,
             "aggregational_gaussianity": -1.1084413698553437,
-            "fano_factor": 1.9583333333333335
+            "fano_factor": 2.136363636363636
           },
           "checks": {
             "excess_kurtosis": false,
             "abs_return_autocorr": true,
-            "aggregational_gaussianity": false,
-            "fano_factor": true
+            "aggregational_gaussianity": false
           },
           "passed": false
         },
@@ -568,13 +542,12 @@
             "zumbach_asymmetry": -0.1378577554941751,
             "gain_loss_skew": -0.16023431118368275,
             "aggregational_gaussianity": -0.8794575977341492,
-            "fano_factor": 1.0555555555555556
+            "fano_factor": 1.1515151515151514
           },
           "checks": {
             "excess_kurtosis": false,
             "abs_return_autocorr": true,
-            "aggregational_gaussianity": false,
-            "fano_factor": true
+            "aggregational_gaussianity": false
           },
           "passed": false
         },
@@ -587,13 +560,12 @@
             "zumbach_asymmetry": 0.03572388719770869,
             "gain_loss_skew": -0.0400317022518059,
             "aggregational_gaussianity": -0.5410012757186143,
-            "fano_factor": 1.1791666666666667
+            "fano_factor": 1.2863636363636362
           },
           "checks": {
             "excess_kurtosis": false,
             "abs_return_autocorr": true,
-            "aggregational_gaussianity": false,
-            "fano_factor": true
+            "aggregational_gaussianity": false
           },
           "passed": false
         },
@@ -606,13 +578,12 @@
             "zumbach_asymmetry": -0.13047925762712093,
             "gain_loss_skew": -0.021569220357811086,
             "aggregational_gaussianity": -0.5523161177337288,
-            "fano_factor": 1.7083333333333333
+            "fano_factor": 1.8636363636363633
           },
           "checks": {
             "excess_kurtosis": false,
             "abs_return_autocorr": true,
-            "aggregational_gaussianity": false,
-            "fano_factor": true
+            "aggregational_gaussianity": false
           },
           "passed": false
         },
@@ -625,13 +596,12 @@
             "zumbach_asymmetry": -0.04100327658789589,
             "gain_loss_skew": 0.16353184777966864,
             "aggregational_gaussianity": -0.6224030060522535,
-            "fano_factor": 1.8875
+            "fano_factor": 2.0590909090909086
           },
           "checks": {
             "excess_kurtosis": false,
             "abs_return_autocorr": true,
-            "aggregational_gaussianity": false,
-            "fano_factor": true
+            "aggregational_gaussianity": false
           },
           "passed": false
         },
@@ -644,13 +614,12 @@
             "zumbach_asymmetry": -0.04417817856074887,
             "gain_loss_skew": 0.05745924390403288,
             "aggregational_gaussianity": -0.3006616303366273,
-            "fano_factor": 1.9541666666666668
+            "fano_factor": 2.131818181818182
           },
           "checks": {
             "excess_kurtosis": false,
             "abs_return_autocorr": true,
-            "aggregational_gaussianity": false,
-            "fano_factor": true
+            "aggregational_gaussianity": false
           },
           "passed": false
         },
@@ -663,13 +632,12 @@
             "zumbach_asymmetry": -0.04219673579035474,
             "gain_loss_skew": 0.03997672673865969,
             "aggregational_gaussianity": -0.6755323624213911,
-            "fano_factor": 1.3416666666666663
+            "fano_factor": 1.4636363636363634
           },
           "checks": {
             "excess_kurtosis": false,
             "abs_return_autocorr": true,
-            "aggregational_gaussianity": false,
-            "fano_factor": true
+            "aggregational_gaussianity": false
           },
           "passed": false
         }
@@ -678,7 +646,7 @@
         "abs_return_autocorr": 0.042009256198528654,
         "aggregational_gaussianity": -0.660530825633107,
         "excess_kurtosis": -0.82484625032167,
-        "fano_factor": 1.6147569444444445,
+        "fano_factor": 1.76155303030303,
         "gain_loss_skew": -0.005760798662315044,
         "zumbach_asymmetry": -0.05320875097110713
       },
@@ -695,15 +663,14 @@
             "zumbach_asymmetry": -0.04573042029766883,
             "gain_loss_skew": -0.2974494941771443,
             "aggregational_gaussianity": 12.294451092727103,
-            "fano_factor": 0.7916666666666667
+            "fano_factor": 0.8636363636363636
           },
           "checks": {
             "excess_kurtosis": true,
             "abs_return_autocorr": true,
-            "aggregational_gaussianity": true,
-            "fano_factor": false
+            "aggregational_gaussianity": true
           },
-          "passed": false
+          "passed": true
         },
         {
           "seed": 1,
@@ -714,15 +681,14 @@
             "zumbach_asymmetry": -0.009318799927705894,
             "gain_loss_skew": -2.745532025776834,
             "aggregational_gaussianity": 16.831861247316713,
-            "fano_factor": 0.8541666666666665
+            "fano_factor": 0.9318181818181819
           },
           "checks": {
             "excess_kurtosis": true,
             "abs_return_autocorr": true,
-            "aggregational_gaussianity": true,
-            "fano_factor": false
+            "aggregational_gaussianity": true
           },
-          "passed": false
+          "passed": true
         },
         {
           "seed": 2,
@@ -733,15 +699,14 @@
             "zumbach_asymmetry": -0.007902522068211883,
             "gain_loss_skew": 0.16283727976235413,
             "aggregational_gaussianity": 15.9285125174997,
-            "fano_factor": 0.8125
+            "fano_factor": 0.8863636363636362
           },
           "checks": {
             "excess_kurtosis": true,
             "abs_return_autocorr": true,
-            "aggregational_gaussianity": true,
-            "fano_factor": false
+            "aggregational_gaussianity": true
           },
-          "passed": false
+          "passed": true
         },
         {
           "seed": 3,
@@ -752,13 +717,12 @@
             "zumbach_asymmetry": -0.07074860287941354,
             "gain_loss_skew": 1.8276238376520202,
             "aggregational_gaussianity": 13.686032162702569,
-            "fano_factor": 1.0999999999999999
+            "fano_factor": 1.1999999999999997
           },
           "checks": {
             "excess_kurtosis": true,
             "abs_return_autocorr": true,
-            "aggregational_gaussianity": true,
-            "fano_factor": true
+            "aggregational_gaussianity": true
           },
           "passed": true
         },
@@ -771,13 +735,12 @@
             "zumbach_asymmetry": -0.08010007495117735,
             "gain_loss_skew": -1.066954059843021,
             "aggregational_gaussianity": 9.391649207574048,
-            "fano_factor": 1.0208333333333333
+            "fano_factor": 1.1136363636363635
           },
           "checks": {
             "excess_kurtosis": true,
             "abs_return_autocorr": true,
-            "aggregational_gaussianity": true,
-            "fano_factor": true
+            "aggregational_gaussianity": true
           },
           "passed": true
         },
@@ -790,15 +753,14 @@
             "zumbach_asymmetry": -0.11245658199378059,
             "gain_loss_skew": -0.7369775410013509,
             "aggregational_gaussianity": 10.89297344219362,
-            "fano_factor": 0.8958333333333333
+            "fano_factor": 0.9772727272727273
           },
           "checks": {
             "excess_kurtosis": true,
             "abs_return_autocorr": true,
-            "aggregational_gaussianity": true,
-            "fano_factor": false
+            "aggregational_gaussianity": true
           },
-          "passed": false
+          "passed": true
         },
         {
           "seed": 6,
@@ -809,15 +771,14 @@
             "zumbach_asymmetry": -0.0853454777523578,
             "gain_loss_skew": 1.6553182547702765,
             "aggregational_gaussianity": 14.499937392839897,
-            "fano_factor": 0.8958333333333333
+            "fano_factor": 0.9772727272727273
           },
           "checks": {
             "excess_kurtosis": true,
             "abs_return_autocorr": true,
-            "aggregational_gaussianity": true,
-            "fano_factor": false
+            "aggregational_gaussianity": true
           },
-          "passed": false
+          "passed": true
         },
         {
           "seed": 7,
@@ -828,26 +789,25 @@
             "zumbach_asymmetry": -0.05174466967703999,
             "gain_loss_skew": 0.578264861826834,
             "aggregational_gaussianity": 10.744457437969157,
-            "fano_factor": 0.8125
+            "fano_factor": 0.8863636363636364
           },
           "checks": {
             "excess_kurtosis": true,
             "abs_return_autocorr": true,
-            "aggregational_gaussianity": true,
-            "fano_factor": false
+            "aggregational_gaussianity": true
           },
-          "passed": false
+          "passed": true
         }
       ],
       "mean_facts": {
         "abs_return_autocorr": 0.028803884543910266,
         "aggregational_gaussianity": 13.033734312602851,
         "excess_kurtosis": 14.643199738791148,
-        "fano_factor": 0.8979166666666667,
+        "fano_factor": 0.9795454545454545,
         "gain_loss_skew": -0.07785861084835818,
         "zumbach_asymmetry": -0.05791839369341949
       },
-      "pass_rate": 0.25
+      "pass_rate": 1.0
     },
     "extreme": {
       "per_seed": [
@@ -860,13 +820,12 @@
             "zumbach_asymmetry": -0.04907944175715241,
             "gain_loss_skew": 0.2970175327880684,
             "aggregational_gaussianity": 9.264414411634434,
-            "fano_factor": 0.6825396825396826
+            "fano_factor": 0.7445887445887446
           },
           "checks": {
             "excess_kurtosis": true,
             "abs_return_autocorr": false,
-            "aggregational_gaussianity": true,
-            "fano_factor": false
+            "aggregational_gaussianity": true
           },
           "passed": false
         },
@@ -879,15 +838,14 @@
             "zumbach_asymmetry": -0.10650029171012834,
             "gain_loss_skew": -0.41349002975448895,
             "aggregational_gaussianity": 8.821170036962759,
-            "fano_factor": 0.838095238095238
+            "fano_factor": 0.9142857142857143
           },
           "checks": {
             "excess_kurtosis": true,
             "abs_return_autocorr": true,
-            "aggregational_gaussianity": true,
-            "fano_factor": false
+            "aggregational_gaussianity": true
           },
-          "passed": false
+          "passed": true
         },
         {
           "seed": 2,
@@ -898,15 +856,14 @@
             "zumbach_asymmetry": -0.01779488328121281,
             "gain_loss_skew": -0.6854454421058239,
             "aggregational_gaussianity": 10.629257238882161,
-            "fano_factor": 0.8333333333333334
+            "fano_factor": 0.9090909090909093
           },
           "checks": {
             "excess_kurtosis": true,
             "abs_return_autocorr": true,
-            "aggregational_gaussianity": true,
-            "fano_factor": false
+            "aggregational_gaussianity": true
           },
-          "passed": false
+          "passed": true
         },
         {
           "seed": 3,
@@ -917,13 +874,12 @@
             "zumbach_asymmetry": 0.029918938751165542,
             "gain_loss_skew": 0.3640432632834651,
             "aggregational_gaussianity": 8.542853897952178,
-            "fano_factor": 0.6172619047619047
+            "fano_factor": 0.6733766233766233
           },
           "checks": {
             "excess_kurtosis": true,
             "abs_return_autocorr": false,
-            "aggregational_gaussianity": true,
-            "fano_factor": false
+            "aggregational_gaussianity": true
           },
           "passed": false
         },
@@ -936,15 +892,14 @@
             "zumbach_asymmetry": -0.011995760987421993,
             "gain_loss_skew": -0.8802327791884117,
             "aggregational_gaussianity": 11.824740312812482,
-            "fano_factor": 0.8136904761904761
+            "fano_factor": 0.8876623376623377
           },
           "checks": {
             "excess_kurtosis": true,
             "abs_return_autocorr": true,
-            "aggregational_gaussianity": true,
-            "fano_factor": false
+            "aggregational_gaussianity": true
           },
-          "passed": false
+          "passed": true
         },
         {
           "seed": 5,
@@ -955,15 +910,14 @@
             "zumbach_asymmetry": 0.034304479598193695,
             "gain_loss_skew": -1.4609163441174933,
             "aggregational_gaussianity": 15.450061439440757,
-            "fano_factor": 0.9125
+            "fano_factor": 0.9954545454545456
           },
           "checks": {
             "excess_kurtosis": true,
             "abs_return_autocorr": true,
-            "aggregational_gaussianity": true,
-            "fano_factor": false
+            "aggregational_gaussianity": true
           },
-          "passed": false
+          "passed": true
         },
         {
           "seed": 6,
@@ -974,13 +928,12 @@
             "zumbach_asymmetry": -0.056750728623375546,
             "gain_loss_skew": -1.7176997559750427,
             "aggregational_gaussianity": 14.151215793216073,
-            "fano_factor": 1.4047619047619044
+            "fano_factor": 1.5324675324675319
           },
           "checks": {
             "excess_kurtosis": true,
             "abs_return_autocorr": true,
-            "aggregational_gaussianity": true,
-            "fano_factor": true
+            "aggregational_gaussianity": true
           },
           "passed": true
         },
@@ -993,13 +946,12 @@
             "zumbach_asymmetry": 0.07600036189446514,
             "gain_loss_skew": -0.3018935012835342,
             "aggregational_gaussianity": 11.126841904877091,
-            "fano_factor": 0.675595238095238
+            "fano_factor": 0.737012987012987
           },
           "checks": {
             "excess_kurtosis": true,
             "abs_return_autocorr": false,
-            "aggregational_gaussianity": true,
-            "fano_factor": false
+            "aggregational_gaussianity": true
           },
           "passed": false
         }
@@ -1008,11 +960,11 @@
         "abs_return_autocorr": 0.019655732558291,
         "aggregational_gaussianity": 11.226319379472242,
         "excess_kurtosis": 13.95478627672377,
-        "fano_factor": 0.8472222222222221,
+        "fano_factor": 0.9242424242424243,
         "gain_loss_skew": -0.5998271320441576,
         "zumbach_asymmetry": -0.012737165764433341
       },
-      "pass_rate": 0.125
+      "pass_rate": 0.625
     }
   }
 }

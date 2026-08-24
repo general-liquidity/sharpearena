@@ -2129,6 +2129,14 @@
                 "std": 1.0277632258007212e-05,
                 "ci95_lo": -0.00013743805468906974,
                 "ci95_hi": -0.00012025069279628756
+              },
+              "familywise_inference": {
+                "method": "Bonferroni two-sided familywise 95% interval",
+                "family_size": 135,
+                "df": 7,
+                "critical_value": 6.391202695754376,
+                "ci95_lo": -0.00015206803413634788,
+                "ci95_hi": -0.00010562071334900943
               }
             }
           },
@@ -2555,6 +2563,14 @@
                 "std": 0.0001389336451782325,
                 "ci95_lo": -0.000544355874734188,
                 "ci95_hi": -0.00031201609268942
+              },
+              "familywise_inference": {
+                "method": "Bonferroni two-sided familywise 95% interval",
+                "family_size": 135,
+                "df": 7,
+                "critical_value": 6.391202695754376,
+                "ci95_lo": -0.0007421248085184649,
+                "ci95_hi": -0.00011424715890514327
               }
             }
           },
@@ -2981,6 +2997,14 @@
                 "std": 0.0005227820379844033,
                 "ci95_lo": 0.0017436440766164405,
                 "ci95_hi": 0.0026178964192106026
+              },
+              "familywise_inference": {
+                "method": "Bonferroni two-sided familywise 95% interval",
+                "family_size": 135,
+                "df": 7,
+                "critical_value": 6.391202695754376,
+                "ci95_lo": 0.0009994755483876468,
+                "ci95_hi": 0.0033620649474393966
               }
             }
           }
@@ -3417,6 +3441,14 @@
                 "std": 1.6076633354428558e-05,
                 "ci95_lo": -0.00026893431381928265,
                 "ci95_hi": -0.00024204923868294842
+              },
+              "familywise_inference": {
+                "method": "Bonferroni two-sided familywise 95% interval",
+                "family_size": 135,
+                "df": 7,
+                "critical_value": 6.391202695754376,
+                "ci95_lo": -0.00029181904151261617,
+                "ci95_hi": -0.00021916451098961484
               }
             }
           },
@@ -3843,6 +3875,14 @@
                 "std": 0.00014993016627348854,
                 "ci95_lo": -0.0009034386605772733,
                 "ci95_hi": -0.0006527093134185628
+              },
+              "familywise_inference": {
+                "method": "Bonferroni two-sided familywise 95% interval",
+                "family_size": 135,
+                "df": 7,
+                "critical_value": 6.391202695754376,
+                "ci95_lo": -0.0011168608959758219,
+                "ci95_hi": -0.00043928707802001423
               }
             }
           },
@@ -4269,6 +4309,14 @@
                 "std": 0.0005300018544289767,
                 "ci95_lo": 0.0013942604156892368,
                 "ci95_hi": 0.00228058651174307
+              },
+              "familywise_inference": {
+                "method": "Bonferroni two-sided familywise 95% interval",
+                "family_size": 135,
+                "df": 7,
+                "critical_value": 6.391202695754376,
+                "ci95_lo": 0.0006398146403722399,
+                "ci95_hi": 0.003035032287060067
               }
             }
           }
@@ -4705,6 +4753,14 @@
                 "std": 9.853146416911503e-05,
                 "ci95_lo": -0.00042662248917782876,
                 "ci95_hi": -0.00026184757896629705
+              },
+              "familywise_inference": {
+                "method": "Bonferroni two-sided familywise 95% interval",
+                "family_size": 135,
+                "df": 7,
+                "critical_value": 6.391202695754376,
+                "ci95_lo": -0.0005668798227267407,
+                "ci95_hi": -0.00012159024541738507
               }
             }
           },
@@ -5131,6 +5187,14 @@
                 "std": 0.0007218566808230141,
                 "ci95_lo": -0.0016218803152566264,
                 "ci95_hi": -0.00041471394691710347
+              },
+              "familywise_inference": {
+                "method": "Bonferroni two-sided familywise 95% interval",
+                "family_size": 135,
+                "df": 7,
+                "critical_value": 6.391202695754376,
+                "ci95_lo": -0.0026494271411408982,
+                "ci95_hi": 0.0006128328789671684
               }
             }
           },
@@ -5557,6 +5621,14 @@
                 "std": 0.002718698396413093,
                 "ci95_lo": -0.002527857044653203,
                 "ci95_hi": 0.0020186427758743905
+              },
+              "familywise_inference": {
+                "method": "Bonferroni two-sided familywise 95% interval",
+                "family_size": 135,
+                "df": 7,
+                "critical_value": 6.391202695754376,
+                "ci95_lo": -0.006397863351979837,
+                "ci95_hi": 0.005888649083201024
               }
             }
           }
@@ -5736,6 +5808,8 @@
         6,
         7
       ],
+      "family_size": 135,
+      "selection_inference": "Bonferroni two-sided familywise 95% interval for each selected best cell",
       "not_searched": [
         "push_weight (fixed at the canonical 0.8)",
         "flow scale / volume_scale (the sub-unit flow calibration is unchanged)",

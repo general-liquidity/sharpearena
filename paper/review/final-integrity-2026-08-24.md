@@ -1,5 +1,10 @@
 # Stage 4.5 Final Integrity Report — 2026-08-24
 
+> **Superseded historical artifact.** This report audited the earlier Round 1
+> candidate. It does not cover the later normalized-impact, multiplicity,
+> witness, sealed-seed, or realism-estimator corrections. See the current
+> integrity report for the submission candidate.
+
 ## Verdict
 
 **PASS** for the candidate manuscript in this version-controlled working tree.

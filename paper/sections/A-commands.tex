@@ -1,6 +1,13 @@
 \section{Commands that produce every number}\label{app:commands}
 
-All commands run from the repository root with the \texttt{sharpearena} Python package installed. The original eight evidence files record \texttt{sharpearena} 0.8.0 over SharpeBench 0.5.0. The volatility-clustering remediation shipped at 0.10.0; the concave-impact and predictability extensions are versioned with the 0.11.0 source tree; the positive control, the existence witness and the sealed seeds were produced on the post-0.11.1 tree. Each script fixes and serializes its seeds.
+All commands run from the repository root with the \texttt{sharpearena} Python package installed. F1 serializes \texttt{sharpearena} 0.9.0. Several legacy evidence files do not serialize a runtime version, so this paper does not reconstruct one from their creation dates; where present, they record SharpeBench 0.5.0. The current F4, F5 and witness files were regenerated from the source tree containing the estimator and dimensional corrections reported here. Each script fixes and serializes its seeds, and the evidence manifest records file hashes and producer commands.
+
+\paragraph{Content provenance.}
+\begin{verbatim}
+python paper/src/make-provenance.py
+  -> paper/evidence/provenance.json
+\end{verbatim}
+The manifest records the Git parent, a content hash over the Rust, Python, manifest and producer-source snapshot, and the SHA-256 digest of every JSON and figure artifact. The content snapshot, rather than a guessed package label, identifies the exact candidate used for the regenerated evidence.
 
 \paragraph{The design-property checks (\cref{sec:leakfree,sec:determinism,sec:replay,sec:contract}).}
 \begin{verbatim}
@@ -19,7 +26,7 @@ python paper/src/make-f1-baselines.py
 \end{verbatim}
 The script passes the bootstrap parameters explicitly ($B = 2000$ percentile resamples, $\alpha = 0.05$, resample seed \texttt{0x5BA7\_2026}) and serializes them in the evidence config; they equal the library defaults defined in \texttt{crates/sharpearena-py/python/sharpearena/confidence.py} (\texttt{DEFAULT\_N\_BOOT}, \texttt{DEFAULT\_RESAMPLE\_SEED}), which reuse the scoring kernel's canonical bootstrap seed.
 
-\paragraph{F2: regret vs the closed-form optimum (\cref{sec:f2}).}
+\paragraph{F2: regret vs the analytical reference (\cref{sec:f2}).}
 \begin{verbatim}
 python paper/src/make-f2-regret.py
   -> paper/evidence/f2-regret.json, paper/figures/f2-regret.pdf
@@ -51,7 +58,7 @@ The same command also runs the concave-impact extension at $\kappa=0.5$ and $0.7
 python paper/src/make-witness.py
   -> paper/evidence/witness.json, paper/figures/witness.pdf
 \end{verbatim}
-The command replays each seed one bar ahead to recover the true next-bar return (asserting that the canonical tape is policy-invariant), mixes it with seeded noise at 13 coarse strengths, scores \texttt{sign\_follow} and \texttt{deadband\_hold} through \texttt{score\_run} on every seed and on the pooled series, and bisects each tier's boundary to a resolution of $0.005$ in $s$ on the held-out band and the F1 table band. The JSON records every strength's per-seed PSR, pooled DSR, bootstrap $p$-value, eligibility flag and the bracketed boundaries behind \cref{tab:witness}.
+The command replays each seed one bar ahead to recover the true next-bar return (asserting that the canonical tape is policy-invariant), mixes it with one seeded standardized noise path reused at every strength, scores \texttt{sign\_follow} and \texttt{deadband\_hold} through \texttt{score\_run} on every seed and on the pooled series, and first checks eligibility is monotone over the 13-point coarse grid. It bisects only a monotone first crossing, to a resolution of $0.005$ in $s$, on the held-out band and the F1 table band. The JSON records every strength's per-seed PSR, pooled DSR, bootstrap $p$-value, eligibility flag, monotonicity check and any bracketed threshold behind \cref{tab:witness}.
 
 \paragraph{Sealed evaluation seeds (\cref{sec:sealed-seeds}).}
 \begin{verbatim}

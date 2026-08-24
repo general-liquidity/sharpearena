@@ -1,8 +1,8 @@
 \section{Experiments}\label{sec:experiments}
 
-Ten findings, eight core calibrations plus two reviewer-motivated probes, and three follow-ups that close questions the ten left open: an existence witness for rank-eligibility (\cref{sec:witness}), an asymmetric positive control for the manipulation probe (\cref{sec:f5-positive-control}) and sealed evaluation seeds (\cref{sec:sealed-seeds}). Each subsection states the entry point, seeds and quantity measured, then reports numbers from committed JSON and figures. The exact commands are listed in \cref{app:commands}. The original evidence records SharpeBench 0.5.0 under \texttt{sharpearena} 0.8.0; the concave-impact and predictability extensions were produced on the v0.11.0 source tree, and the three follow-ups on the post-0.11.1 tree, each with its configuration serialized beside its results.
+Ten findings, eight core calibrations plus two reviewer-motivated probes, and three follow-ups address questions the ten left open: an existence witness for rank-eligibility (\cref{sec:witness}), an asymmetric positive control for the manipulation probe (\cref{sec:f5-positive-control}) and sealed evaluation seeds (\cref{sec:sealed-seeds}). Each subsection states the entry point, seeds and quantity measured, then reports numbers from JSON and figures committed with its producer. The exact commands are listed in \cref{app:commands}. F1 serializes package version 0.9.0; other legacy artifacts do not all carry a runtime version, so provenance is the containing Git revision rather than a reconstructed tag claim. F4, F5 and the witness were regenerated after the estimator and dimensional corrections in this revision.
 
-Three scoping statements govern the whole section. First, the findings are instrument calibrations on a generator whose canonical tape the realism gate of \cref{sec:f4} declines to certify (1 of 24 runs passes the full conjunction); certification is reported beside the results, not required by them. Second, the byte-identity guarantee covers engine outputs behind F1 through F3 and the canonical linear path; Python evidence reductions are seed-deterministic on one platform but outside the golden-hash path. Third, the core evidence uses the explicitly stated train-band seeds except F3, which exercises the split; the predictability probe uses a separate 50{,}000-start band and reports why a bounded public band is unsafe. Dispersion is reported throughout: F1 and F3 use 2{,}000 seed bootstrap resamples, while F2, F5 and F6 use t-based 95\% intervals over committed vectors.
+Three scoping statements govern the whole section. First, the findings are instrument calibrations on a generator whose canonical tape the realism gate of \cref{sec:f4} declines to certify (2 of 24 runs pass the calibrated three-check conjunction); certification is reported beside the results, not required by them. Second, the byte-identity guarantee covers engine outputs behind F1 through F3 and the canonical linear path; Python evidence reductions are seed-deterministic on one platform but outside the golden-hash path. Third, the core evidence uses the explicitly stated train-band seeds except F3, which exercises the split; the predictability probe uses a separate 50{,}000-start band and reports why a bounded public band is unsafe. Dispersion is reported throughout: F1 and F3 use 2{,}000 seed bootstrap resamples, while F2, F5 and F6 use t-based 95\% intervals over committed vectors. Selected F5 cells additionally carry a 135-cell Bonferroni familywise interval.
 
 \subsection{F1: Pipeline validation under the corrected kernel}\label{sec:f1}
 
@@ -49,14 +49,14 @@ The reading: eligibility is a conjunction, and each leg catches what the other m
 
 On the Avellaneda-Stoikov market-making task, \texttt{mm\_regret} runs each candidate quoting policy and the closed-form reference policy (\cref{sec:tasks}) on the same sixteen seeded episodes ($\sigma = 2.0$, $\gamma = 0.1$, $\kappa = 1.5$, 200 steps) and reports the mean reward gap to the reference. Candidates are the reference itself and fixed-spread quoters over a grid of half-spreads. The evidence commits the per-episode regret vector per grid point; intervals are t-based 95\% CIs over the sixteen paired episodes.
 
-The reference's regret is 0.0 by construction, which confirms the plumbing: the metric's zero point is the reference, not a claim of unbeatability. The fixed-spread curve is U-shaped (\cref{fig:f2}): regret is 84.6 (95\% CI $[68.2, 101.1]$) at a half-spread of 0.05 (quoting too tight, filled constantly, run over by inventory), falls to a minimum of 0.037 at 0.5, and rises again to 36.6 ($[33.0, 40.2]$) at 2.0 and 58.8 ($[55.3, 62.3]$) at 4.0 (quoting too wide, earning nothing). The minimum deserves its interval: the 0.5 point's CI is $[-8.7, 8.8]$ and the 1.0 point's is $[-5.4, 12.4]$, so the best fixed spreads are statistically indistinguishable from the reference on sixteen episodes, while the tight and wide extremes are separated from it by wide margins. The instrument resolves the shape of the curve, not the sign of its minimum.
+The reference's regret is 0.0 by construction, which confirms the plumbing: the metric's zero point is the reference, not a claim of unbeatability. The fixed-spread curve is U-shaped (\cref{fig:f2}): regret is 84.6 (95\% CI $[68.2, 101.1]$) at a half-spread of 0.05 (quoting too tight, filled constantly, run over by inventory), falls to a minimum of 0.037 at 0.5, and rises again to 36.6 ($[33.0, 40.2]$) at 2.0 and 58.8 ($[55.3, 62.3]$) at 4.0 (quoting too wide, earning nothing). The minimum deserves its interval: the 0.5 point's CI is $[-8.7, 8.8]$ and the 1.0 point's is $[-5.4, 12.4]$. Both intervals include zero, so sixteen episodes do not resolve either point from the analytical reference; this failure to reject zero is not evidence of equivalence. The tight and wide extremes are separated from zero by wide margins. The instrument resolves the shape of the curve, not the sign of its minimum.
 
 The point of shipping the reference is that agents on this task are scored on regret, not raw PnL. A market-making leaderboard ranked on PnL rewards whichever policy drew the friendliest flow; regret against a fixed analytical reference on the same episodes removes that luck axis.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=0.7\linewidth]{f2-regret}
-\caption{Mean regret versus the closed-form Avellaneda-Stoikov reference policy over 16 paired episodes, with t-based 95\% CIs. Fixed-spread quoting is U-shaped in the half-spread; the reference defines zero.}
+\caption{Mean regret versus the analytical Avellaneda--Stoikov reference policy over 16 paired episodes, with t-based 95\% CIs. Fixed-spread quoting is U-shaped in the half-spread; the reference defines zero.}
 \label{fig:f2}
 \end{figure}
 
@@ -103,35 +103,35 @@ The transfer matrix (\cref{fig:f3}) is where regime structure appears, and its c
 
 \subsection{F4: Stylized-facts realism certification}\label{sec:f4}
 
-For each tier, price panels from eight seeded episodes are graded by \texttt{certify\_realism} against the directional bounds: positive excess kurtosis, positive absolute-return autocorrelation and positive aggregational Gaussianity from the classical catalogue \citep{cont2001empirical}, and a super-Poisson Fano factor (the authors' own diagnostic, \cref{sec:probes}), with gain/loss skew \citep{cont2001empirical} and timescale asymmetry \citep{zumbach2009time} reported as informational.
+For each tier, price panels from eight seeded episodes are graded by \texttt{certify\_realism} against three directional bounds from the classical catalogue: positive excess kurtosis, positive absolute-return autocorrelation and positive aggregational Gaussianity \citep{cont2001empirical}. Gain/loss skew \citep{cont2001empirical}, timescale asymmetry \citep{zumbach2009time}, and a finite-panel Fano exceedance-count ratio are informational. The Fano ratio is not gated: its threshold is estimated from the same 121-bar panel, leaving only 12 count windows, so 1 is not a calibrated finite-sample null even after using an unbiased sample variance.
 
 \begin{table}[t]
 \centering
-\caption{Stylized-facts certification per tier: mean fact value over 8 seeds, per-fact pass counts, and the all-facts pass rate. Calm is near-Gaussian by design and fails the fat-tail facts; the stressed tiers pass them.}
+\caption{Stylized-facts results over 8 seeds. Fano is an exploratory finite-panel proxy and has no pass column; the final rate is the conjunction of the three calibrated directional checks, including aggregational Gaussianity (not shown).}
 \label{tab:f4}
 \small
 \setlength{\tabcolsep}{5pt}
-\begin{tabular}{l rr rr rr r}
+\begin{tabular}{l rr rr r r}
 \toprule
- & \multicolumn{2}{c}{Excess kurtosis} & \multicolumn{2}{c}{$|r|$ autocorr} & \multicolumn{2}{c}{Fano factor} & All facts \\
-\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
-Tier & mean & pass & mean & pass & mean & pass & pass rate \\
+ & \multicolumn{2}{c}{Excess kurtosis} & \multicolumn{2}{c}{$|r|$ autocorr} & {Fano proxy} & {Gated facts} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+Tier & mean & pass & mean & pass & mean & pass rate \\
 \midrule
-Calm & $-0.97$ & 0/8 & $+0.0002$ & 5/8 & 1.19 & 7/8 & 0.000 \\
-Hard & $+16.30$ & 8/8 & $-0.0107$ & 1/8 & 0.85 & 0/8 & 0.000 \\
-Extreme & $+11.38$ & 8/8 & $-0.0118$ & 1/8 & 0.79 & 1/8 & 0.125 \\
+Calm & $-0.97$ & 0/8 & $+0.0002$ & 5/8 & 1.30 & 0.000 \\
+Hard & $+16.30$ & 8/8 & $-0.0107$ & 1/8 & 0.92 & 0.125 \\
+Extreme & $+11.38$ & 8/8 & $-0.0118$ & 1/8 & 0.86 & 0.125 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\Cref{tab:f4} and \cref{fig:f4} report the certification honestly, and it is a mixed verdict. The certification bounds are universal: they encode what real-market tape looks like, not what each tier intends, so a regime designed to be near-Gaussian is expected to fail them, and does. Calm's returns are platykurtic (mean excess kurtosis $-0.97$, aggregational Gaussianity $-0.58$); Calm is therefore, plainly, not realistic tape under this battery, by design, and the gate says so rather than grading it on a curve. Hard and Extreme pass excess kurtosis and aggregational Gaussianity on all eight seeds (means $+16.3$ and $+11.4$ excess kurtosis). But the full conjunction almost never passes: 0/8 on Calm, 0/8 on Hard, 1/8 on Extreme. The binding facts on the stressed tiers are volatility clustering (absolute-return autocorrelation is slightly negative at this 121-bar episode length) and the Fano factor, which drops sub-Poisson exactly when jumps concentrate variance in few bars. This is a finding against the generator, stated as such: the vol-and-jump construction buys fat tails without buying persistent volatility, and a future generator revision must add clustering (for example a stochastic-volatility driver) before the certification gate passes at tier level.
+\Cref{tab:f4} and \cref{fig:f4} give a mixed verdict. Calm is platykurtic (mean excess kurtosis $-0.97$, aggregational Gaussianity $-0.58$) and fails the conjunction on all eight seeds. Hard and Extreme pass excess kurtosis and aggregational Gaussianity on all eight seeds, but absolute-return autocorrelation is slightly negative at this episode length; each tier passes the three-check conjunction on only 1 of 8 seeds. Thus the canonical generator passes 2 of 24 seeded panels. The informational Fano ratios are reported as observations only. They do not identify why variance concentrates, and they no longer decide certification.
 
-That driver now exists as an opt-in \texttt{vol\_clustering} knob on the scenario spec: when positive, a deterministic EMA persistence state driven by realized absolute returns modulates each bar's return deviation, using the same mul/add/div/max arithmetic as the tier transforms so cross-runtime byte-identity is preserved, and a committed golden hash pins the clustered output alongside the unclustered tiers. At \texttt{vol\_clustering} $= 0$ (the default and the canonical leaderboard configuration) the generated panels are byte-identical to the tapes certified above, so the finding stands as reported, and every other experiment in this section runs on this uncertified default tape. Re-certifying the same tiers and seeds at strength $0.5$ flips the volatility-clustering fact: the absolute-return autocorrelation pass count rises from 5/8 to 8/8 on Calm, 1/8 to 8/8 on Hard, and 1/8 to 5/8 on Extreme (Hard's mean $|r|$ autocorrelation moves from $-0.011$ to $+0.029$), lifting Hard's all-facts pass rate from 0.000 to 0.250. Two honesty notes on that remediation. The strength $0.5$ was tuned, and re-certified, on the same eight seeds used to diagnose the failure, so the improvement is in-sample on the diagnosis panel; certification on a disjoint seed set at several strengths is the required follow-up before the driver can claim the fact generally. And the remaining binding fact on the stressed tiers is the sub-Poisson Fano factor, which the clustering driver improves (Hard 0.85 to 0.90) but does not yet fix.
+An opt-in \texttt{vol\_clustering} knob adds deterministic EMA persistence while preserving the zero-knob golden path. On the same diagnostic seeds at strength $0.5$, autocorrelation passes rise from 5/8 to 8/8 on Calm, 1/8 to 8/8 on Hard and 1/8 to 5/8 on Extreme. With Fano correctly excluded from the gate, the three-check pass rates become 0/8, 8/8 and 5/8. This is still in-sample calibration: strength $0.5$ was tuned and rechecked on the diagnosis panel. The newer opt-in jump-burst knobs are implemented but have no committed calibration experiment here, so neither they nor the exploratory Fano proxy support a remediation claim.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\linewidth]{f4-realism}
-\caption{Per-seed stylized-fact values by tier against the certification bounds.}
+\caption{Per-seed stylized-fact values by tier. Only kurtosis, absolute-return autocorrelation and aggregational Gaussianity are gated; Fano is exploratory.}
 \label{fig:f4}
 \end{figure}
 
@@ -139,7 +139,7 @@ That driver now exists as an opt-in \texttt{vol\_clustering} knob on the scenari
 
 A push-and-unwind manipulator is scored against its zero-impact paired reference (identical seed and schedule, $\lambda = \eta = 0$) over eight seeds, so \texttt{impact\_pnl} attributes profit specifically to having moved the price. \texttt{impact\_boundary\_sweep} sweeps permanent impact (Kyle $\lambda$), temporary impact ($\eta$) and the momentum-follower gain over six grid points per axis; \texttt{size\_response} sweeps the push weight over five points. The evidence commits per-seed impact-PnL vectors at every grid point; intervals below are t-based 95\% CIs over the eight seeds.
 
-One theoretical fact frames the whole finding. The market composes linear permanent impact with temporary impact, and under linear, time-independent permanent impact, round-trip price manipulation is unprofitable essentially by theorem: linearity is exactly the condition that rules out price-manipulation quasi-arbitrage \citep{huberman2004price}, and the no-dynamic-arbitrage analysis reaches the same conclusion for related impact-and-decay families \citep{gatheral2010no}. The clean sweep below is therefore a consistency check, not a certification that manipulation cannot pay in synthetic markets. \Cref{sec:f5-concave} runs the concave-impact ablation on the same symmetric schedule and reports a null; \cref{sec:f5-positive-control} then searches the asymmetric schedules that null did not cover and finds the profit theory predicts, under concave impact only.
+Under the precise linear, time-independent permanent-impact assumptions studied by \citet{huberman2004price} and related no-dynamic-arbitrage conditions of \citet{gatheral2010no}, round-trip price manipulation is ruled out. The finite linear sweep below is therefore a model-consistency check, not a universal certificate. \Cref{sec:f5-concave} introduces dimensionally normalized nonlinear flow, and \cref{sec:f5-positive-control} reports an exploratory asymmetric search with familywise inference.
 
 \begin{table}[t]
 \centering
@@ -169,7 +169,7 @@ Push wt. & PnL & 95\% CI \\
 \end{tabular}
 \end{table}
 
-The result (\cref{tab:f5}, \cref{fig:f5}) is the outcome the theory above predicts. On every axis the pump loses money at every sampled coefficient, with every per-point 95\% CI excluding zero, including the realistic center of the grid ($\lambda = 0.1$, $\eta = 0.05$: impact PnL $-3.4 \times 10^{-4}$, CI $[-4.3, -2.6] \times 10^{-4}$). The size response is bounded and decreasing: the least-bad size is the smallest sampled push weight and the loss grows to $-5.1 \times 10^{-4}$ at full size. A profitable region here would contradict the linear specification; the sweep instead agrees with Huberman-Stanzl at every point. The two extensions that follow settle what this sweep cannot. The concave ablation keeps the symmetric schedule and still finds no profit, which is a measurement rather than a corollary; the positive control then shows the same probe finding a profitable asymmetric round trip under concave impact and none under linear, so the linear null above is the theorem confirmed by an instrument that can fail, not one that cannot. The module's disclaimer remains explicit: it diagnoses the simulator, not a trading strategy.
+The result (\cref{tab:f5}, \cref{fig:f5}) is consistent with the linear model's no-manipulation conditions on the sampled grid. On every axis the pump loses money at every sampled coefficient, with every per-point 95\% CI excluding zero, including the realistic center of the grid ($\lambda = 0.1$, $\eta = 0.05$: impact PnL $-3.4 \times 10^{-4}$, CI $[-4.3, -2.6] \times 10^{-4}$). The size response is bounded and decreasing: the least-bad size is the smallest sampled push weight and the loss grows to $-5.1 \times 10^{-4}$ at full size. This finite sweep is not a proof over schedules or parameters outside the grid. The two extensions that follow test what it does not cover. The concave ablation keeps the symmetric schedule and still finds no profit, which is a measurement rather than a corollary; the positive control then finds profitable asymmetric round trips in two selected concave cells after a familywise correction, while all 45 sampled linear cells remain negative. The module's disclaimer remains explicit: it diagnoses the simulator, not a trading strategy.
 
 \begin{figure}[t]
 \centering

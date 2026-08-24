@@ -1,0 +1,502 @@
+{
+  "artifacts": [
+    {
+      "path": "paper/evidence/f1-baselines.json",
+      "sha256": "ec61a9a1f4340d58d497545ce401c159bd1e61201cb7c001773dd66b9e381f67"
+    },
+    {
+      "path": "paper/evidence/f2-regret.json",
+      "sha256": "7dcf2e656b4f73e8af7e4dba90721bab63f79b8de4a01c682b299b9f693c80ee"
+    },
+    {
+      "path": "paper/evidence/f3-generalization.json",
+      "sha256": "3bff445e13dd4d094a45ebe20e713ec0bc63b06e017c30a399d3aa41a8cf50e1"
+    },
+    {
+      "path": "paper/evidence/f4-realism.json",
+      "sha256": "a3044937d31ba643bba28822f0ea120466e5fcdccd4e99556d9d4e17a0083067"
+    },
+    {
+      "path": "paper/evidence/f5-manipulation.json",
+      "sha256": "9072b66285dc5c44068acad908049101f4b0b491efe5f67b265f3b019038e320"
+    },
+    {
+      "path": "paper/evidence/f6-adverse-selection.json",
+      "sha256": "4e8c57621254e500cb3d1d328fc2aec41bd24694927a3debc67c30a5291793e1"
+    },
+    {
+      "path": "paper/evidence/f7-failures.json",
+      "sha256": "a7285e32eda5661bc86f3ef3bafbd88f7d1e0acc9e9856c0c8ecd13d88303779"
+    },
+    {
+      "path": "paper/evidence/f8-ecology.json",
+      "sha256": "bed6e9e3e5430e076685db9d3bd2b912ea531859f0134cff89aea4082990ff19"
+    },
+    {
+      "path": "paper/evidence/predictability.json",
+      "sha256": "bf4c2b3bb4c6311a0795a7b0b65a2fe00b76a06193f3051de0a1f63391782a8a"
+    },
+    {
+      "path": "paper/evidence/sealed-seeds.json",
+      "sha256": "7e7edce4843ca35ee7626fa2ded04338f1a0aca155409f8597c213301b5d1356"
+    },
+    {
+      "path": "paper/evidence/witness.json",
+      "sha256": "2a0924078d7f477ef30c8d70af323ec23d7712c441d6d6282c494bb65d817ec9"
+    },
+    {
+      "path": "paper/figures/f1-baselines.pdf",
+      "sha256": "e6fed8cc1eaab77da7b4313938a76835ef3a6595a331f1f349a2d47fa80149e5"
+    },
+    {
+      "path": "paper/figures/f2-regret.pdf",
+      "sha256": "db9827afee14da9aad330cf2dd2f788b99e25b3eff23aa03d5fefc14a0991602"
+    },
+    {
+      "path": "paper/figures/f3-transfer-matrix.pdf",
+      "sha256": "1a12dbd853fa442f1e146db2ea5c86e67bd31d4efb67732c988399925ea68875"
+    },
+    {
+      "path": "paper/figures/f4-realism.pdf",
+      "sha256": "752a858fa9316f55b7eec0a0c40d4de08b321ee9d2d25f63595303766ac369bc"
+    },
+    {
+      "path": "paper/figures/f5-boundaries.pdf",
+      "sha256": "899357fec1008675c9c23ca730204203f208bcf5042958ce83a4cb58bcdcf93a"
+    },
+    {
+      "path": "paper/figures/f5-concave.pdf",
+      "sha256": "eee4733cd5a92d815a5bbd1435bf6f1b0dd58463d69575cbef6d15c2e6c2f9ba"
+    },
+    {
+      "path": "paper/figures/f5-positive-control.pdf",
+      "sha256": "39f557d2177b69c949146c596fbd70c577320007ccf788190832e5e7bb0a13fe"
+    },
+    {
+      "path": "paper/figures/f5-size-response.pdf",
+      "sha256": "2bbb1795d57305f3c306e80c445c18137ea62b4b7cef01f8e4a61ecfa35aea35"
+    },
+    {
+      "path": "paper/figures/f6-markouts.pdf",
+      "sha256": "d504935416a4024b1aefd0b63533f16f187fa339785cb97455deb2aa6dd7813b"
+    },
+    {
+      "path": "paper/figures/f7-failures.pdf",
+      "sha256": "04d29f61e1130a0b4c77c1307425f21adeaf81bf331c957fc0bc2f3f7e30935c"
+    },
+    {
+      "path": "paper/figures/f8-ecology-control.pdf",
+      "sha256": "99c61bf31b3115ac3e9f523145c433b1e1504e998783d9802b2de4ce829b0b24"
+    },
+    {
+      "path": "paper/figures/f8-ecology-shocked.pdf",
+      "sha256": "f07fa2a30687b9736d593ca5aefa95ae5316369604455c00536de8bfad660828"
+    },
+    {
+      "path": "paper/figures/predictability.pdf",
+      "sha256": "c9d6b12c5cd39fd8be8d768a607588b9b4cef581e6f2d1ce07abe67e3d4d7b0b"
+    },
+    {
+      "path": "paper/figures/witness.pdf",
+      "sha256": "8ed17ec76781641768cc8f910b3ed0c4b65d2b0483b041450ea9e4425340ebba"
+    }
+  ],
+  "repository_head": "9f16e9fb1251ba7f54ef95eac17f94098d3d4f95",
+  "reproduction_entrypoint": "commands in paper/sections/A-commands.tex",
+  "schema_version": 1,
+  "source_files": [
+    {
+      "path": "Cargo.lock",
+      "sha256": "7ec8b27b3f1f625c78b07d2d6b20f67b32aba2e37c40b08f072f9424ed7d72f9"
+    },
+    {
+      "path": "Cargo.toml",
+      "sha256": "1311bb1430f895c67ed479d8464104e413c9efbbfb10d20afac055cf7521839f"
+    },
+    {
+      "path": "crates/sharpearena-py/Cargo.toml",
+      "sha256": "5e7372bc5a29fcced61dc6fb0e0ff9319e0e87ad6f139ae36a9faefb84155307"
+    },
+    {
+      "path": "crates/sharpearena-py/pyproject.toml",
+      "sha256": "328b597fe7cc1083f8ff332a4b0565d573c33684851a2f02753aedfe52cb49fa"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/__init__.py",
+      "sha256": "1c670902ad8d816fc8aef9a9f5ace97e954d7055305690e25119e90516575ee9"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/adverse_selection.py",
+      "sha256": "68c8ffe21eee74499a6fce7ef19e677aff6435803091a84afe17f31b57085935"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/baselines.py",
+      "sha256": "4564c1d94032fbb41323e6c53fd436c6db4a618771303aae0d5729b94730cc77"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/cascade.py",
+      "sha256": "7c2aaf5cfb6fe96ede908b15ab624f89624bf5464af17ed5fb7aa3f678d96d9f"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/check_env.py",
+      "sha256": "65c68b230d33fcc48d144156b0064948d1e4717f3e58668ff5ef0726f8388892"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/checkpoint.py",
+      "sha256": "2eb296dc47db08da14adc7ee5b664904c4b9191ae5e42236aa90d13908f4e756"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/confidence.py",
+      "sha256": "376bb5589380ea8c1acfeef94e774877b153be9a76396d7c5ae9d9da9c32ed88"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/curriculum.py",
+      "sha256": "bbde9aa9cfa99b584f161fab7515994ef11f2fe20bfbfa05e0c1e6ebf46cdec9"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/data_blocks.py",
+      "sha256": "85f15444d71fcbed354775b62e849b7b55831b4fdc8211079f04d2e9687a1dd5"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/dataset.py",
+      "sha256": "00c6ba654f5a0da19c8dbff15b396f0eb0492579f38d3c8e6ffffc391f8c3548"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/decision_parser.py",
+      "sha256": "40a05ca9109a0966793a4a527567c7c84c53872362fd574951457f3951592325"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/deferred.py",
+      "sha256": "cbaad0896b3461e815ed5b13699c245a44c8ba0559608c004d53610a869de32f"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/discrete.py",
+      "sha256": "b7eb66c243ff90f359dc17e0f8b3e68b8ea0f78c5caf4b8bf4de5f84da857d02"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/ecology.py",
+      "sha256": "0f0f4082b62751a4b1453f5889c94cc312c888afcafa3ea9fc6f3f24d253d76d"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/eval_seeds.py",
+      "sha256": "435b51eaa198651df4b8934d8805b5efd27cdd904071a1d2f181c00fc0a810e9"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/execution.py",
+      "sha256": "4bbe8579e3c089a0b3078b9304a29770b92cec04c901e1498352c146326fac9a"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/execution_noise.py",
+      "sha256": "cd4c2aa8f5e1ec08fa74531cd10b9e01b9a2e39870b14e9c6ea965112c5aa1a9"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/failure_taxonomy.py",
+      "sha256": "5aeb9310c8082e749605015db8b37f980ed99156c3a563c020093ebfe6886777"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/forecast.py",
+      "sha256": "28fa8c863711f0e9c71e4c0cf827d3e14462913fea9bbf8f640f1e7e4d18c3fd"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/functional.py",
+      "sha256": "586c3602d1f9341d8b74af716bfaddf0f5d1c99e506126e8b71d20f335741f4f"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/generalization.py",
+      "sha256": "0a791a0cb4692ee6a4e2abc66f1c3c81e472ad801fe04797aa2dfcf9657b6d0c"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/gym.py",
+      "sha256": "724b26360da76dc6d16c9902526550de40b5e640a08a1e3e125e70b1c4b316d6"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/indicators.py",
+      "sha256": "837a46cd0efcbfdb1f000500436584289ea3864477bf7bcd2f6f970425788d7e"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/lob_env.py",
+      "sha256": "43695b6da66ba388ce61865804453f9e2863e0e5bb4a5935702b64a0f8a2ade5"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/lookahead_guard.py",
+      "sha256": "12dbd14ba0133acebd3aa27e9356f1d44a95e83ebac33d3b93d6ed650017f827"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/mandate.py",
+      "sha256": "e2509492b3e76033f772dd2498a2ba52791dd00a3caeb2f48f3a7dd0e33778e7"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/manipulation.py",
+      "sha256": "875378ab2c7259a50abb6d954b33d0563299ca0a70952dc2a8afa8bf2eeee553"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/market_env.py",
+      "sha256": "e0e1a14c6531ab8b4c5f1eecc9423e1d22ee0c02b7530bf53af3aad0ab74586d"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/market_making.py",
+      "sha256": "488b722f94c328175d73ecfdcc9acb7c569afa511026faf3eb6bbbe6ce398228"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/mcp_server.py",
+      "sha256": "d5189d11006056cb5c1a967b390ef6643bab7874e48477ad119db1d4f3e1c73b"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/metrics.py",
+      "sha256": "3691234b70c2455f21398dd9c31a94bfd517f78126bc5dfb903afbe5dc3e3420"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/minari_export.py",
+      "sha256": "74c53b07f17e4f700dd88f2d315397da4b7e77a4ff0461b74f4c05d222b9d570"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/news.py",
+      "sha256": "f0460110d18cc91c2c971d4049c54dc8a11fb7ce0e1c4dd09e75073fb564e2b5"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/obs_extra.py",
+      "sha256": "5175dca0b6822846ff3467c20e6168e8f771807f83b6c8eaea8f401d663ea1a7"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/pairs.py",
+      "sha256": "f82e88ca22dab7e3c739d19a31e30a184b58fe246b97821af8db6b9f294c0339"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/pettingzoo_env.py",
+      "sha256": "d28854fc2e88739009855d2554df6e79147f0cfc4f5b38b979ac78fec596ac61"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/portfolio_env.py",
+      "sha256": "a1c739e06a07efebf9d943aa245a49d5958d90e43c5b4646413a248c1d89485f"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/preprocessing.py",
+      "sha256": "1c4fa20d55c07d7eecfd93ad459b79cb621014412f6eded025f0d8f65a401a59"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/realism.py",
+      "sha256": "0227c2fec3f1953311515e6877754a571fd33ed626d016f21016d9d06f0073bd"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/regime_eval.py",
+      "sha256": "c68567186d0eff1e7f46e4c7449d40fa9ebcda79f2c674a2e2ea62984e0234ff"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/registration.py",
+      "sha256": "e674ac5014625c0818bd875f98d03adb152202478053d36523b83d132026affb"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/reward_misspecification.py",
+      "sha256": "bdfa59cd7dd17c9be6090998022bba080bb2f30a00a778b5a306a557e1fbf7da"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/rewards.py",
+      "sha256": "ae1ad172081ec7fab71e6f79dea1c3e44deae63203933bb7bbbe95034407ccc6"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/risk.py",
+      "sha256": "5f0036836d1b44aaf42b61ee96fa6fe7884d0b9c309ddad12cb6803a99765d08"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/spaces.py",
+      "sha256": "0ea0850797115dcc2b589f80e5711722e0c6a0aeae7e668a0766aa92a4195d83"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/splitmix_inversion.py",
+      "sha256": "2829691831d459b3e121f366c91fb9803fe7fddc21c01725ebaf502180102e09"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/trace.py",
+      "sha256": "d5b8b64236dc12568d51ba219e088d83e06c580aca7ee99efbe72b495ab6fa18"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/vector.py",
+      "sha256": "dc32c09daef781e2ad78bbf43d21ed2bae18c123819e7468b36fd95bb2e7aa8a"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/verifiers_env.py",
+      "sha256": "2cf769b05a71b6416bbdd75eb363f0455479baefaa1b5b6cd1c5a110cba4c1c0"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/wrappers.py",
+      "sha256": "b6d696b9299d0111455eafd56d2d0cbf6d2b5c940591e1a3d981a5f8a95e1e57"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/wrappers_vector.py",
+      "sha256": "53efbeb81b0cfe1cf775b2b5549d471a7e1116a1be7ed94d4693f4dc39780e06"
+    },
+    {
+      "path": "crates/sharpearena-py/src/lib.rs",
+      "sha256": "25890f5762165c405864dd832b40f956b158013c74109c9eac6ca71b8751a4d3"
+    },
+    {
+      "path": "crates/sharpearena-py/target/debug/build/serde-ff447c49c588f692/out/private.rs",
+      "sha256": "f8e9470772811a1bdcd201fb21e14cbf37a57d192b38cd98f66bd4a83442c26b"
+    },
+    {
+      "path": "crates/sharpearena-py/target/debug/build/serde_core-d53d15f99a98fd49/out/private.rs",
+      "sha256": "27ad1b5fb4eebeb1da6419cbfad3ac1922ed1d817fcbab0a1dae1bdfd38d8307"
+    },
+    {
+      "path": "crates/sharpearena-py/target/debug/build/target-lexicon-2d563e2d4765b9e6/out/host.rs",
+      "sha256": "cd6584db077b3ad7d7e79d85b7dc8800304d0cc9b6181d0b3da5a4058ac3fe3b"
+    },
+    {
+      "path": "crates/sharpearena-py/target/release/build/serde-1ddf8bfdf8757bba/out/private.rs",
+      "sha256": "f8e9470772811a1bdcd201fb21e14cbf37a57d192b38cd98f66bd4a83442c26b"
+    },
+    {
+      "path": "crates/sharpearena-py/target/release/build/serde-b76fe31312755928/out/private.rs",
+      "sha256": "f8e9470772811a1bdcd201fb21e14cbf37a57d192b38cd98f66bd4a83442c26b"
+    },
+    {
+      "path": "crates/sharpearena-py/target/release/build/serde_core-3000d716b1720a4b/out/private.rs",
+      "sha256": "27ad1b5fb4eebeb1da6419cbfad3ac1922ed1d817fcbab0a1dae1bdfd38d8307"
+    },
+    {
+      "path": "crates/sharpearena-py/target/release/build/serde_core-7bc9b3f80826db70/out/private.rs",
+      "sha256": "27ad1b5fb4eebeb1da6419cbfad3ac1922ed1d817fcbab0a1dae1bdfd38d8307"
+    },
+    {
+      "path": "crates/sharpearena-py/target/release/build/target-lexicon-61fd3fb9d5cf24de/out/host.rs",
+      "sha256": "3f1e636b79f8bc77758ef3d8341b34c3270407c165aa058246ca51d934c7ba62"
+    },
+    {
+      "path": "crates/sharpearena-py/target/release/build/target-lexicon-ad2abd2fa0479100/out/host.rs",
+      "sha256": "cd6584db077b3ad7d7e79d85b7dc8800304d0cc9b6181d0b3da5a4058ac3fe3b"
+    },
+    {
+      "path": "crates/sharpearena-wasm/Cargo.toml",
+      "sha256": "c8435d7b60d3f3700c1d28e225f929fb862f0caf9ba48ada41ea3c4e700174e2"
+    },
+    {
+      "path": "crates/sharpearena-wasm/src/lib.rs",
+      "sha256": "4728820ce4a8591e7eb8eba2616e1f362a00fab2c9c55463348ee999c0df729d"
+    },
+    {
+      "path": "crates/sharpearena/Cargo.toml",
+      "sha256": "d80a507a11af2d58771cc5a14204c7ffb08fb14fe2de3444d8f0d9db4f459783"
+    },
+    {
+      "path": "crates/sharpearena/examples/score-a-trajectory.rs",
+      "sha256": "c8f90d5a33564a0fe5c2b702a0889c9eb81b8a9b4dd103cbf1639ce4bce86187"
+    },
+    {
+      "path": "crates/sharpearena/release.toml",
+      "sha256": "2f032126b3960cfc3d9c0e3aeb237fd6b667485bd9c56d07ea665139f0f4298e"
+    },
+    {
+      "path": "crates/sharpearena/src/contract.rs",
+      "sha256": "c274af5481e13cc742d1557da4fd2b09742e98f2f872393a84efe8d9b2f31aa1"
+    },
+    {
+      "path": "crates/sharpearena/src/curriculum.rs",
+      "sha256": "ab7244e451564e2814a84605a11122f2674457d4815875f8b360942e463378cb"
+    },
+    {
+      "path": "crates/sharpearena/src/exec_noise.rs",
+      "sha256": "721dfb9ba56ad07a6c0addd300bc848cde36cdefb0fac7d31183aa93d3b79246"
+    },
+    {
+      "path": "crates/sharpearena/src/leaderboard_ci.rs",
+      "sha256": "25bdbc11728775adbf0430024e28e033cc67425c834087fe1bd05df5e3e30cf9"
+    },
+    {
+      "path": "crates/sharpearena/src/lib.rs",
+      "sha256": "7b2442ee3b7e93576c1d4aeead6c28ae3da31e49efce9d159549de6a4fed9794"
+    },
+    {
+      "path": "crates/sharpearena/src/lob_market.rs",
+      "sha256": "efb0ef4bced627cdd4d3d7488c32bc96daaa209063bc094b3a78e4eb9862f29b"
+    },
+    {
+      "path": "crates/sharpearena/src/mandate.rs",
+      "sha256": "997ab1119219363e5682d70e41d6258a9ec5474921725ac9e99087af26dea769"
+    },
+    {
+      "path": "crates/sharpearena/src/market.rs",
+      "sha256": "d2cd2139bd7b2b32a748fe2ef2015c26a3cb2aa1674bd85293c41691c0b116af"
+    },
+    {
+      "path": "crates/sharpearena/src/richness.rs",
+      "sha256": "fadff4efc0aebd14523bd464ed140daa21557f92c132473a7cbd462dfa5daef4"
+    },
+    {
+      "path": "crates/sharpearena/src/scenario_gen.rs",
+      "sha256": "c15f75dc4501c374712f27c309eb80bd21acfe3720bd405c19d5c73086a87ffd"
+    },
+    {
+      "path": "crates/sharpearena/src/vec_env.rs",
+      "sha256": "d062c694bbdc5c01c041eabb29373bee947672afe77e465b4de297729ce52ade"
+    },
+    {
+      "path": "crates/sharpearena/tests/conformance.rs",
+      "sha256": "482f1da6c3895bfd11c552ec9562dadeb34be5353e3fc9243287384868fb5b27"
+    },
+    {
+      "path": "crates/sharpearena/tests/smoke.rs",
+      "sha256": "b5b365c6b175d29f7c6a4ac62eb1cf3fb0566b838408afa15e2c141c527ecbd8"
+    },
+    {
+      "path": "paper/src/make-f1-baselines.py",
+      "sha256": "6be9405e30cc862d8a76ddb0edc57deaa38bbb921ce25991defa438036611a1a"
+    },
+    {
+      "path": "paper/src/make-f2-regret.py",
+      "sha256": "697529661ca3a8903365e5d8f42835c4768a7e2c9ab9940b669e540a63593742"
+    },
+    {
+      "path": "paper/src/make-f3-generalization.py",
+      "sha256": "9fb8b385b5ea66bbf3e8bceca7da50371d8a5507535a346900d51912fedd6e4d"
+    },
+    {
+      "path": "paper/src/make-f4-realism.py",
+      "sha256": "454c75fedb233a59d9bcd195fcbb71c536778bb56cdef4cd4ce4fed84990f101"
+    },
+    {
+      "path": "paper/src/make-f5-manipulation.py",
+      "sha256": "77d546f994b48db0252b9872610c6833950557d281254b6a56a4b66ed50b181f"
+    },
+    {
+      "path": "paper/src/make-f6-adverse-selection.py",
+      "sha256": "865020c117efa3ec426c81f35c27e6a941908dc7a9f6664bed0fe659bcc01997"
+    },
+    {
+      "path": "paper/src/make-f7-failures.py",
+      "sha256": "344a1c805dc1de5fcbbb4712745ea6e45afbd136b15e15a1f00333c45c033558"
+    },
+    {
+      "path": "paper/src/make-f8-ecology.py",
+      "sha256": "8eac767b0e5d2a73f5bb85f9aa7ddd6ded350a478994d68c5a648d4d03ee5b05"
+    },
+    {
+      "path": "paper/src/make-figures.py",
+      "sha256": "c4dd254c2cddfb3c2fad6574ddfceab4067310628fd7bd79b4781df02e18165d"
+    },
+    {
+      "path": "paper/src/make-predictability.py",
+      "sha256": "3e856323764e006d17fe566aeae7200824ffdaaa588ca4ef94809f43d66c3834"
+    },
+    {
+      "path": "paper/src/make-provenance.py",
+      "sha256": "31876dc47b4d2e4eb95bcec940d2574665e0e8bf077a3a76320243f1a4f76784"
+    },
+    {
+      "path": "paper/src/make-sealed-seeds.py",
+      "sha256": "d437e37e6bb12695ef85e3fa5ea77c489a0a23226e6ca1586692e4dafbe5240f"
+    },
+    {
+      "path": "paper/src/make-witness.py",
+      "sha256": "60bbcb5ff30379a1d6d3f861a2d53e2a4ce0518402b89928695ad1509112fe92"
+    }
+  ],
+  "source_snapshot_scope": [
+    "Cargo.toml",
+    "Cargo.lock",
+    "crates/**/*.toml",
+    "crates/**/*.rs",
+    "crates/sharpearena-py/python/**/*.py",
+    "paper/src/*.py"
+  ],
+  "source_snapshot_sha256": "9ec60ea9b6b5d483d99d987778b4bf00fa7895cff5681737a618687210fdf0fa"
+}

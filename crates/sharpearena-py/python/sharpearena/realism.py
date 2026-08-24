@@ -23,9 +23,10 @@ The facts computed by :func:`stylized_facts`:
   distribution drifts back toward Gaussian, so excess kurtosis decays. The fact is the
   excess kurtosis at horizon 1 minus that of the horizon-aggregated series; positive in
   real markets.
-* **fano_factor**: intermittency. Large moves (``|return|`` exceedances) arrive in bursts,
-  not as an even Poisson stream, so the Fano factor (variance/mean of exceedance counts per
-  window) exceeds the Poisson value of 1.
+* **fano_factor**: an exploratory intermittency proxy, the sample variance/mean of
+  large-move exceedance counts per window. Its population value is 1 for a Poisson
+  process, but the panel-estimated threshold and small number of windows mean 1 is not a
+  calibrated finite-sample null here; the default certificate does not gate on it.
 
 :func:`certify_realism` grades a panel against :data:`DEFAULT_THRESHOLDS` (or caller
 overrides) and returns a :class:`RealismReport` with a per-fact pass/fail and an overall
@@ -145,11 +146,13 @@ def _aggregational_gaussianity(r: np.ndarray, horizon: int) -> float:
 
 
 def _fano_factor(r: np.ndarray, window: int, z: float) -> float:
-    """Fano factor (variance/mean) of large-move exceedance counts per ``window``.
+    """Exploratory Fano proxy of large-move exceedance counts per ``window``.
 
     A large move is ``|return|`` above ``mean + z*std``; counting exceedances per window
-    turns the tape into a point process whose Fano factor is 1 under a Poisson (memoryless)
-    arrival and > 1 when large moves cluster (intermittency).
+    turns the tape into a finite-panel point-process diagnostic. The sample variance uses
+    ``ddof=1``. Because the threshold is estimated from the same panel and the number of
+    windows can be small, 1 is not a calibrated finite-sample null; this value is reported
+    but deliberately excluded from :data:`DEFAULT_THRESHOLDS`.
     """
     vals: list[float] = []
     for x in _columns(r):
@@ -162,7 +165,7 @@ def _fano_factor(r: np.ndarray, window: int, z: float) -> float:
         counts = events[: n_blocks * window].reshape(n_blocks, window).sum(axis=1)
         mean = counts.mean()
         if mean > 0.0:
-            vals.append(float(counts.var() / mean))
+            vals.append(float(counts.var(ddof=1) / mean))
     return float(np.nanmean(vals)) if vals else np.nan
 
 
@@ -203,7 +206,6 @@ DEFAULT_THRESHOLDS: dict[str, tuple[Optional[float], Optional[float]]] = {
     "excess_kurtosis": (0.0, None),            # fat-tailed / leptokurtic
     "abs_return_autocorr": (0.0, None),        # volatility clustering present
     "aggregational_gaussianity": (0.0, None),  # kurtosis decays on aggregation
-    "fano_factor": (1.0, None),                # super-Poisson (bursty) large moves
 }
 
 

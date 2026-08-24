@@ -18,12 +18,13 @@ probe can only confirm theory. The ``concave`` key reruns the same sweeps at
 in which theory predicts manipulation can pay), with the same per-seed CIs.
 
 Positive control (the ``positive_control`` key): the symmetric schedule above never
-searches the asymmetric round trips Huberman-Stanzl (2004) show can profit under
-non-linear permanent impact. This block runs a small schedule search over the
+searches asymmetric round trips. This block runs an exploratory schedule search over the
 ``AsymmetricSchedule`` family (up/down duration ratio and block-fraction size split)
 at exponents 1.0, 0.7 and 0.5, on a pure-impact theory arm (no followers, no
 temporary impact), a temporary-impact arm and the canonical follower arm, looking
-for ANY profitable round trip with per-seed CIs. The linear and concave arms above
+for profitable sampled round trips with per-seed intervals. Because the best cell is
+selected from 135 points, its report also carries a Bonferroni familywise 95% interval.
+The linear and concave arms above
 are untouched: their code paths and evidence numbers are byte-identical.
 """
 from __future__ import annotations
@@ -76,6 +77,15 @@ POSITIVE_CONTROL_ARMS = {
     "temporary_impact": {"eta": 0.05, "follower_gain": 0.0},
     "canonical": {"eta": 0.05, "follower_gain": 30.0},
 }
+POSITIVE_CONTROL_FAMILY_SIZE = (
+    len(POSITIVE_CONTROL_EXPONENTS)
+    * len(POSITIVE_CONTROL_LEGS)
+    * len(POSITIVE_CONTROL_SPLITS)
+    * len(POSITIVE_CONTROL_ARMS)
+)
+# Student-t quantile t_{1 - .05/(2*135), 7}. Kept explicit so regenerating the
+# evidence does not add SciPy as a runtime dependency of the paper pipeline.
+BONFERRONI_T_CRIT_DF7 = 6.391202695754376
 
 
 def main() -> None:
@@ -104,6 +114,20 @@ def main() -> None:
         std = math.sqrt(sum((v - mean) ** 2 for v in values) / (n - 1))
         half = t_crit * std / math.sqrt(n)
         return {"mean": mean, "std": std, "ci95_lo": mean - half, "ci95_hi": mean + half}
+
+    def _familywise_stats(values: list[float]) -> dict:
+        n = len(values)
+        mean = sum(values) / n
+        std = math.sqrt(sum((v - mean) ** 2 for v in values) / (n - 1))
+        half = BONFERRONI_T_CRIT_DF7 * std / math.sqrt(n)
+        return {
+            "method": "Bonferroni two-sided familywise 95% interval",
+            "family_size": POSITIVE_CONTROL_FAMILY_SIZE,
+            "df": n - 1,
+            "critical_value": BONFERRONI_T_CRIT_DF7,
+            "ci95_lo": mean - half,
+            "ci95_hi": mean + half,
+        }
 
     dispersion: dict[str, dict] = {}
     for axis, rep in boundaries.items():
@@ -204,12 +228,17 @@ def main() -> None:
                         }
                     )
             best = max(points, key=lambda pt: pt["stats"]["mean"])
+            best_familywise = _familywise_stats(best["per_seed_impact_pnl"])
             by_exponent[str(exponent)] = {
                 "impact_exponent": exponent,
                 "points": points,
                 "n_profitable_mean": sum(pt["profitable_mean"] for pt in points),
                 "n_profitable_ci": sum(pt["profitable_ci"] for pt in points),
-                "best": {"schedule": best["schedule"], "stats": best["stats"]},
+                "best": {
+                    "schedule": best["schedule"],
+                    "stats": best["stats"],
+                    "familywise_inference": best_familywise,
+                },
             }
         positive_control["arms"][arm_name] = {
             "params": {
@@ -239,6 +268,8 @@ def main() -> None:
         "size_splits": ["uniform" if s is None else s for s in POSITIVE_CONTROL_SPLITS],
         "arms": POSITIVE_CONTROL_ARMS,
         "seeds": list(SEEDS),
+        "family_size": POSITIVE_CONTROL_FAMILY_SIZE,
+        "selection_inference": "Bonferroni two-sided familywise 95% interval for each selected best cell",
         "not_searched": [
             "push_weight (fixed at the canonical 0.8)",
             "flow scale / volume_scale (the sub-unit flow calibration is unchanged)",

@@ -1,5 +1,10 @@
 # Response to Reviewers: SharpeArena (Round 1 Revision)
 
+> **Historical response.** This letter records what changed in Round 1. Later
+> reviewer-motivated experiments and corrections supersede statements here
+> about features that did not yet exist; the current manuscript and integrity
+> report are authoritative.
+
 Manuscript: `paper/main.tex`, "SharpeArena: The Point-in-Time (PIT) RL Environment for Trading Agents"
 Decision responded to: `editorial-decision.md` (Major Revision, 2026-08-24), roadmap `revision-roadmap.md` (R-01 through R-33).
 

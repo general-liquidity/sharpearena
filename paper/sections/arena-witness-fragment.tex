@@ -1,39 +1,34 @@
-% Rank-eligibility existence witness for the environment (mirrors SharpeBench's pass witness).
-% Standalone fragment; evidence in paper/evidence/witness.json, figure in
-% paper/figures/witness.pdf, script paper/src/make-witness.py.
+\subsection{Rank-eligibility witness: the acceptance set is non-empty}\label{sec:witness}
 
-\subsection{Rank-eligibility existence witness: the acceptance region is non-empty, and here is its boundary}\label{sec:witness}
-
-\Cref{sec:f1} reports that no reference policy is rank-eligible on any tier and that even \texttt{flat} fails the per-run gate on all 16 seeds, and it leaves open whether the eligibility set is non-empty at all for this task family. That is the right objection: a gate that nothing can pass is not strict, it is vacuous, and ``the number an entrant has to beat'' would then be undefined rather than high. This fragment answers by construction, the way the SharpeBench kernel's own pass witness does. We inject a known edge of controlled strength and locate the strength at which the gates first open.
-
-\paragraph{The out-of-band oracle, and why it is not an entrant.} The generator is deterministic, so the true next-bar return of every symbol is recoverable in-script by replaying the same seed one bar ahead with flat decisions; the canonical position-trading tape is policy-invariant, which the script asserts on every rollout. No entrant can do this through the observation interface (\cref{sec:predictability} measures what an honest adversary recovers), and the oracle is not scored on any board. It exists only to place a signal of known quality in a policy's hands: $\text{signal}_t = s\,z_t + \sqrt{1 - s^2}\,\varepsilon_t$, with $z_t$ the standardized true next-bar return, $\varepsilon_t$ seeded standard normal noise, and $s$ therefore the correlation between signal and truth, from a pure noise trader at $s = 0$ to omniscience at $s = 1$. Two policies consume the signal. The canonical \texttt{sign\_follow} trades $\operatorname{sign}(\text{signal})$ at $1/n$ gross per symbol every bar, the momentum baseline's exposure convention. The turnover-aware \texttt{deadband\_hold} trades the sign only when $|\text{signal}| > 1$ and otherwise holds its previous position. Every strength is scored exactly as the baselines are: the per-run gate on each of 16 seeds through \texttt{score\_run}, the pooled series through \texttt{score\_run} for the deflated Sharpe, the bootstrap $p$-value and the kernel's \texttt{rank\_eligible} flag, a seed-paired bootstrap CI on the pooled DSR, and the F1 deflation footprint ($n_{\text{trials}} = 6$). Eligibility is the paper's rule: the per-run gate passes on every seed (pass\textsuperscript{$k$} rate exactly $1.00$) and the kernel's conjunction holds on the pooled run (DSR $\geq 0.95$, bootstrap $p < 0.05$, process and mandate clean). A coarse sweep over 13 strengths is refined by bisection to a resolution of $0.005$ in $s$. The primary band is the canonical held-out band (16 seeds, 10{,}000-seed gap, as in \cref{sec:f3}); the F1 table band is rerun as a cross-check.
-
-\paragraph{Result: eligibility is attainable on every tier, and the every-seed gate is what binds.} \Cref{tab:witness} gives the boundaries. With the canonical sign-follower the region opens at $s \in [0.734, 0.738]$ on Hard (signal accuracy $0.71$, mean $7.8$ bp per bar) and at $s \in [0.338, 0.341]$ on Extreme (accuracy $0.57$, $27$ bp per bar). On Calm it never opens: even the perfect oracle passes the per-run gate on only 11 of 16 seeds (minimum seed PSR $0.026$), because a policy that flips every symbol every bar pays roughly $14$ bp per bar in round-trip costs (that is the $s = 0$ noise trader's loss), while the omniscient sign of a Calm bar is worth only $2.7$ bp net. The turnover-aware variant removes that ceiling: it is eligible on Calm from $s \in [0.903, 0.906]$ (accuracy $0.88$, $6.4$ bp per bar), on Hard from $s \in [0.472, 0.475]$ (accuracy $0.62$, $9.7$ bp) and on Extreme from $s \in [0.284, 0.288]$ (accuracy $0.55$, $25$ bp). On the F1 table band the boundaries sit at $s \in [0.800, 0.803]$ (Hard) and $[0.425, 0.428]$ (Extreme) for the sign-follower and at $[0.713, 0.716]$, $[0.625, 0.628]$ and $[0.328, 0.331]$ for the deadband variant, the same ordering with band-luck shifts of the size \cref{sec:f3} calibrates. At all ten boundaries that exist the binding gate is the same one: the per-run PSR bar on every seed. The pooled legs open well before it. On the held-out band with the deadband variant the DSR bar is cleared at $s = 0.40$, $0.30$ and $0.20$ (Calm, Hard, Extreme) and the bootstrap at $0.40$, $0.20$ and $0.05$, whereas the every-seed gate waits until $0.906$, $0.475$ and $0.288$; the sign-follower shows the same order, DSR bar at $0.70$ and $0.25$ against every-seed at $0.738$ and $0.341$ on Hard and Extreme. In every case the last seed to pass is the one with the least favourable path, and near the boundary the gate is brittle in the way a conjunction over 16 draws must be: on Extreme, $s = 0.40$ fails on one seed (PSR $0.880$) while $0.35$ and $0.50$ pass, so the boundary is a band, not a point, and the table reports it as one.
+The baseline board of \cref{sec:f1} contains no rank-eligible policy, leaving open whether the conjunction can be satisfied at all. We answer by construction with an out-of-band oracle, not an entrant. For each seed, the script replays the deterministic, policy-invariant tape one bar ahead and mixes standardized next-bar truth $z_t$ with one fixed seeded noise path $\varepsilon_t$:
+\[
+\mathrm{signal}_t(s)=s z_t+\sqrt{1-s^2}\,\varepsilon_t,
+\qquad 0\le s\le1.
+\]
+The same $\varepsilon_t$ is reused at every $s$ (common random numbers), so changing signal strength does not silently change the experiment. A sign-following policy trades every bar; a deadband policy trades only when $|\mathrm{signal}|>1$ and otherwise holds. Both are scored through the unchanged SharpeBench conjunction over 16 seeds. The script first checks the full coarse acceptance set. It refines a crossing by bisection only when coarse eligibility is monotone; otherwise it reports the observed set without calling any crossing a threshold. All ten attained series are monotone after the common-random-number correction.
 
 \begin{table}[t]
 \centering
-\caption{Existence witness: the signal strength $s$ at which rank-eligibility begins, per tier, policy variant and seed band, with the gate still failing on the ineligible side. Strength is the correlation between the oracle-mixed signal and the true next-bar return. ``none'' means no strength up to and including $s = 1$ is eligible.}
+\caption{Observed eligibility thresholds in signal-truth correlation $s$. Intervals are bisection brackets after a monotone coarse-grid check. ``None'' means that no sampled $s\le1$ is eligible. At every attained threshold, the last failing gate is the requirement that every seed's marginal PSR reach $0.90$.}
 \label{tab:witness}
 \small
 \begin{tabular}{llccc}
 \toprule
 Variant & Band & Calm & Hard & Extreme \\
 \midrule
-\texttt{sign\_follow} & held-out & none (11/16 at $s=1$) & $[0.734, 0.738]$ & $[0.338, 0.341]$ \\
-\texttt{sign\_follow} & F1 table & none (11/16 at $s=1$) & $[0.800, 0.803]$ & $[0.425, 0.428]$ \\
-\texttt{deadband\_hold} & held-out & $[0.903, 0.906]$ & $[0.472, 0.475]$ & $[0.284, 0.288]$ \\
-\texttt{deadband\_hold} & F1 table & $[0.713, 0.716]$ & $[0.625, 0.628]$ & $[0.328, 0.331]$ \\
-\midrule
-Binding gate & all & \multicolumn{3}{c}{per-run PSR $\geq 0.90$ on every seed (pass\textsuperscript{$k$})} \\
+\texttt{sign\_follow} & held-out & none & $[0.7250,0.7281]$ & $[0.3000,0.3031]$ \\
+\texttt{sign\_follow} & F1 table & none & $[0.7875,0.7906]$ & $[0.4438,0.4469]$ \\
+\texttt{deadband\_hold} & held-out & $[0.9000,0.9031]$ & $[0.5031,0.5063]$ & $[0.3813,0.3844]$ \\
+\texttt{deadband\_hold} & F1 table & $[0.6563,0.6594]$ & $[0.6188,0.6219]$ & $[0.3688,0.3719]$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
+The result is an existence proof and a calibration, not evidence about an agent. The deadband construction is eligible on every tier, so the acceptance set is non-empty. The every-seed gate is last to open at all ten observed thresholds; pooled DSR and bootstrap gates open earlier. The sign follower never becomes eligible on Calm, even at $s=1$, because its every-bar turnover costs more than the low-volatility signal is worth. Thus the environment does not impose an activity requirement, but its cost model does require a Calm policy to ration turnover.
+
 \begin{figure}[t]
 \centering
 \includegraphics[width=0.95\linewidth]{witness}
-\caption{Existence witness on the held-out band, one row per policy variant. Left: pooled deflated Sharpe against signal strength with seed-paired bootstrap CIs; filled markers are rank-eligible, dashed lines mark the boundary, the dotted line is the DSR bar. Right: pass\textsuperscript{$k$} rate over 16 seeds. The pooled DSR saturates long before the every-seed gate opens.}
+\caption{Witness sweep on the held-out band. Filled markers are eligible sampled points; dashed lines mark bisection thresholds only after monotonicity is verified. The right panels show how many of the 16 seed-level PSR tests pass.}
 \label{fig:witness}
 \end{figure}
-
-\paragraph{Reading.} Three things follow. The acceptance region is non-empty on every tier, so the gates are strict rather than vacuous, and the zero on the baseline board is a measurement of the baselines. Its boundary is far from the trivial policies: an entrant needs the equivalent of a $0.62$ to $0.74$ directional hit rate on Hard bars depending on how it spends turnover, and it needs that on every one of 16 held-out paths, not on average. And the per-run gate that the devil's advocate suspected of hiding an unstated requirement does contain one, but it is documented in the kernel and it is a positive-edge requirement, not an activity requirement: PSR $\geq 0.90$ against a zero-Sharpe benchmark on each run, which a zero-dispersion series fails at PSR $= 0.5$ by construction. \texttt{flat} therefore fails 16 of 16 not because doing nothing is penalized but because doing nothing carries no evidence of edge, and the same rule refuses a clone of the benchmark. The Calm ceiling on the sign-follower is the environment's cost model at work: on the low-volatility tier the per-bar edge of a perfect sign is smaller than the cost of trading it every bar, so eligibility there requires a policy that rations turnover, which is what a real entrant would have to learn. The oracle is not that entrant; it is the ruler the entrant will be measured against.
