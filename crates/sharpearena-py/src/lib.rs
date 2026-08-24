@@ -584,6 +584,22 @@ fn mandate_breach(mandate_json: &str, returns: Vec<f64>, weights: Vec<Vec<f64>>)
     Ok(sharpearena::mandate::mandate_breach(&m, &returns, &weights))
 }
 
+/// Derive the held-out seed for eval slot `slot` under a secret `salt` (see
+/// `sharpearena::sealed_seed`). Always `>= EVAL_SEED_BASE`, so disjointness from the
+/// train band holds without knowing the salt. Rejects salts shorter than
+/// `MIN_SEALED_SALT_BYTES`: the derivation is only as unguessable as the salt.
+#[pyfunction]
+fn sealed_seed(salt: &[u8], slot: u64) -> PyResult<u64> {
+    if salt.len() < sharpearena::MIN_SEALED_SALT_BYTES {
+        return Err(PyValueError::new_err(format!(
+            "sealed-seed salt must be at least {} bytes (got {})",
+            sharpearena::MIN_SEALED_SALT_BYTES,
+            salt.len()
+        )));
+    }
+    Ok(sharpearena::sealed_seed(salt, slot))
+}
+
 /// Perturb a `requested` action vector into a realized one via the deterministic Rust
 /// `exec_noise` core — the trading analog of ALE sticky actions. With probability
 /// `delay_prob` the `previous` action is returned (the order lands a bar late); otherwise
@@ -990,6 +1006,9 @@ fn sharpearena_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(sample_mandate_json, m)?)?;
     m.add_function(wrap_pyfunction!(mandate_breach, m)?)?;
     m.add_function(wrap_pyfunction!(perturb_action, m)?)?;
+    m.add_function(wrap_pyfunction!(sealed_seed, m)?)?;
+    m.add("EVAL_SEED_BASE", sharpearena::EVAL_SEED_BASE)?;
+    m.add("MIN_SEALED_SALT_BYTES", sharpearena::MIN_SEALED_SALT_BYTES)?;
     m.add(
         "__doc__",
         "Native pyo3 bindings for the SharpeArena trading-agent environment.",

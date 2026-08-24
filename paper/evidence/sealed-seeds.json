@@ -1,0 +1,386 @@
+{
+  "config": {
+    "n_symbols": 4,
+    "n_days": 120,
+    "n_slots": 16,
+    "slots": [
+      "held_out_00",
+      "held_out_01",
+      "held_out_02",
+      "held_out_03",
+      "held_out_04",
+      "held_out_05",
+      "held_out_06",
+      "held_out_07",
+      "held_out_08",
+      "held_out_09",
+      "held_out_10",
+      "held_out_11",
+      "held_out_12",
+      "held_out_13",
+      "held_out_14",
+      "held_out_15"
+    ],
+    "verification_tier": "hard",
+    "warmup_bars": 30,
+    "scan_band": [
+      1000000,
+      1065536
+    ],
+    "scan_band_width": 65536,
+    "match_tolerance": 1e-09,
+    "adversary": "predictability probe band scan: first-bar-close table over the 2^16 candidates at the public band start, one observed opening bar, prefix verification on the deployed tier",
+    "public_extra_offsets_rng_seed": 0
+  },
+  "table_build_s": 0.7465610504150391,
+  "public": {
+    "derivation": "EVAL_SEED_BASE + offset",
+    "seeds": {
+      "held_out_00": 1000000,
+      "held_out_01": 1000007,
+      "held_out_02": 1000013,
+      "held_out_03": 1000029,
+      "held_out_04": 1000101,
+      "held_out_05": 1000257,
+      "held_out_06": 1001024,
+      "held_out_07": 1004099,
+      "held_out_08": 1001083,
+      "held_out_09": 1002685,
+      "held_out_10": 1004930,
+      "held_out_11": 1017679,
+      "held_out_12": 1020172,
+      "held_out_13": 1033495,
+      "held_out_14": 1041740,
+      "held_out_15": 1055740
+    },
+    "recovered": 16,
+    "prefix_verified": 16,
+    "n_slots": 16,
+    "collisions": [],
+    "total_scan_s": 0.03952836990356445,
+    "trials": [
+      {
+        "matches": [
+          1000000
+        ],
+        "candidates_checked": 65536,
+        "elapsed_s": 0.0030117034912109375,
+        "slot": "held_out_00",
+        "recovered": true,
+        "prefix_verified": true
+      },
+      {
+        "matches": [
+          1000007
+        ],
+        "candidates_checked": 65536,
+        "elapsed_s": 0.0030002593994140625,
+        "slot": "held_out_01",
+        "recovered": true,
+        "prefix_verified": true
+      },
+      {
+        "matches": [
+          1000013
+        ],
+        "candidates_checked": 65536,
+        "elapsed_s": 0.0029997825622558594,
+        "slot": "held_out_02",
+        "recovered": true,
+        "prefix_verified": true
+      },
+      {
+        "matches": [
+          1000029
+        ],
+        "candidates_checked": 65536,
+        "elapsed_s": 0.0020008087158203125,
+        "slot": "held_out_03",
+        "recovered": true,
+        "prefix_verified": true
+      },
+      {
+        "matches": [
+          1000101
+        ],
+        "candidates_checked": 65536,
+        "elapsed_s": 0.0029997825622558594,
+        "slot": "held_out_04",
+        "recovered": true,
+        "prefix_verified": true
+      },
+      {
+        "matches": [
+          1000257
+        ],
+        "candidates_checked": 65536,
+        "elapsed_s": 0.0020008087158203125,
+        "slot": "held_out_05",
+        "recovered": true,
+        "prefix_verified": true
+      },
+      {
+        "matches": [
+          1001024
+        ],
+        "candidates_checked": 65536,
+        "elapsed_s": 0.0019998550415039062,
+        "slot": "held_out_06",
+        "recovered": true,
+        "prefix_verified": true
+      },
+      {
+        "matches": [
+          1004099
+        ],
+        "candidates_checked": 65536,
+        "elapsed_s": 0.0029993057250976562,
+        "slot": "held_out_07",
+        "recovered": true,
+        "prefix_verified": true
+      },
+      {
+        "matches": [
+          1001083
+        ],
+        "candidates_checked": 65536,
+        "elapsed_s": 0.0020008087158203125,
+        "slot": "held_out_08",
+        "recovered": true,
+        "prefix_verified": true
+      },
+      {
+        "matches": [
+          1002685
+        ],
+        "candidates_checked": 65536,
+        "elapsed_s": 0.001999378204345703,
+        "slot": "held_out_09",
+        "recovered": true,
+        "prefix_verified": true
+      },
+      {
+        "matches": [
+          1004930
+        ],
+        "candidates_checked": 65536,
+        "elapsed_s": 0.0030002593994140625,
+        "slot": "held_out_10",
+        "recovered": true,
+        "prefix_verified": true
+      },
+      {
+        "matches": [
+          1017679
+        ],
+        "candidates_checked": 65536,
+        "elapsed_s": 0.0025148391723632812,
+        "slot": "held_out_11",
+        "recovered": true,
+        "prefix_verified": true
+      },
+      {
+        "matches": [
+          1020172
+        ],
+        "candidates_checked": 65536,
+        "elapsed_s": 0.0020003318786621094,
+        "slot": "held_out_12",
+        "recovered": true,
+        "prefix_verified": true
+      },
+      {
+        "matches": [
+          1033495
+        ],
+        "candidates_checked": 65536,
+        "elapsed_s": 0.002000093460083008,
+        "slot": "held_out_13",
+        "recovered": true,
+        "prefix_verified": true
+      },
+      {
+        "matches": [
+          1041740
+        ],
+        "candidates_checked": 65536,
+        "elapsed_s": 0.003000020980834961,
+        "slot": "held_out_14",
+        "recovered": true,
+        "prefix_verified": true
+      },
+      {
+        "matches": [
+          1055740
+        ],
+        "candidates_checked": 65536,
+        "elapsed_s": 0.0020003318786621094,
+        "slot": "held_out_15",
+        "recovered": true,
+        "prefix_verified": true
+      }
+    ]
+  },
+  "sealed": {
+    "derivation": "sealed_seed(salt, slot_index), salt = os.urandom(32)",
+    "salt_commitment_sha256": "d104e20cf4e63435904cce44c613f161ab48a948bc6d264fc44220333d93b5d8",
+    "salt_revealed_hex": "a6c689d715cbcf7fb2cfae7e85291ad1904961cb17fabdfe40805c53592c564f",
+    "seeds": {
+      "held_out_00": 4728820542370076640,
+      "held_out_01": 3378272267888630457,
+      "held_out_02": 6922567671423773009,
+      "held_out_03": 3113545972257079202,
+      "held_out_04": 15275666069574695813,
+      "held_out_05": 6249030028188991824,
+      "held_out_06": 5181495323995139102,
+      "held_out_07": 8600015118890203433,
+      "held_out_08": 6720496026731579267,
+      "held_out_09": 17892385120289103586,
+      "held_out_10": 17384792228968666397,
+      "held_out_11": 4843344735273576297,
+      "held_out_12": 9304144563570098573,
+      "held_out_13": 11226922955147196294,
+      "held_out_14": 13754605555849553229,
+      "held_out_15": 2573224311463697813
+    },
+    "recovered": 0,
+    "prefix_verified": 0,
+    "n_slots": 16,
+    "collisions": [],
+    "total_scan_s": 0.04013538360595703,
+    "reveal_replay_verified": 16,
+    "scan_coverage_of_band": 3.5527136788006934e-15,
+    "expected_recoveries_at_this_budget": 5.68434188608111e-14,
+    "trials": [
+      {
+        "matches": [],
+        "candidates_checked": 65536,
+        "elapsed_s": 0.0029985904693603516,
+        "slot": "held_out_00",
+        "recovered": false,
+        "prefix_verified": false
+      },
+      {
+        "matches": [],
+        "candidates_checked": 65536,
+        "elapsed_s": 0.002001047134399414,
+        "slot": "held_out_01",
+        "recovered": false,
+        "prefix_verified": false
+      },
+      {
+        "matches": [],
+        "candidates_checked": 65536,
+        "elapsed_s": 0.002999544143676758,
+        "slot": "held_out_02",
+        "recovered": false,
+        "prefix_verified": false
+      },
+      {
+        "matches": [],
+        "candidates_checked": 65536,
+        "elapsed_s": 0.0020058155059814453,
+        "slot": "held_out_03",
+        "recovered": false,
+        "prefix_verified": false
+      },
+      {
+        "matches": [],
+        "candidates_checked": 65536,
+        "elapsed_s": 0.0029997825622558594,
+        "slot": "held_out_04",
+        "recovered": false,
+        "prefix_verified": false
+      },
+      {
+        "matches": [],
+        "candidates_checked": 65536,
+        "elapsed_s": 0.0020003318786621094,
+        "slot": "held_out_05",
+        "recovered": false,
+        "prefix_verified": false
+      },
+      {
+        "matches": [],
+        "candidates_checked": 65536,
+        "elapsed_s": 0.002998828887939453,
+        "slot": "held_out_06",
+        "recovered": false,
+        "prefix_verified": false
+      },
+      {
+        "matches": [],
+        "candidates_checked": 65536,
+        "elapsed_s": 0.002000570297241211,
+        "slot": "held_out_07",
+        "recovered": false,
+        "prefix_verified": false
+      },
+      {
+        "matches": [],
+        "candidates_checked": 65536,
+        "elapsed_s": 0.002000570297241211,
+        "slot": "held_out_08",
+        "recovered": false,
+        "prefix_verified": false
+      },
+      {
+        "matches": [],
+        "candidates_checked": 65536,
+        "elapsed_s": 0.003072023391723633,
+        "slot": "held_out_09",
+        "recovered": false,
+        "prefix_verified": false
+      },
+      {
+        "matches": [],
+        "candidates_checked": 65536,
+        "elapsed_s": 0.0020074844360351562,
+        "slot": "held_out_10",
+        "recovered": false,
+        "prefix_verified": false
+      },
+      {
+        "matches": [],
+        "candidates_checked": 65536,
+        "elapsed_s": 0.00304412841796875,
+        "slot": "held_out_11",
+        "recovered": false,
+        "prefix_verified": false
+      },
+      {
+        "matches": [],
+        "candidates_checked": 65536,
+        "elapsed_s": 0.0020079612731933594,
+        "slot": "held_out_12",
+        "recovered": false,
+        "prefix_verified": false
+      },
+      {
+        "matches": [],
+        "candidates_checked": 65536,
+        "elapsed_s": 0.002998828887939453,
+        "slot": "held_out_13",
+        "recovered": false,
+        "prefix_verified": false
+      },
+      {
+        "matches": [],
+        "candidates_checked": 65536,
+        "elapsed_s": 0.0019998550415039062,
+        "slot": "held_out_14",
+        "recovered": false,
+        "prefix_verified": false
+      },
+      {
+        "matches": [],
+        "candidates_checked": 65536,
+        "elapsed_s": 0.003000020980834961,
+        "slot": "held_out_15",
+        "recovered": false,
+        "prefix_verified": false
+      }
+    ]
+  },
+  "note": "the sealed band keeps the public band structure (every seed >= EVAL_SEED_BASE, disjoint from train by construction) but the concrete seeds are a keyed function of a salt the adversary does not hold; the same scan that recovers every public seed recovers none of the sealed ones, and revealing the salt afterwards replays the sealed evaluation exactly"
+}

@@ -147,6 +147,7 @@ from .eval_seeds import (
     evaluate_eval_set,
     assert_no_regression,
     EVAL_SET_VERSION,
+    sealed_eval_seeds,
 )
 from .realism import (
     stylized_facts,
@@ -176,6 +177,10 @@ from .manipulation import (
     pump_and_dump_schedule,
     momentum_follower_policy,
     DISCLAIMER,
+    AsymmetricSchedule,
+    AsymmetricResult,
+    asymmetric_round_trip_schedule,
+    run_asymmetric_probe,
 )
 from .ecology import (
     run_ecology,
@@ -284,6 +289,7 @@ __all__ = [
     "evaluate_eval_set",
     "assert_no_regression",
     "EVAL_SET_VERSION",
+    "sealed_eval_seeds",
     "REWARD_SCHEMES",
     "list_reward_schemes",
     "build_scheme_rubric",
@@ -375,6 +381,10 @@ __all__ = [
     "pump_and_dump_schedule",
     "momentum_follower_policy",
     "DISCLAIMER",
+    "AsymmetricSchedule",
+    "AsymmetricResult",
+    "asymmetric_round_trip_schedule",
+    "run_asymmetric_probe",
     # Ecology: strategies compete and populations shift.
     "run_ecology",
     "population_table",

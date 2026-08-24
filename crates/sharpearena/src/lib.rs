@@ -29,8 +29,8 @@ pub use contract::CONTRACT_VERSION;
 
 pub mod scenario_gen;
 pub use scenario_gen::{
-    cross_regime_split, generate_scenario, level_seed, train_test_split, DistributionMode,
-    ScenarioSpec,
+    cross_regime_split, generate_scenario, level_seed, sealed_seed, train_test_split,
+    DistributionMode, ScenarioSpec, EVAL_SEED_BASE, MIN_SEALED_SALT_BYTES,
 };
 
 // --- Information-disclosure difficulty (the axis orthogonal to the regime tiers) -----------

@@ -244,6 +244,100 @@ def pump_and_dump_schedule(p: ManipulationParams) -> Callable[[int], float]:
     return weight
 
 
+@dataclass(frozen=True)
+class AsymmetricSchedule:
+    """An asymmetric round trip: accumulate over ``up_bars``, unwind over ``down_bars``.
+
+    The positive-control family for the concave-impact ablation. Under non-linear
+    permanent impact the profitable round trips Huberman-Stanzl (2004) and Gatheral (2010)
+    exhibit are *asymmetric*: under a concave impact function, slicing a leg into ``n``
+    pieces moves the price by a factor ``n**(1 - exponent)`` more than one block of the
+    same size, so accumulating slowly and liquidating in a block (or the reverse) is the
+    shape that theory says can pay. The symmetric :func:`pump_and_dump_schedule` never
+    searches that shape; this family does.
+
+    ``up_bars`` / ``down_bars`` set the duration ratio of the two legs. ``size_split`` is
+    the block fraction: the share of each leg's notional executed in a single bar at the
+    turn of the trip (the last pump bar and the first dump bar), with the remainder spread
+    uniformly over the leg's other bars. A one-bar leg is a block regardless of
+    ``size_split``; ``size_split = 1 / n`` on an ``n``-bar leg is the uniform ramp, and
+    :meth:`uniform` builds that. Everything else about the trip (start bar, hold, peak
+    weight) comes from the :class:`ManipulationParams` it is paired with, and the trip is
+    still flat-to-flat, which is what keeps ``impact_pnl`` an attribution rather than a
+    directional bet.
+    """
+
+    up_bars: int
+    down_bars: int
+    size_split: float
+
+    def __post_init__(self) -> None:
+        if min(self.up_bars, self.down_bars) < 1:
+            raise ValueError("up_bars and down_bars must be >= 1")
+        if not 0.0 < self.size_split <= 1.0:
+            raise ValueError("size_split must lie in (0, 1]")
+
+    @classmethod
+    def uniform(cls, up_bars: int, down_bars: int) -> "AsymmetricSchedule":
+        """Linear ramps of asymmetric duration (no block concentration on either leg)."""
+        return cls(up_bars=up_bars, down_bars=down_bars, size_split=1.0 / max(up_bars, down_bars))
+
+    @property
+    def duration_ratio(self) -> float:
+        return self.up_bars / self.down_bars
+
+    def to_dict(self) -> dict:
+        return {
+            "up_bars": self.up_bars,
+            "down_bars": self.down_bars,
+            "size_split": self.size_split,
+            "duration_ratio": self.duration_ratio,
+        }
+
+
+def asymmetric_round_trip_schedule(
+    p: ManipulationParams, schedule: AsymmetricSchedule
+) -> Callable[[int], float]:
+    """The asymmetric round trip as a bar-indexed target weight, flat before and after.
+
+    ``p.push_bars`` and ``p.dump_bars`` are ignored; the leg lengths come from
+    ``schedule``. ``p.start_bar``, ``p.hold_bars`` and ``p.push_weight`` are honoured.
+    """
+    span = p.start_bar + schedule.up_bars + p.hold_bars + schedule.down_bars
+    if span >= p.n_days:
+        raise ValueError("the asymmetric round trip must finish inside the episode")
+    a = p.start_bar
+    b = a + schedule.up_bars
+    c = b + p.hold_bars
+    d = c + schedule.down_bars
+    n_up, n_down, s = schedule.up_bars, schedule.down_bars, schedule.size_split
+
+    def _cum_up(k: int) -> float:
+        # Fraction of the pump leg accumulated after its k-th bar (1-indexed): the block of
+        # size ``s`` lands on the last bar, the rest is spread evenly over the bars before.
+        if n_up == 1 or k >= n_up:
+            return 1.0
+        return (1.0 - s) * k / (n_up - 1)
+
+    def _remaining_down(k: int) -> float:
+        # Fraction of the position still held after the k-th dump bar: the block of size
+        # ``s`` goes first, the rest is unwound evenly over the bars after.
+        if n_down == 1 or k >= n_down:
+            return 0.0
+        return (1.0 - s) * (1.0 - (k - 1) / (n_down - 1))
+
+    def weight(bar: int) -> float:
+        if bar < a or bar >= d:
+            return 0.0
+        if bar < b:
+            return p.push_weight * _cum_up(bar - a + 1)
+        if bar < c:
+            return p.push_weight
+        return p.push_weight * _remaining_down(bar - c + 1)
+
+    return weight
+
+
 def momentum_follower_policy(gain: float, max_weight: float) -> BarPolicy:
     """A follower that chases the last cleared move: the crowd a pump needs to exist.
 
@@ -270,12 +364,17 @@ def momentum_follower_policy(gain: float, max_weight: float) -> BarPolicy:
 # -- the probe --------------------------------------------------------------
 
 
-def _rollout(p: ManipulationParams, seed: int) -> tuple[float, float]:
+def _rollout(
+    p: ManipulationParams,
+    seed: int,
+    weight_at: Optional[Callable[[int], float]] = None,
+) -> tuple[float, float]:
     """Run one episode and return ``(manipulator_pnl, peak_fractional_price_move)``.
 
     P&L is the manipulator's end-of-episode NAV less its starting capital. The peak price
     move is the largest fractional excursion of the first symbol's cleared mid away from
     its opening level, which is the diagnostic's read on how far the push actually got.
+    ``weight_at`` defaults to the symmetric :func:`pump_and_dump_schedule`.
     """
     env = EndogenousMarketEnv(
         n_agents=1 + p.n_followers,
@@ -292,7 +391,8 @@ def _rollout(p: ManipulationParams, seed: int) -> tuple[float, float]:
     )
     obs, _ = env.reset(seed=int(seed))
     n_symbols = len(env.symbols)
-    weight_at = pump_and_dump_schedule(p)
+    if weight_at is None:
+        weight_at = pump_and_dump_schedule(p)
     followers = {
         a: momentum_follower_policy(p.follower_gain, p.max_weight)
         for a in env.possible_agents
@@ -353,6 +453,63 @@ def run_manipulation_probe(
         push_weight=p.push_weight,
         follower_gain=p.follower_gain,
         impact_exponent=p.impact_exponent,
+    )
+
+
+@dataclass(frozen=True)
+class AsymmetricResult(ManipulationResult):
+    """A :class:`ManipulationResult` for an asymmetric round trip, carrying its shape."""
+
+    up_bars: int = 0
+    down_bars: int = 0
+    size_split: float = 0.0
+
+    def to_dict(self) -> dict:
+        out = super().to_dict()
+        out.update(
+            up_bars=self.up_bars,
+            down_bars=self.down_bars,
+            size_split=self.size_split,
+            duration_ratio=self.up_bars / self.down_bars if self.down_bars else None,
+        )
+        return out
+
+
+def run_asymmetric_probe(
+    *,
+    params: Optional[ManipulationParams] = None,
+    schedule: AsymmetricSchedule,
+    seed: int = 0,
+) -> AsymmetricResult:
+    """Score one asymmetric round trip against its own zero-impact reference.
+
+    Identical to :func:`run_manipulation_probe` except that the manipulator follows
+    :func:`asymmetric_round_trip_schedule` for ``schedule``. Same attribution, same
+    pairing, same followers, same seed on both legs. This is the positive-control probe:
+    the shape under which theory permits a profit under concave permanent impact, so a
+    profit found here under an exponent below one and not under the linear exponent is the
+    instrument firing where it should and staying silent where it should.
+    """
+    p = params or ManipulationParams()
+    weight_at = asymmetric_round_trip_schedule(p, schedule)
+    live_pnl, peak_move = _rollout(p, seed, weight_at)
+    reference_pnl, _ = _rollout(replace(p, kyle_lambda=0.0, eta=0.0), seed, weight_at)
+    impact_pnl = live_pnl - reference_pnl
+    return AsymmetricResult(
+        seed=int(seed),
+        profitable=impact_pnl > 0.0,
+        impact_pnl=impact_pnl,
+        live_pnl=live_pnl,
+        reference_pnl=reference_pnl,
+        peak_price_move=peak_move,
+        kyle_lambda=p.kyle_lambda,
+        eta=p.eta,
+        push_weight=p.push_weight,
+        follower_gain=p.follower_gain,
+        impact_exponent=p.impact_exponent,
+        up_bars=schedule.up_bars,
+        down_bars=schedule.down_bars,
+        size_split=schedule.size_split,
     )
 
 
@@ -452,13 +609,17 @@ def size_response(
 
 __all__ = [
     "DISCLAIMER",
+    "AsymmetricResult",
+    "AsymmetricSchedule",
     "BoundaryReport",
     "ManipulationParams",
     "ManipulationResult",
     "SizeResponse",
+    "asymmetric_round_trip_schedule",
     "impact_boundary_sweep",
     "momentum_follower_policy",
     "pump_and_dump_schedule",
+    "run_asymmetric_probe",
     "run_manipulation_probe",
     "size_response",
 ]

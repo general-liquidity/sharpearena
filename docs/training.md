@@ -117,3 +117,18 @@ The repo ships two independent train/eval split conventions; they do not interac
 Both make train and eval disjoint by construction; the band split is a measurement
 instrument (one gap number), the offset is the operational convention every eval-mode
 dataset draws from.
+
+### Sealed eval seeds (opt-in)
+
+Disjointness says the agent never trained on an eval seed; it does not say the eval
+seeds are unknown. The public `EVAL_SEEDS` are fixed constants, and a bounded public
+band is recoverable from one observed bar by a table scan (the paper's predictability
+probe). `sealed_eval_seeds(salt)` derives the same named slots from a secret salt via
+`sharpearena::sealed_seed` (a keyed derivation; every result is still
+`>= EVAL_SEED_BASE`, so the disjointness check needs no salt), and
+`evaluate_eval_set(..., salt=salt)` runs the unchanged protocol on them. Workflow:
+generate `salt = os.urandom(32)` and keep it outside the repo and the agent's reach;
+publish `sha256(salt)` before the run (for example in the SharpeBench forward
+attestation); evaluate; reveal the salt afterwards so anyone can recompute the seeds
+and replay the run. A revealed salt is spent. The public set and its
+`EVAL_SET_VERSION` are unchanged.

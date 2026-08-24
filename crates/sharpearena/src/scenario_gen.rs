@@ -391,6 +391,73 @@ pub fn cross_regime_split(
     (train, test)
 }
 
+// --- Sealed evaluation seeds ---------------------------------------------------------------
+
+/// Start of the held-out evaluation band `[EVAL_SEED_BASE, u64::MAX)`. Train seeds live
+/// in `[0, EVAL_SEED_BASE)`, so any seed at or above this value is disjoint from the
+/// train band by construction. Mirrors `sharpearena.dataset.EVAL_SEED_BASE`.
+pub const EVAL_SEED_BASE: u64 = 1_000_000;
+
+/// Minimum salt length [`sealed_seed`]'s callers should enforce at the operator
+/// boundary. The derivation is only as unguessable as the salt: 16 random bytes put the
+/// salt itself outside any enumeration budget, whereas a short passphrase re-creates the
+/// bounded-band table-scan the predictability probe measured.
+pub const MIN_SEALED_SALT_BYTES: usize = 16;
+
+/// SplitMix64's output finalizer (the `next_unit` mixing step without the state
+/// increment): an invertible 64-bit bijection with full avalanche.
+fn mix64(mut z: u64) -> u64 {
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
+}
+
+/// Derive the seed for the named eval slot `slot` under a secret `salt`, landing in the
+/// held-out band `[EVAL_SEED_BASE, u64::MAX)`.
+///
+/// The predictability probe showed that a *public* bounded seed band is invertible by a
+/// table scan (one observed bar, about a second), so the environment's unpredictability
+/// rests entirely on seed secrecy and entropy. Sealed seeds keep the public band
+/// *structure* (every sealed seed is `>= EVAL_SEED_BASE`, so disjointness from the train
+/// band holds by construction and needs no salt to verify) while making the concrete
+/// seeds a function of a salt the evaluator keeps outside the repository.
+///
+/// Construction: the salt bytes are absorbed by FNV-1a/64 (with the byte length folded
+/// in), then the digest, a fixed domain tag, and the slot index are driven through three
+/// rounds of the SplitMix64 finalizer, chaining the salt digest back in between rounds
+/// so no single round's inverse exposes the salt. The mixed word is reduced modulo the
+/// band width and offset by `EVAL_SEED_BASE`. Deterministic in `(salt, slot)`; distinct
+/// salts or slots give (with overwhelming probability) distinct seeds.
+///
+/// **What this is and is not.** It is a keyed PRF-*style* derivation built only from
+/// primitives the crate already carries (no crypto dependency), and it is *not* a
+/// certified cryptographic MAC: FNV-1a is not collision-resistant and the SplitMix64
+/// finalizer is a public bijection, so an adversary holding several `(slot, seed)` pairs
+/// may be able to recover the absorbed salt digest algebraically. What it buys: with a
+/// high-entropy salt no adversary who knows only the band structure, the slot names, and
+/// the generator can enumerate the seeds, which is precisely the hole the probe measured.
+/// Any seed that becomes public (via the observed tape) is spent; the salt is revealed
+/// after the evaluation so the run replays, and never reused. Operators who need
+/// resistance to salt recovery from disclosed seeds should derive the salt per evaluation
+/// from a real KDF and treat this function as the final band-mapping step only.
+pub fn sealed_seed(salt: &[u8], slot: u64) -> u64 {
+    const DOMAIN: u64 = 0x5365_616C_6564_4576; // "SealedEv"
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for &b in salt {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    h ^= salt.len() as u64;
+    h = h.wrapping_mul(0x0000_0100_0000_01b3);
+
+    let mut s = mix64(h ^ DOMAIN);
+    s = mix64(s ^ slot.wrapping_mul(0x9E37_79B9_7F4A_7C15));
+    s = mix64(s ^ h.rotate_left(32));
+
+    let span = u64::MAX - EVAL_SEED_BASE;
+    EVAL_SEED_BASE + (s % span)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -880,5 +947,84 @@ mod tests {
             let b = serde_json::to_string(&generate_scenario(&out_dist, seed)).unwrap();
             assert_ne!(a, b, "cross-regime panels must differ at seed {seed}");
         }
+    }
+
+    // -- sealed evaluation seeds ---------------------------------------------------------
+
+    const SALT_A: &[u8] = b"operator-secret-salt-A-0123456789";
+    const SALT_B: &[u8] = b"operator-secret-salt-B-0123456789";
+
+    #[test]
+    fn sealed_seed_lands_in_held_out_band() {
+        for slot in 0..256u64 {
+            for salt in [SALT_A, SALT_B, b"x".as_slice(), b"".as_slice()] {
+                assert!(sealed_seed(salt, slot) >= EVAL_SEED_BASE);
+            }
+        }
+    }
+
+    #[test]
+    fn sealed_seed_is_deterministic() {
+        for slot in 0..64u64 {
+            assert_eq!(sealed_seed(SALT_A, slot), sealed_seed(SALT_A, slot));
+        }
+        // Pinned value: the Python tests assert the same number, so a change to the
+        // derivation is a contract change (a sealed evaluation would stop replaying).
+        assert_eq!(sealed_seed(SALT_A, 0), 0x040a_380d_f918_05c2);
+    }
+
+    #[test]
+    fn sealed_seed_is_salt_and_slot_sensitive() {
+        let mut seen = std::collections::HashSet::new();
+        for slot in 0..64u64 {
+            let a = sealed_seed(SALT_A, slot);
+            let b = sealed_seed(SALT_B, slot);
+            assert_ne!(a, b, "salts must not collide at slot {slot}");
+            assert!(seen.insert(a), "slot collision under salt A at {slot}");
+            assert!(seen.insert(b), "slot collision under salt B at {slot}");
+        }
+        // A single flipped salt byte moves every slot.
+        let mut flipped = SALT_A.to_vec();
+        flipped[0] ^= 1;
+        for slot in 0..16u64 {
+            assert_ne!(sealed_seed(SALT_A, slot), sealed_seed(&flipped, slot));
+        }
+        // The length fold distinguishes a salt from its zero-extended form.
+        let mut extended = SALT_A.to_vec();
+        extended.push(0);
+        assert_ne!(sealed_seed(SALT_A, 0), sealed_seed(&extended, 0));
+    }
+
+    #[test]
+    fn sealed_seed_is_disjoint_from_train_band() {
+        let train = ScenarioSpec {
+            start_level: 0,
+            num_levels: EVAL_SEED_BASE,
+            ..ScenarioSpec::default()
+        };
+        for slot in 0..64u64 {
+            let s = sealed_seed(SALT_A, slot);
+            assert!(s >= train.start_level + train.num_levels);
+        }
+    }
+
+    #[test]
+    fn sealed_seed_is_not_near_the_public_band_start() {
+        // The probe's table scan covers a 2^16 window; sealed seeds are spread over the
+        // whole 2^64 band, so none of these should fall inside any such window at the
+        // base (probability 2^-48 per seed).
+        for slot in 0..64u64 {
+            let s = sealed_seed(SALT_A, slot);
+            assert!(s - EVAL_SEED_BASE >= 1 << 16);
+        }
+    }
+
+    #[test]
+    fn sealed_seed_generates_a_valid_scenario() {
+        let spec = ScenarioSpec::default();
+        let seed = sealed_seed(SALT_A, 3);
+        let a = serde_json::to_string(&generate_scenario(&spec, seed)).unwrap();
+        let b = serde_json::to_string(&generate_scenario(&spec, seed)).unwrap();
+        assert_eq!(a, b);
     }
 }

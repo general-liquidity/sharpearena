@@ -270,3 +270,129 @@ def test_serialised_results_carry_the_disclaimer():
         size_response(params=_P, push_weights=(0.2,), seeds=(0,)).to_dict()["disclaimer"]
         == DISCLAIMER
     )
+
+
+# ---------------------------------------------------------------------------
+# The asymmetric round trip (positive-control family for the concave ablation)
+# ---------------------------------------------------------------------------
+
+from sharpearena.manipulation import (  # noqa: E402
+    AsymmetricSchedule,
+    asymmetric_round_trip_schedule,
+    run_asymmetric_probe,
+)
+
+
+@pytest.mark.parametrize(
+    "schedule",
+    [
+        AsymmetricSchedule.uniform(9, 1),
+        AsymmetricSchedule.uniform(1, 9),
+        AsymmetricSchedule(up_bars=6, down_bars=3, size_split=0.5),
+        AsymmetricSchedule(up_bars=2, down_bars=7, size_split=0.9),
+        AsymmetricSchedule(up_bars=1, down_bars=1, size_split=1.0),
+    ],
+)
+def test_asymmetric_schedule_is_still_flat_to_flat(schedule):
+    """Whatever its shape, the trip must start flat, peak at push_weight and end flat,
+    monotone in on the pump leg and monotone out on the dump leg. A trip that does not
+    return to flat is a directional bet and the attribution would measure the wrong thing."""
+    p = ManipulationParams(n_days=40)
+    weight = asymmetric_round_trip_schedule(p, schedule)
+    span = p.start_bar + schedule.up_bars + p.hold_bars + schedule.down_bars
+    path = [weight(bar) for bar in range(span + 3)]
+
+    assert path[0] == 0.0
+    assert all(w == 0.0 for w in path[: p.start_bar])
+    assert all(w == 0.0 for w in path[span:])
+    assert max(path) == pytest.approx(p.push_weight)
+    peak = path.index(max(path))
+    assert path[:peak] == sorted(path[:peak])
+    assert path[peak:] == sorted(path[peak:], reverse=True)
+    # The pump leg finishes exactly at the peak and the dump leg finishes exactly flat.
+    assert path[p.start_bar + schedule.up_bars - 1] == pytest.approx(p.push_weight)
+    assert path[span - 1] == 0.0
+
+
+def test_uniform_asymmetric_schedule_reproduces_the_symmetric_ramp():
+    """With equal legs and no block concentration the family collapses onto the published
+    symmetric schedule bar for bar, so the two arms share one origin."""
+    p = ManipulationParams(n_days=40, push_bars=5, dump_bars=5)
+    sym = pump_and_dump_schedule(p)
+    asym = asymmetric_round_trip_schedule(p, AsymmetricSchedule.uniform(5, 5))
+    for bar in range(p.n_days):
+        assert asym(bar) == pytest.approx(sym(bar))
+
+
+def test_size_split_concentrates_the_turn():
+    """A larger block fraction leaves more of the pump for its last bar and takes more of
+    the unwind on its first bar; the leg totals are unchanged."""
+    p = ManipulationParams(n_days=40)
+    slow = asymmetric_round_trip_schedule(p, AsymmetricSchedule(6, 6, size_split=1.0 / 6))
+    block = asymmetric_round_trip_schedule(p, AsymmetricSchedule(6, 6, size_split=0.9))
+    a = p.start_bar
+    penultimate_pump = a + 6 - 2
+    first_dump = a + 6 + p.hold_bars
+    assert block(penultimate_pump) < slow(penultimate_pump)
+    assert block(first_dump) < slow(first_dump)
+    assert block(a + 5) == pytest.approx(p.push_weight) == pytest.approx(slow(a + 5))
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"up_bars": 0, "down_bars": 5, "size_split": 0.5},
+        {"up_bars": 5, "down_bars": 0, "size_split": 0.5},
+        {"up_bars": 5, "down_bars": 5, "size_split": 0.0},
+        {"up_bars": 5, "down_bars": 5, "size_split": 1.5},
+        {"up_bars": 5, "down_bars": 5, "size_split": -0.1},
+    ],
+)
+def test_asymmetric_schedule_rejects_incoherent_shapes(kwargs):
+    with pytest.raises(ValueError):
+        AsymmetricSchedule(**kwargs)
+
+
+def test_asymmetric_schedule_must_fit_inside_the_episode():
+    p = ManipulationParams(n_days=20)
+    with pytest.raises(ValueError, match="inside the episode"):
+        asymmetric_round_trip_schedule(p, AsymmetricSchedule.uniform(10, 10))
+
+
+@needs_pz
+def test_asymmetric_probe_is_deterministic_and_carries_its_shape():
+    sc = AsymmetricSchedule.uniform(7, 1)
+    a = run_asymmetric_probe(params=_P, schedule=sc, seed=0)
+    b = run_asymmetric_probe(params=_P, schedule=sc, seed=0)
+    c = run_asymmetric_probe(params=_P, schedule=sc, seed=1)
+    d = run_asymmetric_probe(params=_P, schedule=AsymmetricSchedule.uniform(1, 7), seed=0)
+
+    assert a.to_dict() == b.to_dict()
+    assert a.impact_pnl != c.impact_pnl
+    assert a.impact_pnl != d.impact_pnl
+    blob = a.to_dict()
+    assert blob["up_bars"] == 7 and blob["down_bars"] == 1
+    assert blob["duration_ratio"] == pytest.approx(7.0)
+    assert DISCLAIMER in blob["disclaimer"]
+
+
+@needs_pz
+def test_asymmetric_probe_with_equal_uniform_legs_matches_the_symmetric_probe():
+    """The additive family must not have perturbed the published path: the uniform
+    equal-leg asymmetric probe and the symmetric probe are the same computation."""
+    sym = run_manipulation_probe(params=_P, seed=0)
+    asym = run_asymmetric_probe(
+        params=_P, schedule=AsymmetricSchedule.uniform(_P.push_bars, _P.dump_bars), seed=0
+    )
+    assert asym.impact_pnl == sym.impact_pnl
+    assert asym.live_pnl == sym.live_pnl
+
+
+@needs_pz
+def test_zero_impact_reference_leaves_nothing_to_attribute_on_the_asymmetric_trip():
+    result = run_asymmetric_probe(
+        params=replace(_P, kyle_lambda=0.0, eta=0.0),
+        schedule=AsymmetricSchedule.uniform(6, 2),
+        seed=0,
+    )
+    assert result.impact_pnl == 0.0

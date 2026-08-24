@@ -16,6 +16,15 @@ round-trip unprofitability is a theorem (Huberman-Stanzl 2004), so the linear
 probe can only confirm theory. The ``concave`` key reruns the same sweeps at
 ``impact_exponent`` 0.5 and 0.7 (permanent impact concave in flow, the regime
 in which theory predicts manipulation can pay), with the same per-seed CIs.
+
+Positive control (the ``positive_control`` key): the symmetric schedule above never
+searches the asymmetric round trips Huberman-Stanzl (2004) show can profit under
+non-linear permanent impact. This block runs a small schedule search over the
+``AsymmetricSchedule`` family (up/down duration ratio and block-fraction size split)
+at exponents 1.0, 0.7 and 0.5, on a pure-impact theory arm (no followers, no
+temporary impact), a temporary-impact arm and the canonical follower arm, looking
+for ANY profitable round trip with per-seed CIs. The linear and concave arms above
+are untouched: their code paths and evidence numbers are byte-identical.
 """
 from __future__ import annotations
 
@@ -30,8 +39,10 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from sharpearena import (
+    AsymmetricSchedule,
     ManipulationParams,
     impact_boundary_sweep,
+    run_asymmetric_probe,
     run_manipulation_probe,
     size_response,
 )
@@ -50,6 +61,21 @@ AXES: dict[str, tuple[float, ...] | None] = {
 }
 # The concavity ablation: permanent-impact exponents below 1.0 (0.5 = square-root law).
 CONCAVE_EXPONENTS = (0.5, 0.7)
+
+# Positive control: the asymmetric-schedule search. Exponents include 1.0 so the linear
+# theorem is tested on the same shapes. Leg lengths keep the symmetric trip's 10 bars of
+# trading; (9, 1) is slow-accumulate / block-liquidate, the Gatheral (2010) shape, and
+# (1, 9) is its mirror. Size splits are the block fraction at the turn; None = uniform.
+POSITIVE_CONTROL_EXPONENTS = (1.0, 0.7, 0.5)
+POSITIVE_CONTROL_LEGS = ((1, 9), (2, 8), (5, 5), (8, 2), (9, 1))
+POSITIVE_CONTROL_SPLITS = (None, 0.5, 0.9)
+# Arms: pure permanent impact (the theory case), temporary impact added, and the canonical
+# follower ecology of the linear/concave arms.
+POSITIVE_CONTROL_ARMS = {
+    "theory": {"eta": 0.0, "follower_gain": 0.0},
+    "temporary_impact": {"eta": 0.05, "follower_gain": 0.0},
+    "canonical": {"eta": 0.05, "follower_gain": 30.0},
+}
 
 
 def main() -> None:
@@ -146,6 +172,83 @@ def main() -> None:
             or any(v > 0.0 for v in c_size["impact_pnl"]),
         }
 
+    # Positive control: the asymmetric schedule search. Additive to the arms above; the
+    # symmetric probe is never re-run here and its numbers are not touched.
+    positive_control: dict = {"arms": {}, "summary": {}}
+    for arm_name, arm_overrides in POSITIVE_CONTROL_ARMS.items():
+        arm_p = replace(params, **arm_overrides)
+        by_exponent: dict[str, dict] = {}
+        for exponent in POSITIVE_CONTROL_EXPONENTS:
+            ep = replace(arm_p, impact_exponent=exponent)
+            points = []
+            for up, down in POSITIVE_CONTROL_LEGS:
+                for split in POSITIVE_CONTROL_SPLITS:
+                    sched = (
+                        AsymmetricSchedule.uniform(up, down)
+                        if split is None
+                        else AsymmetricSchedule(up, down, split)
+                    )
+                    row = [
+                        run_asymmetric_probe(params=ep, schedule=sched, seed=s).impact_pnl
+                        for s in SEEDS
+                    ]
+                    st = _stats(row)
+                    points.append(
+                        {
+                            "schedule": sched.to_dict(),
+                            "size_split_label": "uniform" if split is None else split,
+                            "per_seed_impact_pnl": row,
+                            "stats": st,
+                            "profitable_mean": st["mean"] > 0.0,
+                            "profitable_ci": st["ci95_lo"] > 0.0,
+                        }
+                    )
+            best = max(points, key=lambda pt: pt["stats"]["mean"])
+            by_exponent[str(exponent)] = {
+                "impact_exponent": exponent,
+                "points": points,
+                "n_profitable_mean": sum(pt["profitable_mean"] for pt in points),
+                "n_profitable_ci": sum(pt["profitable_ci"] for pt in points),
+                "best": {"schedule": best["schedule"], "stats": best["stats"]},
+            }
+        positive_control["arms"][arm_name] = {
+            "params": {
+                "eta": arm_p.eta,
+                "follower_gain": arm_p.follower_gain,
+                "kyle_lambda": arm_p.kyle_lambda,
+                "push_weight": arm_p.push_weight,
+            },
+            "by_exponent": by_exponent,
+        }
+    positive_control["summary"] = {
+        arm: {
+            k: {
+                "n_points": len(v["points"]),
+                "n_profitable_mean": v["n_profitable_mean"],
+                "n_profitable_ci": v["n_profitable_ci"],
+                "best_mean": v["best"]["stats"]["mean"],
+                "best_schedule": v["best"]["schedule"],
+            }
+            for k, v in a["by_exponent"].items()
+        }
+        for arm, a in positive_control["arms"].items()
+    }
+    positive_control["config"] = {
+        "exponents": list(POSITIVE_CONTROL_EXPONENTS),
+        "legs": [list(l) for l in POSITIVE_CONTROL_LEGS],
+        "size_splits": ["uniform" if s is None else s for s in POSITIVE_CONTROL_SPLITS],
+        "arms": POSITIVE_CONTROL_ARMS,
+        "seeds": list(SEEDS),
+        "not_searched": [
+            "push_weight (fixed at the canonical 0.8)",
+            "flow scale / volume_scale (the sub-unit flow calibration is unchanged)",
+            "kyle_lambda (fixed at 0.1)",
+            "legs longer than 10 trading bars, hold longer than 1 bar",
+            "short-side or overshooting round trips",
+            "follower gains other than 0 and 30",
+        ],
+    }
+
     out = {
         "finding": "F5",
         "config": {
@@ -167,6 +270,7 @@ def main() -> None:
         "dispersion": dispersion,
         "concave": concave,
         "ci_convention": "t-based 95% over per-seed impact PnL, df=7",
+        "positive_control": positive_control,
     }
     (EVIDENCE / "f5-manipulation.json").write_text(json.dumps(out, indent=2))
 
@@ -229,6 +333,40 @@ def main() -> None:
     ax_l.legend(fontsize=8)
     fig.tight_layout()
     fig.savefig(FIGURES / "f5-concave.pdf")
+    plt.close(fig)
+
+    # Figure 4: the positive control. One column per exponent, one row per arm; impact P&L
+    # with 95% CIs against the up/down duration ratio, one line per size split.
+    arms = list(positive_control["arms"].items())
+    exps = [str(e) for e in POSITIVE_CONTROL_EXPONENTS]
+    fig, grid_axes = plt.subplots(
+        len(arms), len(exps), figsize=(3.2 * len(exps), 2.6 * len(arms)),
+        sharex=True, sharey="row",
+    )
+    for i, (arm_name, arm) in enumerate(arms):
+        for j, e in enumerate(exps):
+            ax = grid_axes[i][j]
+            pts = arm["by_exponent"][e]["points"]
+            for split in POSITIVE_CONTROL_SPLITS:
+                label = "uniform" if split is None else split
+                sel = [pt for pt in pts if pt["size_split_label"] == label]
+                xs = [pt["schedule"]["duration_ratio"] for pt in sel]
+                ys = [pt["stats"]["mean"] for pt in sel]
+                lo = [pt["stats"]["ci95_lo"] for pt in sel]
+                hi = [pt["stats"]["ci95_hi"] for pt in sel]
+                ax.plot(xs, ys, marker="o", markersize=3, label=f"split {label}")
+                ax.fill_between(xs, lo, hi, alpha=0.15)
+            ax.axhline(0.0, color="black", linewidth=0.8)
+            ax.set_xscale("log")
+            if i == 0:
+                ax.set_title(f"exponent {e}", fontsize=10)
+            if i == len(arms) - 1:
+                ax.set_xlabel("up/down duration ratio")
+            if j == 0:
+                ax.set_ylabel(f"{arm_name}\nimpact P&L", fontsize=9)
+    grid_axes[0][0].legend(fontsize=7, frameon=False)
+    fig.tight_layout()
+    fig.savefig(FIGURES / "f5-positive-control.pdf")
     plt.close(fig)
 
 

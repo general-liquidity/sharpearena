@@ -1,6 +1,6 @@
 \section{Experiments}\label{sec:experiments}
 
-Ten findings: eight core calibrations plus two reviewer-motivated probes. Each subsection states the entry point, seeds and quantity measured, then reports numbers from committed JSON and figures. The exact commands are listed in \cref{app:commands}. The original evidence records SharpeBench 0.5.0 under \texttt{sharpearena} 0.8.0; the concave-impact and predictability extensions were produced on the v0.11.0 source tree, with their configuration serialized beside their results.
+Ten findings, eight core calibrations plus two reviewer-motivated probes, and three follow-ups that close questions the ten left open: an existence witness for rank-eligibility (\cref{sec:witness}), an asymmetric positive control for the manipulation probe (\cref{sec:f5-positive-control}) and sealed evaluation seeds (\cref{sec:sealed-seeds}). Each subsection states the entry point, seeds and quantity measured, then reports numbers from committed JSON and figures. The exact commands are listed in \cref{app:commands}. The original evidence records SharpeBench 0.5.0 under \texttt{sharpearena} 0.8.0; the concave-impact and predictability extensions were produced on the v0.11.0 source tree, and the three follow-ups on the post-0.11.1 tree, each with its configuration serialized beside its results.
 
 Three scoping statements govern the whole section. First, the findings are instrument calibrations on a generator whose canonical tape the realism gate of \cref{sec:f4} declines to certify (1 of 24 runs passes the full conjunction); certification is reported beside the results, not required by them. Second, the byte-identity guarantee covers engine outputs behind F1 through F3 and the canonical linear path; Python evidence reductions are seed-deterministic on one platform but outside the golden-hash path. Third, the core evidence uses the explicitly stated train-band seeds except F3, which exercises the split; the predictability probe uses a separate 50{,}000-start band and reports why a bounded public band is unsafe. Dispersion is reported throughout: F1 and F3 use 2{,}000 seed bootstrap resamples, while F2, F5 and F6 use t-based 95\% intervals over committed vectors.
 
@@ -34,7 +34,7 @@ max\_sharpe & 0.0000 & 0.06 & 0.0000 & 0.00 & 0.0000 & 0.00 \\
 
 \Cref{tab:f1} and \cref{fig:f1} show the corrected board. On Calm, drift is free deflated Sharpe: \texttt{kelly\_vol\_target} and \texttt{equal\_weight\_long} saturate the DSR at 1.0000 (bootstrap CIs $[0.9798, 1.0000]$ and $[0.8343, 1.0000]$) and \texttt{min\_variance} reaches 0.9849, though with a near-vacuous interval of $[0.0264, 1.0000]$. Yet nothing on the board is rank-eligible, because no policy passes the per-run gate on every seed; the best pass\textsuperscript{$k$} rate is 0.75. On Hard the best DSR collapses to 0.1114 and on Extreme to 0.0243, and the long baseline's pass\textsuperscript{$k$} rate degrades monotonically with stress (0.62, 0.31, 0.06). \texttt{momentum} and \texttt{max\_sharpe} lose money outright on every tier (mean per-bar returns down to $-1.6 \times 10^{-3}$ on Extreme).
 
-The reading: eligibility is a conjunction, and each leg catches what the other misses. Deflation alone would crown drift on Calm; pass\textsuperscript{$k$} alone would miss the overfit breadth the deflation discounts. The earlier all-zeros board looked strict but was measuring a unit error. The corrected board is the honest zero: the number a real agent has to beat is a positive, deflated Sharpe that survives every evaluation seed, and no reference policy produces one. One caveat the board cannot answer: no policy of any kind has yet been shown to be rank-eligible, so whether the eligibility set is non-empty for this task family is unestablished; running the closed-form reference policy of \cref{sec:f2} through the kernel's full eligibility conjunction is the named next experiment (\cref{sec:limitations}).
+The reading: eligibility is a conjunction, and each leg catches what the other misses. Deflation alone would crown drift on Calm; pass\textsuperscript{$k$} alone would miss the overfit breadth the deflation discounts. The earlier all-zeros board looked strict but was measuring a unit error. The corrected board is the honest zero: the number a real agent has to beat is a positive, deflated Sharpe that survives every evaluation seed, and no reference policy produces one. One caveat the board cannot answer on its own: no reference policy is rank-eligible, so the board alone does not show that the eligibility set is non-empty for this task family. \Cref{sec:witness} answers that by construction, injecting an out-of-band oracle signal of controlled strength and locating the strength at which the gates first open; the region is non-empty on every tier, and the per-run gate that fails every baseline here is the leg that binds there too.
 
 \begin{figure}[t]
 \centering
@@ -42,6 +42,8 @@ The reading: eligibility is a conjunction, and each leg catches what the other m
 \caption{Deflated Sharpe per baseline per tier with seed-paired bootstrap CIs. Calm saturates the long baselines; Hard and Extreme collapse them toward zero.}
 \label{fig:f1}
 \end{figure}
+
+\input{sections/arena-witness-fragment}
 
 \subsection{F2: Regret against the closed-form reference policy}\label{sec:f2}
 
@@ -137,7 +139,7 @@ That driver now exists as an opt-in \texttt{vol\_clustering} knob on the scenari
 
 A push-and-unwind manipulator is scored against its zero-impact paired reference (identical seed and schedule, $\lambda = \eta = 0$) over eight seeds, so \texttt{impact\_pnl} attributes profit specifically to having moved the price. \texttt{impact\_boundary\_sweep} sweeps permanent impact (Kyle $\lambda$), temporary impact ($\eta$) and the momentum-follower gain over six grid points per axis; \texttt{size\_response} sweeps the push weight over five points. The evidence commits per-seed impact-PnL vectors at every grid point; intervals below are t-based 95\% CIs over the eight seeds.
 
-One theoretical fact frames the whole finding. The market composes linear permanent impact with temporary impact, and under linear, time-independent permanent impact, round-trip price manipulation is unprofitable essentially by theorem: linearity is exactly the condition that rules out price-manipulation quasi-arbitrage \citep{huberman2004price}, and the no-dynamic-arbitrage analysis reaches the same conclusion for related impact-and-decay families \citep{gatheral2010no}. The clean sweep below is therefore a consistency check, not a certification that manipulation cannot pay in synthetic markets. \Cref{sec:f5-concave} runs the completed concave-impact ablation; its null remains limited by sub-unit flow calibration and a fixed symmetric schedule, so an engineered asymmetric large-flow positive control is still outstanding.
+One theoretical fact frames the whole finding. The market composes linear permanent impact with temporary impact, and under linear, time-independent permanent impact, round-trip price manipulation is unprofitable essentially by theorem: linearity is exactly the condition that rules out price-manipulation quasi-arbitrage \citep{huberman2004price}, and the no-dynamic-arbitrage analysis reaches the same conclusion for related impact-and-decay families \citep{gatheral2010no}. The clean sweep below is therefore a consistency check, not a certification that manipulation cannot pay in synthetic markets. \Cref{sec:f5-concave} runs the concave-impact ablation on the same symmetric schedule and reports a null; \cref{sec:f5-positive-control} then searches the asymmetric schedules that null did not cover and finds the profit theory predicts, under concave impact only.
 
 \begin{table}[t]
 \centering
@@ -167,7 +169,7 @@ Push wt. & PnL & 95\% CI \\
 \end{tabular}
 \end{table}
 
-The result (\cref{tab:f5}, \cref{fig:f5}) is the outcome the theory above predicts. On every axis the pump loses money at every sampled coefficient, with every per-point 95\% CI excluding zero, including the realistic center of the grid ($\lambda = 0.1$, $\eta = 0.05$: impact PnL $-3.4 \times 10^{-4}$, CI $[-4.3, -2.6] \times 10^{-4}$). The size response is bounded and decreasing: the least-bad size is the smallest sampled push weight and the loss grows to $-5.1 \times 10^{-4}$ at full size. A profitable region here would contradict the linear specification; the sweep instead agrees with Huberman-Stanzl at every point. The completed concave extension follows immediately. The module's disclaimer remains explicit: it diagnoses the simulator, not a trading strategy.
+The result (\cref{tab:f5}, \cref{fig:f5}) is the outcome the theory above predicts. On every axis the pump loses money at every sampled coefficient, with every per-point 95\% CI excluding zero, including the realistic center of the grid ($\lambda = 0.1$, $\eta = 0.05$: impact PnL $-3.4 \times 10^{-4}$, CI $[-4.3, -2.6] \times 10^{-4}$). The size response is bounded and decreasing: the least-bad size is the smallest sampled push weight and the loss grows to $-5.1 \times 10^{-4}$ at full size. A profitable region here would contradict the linear specification; the sweep instead agrees with Huberman-Stanzl at every point. The two extensions that follow settle what this sweep cannot. The concave ablation keeps the symmetric schedule and still finds no profit, which is a measurement rather than a corollary; the positive control then shows the same probe finding a profitable asymmetric round trip under concave impact and none under linear, so the linear null above is the theorem confirmed by an instrument that can fail, not one that cannot. The module's disclaimer remains explicit: it diagnoses the simulator, not a trading strategy.
 
 \begin{figure}[t]
 \centering
@@ -184,6 +186,8 @@ The result (\cref{tab:f5}, \cref{fig:f5}) is the outcome the theory above predic
 \end{figure}
 
 \input{sections/concave-fragment}
+
+\input{sections/positive-control-fragment}
 
 \subsection{F6: Adverse-selection markout decomposition}\label{sec:f6}
 
@@ -294,3 +298,5 @@ The honest conclusion is methodological. One replicator trajectory is one draw f
 \end{figure}
 
 \input{sections/predictability-fragment}
+
+\input{sections/sealed-seeds-fragment}

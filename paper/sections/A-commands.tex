@@ -1,6 +1,6 @@
 \section{Commands that produce every number}\label{app:commands}
 
-All commands run from the repository root with the \texttt{sharpearena} Python package installed. The original eight evidence files record \texttt{sharpearena} 0.8.0 over SharpeBench 0.5.0. The volatility-clustering remediation shipped at 0.10.0; the concave-impact and predictability extensions are versioned with the 0.11.0 source tree. Each script fixes and serializes its seeds.
+All commands run from the repository root with the \texttt{sharpearena} Python package installed. The original eight evidence files record \texttt{sharpearena} 0.8.0 over SharpeBench 0.5.0. The volatility-clustering remediation shipped at 0.10.0; the concave-impact and predictability extensions are versioned with the 0.11.0 source tree; the positive control, the existence witness and the sealed seeds were produced on the post-0.11.1 tree. Each script fixes and serializes its seeds.
 
 \paragraph{The design-property checks (\cref{sec:leakfree,sec:determinism,sec:replay,sec:contract}).}
 \begin{verbatim}
@@ -44,7 +44,21 @@ python paper/src/make-f5-manipulation.py
   -> paper/evidence/f5-manipulation.json,
      paper/figures/f5-boundaries.pdf, paper/figures/f5-size-response.pdf
 \end{verbatim}
-The same command also runs the concave-impact extension at $\kappa=0.5$ and $0.7$, serializes it under \texttt{concave}, and writes \texttt{paper/figures/f5-concave.pdf} (\cref{sec:f5-concave}).
+The same command also runs the concave-impact extension at $\kappa=0.5$ and $0.7$, serializes it under \texttt{concave}, and writes \texttt{paper/figures/f5-concave.pdf} (\cref{sec:f5-concave}). It then runs the asymmetric positive control (\cref{sec:f5-positive-control}): 135 grid points over five duration ratios, three block fractions and $\kappa \in \{1.0, 0.7, 0.5\}$ on the theory, temporary-impact and canonical arms, eight seeds each, serialized under \texttt{positive\_control} with its \texttt{config} (including the \texttt{not\_searched} list) and written to \texttt{paper/figures/f5-positive-control.pdf}. The \texttt{linear} and \texttt{concave} keys of the evidence file are byte-identical to their previous values.
+
+\paragraph{Rank-eligibility existence witness (\cref{sec:witness}).}
+\begin{verbatim}
+python paper/src/make-witness.py
+  -> paper/evidence/witness.json, paper/figures/witness.pdf
+\end{verbatim}
+The command replays each seed one bar ahead to recover the true next-bar return (asserting that the canonical tape is policy-invariant), mixes it with seeded noise at 13 coarse strengths, scores \texttt{sign\_follow} and \texttt{deadband\_hold} through \texttt{score\_run} on every seed and on the pooled series, and bisects each tier's boundary to a resolution of $0.005$ in $s$ on the held-out band and the F1 table band. The JSON records every strength's per-seed PSR, pooled DSR, bootstrap $p$-value, eligibility flag and the bracketed boundaries behind \cref{tab:witness}.
+
+\paragraph{Sealed evaluation seeds (\cref{sec:sealed-seeds}).}
+\begin{verbatim}
+python paper/src/make-sealed-seeds.py
+  -> paper/evidence/sealed-seeds.json
+\end{verbatim}
+The command derives 16 named slots publicly (the eight committed offsets plus eight drawn from the same $2^{16}$ band) and sealed (the same slots under a 32-byte salt from the operating system, committed by SHA-256 before the run), re-runs the predictability probe's band-scan adversary unchanged against both, then reveals the salt and replays the sealed scenarios against the recomputed seeds. The JSON records the commitment, the revealed salt, the table-build time and every per-trial recovery and replay record.
 
 \paragraph{F6: adverse-selection markouts (\cref{sec:f6}).}
 \begin{verbatim}
