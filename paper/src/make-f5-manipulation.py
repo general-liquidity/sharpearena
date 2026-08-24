@@ -8,8 +8,14 @@ push weight and reports whether the payoff is bounded. The sweep APIs return
 seed means only, so the script additionally collects per-seed impact PnL at
 every grid point via the public ``run_manipulation_probe`` and serializes
 per-seed vectors plus t-based 95% CIs (asserting the per-seed means reproduce
-the API sweeps). Writes JSON plus two figures. These probes diagnose the
+the API sweeps). Writes JSON plus figures. These probes diagnose the
 simulator's impact specification, not agents.
+
+Concave arm (the falsifiability ablation): under linear permanent impact,
+round-trip unprofitability is a theorem (Huberman-Stanzl 2004), so the linear
+probe can only confirm theory. The ``concave`` key reruns the same sweeps at
+``impact_exponent`` 0.5 and 0.7 (permanent impact concave in flow, the regime
+in which theory predicts manipulation can pay), with the same per-seed CIs.
 """
 from __future__ import annotations
 
@@ -42,6 +48,8 @@ AXES: dict[str, tuple[float, ...] | None] = {
     "eta": None,
     "follower_gain": (0.0, 5.0, 15.0, 30.0, 60.0, 120.0),
 }
+# The concavity ablation: permanent-impact exponents below 1.0 (0.5 = square-root law).
+CONCAVE_EXPONENTS = (0.5, 0.7)
 
 
 def main() -> None:
@@ -92,6 +100,52 @@ def main() -> None:
         "stats": [_stats(r) for r in size_rows],
     }
 
+    # Concave arm: the same boundary/size sweeps, per-seed rows and CIs at each
+    # impact_exponent < 1. The scientific question is whether pump-and-dump becomes
+    # profitable anywhere once permanent impact is concave, as Huberman-Stanzl predict.
+    concave: dict[str, dict] = {}
+    for exponent in CONCAVE_EXPONENTS:
+        cp = replace(params, impact_exponent=exponent)
+        c_boundaries = {
+            axis: impact_boundary_sweep(
+                params=cp, axis=axis, values=values, seeds=SEEDS
+            ).to_dict()
+            for axis, values in AXES.items()
+        }
+        c_size = size_response(params=cp, seeds=SEEDS).to_dict()
+        c_dispersion: dict[str, dict] = {}
+        for axis, rep in c_boundaries.items():
+            rows = [_per_seed(replace(cp, **{axis: v})) for v in rep["values"]]
+            for row, mean in zip(rows, rep["impact_pnl"]):
+                assert abs(sum(row) / len(row) - mean) < 1e-12
+            c_dispersion[axis] = {
+                "values": rep["values"],
+                "per_seed_impact_pnl": rows,
+                "stats": [_stats(r) for r in rows],
+            }
+        c_size_rows = [
+            _per_seed(replace(cp, push_weight=w)) for w in c_size["push_weights"]
+        ]
+        for row, mean in zip(c_size_rows, c_size["impact_pnl"]):
+            assert abs(sum(row) / len(row) - mean) < 1e-12
+        c_dispersion["push_weight"] = {
+            "values": c_size["push_weights"],
+            "per_seed_impact_pnl": c_size_rows,
+            "stats": [_stats(r) for r in c_size_rows],
+        }
+        base_row = _per_seed(cp)
+        concave[str(exponent)] = {
+            "impact_exponent": exponent,
+            "base": {"per_seed_impact_pnl": base_row, "stats": _stats(base_row)},
+            "boundaries": c_boundaries,
+            "size_response": c_size,
+            "dispersion": c_dispersion,
+            "profitable_anywhere": any(
+                any(rep["profitable"]) for rep in c_boundaries.values()
+            )
+            or any(v > 0.0 for v in c_size["impact_pnl"]),
+        }
+
     out = {
         "finding": "F5",
         "config": {
@@ -104,11 +158,14 @@ def main() -> None:
                 "eta": params.eta,
                 "push_weight": params.push_weight,
                 "follower_gain": params.follower_gain,
+                "impact_exponent": params.impact_exponent,
             },
+            "concave_exponents": list(CONCAVE_EXPONENTS),
         },
         "boundaries": boundaries,
         "size_response": size,
         "dispersion": dispersion,
+        "concave": concave,
         "ci_convention": "t-based 95% over per-seed impact PnL, df=7",
     }
     (EVIDENCE / "f5-manipulation.json").write_text(json.dumps(out, indent=2))
@@ -137,6 +194,41 @@ def main() -> None:
     ax.set_ylabel("impact P&L")
     fig.tight_layout()
     fig.savefig(FIGURES / "f5-size-response.pdf")
+    plt.close(fig)
+
+    # Figure 3: the concavity ablation. Impact P&L (with 95% CIs) along the permanent-
+    # impact axis and the push-size axis, linear vs each concave exponent.
+    fig, (ax_l, ax_s) = plt.subplots(1, 2, figsize=(8, 3.2), sharey=True)
+
+    def _with_ci(ax, values, disp, label):
+        means = [s["mean"] for s in disp["stats"]]
+        lo = [s["ci95_lo"] for s in disp["stats"]]
+        hi = [s["ci95_hi"] for s in disp["stats"]]
+        ax.plot(values, means, marker="o", label=label)
+        ax.fill_between(values, lo, hi, alpha=0.2)
+
+    _with_ci(ax_l, dispersion["kyle_lambda"]["values"], dispersion["kyle_lambda"], "linear")
+    _with_ci(ax_s, dispersion["push_weight"]["values"], dispersion["push_weight"], "linear")
+    for key, arm in concave.items():
+        _with_ci(
+            ax_l,
+            arm["dispersion"]["kyle_lambda"]["values"],
+            arm["dispersion"]["kyle_lambda"],
+            f"exponent {key}",
+        )
+        _with_ci(
+            ax_s,
+            arm["dispersion"]["push_weight"]["values"],
+            arm["dispersion"]["push_weight"],
+            f"exponent {key}",
+        )
+    for ax, xlabel in ((ax_l, "kyle_lambda"), (ax_s, "push weight")):
+        ax.axhline(0.0, color="black", linewidth=0.8)
+        ax.set_xlabel(xlabel)
+    ax_l.set_ylabel("impact P&L")
+    ax_l.legend(fontsize=8)
+    fig.tight_layout()
+    fig.savefig(FIGURES / "f5-concave.pdf")
     plt.close(fig)
 
 

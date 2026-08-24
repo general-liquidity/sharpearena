@@ -1,6 +1,6 @@
 \section{Commands that produce every number}\label{app:commands}
 
-All commands run from the repository root at the tagged version, with the \texttt{sharpearena} Python package installed. The package version is recorded in every evidence file (\texttt{sharpearena} 0.8.0 over the SharpeBench 0.5.0 kernel for this run). Each evidence script fixes its seeds internally, writes JSON to \texttt{paper/evidence/} and, where a figure carries the finding, a PDF to \texttt{paper/figures/}.
+All commands run from the repository root with the \texttt{sharpearena} Python package installed. The original eight evidence files record \texttt{sharpearena} 0.8.0 over SharpeBench 0.5.0. The volatility-clustering remediation shipped at 0.10.0; the concave-impact and predictability extensions are versioned with the 0.11.0 source tree. Each script fixes and serializes its seeds.
 
 \paragraph{The design-property checks (\cref{sec:leakfree,sec:determinism,sec:replay,sec:contract}).}
 \begin{verbatim}
@@ -44,6 +44,7 @@ python paper/src/make-f5-manipulation.py
   -> paper/evidence/f5-manipulation.json,
      paper/figures/f5-boundaries.pdf, paper/figures/f5-size-response.pdf
 \end{verbatim}
+The same command also runs the concave-impact extension at $\kappa=0.5$ and $0.7$, serializes it under \texttt{concave}, and writes \texttt{paper/figures/f5-concave.pdf} (\cref{sec:f5-concave}).
 
 \paragraph{F6: adverse-selection markouts (\cref{sec:f6}).}
 \begin{verbatim}
@@ -66,6 +67,14 @@ python paper/src/make-f8-ecology.py
      paper/figures/f8-ecology-shocked.pdf
 \end{verbatim}
 The evidence carries the full seed-0 reports (the figures' source) plus, under \texttt{multi\_seed}, per-seed winners, outcome counts and the cross-seed winner distributions behind \cref{tab:f8}.
+
+\paragraph{Generator predictability (\cref{sec:predictability}).}
+\begin{verbatim}
+python paper/src/make-predictability.py
+  -> paper/evidence/predictability.json,
+     paper/figures/predictability.pdf
+\end{verbatim}
+The command evaluates baseline, causal AR(5) and true-seed oracle predictors on 16 seeds per tier, then times exhaustive recovery in a $2^{16}$ candidate band. The JSON contains every per-seed score and the measured search timing.
 
 \paragraph{Dispersion layers.} The F2, F3, F5 and F6 scripts serialize the per-episode or per-seed vectors behind every reported interval into their evidence JSONs (\texttt{per\_episode\_regret}, \texttt{per\_seed\_returns} with \texttt{band\_dsr\_ci} and \texttt{transfer\_gap\_ci}, \texttt{dispersion}, and \texttt{per\_episode\_markout\_per\_unit} with \texttt{gap\_stats} respectively), each with its CI convention recorded in the file, so every interval in \cref{sec:experiments} is recomputable from the committed evidence.
 

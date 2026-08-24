@@ -52,6 +52,10 @@ small documented JSON interface:
   default ``None`` = point estimate) install an elliptic uncertainty set over the impact
   coefficients: each bar then clears at the worst-case ``(lambda, eta)`` inside the
   ellipse and the result carries the coefficients used in ``robust_impact``.
+  ``impact_exponent`` (default ``1.0`` = linear) applies ``sign(Q) * |Q|**exponent`` to
+  the permanent (Kyle) flow term only; at ``1.0`` the native path is byte-identical to
+  the frozen linear dynamics, below ``1.0`` permanent impact is concave in flow (the
+  Huberman-Stanzl regime in which round-trip manipulation can become profitable).
 * ``reset_market() -> json``: ``{symbols, n_agents, n_bars, start_bar, cursor, capital,
   observations:[MarketObservation, ...]}`` (observations in canonical agent order).
 * ``step_market(orders_json) -> json``: ``orders_json`` is a JSON array of shape
@@ -159,6 +163,7 @@ class EndogenousMarketEnv(ParallelEnv):
         max_weight: float = 1.0,
         allow_short: bool = True,
         uncertainty: Optional[Any] = None,
+        impact_exponent: float = 1.0,
     ) -> None:
         if not _HAS_PETTINGZOO:
             raise RuntimeError(
@@ -182,6 +187,7 @@ class EndogenousMarketEnv(ParallelEnv):
         self._max_weight = float(max_weight)
         self._allow_short = bool(allow_short)
         self._uncertainty = _normalize_uncertainty(uncertainty)
+        self._impact_exponent = float(impact_exponent)
 
         self.possible_agents: list[str] = _agent_ids(self._n_agents)
         self.agents: list[str] = list(self.possible_agents)
@@ -215,22 +221,29 @@ class EndogenousMarketEnv(ParallelEnv):
             distribution_mode=self._distribution_mode,
             richness=self._richness,
         )
-        # Only pass the uncertainty kwargs when a set was requested, so a build without one
-        # is the exact call (and the exact native path) every prior version made.
+        # Only pass the uncertainty/concavity kwargs when requested, so a build without
+        # them is the exact call (and the exact native path) every prior version made.
         if self._uncertainty is not None:
             lam, eta_r, rho = self._uncertainty
             kwargs.update(
                 lambda_radius=lam, eta_radius=eta_r, uncertainty_correlation=rho
             )
+        if self._impact_exponent != 1.0:
+            kwargs.update(impact_exponent=self._impact_exponent)
         try:
             self._market = PyMarketClearing(**kwargs)
             return
         except TypeError:
             pass
-        # An older native binding may predate the newest optional params (uncertainty, then
-        # richness, then vol_scale). Drop them only when they sit at their defaults, so
-        # default behavior is unchanged; a non-default request for a missing param still
-        # surfaces the error.
+        # An older native binding may predate the newest optional params (impact_exponent,
+        # then uncertainty, then richness, then vol_scale). Drop them only when they sit at
+        # their defaults, so default behavior is unchanged; a non-default request for a
+        # missing param still surfaces the error.
+        if self._impact_exponent != 1.0:
+            raise TypeError(
+                "the native binding predates the 'impact_exponent' concavity parameter "
+                "(needs a rebuild)"
+            )
         if self._uncertainty is not None:
             raise TypeError(
                 "the native binding predates the 'lambda_radius'/'eta_radius' uncertainty "
@@ -322,6 +335,11 @@ class EndogenousMarketEnv(ParallelEnv):
     @property
     def scenario_seed(self) -> int:
         return self._seed
+
+    @property
+    def impact_exponent(self) -> float:
+        """The permanent-impact exponent (1.0 = linear, < 1.0 = concave)."""
+        return self._impact_exponent
 
     def reset(
         self, seed: Optional[int] = None, options: Optional[dict] = None

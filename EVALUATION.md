@@ -45,6 +45,15 @@ The gap is wide on purpose: train can later grow by up to `gap` seeds without ev
 touching the held-out band. The split is produced (and disjointness asserted) by
 `train_test_seeds(n_train=256, n_test=256, seed_start=0, gap=10000)`.
 
+Disjoint is not secret. Because scenarios are deterministic, publishing a bounded
+held-out band lets an adversary enumerate it: the paper's predictability probe
+recovers 16/16 seeds from a public band of width `2^16` using one observed bar.
+Leaderboard operators must sample held-out seeds from a high-entropy private space,
+commit to the seed set or its sealed artifact before submissions close, and reveal
+the seeds only with the final replay artifacts. The intervals above document the
+canonical split; they are suitable for local research comparisons, not a secret
+hosted evaluation after publication.
+
 ## What you must report
 
 A leaderboard entry is incomplete unless it states all of:
@@ -116,6 +125,11 @@ identical panel is riding disclosure, not skill. Report the tier alongside the
 The generator also carries an opt-in `vol_clustering` knob (a deterministic
 volatility-clustering post-pass on the tape); it is outside the canonical config, which
 stays `vol_clustering=0`.
+
+The endogenous market also exposes an opt-in `impact_exponent`. The canonical
+setting is explicitly `impact_exponent=1.0` (linear permanent impact). Values below
+one run on a separate `powf` path and are not covered by the canonical byte-identity
+goldens; reports using them must state the exponent in every result row.
 
 ## Statistical confidence (is A > B beyond seed noise?)
 

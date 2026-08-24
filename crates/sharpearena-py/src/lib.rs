@@ -623,6 +623,21 @@ pub struct PyMarketClearing {
     params: MarketParams,
     seed: u64,
     uncertainty: Option<EllipticUncertaintySet>,
+    /// Permanent-impact exponent (`1.0` = the frozen linear golden-hash path; `< 1.0` =
+    /// concave, the Huberman-Stanzl manipulation-admitting regime). Gated exactly like the
+    /// uncertainty set: at `1.0` the native call runs byte-identical linear arithmetic.
+    impact_exponent: f64,
+}
+
+/// Validate the permanent-impact exponent, surfacing a bad input as a Python `ValueError`
+/// instead of the Rust panic inside `clear_bar_concave`.
+fn validate_impact_exponent(impact_exponent: f64) -> PyResult<f64> {
+    if !(impact_exponent > 0.0 && impact_exponent.is_finite()) {
+        return Err(PyValueError::new_err(
+            "impact_exponent must be a positive finite number (1.0 = linear)",
+        ));
+    }
+    Ok(impact_exponent)
 }
 
 /// Validate-and-build the elliptic uncertainty set from optional ctor/setter inputs.
@@ -676,6 +691,7 @@ impl PyMarketClearing {
         lambda_radius = None,
         eta_radius = None,
         uncertainty_correlation = 0.0,
+        impact_exponent = 1.0,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -693,6 +709,7 @@ impl PyMarketClearing {
         lambda_radius: Option<f64>,
         eta_radius: Option<f64>,
         uncertainty_correlation: f64,
+        impact_exponent: f64,
     ) -> PyResult<Self> {
         if n_agents < 1 {
             return Err(PyValueError::new_err("n_agents must be >= 1"));
@@ -709,11 +726,13 @@ impl PyMarketClearing {
             vol_scale,
         };
         let uncertainty = build_uncertainty(lambda_radius, eta_radius, uncertainty_correlation)?;
+        let impact_exponent = validate_impact_exponent(impact_exponent)?;
         Ok(PyMarketClearing {
             inner,
             params,
             seed,
             uncertainty,
+            impact_exponent,
         })
     }
 
@@ -746,6 +765,20 @@ impl PyMarketClearing {
         correlation: f64,
     ) -> PyResult<()> {
         self.uncertainty = build_uncertainty(lambda_radius, eta_radius, correlation)?;
+        Ok(())
+    }
+
+    /// The permanent-impact exponent every [`step_market`](Self::step_market) call clears
+    /// at (`1.0` = the linear golden-hash path, `< 1.0` = concave permanent impact).
+    #[getter]
+    fn impact_exponent(&self) -> f64 {
+        self.impact_exponent
+    }
+
+    /// Set the permanent-impact exponent used by every subsequent
+    /// [`step_market`](Self::step_market) call. `1.0` restores the linear path.
+    fn set_impact_exponent(&mut self, impact_exponent: f64) -> PyResult<()> {
+        self.impact_exponent = validate_impact_exponent(impact_exponent)?;
         Ok(())
     }
 
@@ -811,11 +844,16 @@ impl PyMarketClearing {
                 agent_orders[bad].len()
             )));
         }
-        // `step_robust(.., None)` runs the identical arithmetic as `step`, so the
-        // point-estimate wire output stays byte-identical when no set is installed.
-        let result = self
-            .inner
-            .step_robust(&agent_orders, &self.params, self.uncertainty.as_ref());
+        // `step_concave(.., None, 1.0)` runs the identical arithmetic as `step` (the
+        // exponent at 1.0 returns the flow term unchanged, no `powf` evaluated), so the
+        // point-estimate wire output stays byte-identical when no set and no non-unit
+        // exponent are installed.
+        let result = self.inner.step_concave(
+            &agent_orders,
+            &self.params,
+            self.uncertainty.as_ref(),
+            self.impact_exponent,
+        );
         let mut value =
             serde_json::to_value(&result).map_err(|e| PyValueError::new_err(e.to_string()))?;
         if let serde_json::Value::Object(ref mut map) = value {

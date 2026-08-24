@@ -88,7 +88,9 @@ jobs:
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
       - name: Build the WASM kernel (nodejs target)
-        run: wasm-pack build crates/sharpearena-wasm --target nodejs --out-dir ../../npm/sharpearena/pkg --out-name sharpearena
+        run: |
+          rm -rf npm/sharpearena/pkg
+          wasm-pack build crates/sharpearena-wasm --target nodejs --out-dir ../../npm/sharpearena/pkg --out-name sharpearena
 
       - uses: actions/setup-node@v6
         with:

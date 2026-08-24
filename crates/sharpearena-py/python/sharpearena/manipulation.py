@@ -73,6 +73,12 @@ class ManipulationParams:
     ``follower_gain`` sets how hard the other agents chase the move. At ``0.0`` they are
     inert and the probe measures the impact specification alone. Above zero they supply the
     thing a pump actually needs: someone to unwind into.
+
+    ``impact_exponent`` (default ``1.0`` = linear) selects the permanent-impact shape the
+    probe runs against. Under linear permanent impact, round-trip unprofitability is a
+    theorem (Huberman-Stanzl 2004), so the linear probe can only confirm theory; an
+    exponent below one makes permanent impact concave in flow, the regime in which theory
+    predicts manipulation can pay, which is what makes the probe falsifiable.
     """
 
     n_symbols: int = 1
@@ -90,6 +96,7 @@ class ManipulationParams:
     dump_bars: int = 5
     push_weight: float = 0.8
     follower_gain: float = 30.0
+    impact_exponent: float = 1.0
 
     def __post_init__(self) -> None:
         if self.n_followers < 0:
@@ -100,6 +107,8 @@ class ManipulationParams:
             raise ValueError("hold_bars must be >= 0")
         if self.start_bar < 0:
             raise ValueError("start_bar must be >= 0")
+        if not self.impact_exponent > 0.0:
+            raise ValueError("impact_exponent must be positive (1.0 = linear)")
         span = self.start_bar + self.push_bars + self.hold_bars + self.dump_bars
         if span >= self.n_days:
             raise ValueError("the round trip must finish inside the episode")
@@ -125,6 +134,7 @@ class ManipulationResult:
     eta: float
     push_weight: float
     follower_gain: float
+    impact_exponent: float = 1.0
 
     def to_dict(self) -> dict:
         return {
@@ -138,6 +148,7 @@ class ManipulationResult:
             "eta": self.eta,
             "push_weight": self.push_weight,
             "follower_gain": self.follower_gain,
+            "impact_exponent": self.impact_exponent,
             "disclaimer": DISCLAIMER,
         }
 
@@ -277,6 +288,7 @@ def _rollout(p: ManipulationParams, seed: int) -> tuple[float, float]:
         volume_scale=p.volume_scale,
         distribution_mode=p.distribution_mode,
         max_weight=p.max_weight,
+        impact_exponent=p.impact_exponent,
     )
     obs, _ = env.reset(seed=int(seed))
     n_symbols = len(env.symbols)
@@ -340,6 +352,7 @@ def run_manipulation_probe(
         eta=p.eta,
         push_weight=p.push_weight,
         follower_gain=p.follower_gain,
+        impact_exponent=p.impact_exponent,
     )
 
 

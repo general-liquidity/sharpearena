@@ -72,7 +72,7 @@ pub use lob_market::{Fill, LadderSnapshot, OrderBook, OrderKind, RestingOrder, S
 
 pub mod market;
 pub use market::{
-    clear_bar, clear_bar_robust, AgentFill, ClearResult, EllipticUncertaintySet,
+    clear_bar, clear_bar_concave, clear_bar_robust, AgentFill, ClearResult, EllipticUncertaintySet,
     ImpactCoefficients, MarketClearing, MarketParams,
 };
 

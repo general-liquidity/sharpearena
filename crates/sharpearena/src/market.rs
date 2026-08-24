@@ -55,6 +55,29 @@
 //! See [`EllipticUncertaintySet`] for the geometry, the closed-form worst case, and why an
 //! ellipse rather than a box is the right shape for two correlated impact coefficients.
 //!
+//! ## Concave permanent impact: an optional impact exponent
+//!
+//! Under **linear** permanent impact, round-trip manipulation is unprofitable by
+//! construction (Huberman-Stanzl 2004: linear permanent impact is the unique
+//! quasi-arbitrage-free specification), so a manipulation probe run against the linear
+//! model can only ever confirm theory: it cannot fail. To make that probe falsifiable,
+//! the concave entry points ([`clear_bar_concave`], [`MarketClearing::step_concave`])
+//! accept an `impact_exponent` applied to the **permanent (Kyle) flow term only**:
+//! `Q` is replaced by `sign(Q) * |Q|^exponent` in both the temporary fill's crowd term
+//! and the permanent multiplier update, while the Almgren-Chriss own-size term `eta * q_i`
+//! stays linear. `exponent = 1.0` is the exact legacy value: the substitution then returns
+//! `Q` itself (the same bits, no `powf` evaluated), so the arithmetic is byte-identical to
+//! [`clear_bar`] / [`clear_bar_robust`]. Exponents below one make permanent impact concave
+//! in flow, the square-root-law regime under which Huberman-Stanzl predict manipulation
+//! can become profitable.
+//!
+//! Like the uncertainty set, the exponent is **opt-in and gated outside the golden-hash
+//! path**: [`clear_bar`] and [`MarketClearing::step`] never touch it, and a general power
+//! requires `powf`, a libm transcendental excluded from the mul/add/div-only cross-runtime
+//! determinism guarantee below. Published results and the cross-runtime golden hashes are
+//! pinned to the linear point-estimate dynamics, which the concave path is never allowed
+//! to move.
+//!
 //! ## Determinism
 //!
 //! Every step is a pure function of `(exogenous path, lambda, eta, V, vol_scale, capital,
@@ -280,6 +303,25 @@ impl EllipticUncertaintySet {
             lambda: floor_at_zero(point.lambda + sc_lambda / norm),
             eta: floor_at_zero(point.eta + sc_eta / norm),
         }
+    }
+}
+
+/// The signed power `sign(q) * |q|^exponent` applied to the permanent-impact flow term on
+/// the concave path.
+///
+/// `exponent == 1.0` is special-cased to return `q` itself (the identical bits, with no
+/// `powf` evaluated), which is what makes [`clear_bar_concave`] at exponent one
+/// byte-identical to the frozen linear path. Any other exponent goes through `powf`, a
+/// libm transcendental deliberately excluded from the golden-hash determinism guarantee;
+/// that is why the exponent lives on the gated concave entry points and never on
+/// [`clear_bar`].
+fn signed_pow(q: f64, exponent: f64) -> f64 {
+    if exponent == 1.0 {
+        q
+    } else if q >= 0.0 {
+        q.powf(exponent)
+    } else {
+        -((-q).powf(exponent))
     }
 }
 
@@ -598,6 +640,28 @@ impl MarketClearing {
         clear_bar_robust(&exo_mid, agent_orders, params, uncertainty, self)
     }
 
+    /// [`step_robust`](Self::step_robust) with an explicit permanent-impact exponent.
+    /// `impact_exponent = 1.0` (with `uncertainty = None`) is the point-estimate linear
+    /// path and runs the identical arithmetic as [`step`](Self::step); see
+    /// [`clear_bar_concave`].
+    pub fn step_concave(
+        &mut self,
+        agent_orders: &[Vec<f64>],
+        params: &MarketParams,
+        uncertainty: Option<&EllipticUncertaintySet>,
+        impact_exponent: f64,
+    ) -> ClearResult {
+        let exo_mid = self.exo_mid_at_cursor();
+        clear_bar_concave(
+            &exo_mid,
+            agent_orders,
+            params,
+            uncertainty,
+            impact_exponent,
+            self,
+        )
+    }
+
     /// Assemble one agent's observation from a prepared symbol-snapshot list: its own
     /// cash and per-symbol holdings (with a displayed average entry price). Holdings are
     /// the agent's own — never any peer's pending state.
@@ -779,6 +843,37 @@ pub fn clear_bar_robust(
     uncertainty: Option<&EllipticUncertaintySet>,
     state: &mut MarketClearing,
 ) -> ClearResult {
+    clear_bar_concave(exo_mid, agent_orders, params, uncertainty, 1.0, state)
+}
+
+/// [`clear_bar_robust`] with an explicit **permanent-impact exponent**: the concavity
+/// ablation that makes the manipulation probe falsifiable (see the module docs).
+///
+/// With `impact_exponent = 1.0` this *is* [`clear_bar_robust`]: [`signed_pow`] then
+/// returns the flow unchanged (the same bits, no `powf` evaluated), so the cleared path is
+/// bit-for-bit the frozen linear path the golden hashes are pinned to. Any other exponent
+/// replaces `Q` with `sign(Q) * |Q|^exponent` in the permanent (Kyle) term of both the
+/// temporary fill and the permanent multiplier update; the Almgren-Chriss own-size term
+/// stays linear. A general power requires `powf`, a libm transcendental outside the
+/// mul/add/div-only cross-runtime guarantee, which is why the exponent is gated onto these
+/// opt-in entry points exactly as the [`EllipticUncertaintySet`] is and never touches
+/// [`clear_bar`].
+///
+/// When both an uncertainty set and a non-unit exponent are supplied, the set's cost
+/// direction is still formed from the raw flow (`Q^2`, `sum q_i^2`): the set stresses the
+/// coefficients, the exponent reshapes the flow term, and the two compose.
+pub fn clear_bar_concave(
+    exo_mid: &[f64],
+    agent_orders: &[Vec<f64>],
+    params: &MarketParams,
+    uncertainty: Option<&EllipticUncertaintySet>,
+    impact_exponent: f64,
+    state: &mut MarketClearing,
+) -> ClearResult {
+    assert!(
+        impact_exponent > 0.0,
+        "impact_exponent must be positive (1.0 = linear)"
+    );
     let n_sym = state.symbols.len();
     let n_agents = state.agents.len();
     assert_eq!(exo_mid.len(), n_sym, "exo_mid must cover every symbol");
@@ -888,8 +983,15 @@ pub fn clear_bar_robust(
         for s in 0..n_sym {
             let qi = q[i][s];
             let mid = cleared_mid[s];
+            // `signed_pow(_, 1.0)` returns the flow itself (same bits), keeping the
+            // linear path byte-identical; a non-unit exponent makes the crowd term
+            // concave/convex in flow while the own-size term stays linear.
             let fill = mid
-                * (1.0 + vol_factor[s] * (impact[s].lambda * net_flow[s] + impact[s].eta * qi) / v);
+                * (1.0
+                    + vol_factor[s]
+                        * (impact[s].lambda * signed_pow(net_flow[s], impact_exponent)
+                            + impact[s].eta * qi)
+                        / v);
             let sym = state.symbols[s].clone();
             let book = &mut state.agents[i];
             book.cash -= qi * fill;
@@ -947,7 +1049,7 @@ pub fn clear_bar_robust(
     // (5) permanent impact accumulates into the running multiplier for the next bar; the
     //     cleared mid becomes the mark for the next bar's holding PnL.
     for (s, (mult, flow)) in state.impact_mult.iter_mut().zip(&net_flow).enumerate() {
-        *mult *= 1.0 + impact[s].lambda * flow / v;
+        *mult *= 1.0 + impact[s].lambda * signed_pow(*flow, impact_exponent) / v;
     }
     // Fold this bar's realized cleared return into each symbol's trailing vol proxy, for the
     // *next* bar's scaling. `prev_mid` still holds the previous bar's cleared mid here.
@@ -1502,7 +1604,10 @@ mod tests {
             }
             // Everything but the (identical) reported coefficients must match the
             // point-estimate bar. Compare as parsed values so field ordering is irrelevant.
-            let mut value = serde_json::to_value(&r).unwrap();
+            // Both sides go through the same to_string + from_str round trip: without the
+            // `float_roundtrip` feature serde_json's parse can land 1 ulp off, so a parsed
+            // tree only compares equal to another parsed tree, not to a `to_value` one.
+            let mut value: serde_json::Value = serde_json::from_str(&result_blob(&r)).unwrap();
             value.as_object_mut().unwrap().remove("robust_impact");
             let expected: serde_json::Value = serde_json::from_str(&point[bar]).unwrap();
             assert_eq!(
@@ -1791,6 +1896,172 @@ mod tests {
     #[should_panic(expected = "radii must be non-negative")]
     fn a_negative_radius_is_rejected() {
         EllipticUncertaintySet::new(-0.1, 0.1, 0.0);
+    }
+
+    // --- Concave permanent-impact axis ------------------------------------------------------
+
+    #[test]
+    fn a_unit_exponent_is_byte_identical_to_the_linear_path() {
+        // The load-bearing guarantee for the concavity gate: exponent 1.0 must reproduce
+        // the frozen linear path bit-for-bit over a full rollout, across every result
+        // field, with and without an uncertainty set. The golden hashes are pinned to the
+        // linear path; this pins the gate to it.
+        let data = Dataset::synthetic(3, 60, 23);
+        let params = MarketParams {
+            lambda: 0.35,
+            eta: 0.18,
+            volume_scale: 2.0,
+            vol_scale: 3.0,
+        };
+        let orders: Vec<Vec<f64>> = (0..3)
+            .map(|i| vec![0.2 * (i as f64 + 1.0), -0.1 * (i as f64), 0.05])
+            .collect();
+
+        let legacy = robust_rollout(&data, 3, &params, None, &orders);
+        let mut m = MarketClearing::from_dataset(&data, 3, 1.0);
+        let mut unit = Vec::new();
+        loop {
+            let r = m.step_concave(&orders, &params, None, 1.0);
+            unit.push(result_blob(&r));
+            if r.done {
+                break;
+            }
+        }
+        assert_eq!(
+            legacy, unit,
+            "step_concave(.., 1.0) must be byte-identical to step"
+        );
+
+        let set = EllipticUncertaintySet::new(0.07, 0.03, -0.4);
+        let robust = robust_rollout(&data, 3, &params, Some(&set), &orders);
+        let mut m = MarketClearing::from_dataset(&data, 3, 1.0);
+        let mut unit_robust = Vec::new();
+        loop {
+            let r = m.step_concave(&orders, &params, Some(&set), 1.0);
+            unit_robust.push(result_blob(&r));
+            if r.done {
+                break;
+            }
+        }
+        assert_eq!(
+            robust, unit_robust,
+            "exponent 1.0 must compose with an uncertainty set unchanged"
+        );
+    }
+
+    /// First-bar fill impact (fill price minus cleared mid, agent 0, symbol 0) under a
+    /// given exponent, on a flat 100.0 path so the cleared mid and the sizing are shared
+    /// with the linear run. `eta = 0` so the entire impact term is the permanent leg.
+    fn first_bar_crowd_impact(capital: f64, exponent: f64) -> (f64, f64) {
+        let data = dataset_from_closes(vec![100.0; 30]);
+        let params = MarketParams {
+            lambda: 0.5,
+            eta: 0.0,
+            volume_scale: 1.0,
+            vol_scale: 0.0,
+        };
+        let buy = block(2, 1, 0.8);
+        let mut m = MarketClearing::from_dataset(&data, 2, capital);
+        let r = m.step_concave(&buy, &params, None, exponent);
+        let mid = r.cleared_mids[0];
+        (r.fills[0][0].fill_price - mid, r.net_flow[0])
+    }
+
+    #[test]
+    fn a_concave_exponent_charges_large_flow_less_and_small_flow_more() {
+        // The concavity statement itself, in flow units (|Q| relative to 1): sqrt impact
+        // undercharges the linear model for large trades and overcharges it for small
+        // ones, with the crossover at |Q| = 1. capital = 100 puts the two-agent 0.8-weight
+        // buy at Q = 1.6 > 1; capital = 1 puts it at Q = 0.016 < 1.
+        let (linear_large, q_large) = first_bar_crowd_impact(100.0, 1.0);
+        let (concave_large, _) = first_bar_crowd_impact(100.0, 0.5);
+        assert!(
+            q_large > 1.0,
+            "the large-trade arm must clear |Q| > 1: {q_large}"
+        );
+        assert!(
+            concave_large < linear_large,
+            "concave impact must charge a large trade less: {concave_large} vs {linear_large}"
+        );
+
+        let (linear_small, q_small) = first_bar_crowd_impact(1.0, 1.0);
+        let (concave_small, _) = first_bar_crowd_impact(1.0, 0.5);
+        assert!(
+            q_small > 0.0 && q_small < 1.0,
+            "the small-trade arm must clear 0 < |Q| < 1: {q_small}"
+        );
+        assert!(
+            concave_small > linear_small,
+            "concave impact must charge a small trade more: {concave_small} vs {linear_small}"
+        );
+    }
+
+    #[test]
+    fn the_concave_exponent_also_bends_the_permanent_multiplier() {
+        // Internal consistency, mirroring the robust-lambda test: the exponent reshapes
+        // the flow term that feeds the next bar's reference price, not just the fill. A
+        // large (Q > 1) buy therefore leaves the concave cleared mid below the linear one
+        // on the following bar.
+        let data = dataset_from_closes(vec![100.0; 30]);
+        let params = MarketParams {
+            lambda: 0.5,
+            eta: 0.0,
+            volume_scale: 1.0,
+            vol_scale: 0.0,
+        };
+        let buy = block(2, 1, 0.8);
+        let mut linear = MarketClearing::from_dataset(&data, 2, 100.0);
+        let mut concave = MarketClearing::from_dataset(&data, 2, 100.0);
+        linear.step_concave(&buy, &params, None, 1.0);
+        concave.step_concave(&buy, &params, None, 0.5);
+        let rl = linear.step_concave(&buy, &params, None, 1.0);
+        let rc = concave.step_concave(&buy, &params, None, 0.5);
+        assert!(
+            rc.cleared_mids[0] < rl.cleared_mids[0],
+            "a concave exponent must carry into the reference price: {} vs {}",
+            rc.cleared_mids[0],
+            rl.cleared_mids[0]
+        );
+        assert!(
+            rc.cleared_mids[0] > 100.0,
+            "the concave permanent bump is still a bump: {}",
+            rc.cleared_mids[0]
+        );
+    }
+
+    #[test]
+    fn concave_clearing_is_deterministic() {
+        // powf is admitted on the gated path only; within one runtime it is still a pure
+        // function, so the same inputs reproduce a byte-identical stream.
+        let data = Dataset::synthetic(2, 45, 19);
+        let params = MarketParams {
+            lambda: 0.3,
+            eta: 0.15,
+            volume_scale: 1.0,
+            vol_scale: 2.0,
+        };
+        let orders = block(3, 2, 0.5);
+        let run = || {
+            let mut m = MarketClearing::from_dataset(&data, 3, 1.0);
+            let mut log = Vec::new();
+            loop {
+                let r = m.step_concave(&orders, &params, None, 0.5);
+                log.push(result_blob(&r));
+                if r.done {
+                    break;
+                }
+            }
+            log
+        };
+        assert_eq!(run(), run(), "concave clearing must be deterministic");
+    }
+
+    #[test]
+    #[should_panic(expected = "impact_exponent must be positive")]
+    fn a_non_positive_exponent_is_rejected() {
+        let data = Dataset::synthetic(1, 30, 1);
+        let mut m = MarketClearing::from_dataset(&data, 1, 1.0);
+        m.step_concave(&block(1, 1, 0.1), &MarketParams::default(), None, 0.0);
     }
 
     // --- Observation-richness (information-disclosure) axis --------------------------------
