@@ -25,3 +25,7 @@ paper/*.fdb_latexmk
 paper/*.bbl
 paper/*.blg
 paper/build.log
+
+# Python bytecode from the evidence scripts
+__pycache__/
+*.pyc
