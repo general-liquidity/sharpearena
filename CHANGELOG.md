@@ -6,17 +6,36 @@ version covers the Rust crates, the npm package and the PyPI package; each
 section is one `v*` tag and links the commits it was built from. The wire
 contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
-[Unreleased]: https://github.com/general-liquidity/sharpearena/compare/v0.11.1...HEAD
+[Unreleased]: https://github.com/general-liquidity/sharpearena/compare/v0.13.0...HEAD
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.13.0] - 2026-08-25
+
 ### Added
-- scenario_gen: `sealed_seed(salt, slot)`, an opt-in keyed derivation of held-out evaluation seeds into `[EVAL_SEED_BASE, 2^64)` from a secret salt (FNV-1a digest plus SplitMix64 finalizer rounds, PRF-style, not a certified MAC), exposed through pyo3 and as `sealed_eval_seeds(salt)` / `evaluate_eval_set(salt=...)` in Python; disjointness from the train band holds by construction without the salt, and the public set, its version string and its regression snapshot are untouched. Paper: the predictability probe's band scan recovers 16/16 public seeds and 0/16 sealed seeds, and the revealed salt replays 16/16 (commit pending).
-- manipulation: `AsymmetricSchedule` (leg durations plus a block fraction, the symmetric schedule recovered as a member) and the paper's positive control: under concave impact at exponent 0.5 a slow-accumulate, block-liquidate round trip is profitable with a CI clear of zero on the follower-free arm, exponent 0.7 shows the theory's ordering without profit, and all 45 linear-impact points are negative with time-reversal symmetry; the existing `linear` and `concave` evidence keys are byte-identical (commit pending).
-- paper: rank-eligibility existence witness. An out-of-band oracle signal of controlled strength, consumed by `sign_follow` and `deadband_hold`, opens the kernel's gates on every tier; pass^k on every seed is the binding leg at all ten attained boundaries, and Calm every-bar trading cannot pass on costs alone even for a perfect oracle (commit pending).
+- scenario_gen: opt-in clustered jump bursts (`jump_burst_probability`, `jump_burst_persistence`, `jump_burst_size`), a deterministic post-pass that raises the Fano intermittency statistic while the zero-knob golden path stays byte-identical; threaded through the pyo3 constructors, `SharpeArenaEnv`, the vector env and `build_scenario_dataset` ([2e9c8b4](https://github.com/general-liquidity/sharpearena/commit/2e9c8b4)).
+- python: `splitmix_inversion`, exact SplitMix64 finalizer inversion primitives that make the generator-inversion boundary reproducible: one full finalizer output inverts exactly, while the published 53-bit unit leaves 2^11 candidate states before the price transform ([2e9c8b4](https://github.com/general-liquidity/sharpearena/commit/2e9c8b4)).
+- paper: `paper/evidence/provenance.json` records the Git parent, a content hash over the source snapshot and the digest of every evidence and figure artifact ([7348c82](https://github.com/general-liquidity/sharpearena/commit/7348c82)).
 
 ### Changed
-- paper: the three fragments are integrated into the experiments section; the abstract, introduction, limitations, command appendix and README reflect the positive control, sealed seeds and witness (commit pending).
+- paper: re-derived claims and evidence. The nonlinear-impact branch applies the exponent to dimensionless crowd flow with a scale-invariance regression test; the positive control reports Bonferroni familywise intervals over its 135-cell search alongside pointwise ones; the realism gate is the conjunction of three calibrated directional checks with Fano reported as an exploratory proxy (2 of 24 canonical panels pass); the witness producer enforces coarse-grid monotonicity before bisection ([7348c82](https://github.com/general-liquidity/sharpearena/commit/7348c82)).
+- paper: the companion citation reads SharpeBench version 0.8.0 ([aec2e48](https://github.com/general-liquidity/sharpearena/commit/aec2e48)).
+
+### Fixed
+- py: the binding satisfies the clippy gate ([9f16e9f](https://github.com/general-liquidity/sharpearena/commit/9f16e9f)).
+
+## [0.12.0] - 2026-08-24
+### Added
+- scenario_gen: `sealed_seed(salt, slot)`, an opt-in keyed derivation of held-out evaluation seeds into `[EVAL_SEED_BASE, 2^64)` from a secret salt (FNV-1a digest plus SplitMix64 finalizer rounds, PRF-style, not a certified MAC), exposed through pyo3 and as `sealed_eval_seeds(salt)` / `evaluate_eval_set(salt=...)` in Python; disjointness from the train band holds by construction without the salt, and the public set, its version string and its regression snapshot are untouched. Paper: the predictability probe's band scan recovers 16/16 public seeds and 0/16 sealed seeds, and the revealed salt replays 16/16 ([93b0a73](https://github.com/general-liquidity/sharpearena/commit/93b0a73)).
+- manipulation: `AsymmetricSchedule` (leg durations plus a block fraction, the symmetric schedule recovered as a member) and the paper's positive control: under concave impact at exponent 0.5 a slow-accumulate, block-liquidate round trip is profitable with a CI clear of zero on the follower-free arm, exponent 0.7 shows the theory's ordering without profit, and all 45 linear-impact points are negative with time-reversal symmetry; the existing `linear` and `concave` evidence keys are byte-identical ([93b0a73](https://github.com/general-liquidity/sharpearena/commit/93b0a73)).
+- paper: rank-eligibility existence witness. An out-of-band oracle signal of controlled strength, consumed by `sign_follow` and `deadband_hold`, opens the kernel's gates on every tier; pass^k on every seed is the binding leg at all ten attained boundaries, and Calm every-bar trading cannot pass on costs alone even for a perfect oracle ([93b0a73](https://github.com/general-liquidity/sharpearena/commit/93b0a73)).
+
+### Changed
+- paper: the three fragments are integrated into the experiments section; the abstract, introduction, limitations, command appendix and README reflect the positive control, sealed seeds and witness ([93b0a73](https://github.com/general-liquidity/sharpearena/commit/93b0a73)).
+- paper: the companion citation reads SharpeBench version 0.7.0 ([b7193fa](https://github.com/general-liquidity/sharpearena/commit/b7193fa)).
+- chore: build artifacts and bytecode untracked and ignored ([5a94d70](https://github.com/general-liquidity/sharpearena/commit/5a94d70), [18a37da](https://github.com/general-liquidity/sharpearena/commit/18a37da)).
 
 ## [0.11.1] - 2026-08-24
 
