@@ -6,6 +6,11 @@ the point-in-time ``closes`` vector each bar into a (T, n_symbols) price panel,
 then grades each panel with ``sharpearena.certify_realism`` against the
 directional Cont-stylized-facts bounds. Writes per-seed reports, per-tier
 aggregates, and a grouped-bar figure of the mean fact values.
+
+Also certifies the same tiers with the generator's opt-in volatility-clustering
+driver enabled (``vol_clustering = VOL_CLUSTERING``) under ``clustered_tiers``,
+so the JSON carries the before/after evidence for the clustering fact. The
+default (unclustered) tiers remain the canonical configuration.
 """
 from __future__ import annotations
 
@@ -29,11 +34,18 @@ SEEDS = list(range(8))
 N_SYMBOLS = 4
 N_DAYS = 120
 MAX_STEPS = 512
+# Opt-in volatility-clustering strength for the clustered variants (matches the
+# committed strength in tests/test_vol_clustering.py; leaderboard stays at 0.0).
+VOL_CLUSTERING = 0.5
 
 
-def _collect_panel(tier: str, seed: int) -> np.ndarray:
+def _collect_panel(tier: str, seed: int, vol_clustering: float = 0.0) -> np.ndarray:
     env = SharpeArenaEnv(
-        n_symbols=N_SYMBOLS, n_days=N_DAYS, seed=seed, distribution_mode=tier
+        n_symbols=N_SYMBOLS,
+        n_days=N_DAYS,
+        seed=seed,
+        distribution_mode=tier,
+        vol_clustering=vol_clustering,
     )
     obs, _ = env.reset(seed=seed)
     closes = [np.asarray(obs["closes"], dtype=np.float64).reshape(-1)]
@@ -50,30 +62,36 @@ def main() -> None:
     EVIDENCE.mkdir(parents=True, exist_ok=True)
     FIGURES.mkdir(parents=True, exist_ok=True)
 
-    tiers: dict[str, dict] = {}
-    for tier in TIERS:
-        per_seed = []
-        for seed in SEEDS:
-            panel = _collect_panel(tier, seed)
-            report = certify_realism(panel, kind="price")
-            per_seed.append(
-                {
-                    "seed": seed,
-                    "n_bars": int(panel.shape[0]),
-                    "facts": report.facts,
-                    "checks": report.checks,
-                    "passed": report.passed,
-                }
-            )
-        fact_names = sorted(per_seed[0]["facts"])
-        mean_facts = {
-            f: float(np.nanmean([r["facts"][f] for r in per_seed])) for f in fact_names
-        }
-        tiers[tier] = {
-            "per_seed": per_seed,
-            "mean_facts": mean_facts,
-            "pass_rate": float(np.mean([r["passed"] for r in per_seed])),
-        }
+    def certify_tiers(vol_clustering: float) -> dict[str, dict]:
+        tiers: dict[str, dict] = {}
+        for tier in TIERS:
+            per_seed = []
+            for seed in SEEDS:
+                panel = _collect_panel(tier, seed, vol_clustering)
+                report = certify_realism(panel, kind="price")
+                per_seed.append(
+                    {
+                        "seed": seed,
+                        "n_bars": int(panel.shape[0]),
+                        "facts": report.facts,
+                        "checks": report.checks,
+                        "passed": report.passed,
+                    }
+                )
+            fact_names = sorted(per_seed[0]["facts"])
+            mean_facts = {
+                f: float(np.nanmean([r["facts"][f] for r in per_seed]))
+                for f in fact_names
+            }
+            tiers[tier] = {
+                "per_seed": per_seed,
+                "mean_facts": mean_facts,
+                "pass_rate": float(np.mean([r["passed"] for r in per_seed])),
+            }
+        return tiers
+
+    tiers = certify_tiers(0.0)
+    clustered_tiers = certify_tiers(VOL_CLUSTERING)
 
     out = {
         "finding": "F4",
@@ -83,8 +101,10 @@ def main() -> None:
             "seeds": SEEDS,
             "max_steps": MAX_STEPS,
             "tiers": list(TIERS),
+            "vol_clustering": VOL_CLUSTERING,
         },
         "tiers": tiers,
+        "clustered_tiers": clustered_tiers,
     }
     (EVIDENCE / "f4-realism.json").write_text(json.dumps(out, indent=2))
 

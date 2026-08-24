@@ -59,6 +59,7 @@ class SharpeArenaEnv(gym.Env):
         max_weight: float = 1.0,
         allow_short: bool = True,
         distribution_mode: str = "calm",
+        vol_clustering: float = 0.0,
         mode: str = "train",
         env_kwargs: Optional[dict] = None,
     ) -> None:
@@ -72,6 +73,7 @@ class SharpeArenaEnv(gym.Env):
         self._window_end = window_end
         self._csv_text = csv_text
         self._distribution_mode = distribution_mode
+        self._vol_clustering = float(vol_clustering)
         self._seed_offset = _EVAL_SEED_BASE if mode == "eval" else 0
         self._kwargs: dict[str, Any] = dict(env_kwargs or {})
         self._resolved_seeds: dict[str, int] = {}
@@ -134,6 +136,7 @@ class SharpeArenaEnv(gym.Env):
             window_start=self._window_start,
             window_end=self._window_end,
             distribution_mode=self._distribution_mode,
+            vol_clustering=self._vol_clustering,
             exec_seed=exec_seed,
             **self._kwargs,
         )

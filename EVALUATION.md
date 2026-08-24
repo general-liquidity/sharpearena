@@ -113,6 +113,10 @@ identical panel is riding disclosure, not skill. Report the tier alongside the
 `distribution_mode` (Rust: `MarketClearing::from_dataset_with_richness` /
 `RichnessTier`; Python: `PyMarketClearing(..., richness=...)`).
 
+The generator also carries an opt-in `vol_clustering` knob (a deterministic
+volatility-clustering post-pass on the tape); it is outside the canonical config, which
+stays `vol_clustering=0`.
+
 ## Statistical confidence (is A > B beyond seed noise?)
 
 Deflation handles overfit-luck and pass^k handles per-run reliability, but a leaderboard has

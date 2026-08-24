@@ -52,14 +52,25 @@ fn parse_richness_tier(richness: &str) -> PyResult<RichnessTier> {
 
 /// Build the synthetic dataset for a tier: `Calm` is the mild panel; `Hard`/`Extreme`
 /// post-process that same seeded panel (see `sharpearena::generate_scenario`).
-fn build_dataset(n_symbols: usize, n_days: usize, seed: u64, mode: DistributionMode) -> Dataset {
+/// `vol_clustering > 0.0` opts into the volatility-clustering post-pass; at `0.0`
+/// (the default) the output is byte-identical to the historical build.
+fn build_dataset(
+    n_symbols: usize,
+    n_days: usize,
+    seed: u64,
+    mode: DistributionMode,
+    vol_clustering: f64,
+) -> Dataset {
     match mode {
-        DistributionMode::Calm => Dataset::synthetic(n_symbols, n_days, seed),
+        DistributionMode::Calm if vol_clustering == 0.0 => {
+            Dataset::synthetic(n_symbols, n_days, seed)
+        }
         m => generate_scenario(
             &ScenarioSpec {
                 n_symbols,
                 n_days,
                 distribution_mode: m,
+                vol_clustering,
                 ..ScenarioSpec::default()
             },
             seed,
@@ -132,6 +143,7 @@ impl PyTradingEnv {
         max_participation = None,
         distribution_mode = "calm",
         exec_seed = None,
+        vol_clustering = 0.0,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -147,9 +159,10 @@ impl PyTradingEnv {
         max_participation: Option<f64>,
         distribution_mode: &str,
         exec_seed: Option<u64>,
+        vol_clustering: f64,
     ) -> PyResult<Self> {
         let mode = parse_distribution_mode(distribution_mode)?;
-        let data = build_dataset(n_symbols, n_days, seed, mode);
+        let data = build_dataset(n_symbols, n_days, seed, mode, vol_clustering);
         let window = build_window(window_start, window_end, data.len());
         if window.start >= window.end || window.end > data.len() {
             return Err(PyValueError::new_err(format!(
@@ -310,6 +323,7 @@ impl PyVecTradingEnv {
         distribution_mode = "calm",
         exec_seed = None,
         autoreset_mode = "next_step",
+        vol_clustering = 0.0,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -326,6 +340,7 @@ impl PyVecTradingEnv {
         distribution_mode: &str,
         exec_seed: Option<u64>,
         autoreset_mode: &str,
+        vol_clustering: f64,
     ) -> PyResult<Self> {
         if seeds.is_empty() {
             return Err(PyValueError::new_err("seeds must be non-empty"));
@@ -363,6 +378,7 @@ impl PyVecTradingEnv {
                 seed,
                 exec_seed,
                 distribution_mode: mode,
+                vol_clustering,
                 window,
                 costs,
             })
@@ -683,7 +699,7 @@ impl PyMarketClearing {
         }
         let mode = parse_distribution_mode(distribution_mode)?;
         let tier = parse_richness_tier(richness)?;
-        let data = build_dataset(n_symbols, n_days, seed, mode);
+        let data = build_dataset(n_symbols, n_days, seed, mode, 0.0);
         let inner =
             MarketClearing::from_dataset_with_richness(&data, n_agents, capital, tier.richness());
         let params = MarketParams {

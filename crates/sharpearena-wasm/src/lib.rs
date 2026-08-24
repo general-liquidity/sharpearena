@@ -526,4 +526,42 @@ mod tests {
             "cross-runtime golden fingerprint drifted from the sharpearena crate's pin"
         );
     }
+
+    /// Same cross-runtime pin for the opt-in volatility-clustering pass: `Hard` 4×120,
+    /// seed 7, `vol_clustering = 0.5` through the JSON kernel must match the native
+    /// generator byte-for-byte and the committed golden fingerprint.
+    #[test]
+    fn generate_scenario_kernel_matches_clustered_golden() {
+        use sharpearena::{generate_scenario, DistributionMode, ScenarioSpec};
+
+        let spec = ScenarioSpec {
+            distribution_mode: DistributionMode::Hard,
+            n_symbols: 4,
+            n_days: 120,
+            vol_clustering: 0.5,
+            ..ScenarioSpec::default()
+        };
+        let native = serde_json::to_string(&generate_scenario(&spec, 7)).unwrap();
+
+        let input = format!(
+            r#"{{"spec":{},"seed":7}}"#,
+            serde_json::to_string(&spec).unwrap()
+        );
+        let kernel = generate_scenario_json(&input).expect("kernel scenario");
+
+        assert_eq!(
+            native, kernel,
+            "wasm scenario kernel must reproduce the native clustered generator byte-for-byte"
+        );
+
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        for &b in kernel.as_bytes() {
+            h ^= b as u64;
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        assert_eq!(
+            h, 0xa1d2_31f7_e114_a381,
+            "cross-runtime clustered golden fingerprint drifted from the sharpearena crate's pin"
+        );
+    }
 }

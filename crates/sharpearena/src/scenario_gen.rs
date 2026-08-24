@@ -53,7 +53,7 @@ pub enum DistributionMode {
 /// are **orthogonal** difficulty axes: the former sets how adversarial the price path is,
 /// the latter how much of it the agent is shown. Together they span a `(regime × richness)`
 /// grid (see [`ObservationRichness`]).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ScenarioSpec {
     pub start_level: u64,
     /// Size of the legal seed interval; `0` means unbounded.
@@ -66,6 +66,15 @@ pub struct ScenarioSpec {
     /// this field parses back to the historical disclosure and is byte-identical.
     #[serde(default)]
     pub obs_richness: ObservationRichness,
+    /// Opt-in volatility-clustering strength (`0.0` = off, the default). When positive,
+    /// a [`vol_cluster`] post-pass modulates each bar's return deviation by a persistence
+    /// state driven by realized absolute returns (an EMA recursion), so `|return|`
+    /// autocorrelation turns positive — the Cont volatility-clustering stylized fact.
+    /// Additive and `#[serde(default)]`: at `0.0` the generated panel is byte-identical
+    /// to the historical output, and a spec serialized before this field parses back to
+    /// the unclustered generator.
+    #[serde(default)]
+    pub vol_clustering: f64,
 }
 
 impl Default for ScenarioSpec {
@@ -77,6 +86,7 @@ impl Default for ScenarioSpec {
             n_days: 120,
             distribution_mode: DistributionMode::Calm,
             obs_richness: ObservationRichness::default(),
+            vol_clustering: 0.0,
         }
     }
 }
@@ -139,6 +149,50 @@ fn amplify(mut base: Dataset, seed: u64, p: AmplifyParams) -> Dataset {
             let adjusted = (mean + p.vol_mult * (r - mean) + jump).max(-0.95);
             price *= 1.0 + adjusted;
             series[i + 1] = price;
+        }
+    }
+    base
+}
+
+/// EMA persistence of the volatility-clustering state: `state ← PERSISTENCE * state +
+/// (1 - PERSISTENCE) * |realized deviation|`. High enough that a burst of large moves
+/// keeps the local scale elevated for many bars (slow-decaying `|r|` autocorrelation).
+const CLUSTER_PERSISTENCE: f64 = 0.85;
+
+/// Floor on the per-bar clustering scale so a long quiet stretch can never collapse
+/// the tape to zero volatility (mirrors the `max(-0.95)` return floor).
+const MIN_CLUSTER_SCALE: f64 = 0.05;
+
+/// Opt-in volatility-clustering post-pass (`strength > 0.0`). Each symbol's per-bar
+/// deviation from its mean return is re-scaled by `1 + strength * (state / baseline - 1)`,
+/// where `state` is an EMA of the *realized* absolute output deviations and `baseline`
+/// is the series' mean absolute deviation. A large move raises `state`, which amplifies
+/// the next bars' deviations, which feeds back into `state` — persistent volatility
+/// episodes, i.e. positive `|return|` autocorrelation (the fixed point of the recursion
+/// is `state = baseline`, so the tape's overall scale is preserved). No RNG: the state
+/// is a pure function of the prior generated bars, and the arithmetic is mul/add/div/`max`
+/// only (`|x|` is `max(x, -x)`), so the result stays byte-identical across runtimes.
+fn vol_cluster(mut base: Dataset, strength: f64) -> Dataset {
+    for series in base.closes.values_mut() {
+        if series.len() < 2 {
+            continue;
+        }
+        let rets: Vec<f64> = (1..series.len())
+            .map(|t| series[t] / series[t - 1] - 1.0)
+            .collect();
+        let mean = rets.iter().sum::<f64>() / rets.len() as f64;
+        let baseline = (rets.iter().map(|r| (r - mean).max(mean - r)).sum::<f64>()
+            / rets.len() as f64)
+            .max(1e-9);
+        let mut state = baseline;
+        let mut price = series[0];
+        for (i, r) in rets.iter().enumerate() {
+            let scale = (1.0 + strength * (state / baseline - 1.0)).max(MIN_CLUSTER_SCALE);
+            let adjusted = (mean + scale * (r - mean)).max(-0.95);
+            price *= 1.0 + adjusted;
+            series[i + 1] = price;
+            let dev = (adjusted - mean).max(mean - adjusted);
+            state = CLUSTER_PERSISTENCE * state + (1.0 - CLUSTER_PERSISTENCE) * dev;
         }
     }
     base
@@ -240,7 +294,7 @@ fn regime_shift(mut base: Dataset, seed: u64) -> Dataset {
 /// `CointegratedPairs` / `RegimeShift` overwrite it with a bespoke structured panel.
 pub fn generate_scenario(spec: &ScenarioSpec, seed: u64) -> Dataset {
     let base = Dataset::synthetic(spec.n_symbols, spec.n_days, seed);
-    match spec.distribution_mode {
+    let tiered = match spec.distribution_mode {
         DistributionMode::Calm => base,
         DistributionMode::Hard => amplify(
             base,
@@ -264,6 +318,11 @@ pub fn generate_scenario(spec: &ScenarioSpec, seed: u64) -> Dataset {
         ),
         DistributionMode::CointegratedPairs => cointegrated_pairs(base, seed),
         DistributionMode::RegimeShift => regime_shift(base, seed),
+    };
+    if spec.vol_clustering > 0.0 {
+        vol_cluster(tiered, spec.vol_clustering)
+    } else {
+        tiered
     }
 }
 
@@ -355,6 +414,10 @@ mod tests {
     const GOLDEN_EXTREME_4X120_SEED7_FNV1A: u64 = 0xb082_0c4d_2c73_7f88;
     const GOLDEN_COINTEGRATED_4X120_SEED7_FNV1A: u64 = 0xa3d2_2742_4ef0_5868;
     const GOLDEN_REGIME_4X120_SEED7_FNV1A: u64 = 0x8b82_2cf3_c9d3_038f;
+    /// Golden fingerprint of the clustered generator: `Hard` 4×120, seed 7,
+    /// `vol_clustering = 0.5`. Pins the opt-in [`vol_cluster`] pass the same way the
+    /// unclustered tiers are pinned; the wasm crate asserts the same value.
+    const GOLDEN_HARD_CLUSTERED_4X120_SEED7_FNV1A: u64 = 0xa1d2_31f7_e114_a381;
 
     /// Mean per-symbol stdev of simple returns — a realized-volatility proxy.
     fn realized_vol(d: &Dataset) -> f64 {
@@ -537,6 +600,108 @@ mod tests {
         let rj = serde_json::to_string(&generate_scenario(&regime_spec(), 7)).unwrap();
         assert_eq!(fnv1a(pj.as_bytes()), GOLDEN_COINTEGRATED_4X120_SEED7_FNV1A);
         assert_eq!(fnv1a(rj.as_bytes()), GOLDEN_REGIME_4X120_SEED7_FNV1A);
+    }
+
+    fn clustered_hard_spec() -> ScenarioSpec {
+        ScenarioSpec {
+            distribution_mode: DistributionMode::Hard,
+            vol_clustering: 0.5,
+            ..golden_spec()
+        }
+    }
+
+    /// Mean autocorrelation of `|r - mean|` over lags 1..=lags, averaged across symbols —
+    /// the volatility-clustering stylized fact the realism gate checks.
+    fn abs_return_autocorr(d: &Dataset, lags: usize) -> f64 {
+        let mut acc = 0.0;
+        let mut n = 0usize;
+        for series in d.closes.values() {
+            let rets: Vec<f64> = (1..series.len())
+                .map(|t| series[t] / series[t - 1] - 1.0)
+                .collect();
+            let mean = rets.iter().sum::<f64>() / rets.len() as f64;
+            let a: Vec<f64> = rets.iter().map(|r| (r - mean).abs()).collect();
+            let am = a.iter().sum::<f64>() / a.len() as f64;
+            let c: Vec<f64> = a.iter().map(|v| v - am).collect();
+            let denom: f64 = c.iter().map(|v| v * v).sum();
+            if denom == 0.0 {
+                continue;
+            }
+            for k in 1..=lags {
+                let num: f64 = (k..c.len()).map(|t| c[t] * c[t - k]).sum();
+                acc += num / denom;
+                n += 1;
+            }
+        }
+        acc / n as f64
+    }
+
+    #[test]
+    fn vol_clustering_zero_is_byte_identical() {
+        for mode in [
+            DistributionMode::Calm,
+            DistributionMode::Hard,
+            DistributionMode::Extreme,
+            DistributionMode::CointegratedPairs,
+            DistributionMode::RegimeShift,
+        ] {
+            let plain = ScenarioSpec {
+                distribution_mode: mode,
+                ..golden_spec()
+            };
+            let zeroed = ScenarioSpec {
+                vol_clustering: 0.0,
+                ..plain.clone()
+            };
+            let a = serde_json::to_string(&generate_scenario(&plain, 7)).unwrap();
+            let b = serde_json::to_string(&generate_scenario(&zeroed, 7)).unwrap();
+            assert_eq!(a, b, "vol_clustering = 0.0 must be a no-op for {mode:?}");
+        }
+    }
+
+    #[test]
+    fn vol_clustering_raises_abs_return_autocorr() {
+        let plain = ScenarioSpec {
+            distribution_mode: DistributionMode::Hard,
+            ..golden_spec()
+        };
+        let mut raised = 0;
+        for seed in 0..8u64 {
+            let base = abs_return_autocorr(&generate_scenario(&plain, seed), 10);
+            let clustered =
+                abs_return_autocorr(&generate_scenario(&clustered_hard_spec(), seed), 10);
+            if clustered > base {
+                raised += 1;
+            }
+        }
+        assert!(
+            raised >= 7,
+            "clustered |r| autocorrelation should exceed unclustered on ≥7/8 seeds, got {raised}"
+        );
+    }
+
+    #[test]
+    fn vol_clustering_prices_positive_and_deterministic() {
+        let a = generate_scenario(&clustered_hard_spec(), 7);
+        let b = generate_scenario(&clustered_hard_spec(), 7);
+        assert_eq!(
+            serde_json::to_string(&a).unwrap(),
+            serde_json::to_string(&b).unwrap()
+        );
+        for series in a.closes.values() {
+            for &p in series {
+                assert!(p.is_finite() && p > 0.0, "price {p} must be finite and > 0");
+            }
+        }
+    }
+
+    #[test]
+    fn golden_hash_clustered_hard_stable() {
+        let json = serde_json::to_string(&generate_scenario(&clustered_hard_spec(), 7)).unwrap();
+        assert_eq!(
+            fnv1a(json.as_bytes()),
+            GOLDEN_HARD_CLUSTERED_4X120_SEED7_FNV1A
+        );
     }
 
     /// Ordinary-least-squares slope of `y` on `x` (with intercept), mul/add/div only.

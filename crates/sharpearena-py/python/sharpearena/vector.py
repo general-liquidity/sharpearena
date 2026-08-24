@@ -82,6 +82,7 @@ class SharpeArenaVectorEnv(VectorEnv):
         max_weight: float = 1.0,
         allow_short: bool = True,
         distribution_mode: str = "calm",
+        vol_clustering: float = 0.0,
         autoreset_mode: str = "next_step",
         mode: str = "train",
         max_episode_steps: Optional[int] = None,
@@ -122,6 +123,7 @@ class SharpeArenaVectorEnv(VectorEnv):
             window_start=window_start,
             window_end=window_end,
             distribution_mode=distribution_mode,
+            vol_clustering=float(vol_clustering),
             autoreset_mode=autoreset_mode,
             **kwargs,
         )

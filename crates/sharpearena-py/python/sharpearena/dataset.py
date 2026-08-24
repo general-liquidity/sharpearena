@@ -54,14 +54,18 @@ def build_scenario_dataset(
     *,
     regime: Optional[str] = None,
     allow_short: bool = True,
+    vol_clustering: float = 0.0,
 ):
     """A ``datasets.Dataset`` of ``n_windows`` point-in-time scenarios.
 
     One row per scenario: ``question`` (initial instruction, including the scenario's
     sampled mandate), ``answer`` (``str(seed)``), ``info`` (``{"seed", "n_symbols",
-    "n_days", "mode", "mandate", "regime"?}``). The mandate is sampled deterministically
-    from the row seed (leak-free) and carried as a plain-JSON dict. ``mode`` selects the
-    train/eval seed range; the two ranges are disjoint by construction.
+    "n_days", "mode", "mandate", "regime"?, "vol_clustering"?}``). The mandate is sampled
+    deterministically from the row seed (leak-free) and carried as a plain-JSON dict.
+    ``mode`` selects the train/eval seed range; the two ranges are disjoint by
+    construction. ``vol_clustering`` is a pass-through knob for the generator's opt-in
+    volatility-clustering post-pass; it is recorded in ``info`` only when nonzero, so
+    default rows are unchanged.
     """
     if n_windows < 1:
         raise ValueError("n_windows must be >= 1")
@@ -93,6 +97,8 @@ def build_scenario_dataset(
         }
         if regime is not None:
             info["regime"] = regime
+        if float(vol_clustering) != 0.0:
+            info["vol_clustering"] = float(vol_clustering)
         infos.append(info)
 
     return Dataset.from_dict(

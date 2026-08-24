@@ -18,7 +18,8 @@
       "calm",
       "hard",
       "extreme"
-    ]
+    ],
+    "vol_clustering": 0.5
   },
   "tiers": {
     "calm": {
@@ -513,6 +514,503 @@
         "fano_factor": 0.7881042568542568,
         "gain_loss_skew": -0.7501225977185052,
         "zumbach_asymmetry": 0.025281551736407223
+      },
+      "pass_rate": 0.125
+    }
+  },
+  "clustered_tiers": {
+    "calm": {
+      "per_seed": [
+        {
+          "seed": 0,
+          "n_bars": 121,
+          "facts": {
+            "excess_kurtosis": -0.7321852472407944,
+            "abs_return_autocorr": 0.0020939930036640757,
+            "zumbach_asymmetry": 0.02058994968666445,
+            "gain_loss_skew": -0.1476965598096733,
+            "aggregational_gaussianity": -0.6044332452127483,
+            "fano_factor": 1.8333333333333333
+          },
+          "checks": {
+            "excess_kurtosis": false,
+            "abs_return_autocorr": true,
+            "aggregational_gaussianity": false,
+            "fano_factor": true
+          },
+          "passed": false
+        },
+        {
+          "seed": 1,
+          "n_bars": 121,
+          "facts": {
+            "excess_kurtosis": -0.4306958333519756,
+            "abs_return_autocorr": 0.05287716641475765,
+            "zumbach_asymmetry": -0.0862686405929347,
+            "gain_loss_skew": 0.06247758588209151,
+            "aggregational_gaussianity": -1.1084413698553437,
+            "fano_factor": 1.9583333333333335
+          },
+          "checks": {
+            "excess_kurtosis": false,
+            "abs_return_autocorr": true,
+            "aggregational_gaussianity": false,
+            "fano_factor": true
+          },
+          "passed": false
+        },
+        {
+          "seed": 2,
+          "n_bars": 121,
+          "facts": {
+            "excess_kurtosis": -0.9587413817369602,
+            "abs_return_autocorr": 0.046689163011445024,
+            "zumbach_asymmetry": -0.1378577554941751,
+            "gain_loss_skew": -0.16023431118368275,
+            "aggregational_gaussianity": -0.8794575977341492,
+            "fano_factor": 1.0555555555555556
+          },
+          "checks": {
+            "excess_kurtosis": false,
+            "abs_return_autocorr": true,
+            "aggregational_gaussianity": false,
+            "fano_factor": true
+          },
+          "passed": false
+        },
+        {
+          "seed": 3,
+          "n_bars": 121,
+          "facts": {
+            "excess_kurtosis": -0.9776170896107071,
+            "abs_return_autocorr": 0.02992190207875948,
+            "zumbach_asymmetry": 0.03572388719770869,
+            "gain_loss_skew": -0.0400317022518059,
+            "aggregational_gaussianity": -0.5410012757186143,
+            "fano_factor": 1.1791666666666667
+          },
+          "checks": {
+            "excess_kurtosis": false,
+            "abs_return_autocorr": true,
+            "aggregational_gaussianity": false,
+            "fano_factor": true
+          },
+          "passed": false
+        },
+        {
+          "seed": 4,
+          "n_bars": 121,
+          "facts": {
+            "excess_kurtosis": -1.0049628443515424,
+            "abs_return_autocorr": 0.04675924714021714,
+            "zumbach_asymmetry": -0.13047925762712093,
+            "gain_loss_skew": -0.021569220357811086,
+            "aggregational_gaussianity": -0.5523161177337288,
+            "fano_factor": 1.7083333333333333
+          },
+          "checks": {
+            "excess_kurtosis": false,
+            "abs_return_autocorr": true,
+            "aggregational_gaussianity": false,
+            "fano_factor": true
+          },
+          "passed": false
+        },
+        {
+          "seed": 5,
+          "n_bars": 121,
+          "facts": {
+            "excess_kurtosis": -0.7431362504020727,
+            "abs_return_autocorr": 0.03036840082505001,
+            "zumbach_asymmetry": -0.04100327658789589,
+            "gain_loss_skew": 0.16353184777966864,
+            "aggregational_gaussianity": -0.6224030060522535,
+            "fano_factor": 1.8875
+          },
+          "checks": {
+            "excess_kurtosis": false,
+            "abs_return_autocorr": true,
+            "aggregational_gaussianity": false,
+            "fano_factor": true
+          },
+          "passed": false
+        },
+        {
+          "seed": 6,
+          "n_bars": 121,
+          "facts": {
+            "excess_kurtosis": -0.794396573657181,
+            "abs_return_autocorr": 0.07364142920037083,
+            "zumbach_asymmetry": -0.04417817856074887,
+            "gain_loss_skew": 0.05745924390403288,
+            "aggregational_gaussianity": -0.3006616303366273,
+            "fano_factor": 1.9541666666666668
+          },
+          "checks": {
+            "excess_kurtosis": false,
+            "abs_return_autocorr": true,
+            "aggregational_gaussianity": false,
+            "fano_factor": true
+          },
+          "passed": false
+        },
+        {
+          "seed": 7,
+          "n_bars": 121,
+          "facts": {
+            "excess_kurtosis": -0.9570347822221267,
+            "abs_return_autocorr": 0.05372274791396503,
+            "zumbach_asymmetry": -0.04219673579035474,
+            "gain_loss_skew": 0.03997672673865969,
+            "aggregational_gaussianity": -0.6755323624213911,
+            "fano_factor": 1.3416666666666663
+          },
+          "checks": {
+            "excess_kurtosis": false,
+            "abs_return_autocorr": true,
+            "aggregational_gaussianity": false,
+            "fano_factor": true
+          },
+          "passed": false
+        }
+      ],
+      "mean_facts": {
+        "abs_return_autocorr": 0.042009256198528654,
+        "aggregational_gaussianity": -0.660530825633107,
+        "excess_kurtosis": -0.82484625032167,
+        "fano_factor": 1.6147569444444445,
+        "gain_loss_skew": -0.005760798662315044,
+        "zumbach_asymmetry": -0.05320875097110713
+      },
+      "pass_rate": 0.0
+    },
+    "hard": {
+      "per_seed": [
+        {
+          "seed": 0,
+          "n_bars": 121,
+          "facts": {
+            "excess_kurtosis": 14.552698923715287,
+            "abs_return_autocorr": 0.017906949155364893,
+            "zumbach_asymmetry": -0.04573042029766883,
+            "gain_loss_skew": -0.2974494941771443,
+            "aggregational_gaussianity": 12.294451092727103,
+            "fano_factor": 0.7916666666666667
+          },
+          "checks": {
+            "excess_kurtosis": true,
+            "abs_return_autocorr": true,
+            "aggregational_gaussianity": true,
+            "fano_factor": false
+          },
+          "passed": false
+        },
+        {
+          "seed": 1,
+          "n_bars": 121,
+          "facts": {
+            "excess_kurtosis": 17.668896515388983,
+            "abs_return_autocorr": 0.040900471991656424,
+            "zumbach_asymmetry": -0.009318799927705894,
+            "gain_loss_skew": -2.745532025776834,
+            "aggregational_gaussianity": 16.831861247316713,
+            "fano_factor": 0.8541666666666665
+          },
+          "checks": {
+            "excess_kurtosis": true,
+            "abs_return_autocorr": true,
+            "aggregational_gaussianity": true,
+            "fano_factor": false
+          },
+          "passed": false
+        },
+        {
+          "seed": 2,
+          "n_bars": 121,
+          "facts": {
+            "excess_kurtosis": 18.042483991820923,
+            "abs_return_autocorr": 0.045047293983854444,
+            "zumbach_asymmetry": -0.007902522068211883,
+            "gain_loss_skew": 0.16283727976235413,
+            "aggregational_gaussianity": 15.9285125174997,
+            "fano_factor": 0.8125
+          },
+          "checks": {
+            "excess_kurtosis": true,
+            "abs_return_autocorr": true,
+            "aggregational_gaussianity": true,
+            "fano_factor": false
+          },
+          "passed": false
+        },
+        {
+          "seed": 3,
+          "n_bars": 121,
+          "facts": {
+            "excess_kurtosis": 15.700280097619437,
+            "abs_return_autocorr": 0.02287652165638383,
+            "zumbach_asymmetry": -0.07074860287941354,
+            "gain_loss_skew": 1.8276238376520202,
+            "aggregational_gaussianity": 13.686032162702569,
+            "fano_factor": 1.0999999999999999
+          },
+          "checks": {
+            "excess_kurtosis": true,
+            "abs_return_autocorr": true,
+            "aggregational_gaussianity": true,
+            "fano_factor": true
+          },
+          "passed": true
+        },
+        {
+          "seed": 4,
+          "n_bars": 121,
+          "facts": {
+            "excess_kurtosis": 10.476057732376422,
+            "abs_return_autocorr": 0.03987254028441532,
+            "zumbach_asymmetry": -0.08010007495117735,
+            "gain_loss_skew": -1.066954059843021,
+            "aggregational_gaussianity": 9.391649207574048,
+            "fano_factor": 1.0208333333333333
+          },
+          "checks": {
+            "excess_kurtosis": true,
+            "abs_return_autocorr": true,
+            "aggregational_gaussianity": true,
+            "fano_factor": true
+          },
+          "passed": true
+        },
+        {
+          "seed": 5,
+          "n_bars": 121,
+          "facts": {
+            "excess_kurtosis": 13.377245301609635,
+            "abs_return_autocorr": 0.016593502656738514,
+            "zumbach_asymmetry": -0.11245658199378059,
+            "gain_loss_skew": -0.7369775410013509,
+            "aggregational_gaussianity": 10.89297344219362,
+            "fano_factor": 0.8958333333333333
+          },
+          "checks": {
+            "excess_kurtosis": true,
+            "abs_return_autocorr": true,
+            "aggregational_gaussianity": true,
+            "fano_factor": false
+          },
+          "passed": false
+        },
+        {
+          "seed": 6,
+          "n_bars": 121,
+          "facts": {
+            "excess_kurtosis": 15.445786697950048,
+            "abs_return_autocorr": 0.02202593475119293,
+            "zumbach_asymmetry": -0.0853454777523578,
+            "gain_loss_skew": 1.6553182547702765,
+            "aggregational_gaussianity": 14.499937392839897,
+            "fano_factor": 0.8958333333333333
+          },
+          "checks": {
+            "excess_kurtosis": true,
+            "abs_return_autocorr": true,
+            "aggregational_gaussianity": true,
+            "fano_factor": false
+          },
+          "passed": false
+        },
+        {
+          "seed": 7,
+          "n_bars": 121,
+          "facts": {
+            "excess_kurtosis": 11.882148649848443,
+            "abs_return_autocorr": 0.025207861871675775,
+            "zumbach_asymmetry": -0.05174466967703999,
+            "gain_loss_skew": 0.578264861826834,
+            "aggregational_gaussianity": 10.744457437969157,
+            "fano_factor": 0.8125
+          },
+          "checks": {
+            "excess_kurtosis": true,
+            "abs_return_autocorr": true,
+            "aggregational_gaussianity": true,
+            "fano_factor": false
+          },
+          "passed": false
+        }
+      ],
+      "mean_facts": {
+        "abs_return_autocorr": 0.028803884543910266,
+        "aggregational_gaussianity": 13.033734312602851,
+        "excess_kurtosis": 14.643199738791148,
+        "fano_factor": 0.8979166666666667,
+        "gain_loss_skew": -0.07785861084835818,
+        "zumbach_asymmetry": -0.05791839369341949
+      },
+      "pass_rate": 0.25
+    },
+    "extreme": {
+      "per_seed": [
+        {
+          "seed": 0,
+          "n_bars": 121,
+          "facts": {
+            "excess_kurtosis": 11.799174354652433,
+            "abs_return_autocorr": -0.005019131741123497,
+            "zumbach_asymmetry": -0.04907944175715241,
+            "gain_loss_skew": 0.2970175327880684,
+            "aggregational_gaussianity": 9.264414411634434,
+            "fano_factor": 0.6825396825396826
+          },
+          "checks": {
+            "excess_kurtosis": true,
+            "abs_return_autocorr": false,
+            "aggregational_gaussianity": true,
+            "fano_factor": false
+          },
+          "passed": false
+        },
+        {
+          "seed": 1,
+          "n_bars": 121,
+          "facts": {
+            "excess_kurtosis": 12.46090886941775,
+            "abs_return_autocorr": 0.027454082773188126,
+            "zumbach_asymmetry": -0.10650029171012834,
+            "gain_loss_skew": -0.41349002975448895,
+            "aggregational_gaussianity": 8.821170036962759,
+            "fano_factor": 0.838095238095238
+          },
+          "checks": {
+            "excess_kurtosis": true,
+            "abs_return_autocorr": true,
+            "aggregational_gaussianity": true,
+            "fano_factor": false
+          },
+          "passed": false
+        },
+        {
+          "seed": 2,
+          "n_bars": 121,
+          "facts": {
+            "excess_kurtosis": 13.318624719981653,
+            "abs_return_autocorr": 0.013118227054601066,
+            "zumbach_asymmetry": -0.01779488328121281,
+            "gain_loss_skew": -0.6854454421058239,
+            "aggregational_gaussianity": 10.629257238882161,
+            "fano_factor": 0.8333333333333334
+          },
+          "checks": {
+            "excess_kurtosis": true,
+            "abs_return_autocorr": true,
+            "aggregational_gaussianity": true,
+            "fano_factor": false
+          },
+          "passed": false
+        },
+        {
+          "seed": 3,
+          "n_bars": 121,
+          "facts": {
+            "excess_kurtosis": 10.617890457480296,
+            "abs_return_autocorr": -0.0097265211399679,
+            "zumbach_asymmetry": 0.029918938751165542,
+            "gain_loss_skew": 0.3640432632834651,
+            "aggregational_gaussianity": 8.542853897952178,
+            "fano_factor": 0.6172619047619047
+          },
+          "checks": {
+            "excess_kurtosis": true,
+            "abs_return_autocorr": false,
+            "aggregational_gaussianity": true,
+            "fano_factor": false
+          },
+          "passed": false
+        },
+        {
+          "seed": 4,
+          "n_bars": 121,
+          "facts": {
+            "excess_kurtosis": 12.780690779040778,
+            "abs_return_autocorr": 0.021979749951633466,
+            "zumbach_asymmetry": -0.011995760987421993,
+            "gain_loss_skew": -0.8802327791884117,
+            "aggregational_gaussianity": 11.824740312812482,
+            "fano_factor": 0.8136904761904761
+          },
+          "checks": {
+            "excess_kurtosis": true,
+            "abs_return_autocorr": true,
+            "aggregational_gaussianity": true,
+            "fano_factor": false
+          },
+          "passed": false
+        },
+        {
+          "seed": 5,
+          "n_bars": 121,
+          "facts": {
+            "excess_kurtosis": 17.843958091748856,
+            "abs_return_autocorr": 0.02878144479255531,
+            "zumbach_asymmetry": 0.034304479598193695,
+            "gain_loss_skew": -1.4609163441174933,
+            "aggregational_gaussianity": 15.450061439440757,
+            "fano_factor": 0.9125
+          },
+          "checks": {
+            "excess_kurtosis": true,
+            "abs_return_autocorr": true,
+            "aggregational_gaussianity": true,
+            "fano_factor": false
+          },
+          "passed": false
+        },
+        {
+          "seed": 6,
+          "n_bars": 121,
+          "facts": {
+            "excess_kurtosis": 19.927781419150318,
+            "abs_return_autocorr": 0.08986722042310705,
+            "zumbach_asymmetry": -0.056750728623375546,
+            "gain_loss_skew": -1.7176997559750427,
+            "aggregational_gaussianity": 14.151215793216073,
+            "fano_factor": 1.4047619047619044
+          },
+          "checks": {
+            "excess_kurtosis": true,
+            "abs_return_autocorr": true,
+            "aggregational_gaussianity": true,
+            "fano_factor": true
+          },
+          "passed": true
+        },
+        {
+          "seed": 7,
+          "n_bars": 121,
+          "facts": {
+            "excess_kurtosis": 12.889261522318069,
+            "abs_return_autocorr": -0.009209211647665638,
+            "zumbach_asymmetry": 0.07600036189446514,
+            "gain_loss_skew": -0.3018935012835342,
+            "aggregational_gaussianity": 11.126841904877091,
+            "fano_factor": 0.675595238095238
+          },
+          "checks": {
+            "excess_kurtosis": true,
+            "abs_return_autocorr": false,
+            "aggregational_gaussianity": true,
+            "fano_factor": false
+          },
+          "passed": false
+        }
+      ],
+      "mean_facts": {
+        "abs_return_autocorr": 0.019655732558291,
+        "aggregational_gaussianity": 11.226319379472242,
+        "excess_kurtosis": 13.95478627672377,
+        "fano_factor": 0.8472222222222221,
+        "gain_loss_skew": -0.5998271320441576,
+        "zumbach_asymmetry": -0.012737165764433341
       },
       "pass_rate": 0.125
     }

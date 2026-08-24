@@ -34,6 +34,9 @@ pub struct LaneConfig {
     pub seed: u64,
     pub exec_seed: Option<u64>,
     pub distribution_mode: DistributionMode,
+    /// Opt-in volatility-clustering strength (`0.0` = off; see
+    /// [`ScenarioSpec::vol_clustering`]).
+    pub vol_clustering: f64,
     pub window: Option<Window>,
     pub costs: CostModel,
 }
@@ -49,6 +52,7 @@ impl LaneConfig {
             seed,
             exec_seed: None,
             distribution_mode: DistributionMode::Calm,
+            vol_clustering: 0.0,
             window: None,
             costs: CostModel::default(),
         }
@@ -56,12 +60,16 @@ impl LaneConfig {
 
     fn build(&self) -> TradingEnv {
         let data = match self.distribution_mode {
-            DistributionMode::Calm => Dataset::synthetic(self.n_symbols, self.n_days, self.seed),
+            // The unclustered Calm fast path stays byte-identical to the historical build.
+            DistributionMode::Calm if self.vol_clustering == 0.0 => {
+                Dataset::synthetic(self.n_symbols, self.n_days, self.seed)
+            }
             mode => generate_scenario(
                 &ScenarioSpec {
                     n_symbols: self.n_symbols,
                     n_days: self.n_days,
                     distribution_mode: mode,
+                    vol_clustering: self.vol_clustering,
                     ..ScenarioSpec::default()
                 },
                 self.seed,
