@@ -54,6 +54,7 @@ fn parse_richness_tier(richness: &str) -> PyResult<RichnessTier> {
 /// post-process that same seeded panel (see `sharpearena::generate_scenario`).
 /// `vol_clustering > 0.0` opts into the volatility-clustering post-pass; at `0.0`
 /// (the default) the output is byte-identical to the historical build.
+#[allow(clippy::too_many_arguments)]
 fn build_dataset(
     n_symbols: usize,
     n_days: usize,
