@@ -53,6 +53,28 @@ concentrated in the worst tenth of fills. A high rate with a low tail share mean
 quotes are mispriced against the whole flow. A low rate with a high tail share means a
 handful of meta-orders are doing the damage.
 
+**The endogenous arm.** The scenario above fixes the efficient-price path: the meta-order's
+information is realized as an exogenous drift, and nothing any taker does moves the mid.
+That is enough to measure the informed-versus-uninformed *gap*, but it cannot speak to
+maker profitability *levels*, because a maker whose fills never move the price against it
+books the full quoted depth on every print. :class:`EndogenousImpact` supplies the missing
+mechanism, using the permanent-impact law of the shared-book clearing engine
+(``sharpearena::market``, Kyle 1985 as implemented for the M2 environment). Let ``S_t`` be
+the efficient price (the alpha drift plus ordinary volatility, identical across the two legs
+of the control) and ``Q_t`` the signed taker quantity actually filled against the maker
+ladder in bar ``t`` (meta-order children plus noise flow). The mid the makers quote around is
+
+    ``mid_t = S_t * M_t``,  ``M_{t+1} = M_t * (1 + lambda * Q_t / V)``,  ``M_0 = 1``,
+
+the engine's running permanent-impact multiplier, updated after the bar clears so that the
+reference price a maker quotes against is moved only by flow strictly before it. Temporary
+impact is not a separate term here: the maker ladder itself is the temporary component (a
+taker pays the quoted depth, which is what the engine's ``eta`` term models in the
+maker-less M2 market), so the arm adds exactly one thing to the exogenous scenario, that a
+filled unit moves the next reference price by ``mid_t * lambda / V`` in the taker's
+direction. With ``lambda = 0`` the arm reproduces the exogenous scenario bit for bit.
+:func:`compare_endogenous_arms` runs the paired control under both arms.
+
 Determinism: every draw comes from seeded ``np.random.default_rng`` streams derived from
 one master seed, and there is no clock and no I/O, so a report reproduces byte for byte
 from ``(seed, params, policies)``.
@@ -126,6 +148,53 @@ class AdverseSelectionParams:
         the parents do not overlap and each one's move is attributable to it alone."""
         room = self.mm.n_steps - self.meta_start_step
         return max(self.n_children, room // self.n_meta_orders)
+
+
+@dataclass(frozen=True)
+class EndogenousImpact:
+    """Permanent-impact coefficients for the endogenous arm, in the clearing engine's units.
+
+    ``kyle_lambda`` is Kyle's coefficient per unit of dimensionless flow and
+    ``volume_scale`` the ADV-like normalizer ``V`` that makes flow dimensionless, exactly as
+    in ``MarketParams`` of the shared-book engine: a bar whose filled taker flow is ``Q``
+    multiplies the next reference mid by ``1 + kyle_lambda * Q / V``. That factor must
+    remain finite and strictly positive on every realized bar: a non-positive value would
+    make the modeled mid non-positive and the log-markout statistic undefined, so the
+    runtime rejects it with ``ValueError`` rather than silently crossing the domain. The default
+    ``volume_scale`` is one episode's realized taker volume under the default scenario
+    (mean 239 filled units over the 48 exogenous-arm episodes of the paired control), the
+    scenario's analogue of a day's volume; at the default ``kyle_lambda`` a filled unit
+    then moves the mid by ``100 * 0.1 / 240 = 0.042`` price units at the initial mid.
+    """
+
+    kyle_lambda: float = 0.1
+    volume_scale: float = 240.0
+
+    def __post_init__(self) -> None:
+        if not (math.isfinite(self.kyle_lambda) and self.kyle_lambda >= 0.0):
+            raise ValueError("kyle_lambda must be a finite non-negative number")
+        if not (math.isfinite(self.volume_scale) and self.volume_scale > 0.0):
+            raise ValueError("volume_scale must be a finite positive number")
+
+    def impact_per_unit(self, mid: float) -> float:
+        """Permanent mid move, in price units, per filled unit of taker flow at ``mid``."""
+        return mid * self.kyle_lambda / self.volume_scale
+
+    def multiplier_for_flow(self, flow: float) -> float:
+        """Return the valid next-bar permanent-impact multiplier for signed filled flow.
+
+        This is deliberately a domain check, not a clamp: clamping would change the clearing
+        law at the very parameter values where the calibration has become incoherent.
+        """
+        factor = 1.0 + self.kyle_lambda * flow / self.volume_scale
+        if not (math.isfinite(factor) and factor > 0.0):
+            raise ValueError(
+                "endogenous impact requires a finite positive multiplier "
+                "1 + kyle_lambda * Q / volume_scale; "
+                f"got {factor!r} for kyle_lambda={self.kyle_lambda!r}, "
+                f"Q={flow!r}, volume_scale={self.volume_scale!r}"
+            )
+        return factor
 
 
 @dataclass(frozen=True)
@@ -235,9 +304,17 @@ class AdverseSelectionReport:
     makers: tuple[MakerMarkout, ...]
     fills: tuple[Fill, ...]
     mid_path: tuple[float, ...]
+    # The endogenous decomposition of ``mid_path``: ``mid_t = efficient_path[t] *
+    # impact_multiplier_path[t]``. In the exogenous arm the multiplier is identically 1 and
+    # the efficient path is the mid path. ``net_flow[t]`` is the signed taker quantity
+    # filled in bar ``t``, the flow that moves ``M_{t+1}``.
+    impact: Optional[EndogenousImpact] = None
+    efficient_path: tuple[float, ...] = ()
+    impact_multiplier_path: tuple[float, ...] = ()
+    net_flow: tuple[int, ...] = ()
 
     def to_dict(self) -> dict:
-        return {
+        out = {
             "seed": self.seed,
             "informed": self.informed,
             "meta_orders": [
@@ -253,6 +330,14 @@ class AdverseSelectionReport:
             "meta_filled_qty": self.meta_filled_qty,
             "makers": [m.to_dict() for m in self.makers],
         }
+        if self.impact is not None:
+            out["impact"] = {
+                "kyle_lambda": self.impact.kyle_lambda,
+                "volume_scale": self.impact.volume_scale,
+                "final_multiplier": self.impact_multiplier_path[-1],
+                "informed_displacement": informed_displacement(self),
+            }
+        return out
 
 
 # -- internals --------------------------------------------------------------
@@ -536,6 +621,7 @@ def run_adverse_selection(
     params: Optional[AdverseSelectionParams] = None,
     policies: Optional[Sequence[Policy]] = None,
     seed: int = 0,
+    impact: Optional[EndogenousImpact] = None,
 ) -> AdverseSelectionReport:
     """Run one seeded episode of informed meta-order flow against the maker roster.
 
@@ -547,6 +633,10 @@ def run_adverse_selection(
     ``policies`` are ``(obs) -> [bid_depth, ask_depth]`` callables in roster order, shaped
     for :class:`~sharpearena.market_making.MarketMakingEnv`. When omitted, the roster is
     the Avellaneda-Stoikov optimum plus tighter fixed-spread quoters.
+
+    ``impact`` switches on the endogenous arm: the bar's filled taker flow then also moves
+    the next mid through the clearing engine's permanent-impact multiplier (see the module
+    docstring). ``None`` is the exogenous scenario, unchanged.
     """
     p = params or AdverseSelectionParams()
     mm = p.mm
@@ -586,13 +676,19 @@ def run_adverse_selection(
 
     book = _MakerBook(makers, mm)
     fills: list[Fill] = []
-    mid = mm.s0
+    efficient = mm.s0
+    mult = 1.0
+    mid = efficient
     mid_path = [mid]
+    efficient_path = [efficient]
+    mult_path = [mult]
+    net_flow: list[int] = []
     meta_filled = 0
     meta_cp = _INFORMED if p.informed else _UNINFORMED
     lam = mm.arrival_rate * mm.dt
 
     for t in range(mm.n_steps):
+        n_fills_before = len(fills)
         depths: dict[str, tuple[float, float]] = {}
         for maker, policy in zip(makers, pols):
             action = np.asarray(policy(_obs(maker, book, mid, t, mm)), dtype=np.float64)
@@ -630,11 +726,26 @@ def run_adverse_selection(
                 out=fills,
             )
 
-        # The efficient price moves: the meta-order's information (and its impact, which
-        # this model does not try to separate from it) plus ordinary volatility.
+        # The bar's filled taker flow, signed from the taker's side (a maker fill with
+        # signed_qty = -1 is a taker buy). This is what moves the endogenous mid.
+        flow = -sum(f.signed_qty for f in fills[n_fills_before:])
+        net_flow.append(flow)
+
+        # The efficient price moves: the meta-order's information (and, in the exogenous
+        # arm, its impact, which that arm does not try to separate from it) plus ordinary
+        # volatility.
         if order is not None:
-            mid += order.alpha / len(order.children)
-        mid += mm.sigma * math.sqrt(mm.dt) * float(rng_price.standard_normal())
+            efficient += order.alpha / len(order.children)
+        efficient += mm.sigma * math.sqrt(mm.dt) * float(rng_price.standard_normal())
+        efficient_path.append(efficient)
+        if impact is None:
+            mid = efficient
+        else:
+            # The engine's permanent-impact update, applied after the bar clears so that
+            # the mid a maker quotes against is moved only by flow strictly before it.
+            mult *= impact.multiplier_for_flow(flow)
+            mid = efficient * mult
+        mult_path.append(mult)
         mid_path.append(mid)
 
     return AdverseSelectionReport(
@@ -646,7 +757,26 @@ def run_adverse_selection(
         makers=tuple(_summarize(m, fills, mid_path, p.markout_horizons) for m in makers),
         fills=tuple(fills),
         mid_path=tuple(mid_path),
+        impact=impact,
+        efficient_path=tuple(efficient_path),
+        impact_multiplier_path=tuple(mult_path),
+        net_flow=tuple(net_flow),
     )
+
+
+def informed_displacement(report: AdverseSelectionReport) -> float:
+    """Mean log-multiplier move over the meta-order windows, signed by the parent's side.
+
+    ``side * (ln M_end - ln M_start)`` averaged over the episode's parents: positive when
+    the parents' own flow pushed the reference mid the way they were trading, which is the
+    endogenous arm's defining property. Identically zero in the exogenous arm.
+    """
+    path = report.impact_multiplier_path
+    moves = [
+        m.side * (math.log(path[m.end_step]) - math.log(path[m.start_step]))
+        for m in report.meta_orders
+    ]
+    return sum(moves) / len(moves)
 
 
 def compare_informed_vs_uninformed(
@@ -694,13 +824,132 @@ def compare_informed_vs_uninformed(
     }
 
 
+def _episode_row(report: AdverseSelectionReport, horizons: Sequence[int]) -> dict:
+    """One episode's pooled maker statistics: markout per filled unit (episode markout over
+    episode filled quantity, all makers) and the toxic-fill rate (share of fills, all
+    makers, whose markout is negative), per horizon."""
+    qty = sum(m.filled_qty for m in report.makers)
+    per_unit: dict[int, float] = {}
+    toxic: dict[int, float] = {}
+    for h in horizons:
+        per_unit[h] = sum(m.markout[h] for m in report.makers) / qty if qty else 0.0
+        marks = fill_markout(report.fills, report.mid_path, h)
+        toxic[h] = sum(1 for x in marks if x < 0.0) / len(marks) if marks else 0.0
+    return {"markout_per_unit": per_unit, "toxic_fill_rate": toxic}
+
+
+def compare_endogenous_arms(
+    *,
+    params: Optional[AdverseSelectionParams] = None,
+    impact: Optional[EndogenousImpact] = None,
+    policies: Optional[Sequence[Policy]] = None,
+    n_episodes: int = 24,
+    seed_base: int = 0,
+) -> dict:
+    """The paired informed / uninformed control under both arms, per episode.
+
+    For each seed the scenario runs four times: informed and uninformed, each with the
+    price path exogenous (``impact=None``) and endogenous (``impact``). The efficient
+    price, the slice schedule, the parent sizes and the alpha signs are identical across
+    all four; the endogenous arm differs only in that filled taker flow moves the next mid.
+    Per-episode vectors are returned rather than pooled means so a caller can put an
+    interval on every cell; ``means`` pools each vector for convenience.
+
+    The economically meaningful question the endogenous arm answers is whether makers
+    still earn a positive markout against informed flow once their own fills move the
+    price, which is ``means["endogenous"]["informed"]["markout_per_unit"][h] > 0``.
+    """
+    p = params or AdverseSelectionParams()
+    imp = impact or EndogenousImpact()
+    horizons = tuple(p.markout_horizons)
+    arms = {"exogenous": None, "endogenous": imp}
+    legs = {"informed": True, "uninformed": False}
+
+    def _vec() -> dict[int, list[float]]:
+        return {h: [] for h in horizons}
+
+    out: dict = {
+        arm: {
+            **{leg: {"markout_per_unit": _vec(), "toxic_fill_rate": _vec()} for leg in legs},
+            "gap_per_unit": _vec(),
+            "informed_displacement": [],
+            "uninformed_displacement": [],
+        }
+        for arm in arms
+    }
+    for i in range(int(n_episodes)):
+        seed = seed_base + i
+        for arm, arm_impact in arms.items():
+            rows: dict[str, dict] = {}
+            for leg, informed in legs.items():
+                report = run_adverse_selection(
+                    params=replace(p, informed=informed),
+                    policies=policies,
+                    seed=seed,
+                    impact=arm_impact,
+                )
+                rows[leg] = _episode_row(report, horizons)
+                out[arm][f"{leg}_displacement"].append(informed_displacement(report))
+                for key in ("markout_per_unit", "toxic_fill_rate"):
+                    for h in horizons:
+                        out[arm][leg][key][h].append(rows[leg][key][h])
+            for h in horizons:
+                out[arm]["gap_per_unit"][h].append(
+                    rows["uninformed"]["markout_per_unit"][h]
+                    - rows["informed"]["markout_per_unit"][h]
+                )
+
+    def _mean(v: Sequence[float]) -> float:
+        return sum(v) / len(v) if v else 0.0
+
+    means = {
+        arm: {
+            **{
+                leg: {
+                    key: {h: _mean(out[arm][leg][key][h]) for h in horizons}
+                    for key in ("markout_per_unit", "toxic_fill_rate")
+                }
+                for leg in legs
+            },
+            "gap_per_unit": {h: _mean(out[arm]["gap_per_unit"][h]) for h in horizons},
+            "informed_displacement": _mean(out[arm]["informed_displacement"]),
+            "uninformed_displacement": _mean(out[arm]["uninformed_displacement"]),
+        }
+        for arm in arms
+    }
+    return {
+        "n_episodes": int(n_episodes),
+        "seed_base": int(seed_base),
+        "horizons": horizons,
+        "impact": {
+            "kyle_lambda": imp.kyle_lambda,
+            "volume_scale": imp.volume_scale,
+            "impact_per_unit_at_s0": imp.impact_per_unit(p.mm.s0),
+        },
+        "per_episode": out,
+        "means": means,
+        "informed_is_worse": {
+            arm: {h: means[arm]["gap_per_unit"][h] > 0.0 for h in horizons} for arm in arms
+        },
+        "makers_profit_against_informed_flow": {
+            arm: {
+                h: means[arm]["informed"]["markout_per_unit"][h] > 0.0 for h in horizons
+            }
+            for arm in arms
+        },
+    }
+
+
 __all__ = [
     "AdverseSelectionParams",
     "AdverseSelectionReport",
+    "EndogenousImpact",
     "Fill",
     "MakerMarkout",
     "MetaOrder",
+    "compare_endogenous_arms",
     "compare_informed_vs_uninformed",
     "fill_markout",
+    "informed_displacement",
     "run_adverse_selection",
 ]

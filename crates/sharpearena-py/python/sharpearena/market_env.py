@@ -52,10 +52,12 @@ small documented JSON interface:
   default ``None`` = point estimate) install an elliptic uncertainty set over the impact
   coefficients: each bar then clears at the worst-case ``(lambda, eta)`` inside the
   ellipse and the result carries the coefficients used in ``robust_impact``.
-  ``impact_exponent`` (default ``1.0`` = linear) applies ``sign(Q) * |Q|**exponent`` to
-  the permanent (Kyle) flow term only; at ``1.0`` the native path is byte-identical to
-  the frozen linear dynamics, below ``1.0`` permanent impact is concave in flow (the
-  Huberman-Stanzl regime in which round-trip manipulation can become profitable).
+  ``impact_exponent`` (default ``1.0`` = linear) applies
+  ``sign(Q / V) * |Q / V|**exponent`` to the permanent (Kyle) normalized-flow term only.
+  Thus the permanent coefficient is dimensionless for the declared exponent. At ``1.0``
+  the native path is byte-identical to the frozen linear dynamics; below ``1.0`` permanent
+  impact is concave in flow (the Huberman-Stanzl regime in which round-trip manipulation
+  can become profitable).
 * ``reset_market() -> json``: ``{symbols, n_agents, n_bars, start_bar, cursor, capital,
   observations:[MarketObservation, ...]}`` (observations in canonical agent order).
 * ``step_market(orders_json) -> json``: ``orders_json`` is a JSON array of shape

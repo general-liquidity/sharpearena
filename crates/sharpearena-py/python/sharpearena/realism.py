@@ -20,13 +20,14 @@ The facts computed by :func:`stylized_facts`:
 * **gain_loss_skew**: the gain/loss asymmetry of the return distribution (its skewness);
   equities are typically left-skewed (fatter loss tail).
 * **aggregational_gaussianity**: as returns are summed over longer horizons the
-  distribution drifts back toward Gaussian, so excess kurtosis decays. The fact is the
-  excess kurtosis at horizon 1 minus that of the horizon-aggregated series; positive in
-  real markets.
-* **fano_factor**: an exploratory intermittency proxy, the sample variance/mean of
-  large-move exceedance counts per window. Its population value is 1 for a Poisson
-  process, but the panel-estimated threshold and small number of windows mean 1 is not a
-  calibrated finite-sample null here; the default certificate does not gate on it.
+  distribution drifts back toward Gaussian.  The fact is the reduction in *absolute*
+  excess kurtosis (distance from Gaussian), not merely a signed-kurtosis difference:
+  a platykurtic series becoming less platykurtic is convergence too.
+* **fano_factor**: an exploratory intermittency proxy, the Bessel-corrected sample
+  variance/mean of large-move exceedance counts, divided by its exact conditional-IID
+  finite-panel expectation.  Conditioning on the observed total exceedance count makes
+  the estimated threshold harmless for this null; ratio 1 is neutral, although the
+  small number of windows still makes it too noisy to gate the default certificate.
 
 :func:`certify_realism` grades a panel against :data:`DEFAULT_THRESHOLDS` (or caller
 overrides) and returns a :class:`RealismReport` with a per-fact pass/fail and an overall
@@ -40,6 +41,7 @@ injected panel: it never touches the native engine or any RNG.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Optional
 
 import numpy as np
@@ -101,6 +103,35 @@ def _abs_return_autocorr(r: np.ndarray, lags: int) -> float:
     return float(np.nanmean(vals)) if vals else np.nan
 
 
+@lru_cache(maxsize=32)
+def _abs_acf_iid_upper(n_returns: int, n_series: int, lags: int) -> float:
+    """Reproducible 95th-percentile IID null for the actual mean-|r|-ACF estimator.
+
+    The familiar zero population ACF is not the null of this short-panel estimator:
+    finite samples, demeaning and averaging ten lags make a raw ``> 0`` check reject
+    IID panels far more often than its name suggests.  We therefore pre-calibrate the
+    *estimator* against 20,000 independent Gaussian panels of exactly the requested
+    geometry.  The seed, number of replicates and quantile are fixed constants, never
+    fitted to a generated market panel.  Chunking bounds memory and the cache means a
+    paper sweep pays the calibration once per geometry.
+    """
+    if n_returns < 3 or n_series < 1 or lags < 1:
+        return float("nan")
+    rng = np.random.default_rng(0xA11CE_2026 + 1009 * n_returns + 31 * n_series + lags)
+    draws: list[np.ndarray] = []
+    n_rep, chunk = 20_000, 1_000
+    effective_lags = min(lags, n_returns - 1)
+    for start in range(0, n_rep, chunk):
+        x = np.abs(rng.standard_normal((min(chunk, n_rep - start), n_returns, n_series)))
+        x -= x.mean(axis=1, keepdims=True)
+        denom = np.sum(x * x, axis=1)
+        acfs = []
+        for k in range(1, effective_lags + 1):
+            acfs.append(np.sum(x[:, k:, :] * x[:, :-k, :], axis=1) / denom)
+        draws.append(np.mean(np.stack(acfs, axis=1), axis=(1, 2)))
+    return float(np.quantile(np.concatenate(draws), 0.95))
+
+
 def _zumbach_asymmetry(r: np.ndarray, window: int) -> float:
     """Coarse->fine minus fine->coarse volatility-correlation gap at lag == ``window``.
 
@@ -134,25 +165,29 @@ def _gain_loss_skew(r: np.ndarray) -> float:
 
 
 def _aggregational_gaussianity(r: np.ndarray, horizon: int) -> float:
-    """Excess kurtosis at horizon 1 minus that of the ``horizon``-aggregated return series.
+    """Reduction in absolute excess-kurtosis distance from Gaussian on aggregation.
 
-    Positive when tails thin toward Gaussian as returns are summed over longer horizons.
+    A signed difference misclassifies a platykurtic panel that moves from, for example,
+    -1.0 to -0.3 as moving *away* from Gaussian.  ``abs(k_1) - abs(k_h)`` is positive
+    exactly when the horizon-aggregated series is closer to zero excess kurtosis.
     """
     n_blocks = r.shape[0] // horizon
     if n_blocks < 2:
         return np.nan
     agg = r[: n_blocks * horizon].reshape(n_blocks, horizon, r.shape[1]).sum(axis=1)
-    return float(_excess_kurtosis(r) - _excess_kurtosis(agg))
+    return float(abs(_excess_kurtosis(r)) - abs(_excess_kurtosis(agg)))
 
 
 def _fano_factor(r: np.ndarray, window: int, z: float) -> float:
-    """Exploratory Fano proxy of large-move exceedance counts per ``window``.
+    """Finite-panel-calibrated exploratory Fano ratio of large-move counts.
 
-    A large move is ``|return|`` above ``mean + z*std``; counting exceedances per window
-    turns the tape into a finite-panel point-process diagnostic. The sample variance uses
-    ``ddof=1``. Because the threshold is estimated from the same panel and the number of
-    windows can be small, 1 is not a calibrated finite-sample null; this value is reported
-    but deliberately excluded from :data:`DEFAULT_THRESHOLDS`.
+    For each series, condition on the observed number ``M`` of exceedances among ``N``
+    bars.  Under IID placement of those events, the block counts are multivariate
+    hypergeometric and the exact expectation of the Bessel-corrected sample Fano is
+    ``N * (1 - M/N) / (N - 1)``.  Dividing by that quantity makes the reported ratio
+    neutral at one for the *actual finite-panel estimator*, rather than comparing a
+    Bernoulli count process to an inapplicable Poisson limit.  This remains descriptive:
+    with only twelve ten-bar blocks it is not a stable certificate statistic.
     """
     vals: list[float] = []
     for x in _columns(r):
@@ -165,7 +200,11 @@ def _fano_factor(r: np.ndarray, window: int, z: float) -> float:
         counts = events[: n_blocks * window].reshape(n_blocks, window).sum(axis=1)
         mean = counts.mean()
         if mean > 0.0:
-            vals.append(float(counts.var(ddof=1) / mean))
+            n_obs = n_blocks * window
+            p = float(counts.sum()) / n_obs
+            conditional_iid_fano = n_obs * (1.0 - p) / (n_obs - 1.0)
+            if conditional_iid_fano > 0.0:
+                vals.append(float((counts.var(ddof=1) / mean) / conditional_iid_fano))
     return float(np.nanmean(vals)) if vals else np.nan
 
 
@@ -209,6 +248,18 @@ DEFAULT_THRESHOLDS: dict[str, tuple[Optional[float], Optional[float]]] = {
 }
 
 
+# A reproducible Calm calibration candidate.  It passed the earlier raw-positive-ACF
+# screen, but fails the subsequent finite-panel-calibrated ACF confirmation; it is not a
+# certified preset.  Mirrors ``ScenarioSpec::calm_calibration_candidate()`` in the crate.
+# The default (all-zero) Calm tape is unchanged and remains uncertified.
+CALM_CALIBRATION_CANDIDATE_KNOBS: dict[str, float] = {
+    "vol_clustering": 0.5,
+    "jump_burst_probability": 0.02,
+    "jump_burst_persistence": 0.0,
+    "jump_burst_size": 0.015,
+}
+
+
 @dataclass(frozen=True)
 class RealismReport:
     """The graded output of :func:`certify_realism`.
@@ -239,10 +290,18 @@ def certify_realism(
     if thresholds is not None:
         merged.update(thresholds)
     facts = stylized_facts(panel, **facts_kwargs)
+    returns = _as_returns(panel, facts_kwargs.get("kind", "price"))
     checks: dict[str, bool] = {}
+    applied = dict(merged)
     for name, (low, high) in merged.items():
         value = facts.get(name, np.nan)
         ok = np.isfinite(value)
+        if name == "abs_return_autocorr" and (thresholds is None or name not in thresholds):
+            # A one-sided 5% IID-null calibration of this finite-panel estimator.
+            low = _abs_acf_iid_upper(
+                returns.shape[0], returns.shape[1], int(facts_kwargs.get("abs_acf_lags", 10))
+            )
+            applied[name] = (low, None)
         if ok and low is not None:
             ok = value >= low
         if ok and high is not None:
@@ -252,7 +311,7 @@ def certify_realism(
         facts=facts,
         checks=checks,
         passed=all(checks.values()),
-        thresholds=merged,
+        thresholds=applied,
     )
 
 
@@ -261,4 +320,5 @@ __all__ = [
     "certify_realism",
     "RealismReport",
     "DEFAULT_THRESHOLDS",
+    "CALM_CALIBRATION_CANDIDATE_KNOBS",
 ]

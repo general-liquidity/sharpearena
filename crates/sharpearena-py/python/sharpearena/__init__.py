@@ -154,6 +154,7 @@ from .realism import (
     certify_realism,
     RealismReport,
     DEFAULT_THRESHOLDS,
+    CALM_CALIBRATION_CANDIDATE_KNOBS,
 )
 from .registration import register_envs
 from .adverse_selection import (
@@ -162,8 +163,11 @@ from .adverse_selection import (
     MetaOrder,
     MakerMarkout,
     Fill,
+    EndogenousImpact,
     run_adverse_selection,
     compare_informed_vs_uninformed,
+    compare_endogenous_arms,
+    informed_displacement,
     fill_markout,
 )
 from .manipulation import (
@@ -360,6 +364,7 @@ __all__ = [
     "certify_realism",
     "RealismReport",
     "DEFAULT_THRESHOLDS",
+    "CALM_CALIBRATION_CANDIDATE_KNOBS",
     "register_envs",
     # Adverse selection: the maker-side risk a single-agent env cannot express.
     "AdverseSelectionParams",
@@ -367,8 +372,11 @@ __all__ = [
     "MetaOrder",
     "MakerMarkout",
     "Fill",
+    "EndogenousImpact",
     "run_adverse_selection",
     "compare_informed_vs_uninformed",
+    "compare_endogenous_arms",
+    "informed_displacement",
     "fill_markout",
     # Manipulation: a red-team diagnostic on the impact model, not a strategy.
     "ManipulationParams",

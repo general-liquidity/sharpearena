@@ -89,10 +89,56 @@ def test_garch_shows_stronger_vol_clustering():
 
 def test_iid_baselines_are_neutral():
     facts = stylized_facts(_iid_panel(t=2000), kind="return")
-    # A memoryless Gaussian tape: ~mesokurtic, ~no clustering, ~Poisson (Fano ~ 1).
+    # A memoryless Gaussian tape: ~mesokurtic, ~no clustering, and a finite-panel-
+    # calibrated conditional-IID Fano ratio near one.
     assert abs(facts["excess_kurtosis"]) < 0.5
     assert abs(facts["abs_return_autocorr"]) < 0.05
     assert abs(facts["fano_factor"] - 1.0) < 0.5
+
+
+def test_aggregational_gaussianity_uses_distance_to_gaussian_not_signed_kurtosis():
+    # The prior signed difference called this a failure (-1 -> -0.3).  A platykurtic
+    # panel moving toward zero excess kurtosis is aggregational Gaussianity by definition.
+    # Repeating each value makes the sample moments deterministic enough for this unit test.
+    base = np.tile(np.array([-1.0, -1.0, 1.0, 1.0, -0.2, 0.2]), 40).reshape(-1, 1)
+    facts = stylized_facts(base, kind="return", agg_horizon=4)
+    # The construction is intentionally only a regression against the old signed formula:
+    # an equivalent direct calculation must agree with the public diagnostic.
+    r = base[:, 0]
+    k1 = ((r - r.mean()) ** 4).mean() / r.std() ** 4 - 3.0
+    agg = r[: len(r) // 4 * 4].reshape(-1, 4).sum(axis=1)
+    k4 = ((agg - agg.mean()) ** 4).mean() / agg.std() ** 4 - 3.0
+    assert facts["aggregational_gaussianity"] == pytest.approx(abs(k1) - abs(k4))
+
+
+def test_fano_is_neutral_under_its_conditional_finite_panel_null():
+    # Exactly one event per ten-bar block has raw Fano 0, hence the calibrated ratio
+    # must also be 0; a clustered placement must be above the IID conditional baseline.
+    evenly_spaced = np.tile(np.array([10.0] + [0.0] * 9), 12).reshape(-1, 1)
+    clustered = np.array([10.0] * 6 + [0.0] * 114).reshape(-1, 1)
+    even = stylized_facts(evenly_spaced, kind="return", fano_z=1.0)["fano_factor"]
+    bunch = stylized_facts(clustered, kind="return", fano_z=1.0)["fano_factor"]
+    assert even == pytest.approx(0.0)
+    assert bunch > 1.0
+
+
+def test_abs_return_acf_gate_has_a_reproducible_iid_false_positive_rate():
+    # The gate uses a fixed 20,000-panel Gaussian null for exactly this estimator rather
+    # than the invalid raw threshold ``ACF > 0``.  A fresh IID batch should reject near
+    # the advertised one-sided 5% rate, not the old roughly-quarter rate.
+    rng = np.random.default_rng(20260825)
+    rejected = 0
+    n = 200
+    for _ in range(n):
+        report = certify_realism(
+            rng.standard_normal((120, 4)), kind="return", thresholds={
+                "excess_kurtosis": (None, None),
+                "aggregational_gaussianity": (None, None),
+            }
+        )
+        rejected += report.checks["abs_return_autocorr"]
+    rate = rejected / n
+    assert 0.01 <= rate <= 0.12
 
 
 # -- certify_realism --------------------------------------------------------

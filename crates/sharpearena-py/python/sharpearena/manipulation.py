@@ -44,6 +44,7 @@ and the bar index, and there is no clock and no I/O, so a sweep reproduces byte 
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import math
 from typing import Callable, Optional, Sequence
 
 import numpy as np
@@ -101,14 +102,30 @@ class ManipulationParams:
     def __post_init__(self) -> None:
         if self.n_followers < 0:
             raise ValueError("n_followers must be >= 0")
+        if self.n_symbols < 1 or self.n_days < 1:
+            raise ValueError("n_symbols and n_days must be >= 1")
         if min(self.push_bars, self.dump_bars) < 1:
             raise ValueError("push_bars and dump_bars must be >= 1")
         if self.hold_bars < 0:
             raise ValueError("hold_bars must be >= 0")
         if self.start_bar < 0:
             raise ValueError("start_bar must be >= 0")
-        if not self.impact_exponent > 0.0:
+        if not (math.isfinite(self.impact_exponent) and self.impact_exponent > 0.0):
             raise ValueError("impact_exponent must be positive (1.0 = linear)")
+        for name, value, lower, inclusive in (
+            ("capital", self.capital, 0.0, False),
+            ("volume_scale", self.volume_scale, 0.0, False),
+            ("max_weight", self.max_weight, 0.0, False),
+            ("kyle_lambda", self.kyle_lambda, 0.0, True),
+            ("eta", self.eta, 0.0, True),
+            ("push_weight", self.push_weight, 0.0, True),
+            ("follower_gain", self.follower_gain, 0.0, True),
+        ):
+            if not math.isfinite(value) or (value < lower if inclusive else value <= lower):
+                relation = "non-negative" if inclusive else "positive"
+                raise ValueError(f"{name} must be a finite {relation} number")
+        if self.push_weight > self.max_weight:
+            raise ValueError("push_weight must not exceed max_weight")
         span = self.start_bar + self.push_bars + self.hold_bars + self.dump_bars
         if span >= self.n_days:
             raise ValueError("the round trip must finish inside the episode")
@@ -258,30 +275,54 @@ class AsymmetricSchedule:
     :func:`pump_and_dump_schedule` never searches this shape; this family does.
 
     ``up_bars`` / ``down_bars`` set the duration ratio of the two legs. ``size_split`` is
-    the block fraction: the share of each leg's notional executed in a single bar at the
-    turn of the trip (the last pump bar and the first dump bar), with the remainder spread
-    uniformly over the leg's other bars. A one-bar leg is a block regardless of
-    ``size_split``; ``size_split = 1 / n`` on an ``n``-bar leg is the uniform ramp, and
-    :meth:`uniform` builds that. Everything else about the trip (start bar, hold, peak
-    weight) comes from the :class:`ManipulationParams` it is paired with, and the trip is
-    still flat-to-flat, which is what keeps ``impact_pnl`` an attribution rather than a
-    directional bet.
+    the legacy shared block fraction: the share of each leg's notional executed in a single
+    bar at the turn of the trip (the last pump bar and the first dump bar), with the
+    remainder spread uniformly over the leg's other bars. ``up_size_split`` and
+    ``down_size_split`` override it per leg. They matter for unequal durations: a uniform
+    9:1 trip has fractions 1/9 and 1, not one shared 1/9 fraction that silently leaves the
+    one-bar liquidation incomplete. A one-bar leg is a block regardless of its configured
+    split. Everything else about the trip (start bar, hold, peak weight) comes from the
+    :class:`ManipulationParams` it is paired with, and the trip is still flat-to-flat, which
+    is what keeps ``impact_pnl`` an attribution rather than a directional bet.
     """
 
     up_bars: int
     down_bars: int
     size_split: float
+    up_size_split: float | None = None
+    down_size_split: float | None = None
 
     def __post_init__(self) -> None:
         if min(self.up_bars, self.down_bars) < 1:
             raise ValueError("up_bars and down_bars must be >= 1")
-        if not 0.0 < self.size_split <= 1.0:
-            raise ValueError("size_split must lie in (0, 1]")
+        for name, value in (
+            ("size_split", self.size_split),
+            ("up_size_split", self.up_size_split),
+            ("down_size_split", self.down_size_split),
+        ):
+            if value is not None and not 0.0 < value <= 1.0:
+                raise ValueError(f"{name} must lie in (0, 1]")
+
+    @property
+    def up_split(self) -> float:
+        return 1.0 if self.up_bars == 1 else (self.up_size_split or self.size_split)
+
+    @property
+    def down_split(self) -> float:
+        return 1.0 if self.down_bars == 1 else (self.down_size_split or self.size_split)
 
     @classmethod
     def uniform(cls, up_bars: int, down_bars: int) -> "AsymmetricSchedule":
         """Linear ramps of asymmetric duration (no block concentration on either leg)."""
-        return cls(up_bars=up_bars, down_bars=down_bars, size_split=1.0 / max(up_bars, down_bars))
+        return cls(
+            up_bars=up_bars,
+            down_bars=down_bars,
+            # Keep the legacy field meaningful for serialisers while making the actual
+            # uniform increments explicit and independently normalized per leg.
+            size_split=1.0 / max(up_bars, down_bars),
+            up_size_split=1.0 / up_bars,
+            down_size_split=1.0 / down_bars,
+        )
 
     @property
     def duration_ratio(self) -> float:
@@ -292,18 +333,29 @@ class AsymmetricSchedule:
             "up_bars": self.up_bars,
             "down_bars": self.down_bars,
             "size_split": self.size_split,
+            "up_size_split": self.up_split,
+            "down_size_split": self.down_split,
             "duration_ratio": self.duration_ratio,
         }
 
 
 def asymmetric_round_trip_schedule(
-    p: ManipulationParams, schedule: AsymmetricSchedule
+    p: ManipulationParams, schedule: AsymmetricSchedule, side: int = 1
 ) -> Callable[[int], float]:
     """The asymmetric round trip as a bar-indexed target weight, flat before and after.
 
     ``p.push_bars`` and ``p.dump_bars`` are ignored; the leg lengths come from
     ``schedule``. ``p.start_bar``, ``p.hold_bars`` and ``p.push_weight`` are honoured.
+
+    ``side`` is ``+1`` for the long round trip (accumulate long, liquidate) and ``-1`` for
+    its mirror (accumulate short, buy back). The mirror is the same path with the sign
+    flipped bar for bar, so it is still flat-to-flat and the attribution still measures
+    what moving the price was worth. Whether the two sides pay the same is an empirical
+    question about the engine's multiplicative price compounding, not a property of the
+    schedule.
     """
+    if side not in (1, -1):
+        raise ValueError("side must be +1 (long round trip) or -1 (short round trip)")
     span = p.start_bar + schedule.up_bars + p.hold_bars + schedule.down_bars
     if span >= p.n_days:
         raise ValueError("the asymmetric round trip must finish inside the episode")
@@ -311,30 +363,37 @@ def asymmetric_round_trip_schedule(
     b = a + schedule.up_bars
     c = b + p.hold_bars
     d = c + schedule.down_bars
-    n_up, n_down, s = schedule.up_bars, schedule.down_bars, schedule.size_split
+    n_up, n_down = schedule.up_bars, schedule.down_bars
 
-    def _cum_up(k: int) -> float:
-        # Fraction of the pump leg accumulated after its k-th bar (1-indexed): the block of
-        # size ``s`` lands on the last bar, the rest is spread evenly over the bars before.
-        if n_up == 1 or k >= n_up:
-            return 1.0
-        return (1.0 - s) * k / (n_up - 1)
+    def _leg_increments(n: int, split: float, block_first: bool) -> tuple[float, ...]:
+        if n == 1:
+            return (1.0,)
+        remainder = (1.0 - split) / (n - 1)
+        out = (split,) + (remainder,) * (n - 1) if block_first else (remainder,) * (n - 1) + (split,)
+        assert math.isclose(sum(out), 1.0, rel_tol=0.0, abs_tol=1e-15)
+        return out
 
-    def _remaining_down(k: int) -> float:
-        # Fraction of the position still held after the k-th dump bar: the block of size
-        # ``s`` goes first, the rest is unwound evenly over the bars after.
-        if n_down == 1 or k >= n_down:
-            return 0.0
-        return (1.0 - s) * (1.0 - (k - 1) / (n_down - 1))
+    # Each leg executes exactly one peak position in opposite directions. This invariant
+    # prevents duration sweeps from accidentally changing total liquidation notional.
+    up_increments = _leg_increments(n_up, schedule.up_split, block_first=False)
+    down_increments = _leg_increments(n_down, schedule.down_split, block_first=True)
+    up_targets = np.cumsum(up_increments)
+    down_targets = 1.0 - np.cumsum(down_increments)
+    # Make the contractual endpoints exact rather than exposing harmless cumulative binary
+    # roundoff (for example 0.8000000000000004) to a target-weight protocol.
+    up_targets[-1] = 1.0
+    down_targets[-1] = 0.0
+    assert math.isclose(float(up_targets[-1]), 1.0, rel_tol=0.0, abs_tol=1e-15)
+    assert math.isclose(float(down_targets[-1]), 0.0, rel_tol=0.0, abs_tol=1e-15)
 
     def weight(bar: int) -> float:
         if bar < a or bar >= d:
             return 0.0
         if bar < b:
-            return p.push_weight * _cum_up(bar - a + 1)
+            return side * p.push_weight * float(up_targets[bar - a])
         if bar < c:
-            return p.push_weight
-        return p.push_weight * _remaining_down(bar - c + 1)
+            return side * p.push_weight
+        return side * p.push_weight * float(down_targets[bar - c])
 
     return weight
 
@@ -464,6 +523,7 @@ class AsymmetricResult(ManipulationResult):
     up_bars: int = 0
     down_bars: int = 0
     size_split: float = 0.0
+    side: int = 1
 
     def to_dict(self) -> dict:
         out = super().to_dict()
@@ -472,6 +532,7 @@ class AsymmetricResult(ManipulationResult):
             down_bars=self.down_bars,
             size_split=self.size_split,
             duration_ratio=self.up_bars / self.down_bars if self.down_bars else None,
+            side=self.side,
         )
         return out
 
@@ -481,18 +542,20 @@ def run_asymmetric_probe(
     params: Optional[ManipulationParams] = None,
     schedule: AsymmetricSchedule,
     seed: int = 0,
+    side: int = 1,
 ) -> AsymmetricResult:
     """Score one asymmetric round trip against its own zero-impact reference.
 
     Identical to :func:`run_manipulation_probe` except that the manipulator follows
-    :func:`asymmetric_round_trip_schedule` for ``schedule``. Same attribution, same
-    pairing, same followers, same seed on both legs. This is the positive-control probe:
-    the shape under which theory permits a profit under concave permanent impact, so a
-    profit found here under an exponent below one and not under the linear exponent is the
+    :func:`asymmetric_round_trip_schedule` for ``schedule`` on ``side`` (``+1`` long,
+    ``-1`` the mirrored short round trip). Same attribution, same pairing, same
+    followers, same seed on both legs. This is the positive-control probe: the shape
+    under which theory permits a profit under concave permanent impact, so a profit
+    found here under an exponent below one and not under the linear exponent is the
     instrument firing where it should and staying silent where it should.
     """
     p = params or ManipulationParams()
-    weight_at = asymmetric_round_trip_schedule(p, schedule)
+    weight_at = asymmetric_round_trip_schedule(p, schedule, side)
     live_pnl, peak_move = _rollout(p, seed, weight_at)
     reference_pnl, _ = _rollout(replace(p, kyle_lambda=0.0, eta=0.0), seed, weight_at)
     impact_pnl = live_pnl - reference_pnl
@@ -511,6 +574,7 @@ def run_asymmetric_probe(
         up_bars=schedule.up_bars,
         down_bars=schedule.down_bars,
         size_split=schedule.size_split,
+        side=side,
     )
 
 

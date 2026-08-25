@@ -14,6 +14,7 @@ the one that checks the diagnostic framing is stated rather than implied, always
 import importlib.util
 from dataclasses import replace
 
+import numpy as np
 import pytest
 
 from sharpearena import manipulation
@@ -38,6 +39,21 @@ _SEEDS = (0, 1)
 # somebody to unwind into. The shipped default has no such crowd and the round trip loses
 # there, so this configuration is what keeps the probe's positive branch under test.
 _CROWD = ManipulationParams(n_days=60, n_followers=16, hold_bars=6, follower_gain=120.0)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"capital": 0.0}, {"capital": float("nan")},
+        {"volume_scale": 0.0}, {"volume_scale": float("inf")},
+        {"kyle_lambda": -0.1}, {"eta": -0.1},
+        {"max_weight": 0.0}, {"push_weight": -0.1},
+        {"push_weight": 1.1}, {"follower_gain": -1.0},
+    ],
+)
+def test_manipulation_params_reject_invalid_physical_scales(kwargs):
+    with pytest.raises(ValueError):
+        ManipulationParams(**kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -324,6 +340,26 @@ def test_uniform_asymmetric_schedule_reproduces_the_symmetric_ramp():
         assert asym(bar) == pytest.approx(sym(bar))
 
 
+@pytest.mark.parametrize("up, down", [(9, 1), (1, 9), (18, 2), (45, 5)])
+def test_uniform_asymmetric_legs_each_execute_one_full_peak_notional(up, down):
+    """Unequal ``uniform`` legs use their own 1/n increment, not one shared split.
+
+    This is a contract-level invariant for the F5 duration sweep: the target-weight
+    changes on the accumulation and liquidation legs must sum to +peak and -peak.
+    """
+    p = ManipulationParams(n_days=80)
+    schedule = AsymmetricSchedule.uniform(up, down)
+    weight = asymmetric_round_trip_schedule(p, schedule)
+    a = p.start_bar
+    peak = p.push_weight
+    targets = [0.0] + [weight(bar) for bar in range(a, a + up + p.hold_bars + down)]
+    deltas = np.diff(targets)
+    assert schedule.up_split == pytest.approx(1.0 / up)
+    assert schedule.down_split == pytest.approx(1.0 / down)
+    assert deltas[:up].sum() == pytest.approx(peak)
+    assert deltas[up + p.hold_bars :].sum() == pytest.approx(-peak)
+
+
 def test_size_split_concentrates_the_turn():
     """A larger block fraction leaves more of the pump for its last bar and takes more of
     the unwind on its first bar; the leg totals are unchanged."""
@@ -396,3 +432,122 @@ def test_zero_impact_reference_leaves_nothing_to_attribute_on_the_asymmetric_tri
         seed=0,
     )
     assert result.impact_pnl == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Extended-sweep schedule variants: long legs, interleaved holds, the short side
+# ---------------------------------------------------------------------------
+
+
+def _round_trip_path(p: ManipulationParams, schedule: AsymmetricSchedule, side: int):
+    weight = asymmetric_round_trip_schedule(p, schedule, side)
+    span = p.start_bar + schedule.up_bars + p.hold_bars + schedule.down_bars
+    return span, [weight(bar) for bar in range(span + 3)]
+
+
+@pytest.mark.parametrize(
+    "hold_bars, schedule",
+    [
+        (1, AsymmetricSchedule.uniform(45, 5)),   # the longest extended leg pair
+        (12, AsymmetricSchedule.uniform(9, 1)),   # the longest extended hold
+        (0, AsymmetricSchedule.uniform(9, 1)),    # no hold at all
+        (6, AsymmetricSchedule(27, 3, size_split=0.9)),
+    ],
+)
+@pytest.mark.parametrize("side", [1, -1])
+def test_extended_schedule_variants_are_flat_to_flat(hold_bars, schedule, side):
+    """Long legs, long holds and the mirrored short trip all keep the round-trip
+    invariants: flat before the start bar, a single extremum of magnitude push_weight
+    held for exactly ``hold_bars`` bars, monotone in and monotone out, flat after."""
+    p = ManipulationParams(n_days=80, hold_bars=hold_bars)
+    span, path = _round_trip_path(p, schedule, side)
+    signed = [side * w for w in path]
+
+    assert all(w == 0.0 for w in path[: p.start_bar])
+    assert all(w == 0.0 for w in path[span:])
+    assert max(signed) == pytest.approx(p.push_weight)
+    assert min(signed) == 0.0
+    first_peak = signed.index(max(signed))
+    last_peak = len(signed) - 1 - signed[::-1].index(max(signed))
+    assert last_peak - first_peak == hold_bars
+    assert signed[: first_peak + 1] == sorted(signed[: first_peak + 1])
+    assert signed[last_peak:] == sorted(signed[last_peak:], reverse=True)
+    assert first_peak == p.start_bar + schedule.up_bars - 1
+    assert path[span - 1] == 0.0
+
+
+@pytest.mark.parametrize(
+    "schedule",
+    [
+        AsymmetricSchedule.uniform(9, 1),
+        AsymmetricSchedule.uniform(1, 9),
+        AsymmetricSchedule.uniform(45, 5),
+        AsymmetricSchedule(8, 2, size_split=0.5),
+    ],
+)
+@pytest.mark.parametrize("hold_bars", [0, 1, 12])
+def test_short_side_is_the_exact_sign_mirror_of_the_long_side(schedule, hold_bars):
+    """The short round trip is the long one with the sign flipped bar for bar, and the
+    default side is the long side. Any asymmetry the probe then measures between the two
+    sides is a property of the market, not of the schedule."""
+    p = ManipulationParams(n_days=80, hold_bars=hold_bars)
+    long_w = asymmetric_round_trip_schedule(p, schedule)
+    short_w = asymmetric_round_trip_schedule(p, schedule, -1)
+    explicit_long = asymmetric_round_trip_schedule(p, schedule, 1)
+    for bar in range(p.n_days):
+        assert short_w(bar) == -long_w(bar)
+        assert explicit_long(bar) == long_w(bar)
+    assert min(short_w(bar) for bar in range(p.n_days)) == pytest.approx(-p.push_weight)
+
+
+@pytest.mark.parametrize("side", [0, 2, -2])
+def test_schedule_and_probe_reject_a_side_that_is_not_a_sign(side):
+    p = ManipulationParams(n_days=40)
+    with pytest.raises(ValueError, match="side must be"):
+        asymmetric_round_trip_schedule(p, AsymmetricSchedule.uniform(4, 2), side)
+    with pytest.raises(ValueError, match="side must be"):
+        run_asymmetric_probe(params=p, schedule=AsymmetricSchedule.uniform(4, 2), side=side)
+
+
+def test_extended_schedule_variants_must_still_fit_inside_the_episode():
+    p = ManipulationParams(n_days=80, hold_bars=12)
+    with pytest.raises(ValueError, match="inside the episode"):
+        asymmetric_round_trip_schedule(p, AsymmetricSchedule.uniform(60, 5), -1)
+
+
+@needs_pz
+def test_short_side_probe_is_deterministic_and_carries_its_side():
+    sc = AsymmetricSchedule.uniform(7, 1)
+    a = run_asymmetric_probe(params=_P, schedule=sc, seed=0, side=-1)
+    b = run_asymmetric_probe(params=_P, schedule=sc, seed=0, side=-1)
+    long_side = run_asymmetric_probe(params=_P, schedule=sc, seed=0)
+
+    assert a.to_dict() == b.to_dict()
+    assert a.side == -1 and a.to_dict()["side"] == -1
+    assert long_side.side == 1 and long_side.to_dict()["side"] == 1
+    # The market is not sign-symmetric bit for bit (multiplicative compounding), so the
+    # two sides are distinct runs; equality here would mean the side was ignored.
+    assert a.impact_pnl != long_side.impact_pnl
+    assert a.peak_price_move > 0.0
+
+
+@needs_pz
+def test_zero_impact_reference_leaves_nothing_to_attribute_on_the_short_side():
+    result = run_asymmetric_probe(
+        params=replace(_P, kyle_lambda=0.0, eta=0.0),
+        schedule=AsymmetricSchedule.uniform(6, 2),
+        seed=0,
+        side=-1,
+    )
+    assert result.impact_pnl == 0.0
+    assert result.live_pnl == result.reference_pnl
+
+
+@needs_pz
+def test_long_hold_and_long_legs_run_and_are_deterministic():
+    p = ManipulationParams(n_days=80, hold_bars=12, eta=0.0, follower_gain=0.0)
+    sc = AsymmetricSchedule.uniform(45, 5)
+    a = run_asymmetric_probe(params=p, schedule=sc, seed=3)
+    b = run_asymmetric_probe(params=p, schedule=sc, seed=3)
+    assert a.to_dict() == b.to_dict()
+    assert a.up_bars == 45 and a.down_bars == 5

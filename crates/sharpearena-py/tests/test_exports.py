@@ -36,6 +36,11 @@ NEWLY_EXPORTED = [
     "BEHAVIORAL_POLICIES",
     "DispositionEffectPolicy",
     "OverconfidentPolicy",
+    # repaired realism / endogenous adverse selection
+    "CALM_CALIBRATION_CANDIDATE_KNOBS",
+    "EndogenousImpact",
+    "compare_endogenous_arms",
+    "informed_displacement",
 ]
 
 

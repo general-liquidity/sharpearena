@@ -1,8 +1,8 @@
 \section{Experiments}\label{sec:experiments}
 
-Ten findings, eight core calibrations plus two reviewer-motivated probes, and three follow-ups address questions the ten left open: an existence witness for rank-eligibility (\cref{sec:witness}), an asymmetric positive control for the manipulation probe (\cref{sec:f5-positive-control}) and sealed evaluation seeds (\cref{sec:sealed-seeds}). Each subsection states the entry point, seeds and quantity measured, then reports numbers from JSON and figures committed with its producer. The exact commands are listed in \cref{app:commands}. F1 serializes package version 0.9.0; other legacy artifacts do not all carry a runtime version, so provenance is the containing Git revision rather than a reconstructed tag claim. F4, F5 and the witness were regenerated after the estimator and dimensional corrections in this revision.
+Ten findings, eight core calibrations plus two follow-up probes, address questions left open by the initial calibrations: an existence witness for rank-eligibility (\cref{sec:witness}), an asymmetric positive control for the manipulation probe (\cref{sec:f5-positive-control}) and sealed evaluation seeds (\cref{sec:sealed-seeds}). Each subsection states the entry point, seeds and quantity measured, then reports numbers from JSON and figures committed with its producer. The exact commands are listed in \cref{app:commands}. F1 serializes package version 0.9.0; other legacy artifacts do not all carry a runtime version, so provenance is the containing source-tree revision rather than a reconstructed tag claim. F4 and F5 are produced by the documented finite-panel estimator and normalized-flow scripts; the witness artifact records its producer and common-random-number configuration.
 
-Three scoping statements govern the whole section. First, the findings are instrument calibrations on a generator whose canonical tape the realism gate of \cref{sec:f4} declines to certify (2 of 24 runs pass the calibrated three-check conjunction); certification is reported beside the results, not required by them. Second, the byte-identity guarantee covers engine outputs behind F1 through F3 and the canonical linear path; Python evidence reductions are seed-deterministic on one platform but outside the golden-hash path. Third, the core evidence uses the explicitly stated train-band seeds except F3, which exercises the split; the predictability probe uses a separate 50{,}000-start band and reports why a bounded public band is unsafe. Dispersion is reported throughout: F1 and F3 use 2{,}000 seed bootstrap resamples, while F2, F5 and F6 use t-based 95\% intervals over committed vectors. Selected F5 cells additionally carry a 135-cell Bonferroni familywise interval.
+Three scoping statements govern the whole section. First, the findings are instrument calibrations on a generator whose canonical tape the finite-panel-calibrated realism diagnostic of \cref{sec:f4} declines to certify (1 of 24 runs pass the three-check conjunction); that diagnostic is reported beside the results, not required by them. Second, the byte-identity guarantee covers engine outputs behind F1 through F3 and the canonical linear path; Python evidence reductions are seed-deterministic on one platform but outside the golden-hash path. Third, the core evidence uses explicitly named seed bands; F3 uses its documented 16-seed train and gap-band evaluation subsets, and the predictability probe uses a separate 50{,}000-start band to show why a bounded public band is unsafe. Dispersion is reported throughout: F1 and F3 use 2{,}000 seed bootstrap resamples, while F2, F5 and F6 use t-based 95\% intervals over committed vectors. The 135-cell F5 search reports Bonferroni familywise intervals for selected cells; its 60-cell extension corrects over the global 195-cell family because the extension anchor was selected from the initial grid on the same eight seeds. One fixed-cell confirmation uses 32 fresh seeds. The F6 six-value impact sweep is exploratory and reports pointwise intervals only.
 
 \subsection{F1: Pipeline validation under the corrected kernel}\label{sec:f1}
 
@@ -103,11 +103,11 @@ The transfer matrix (\cref{fig:f3}) is where regime structure appears, and its c
 
 \subsection{F4: Stylized-facts realism certification}\label{sec:f4}
 
-For each tier, price panels from eight seeded episodes are graded by \texttt{certify\_realism} against three directional bounds from the classical catalogue: positive excess kurtosis, positive absolute-return autocorrelation and positive aggregational Gaussianity \citep{cont2001empirical}. Gain/loss skew \citep{cont2001empirical}, timescale asymmetry \citep{zumbach2009time}, and a finite-panel Fano exceedance-count ratio are informational. The Fano ratio is not gated: its threshold is estimated from the same 121-bar panel, leaving only 12 count windows, so 1 is not a calibrated finite-sample null even after using an unbiased sample variance.
+For each tier, price panels from eight seeded episodes are graded by \texttt{certify\_realism} against three directional bounds from the classical catalogue: positive excess kurtosis, absolute-return autocorrelation above a fixed 95th-percentile IID null for this exact $120\times4$, ten-lag estimator, and aggregation moving \emph{absolute} excess kurtosis toward zero \citep{cont2001empirical}. The IID null is a deterministic 20{,}000-panel simulation fixed in source, not tuned to any market panel. Gain/loss skew \citep{cont2001empirical}, timescale asymmetry \citep{zumbach2009time}, and a finite-panel-calibrated Fano exceedance-count ratio are informational. The Fano ratio conditions on the observed exceedance count and divides the Bessel-corrected sample Fano by its exact equal-block IID expectation; it remains ungated because 12 count windows make it too noisy for certification.
 
 \begin{table}[t]
 \centering
-\caption{Stylized-facts results over 8 seeds. Fano is an exploratory finite-panel proxy and has no pass column; the final rate is the conjunction of the three calibrated directional checks, including aggregational Gaussianity (not shown).}
+\caption{Stylized-facts results over 8 seeds. Fano is a conditional-IID-calibrated exploratory ratio and has no pass column; the final rate is the conjunction of the three calibrated directional checks, including aggregation toward zero absolute excess kurtosis. Aggregation passes 8/8 seeds in Calm, 8/8 in Hard, and 8/8 in Extreme.}
 \label{tab:f4}
 \small
 \setlength{\tabcolsep}{5pt}
@@ -117,16 +117,16 @@ For each tier, price panels from eight seeded episodes are graded by \texttt{cer
 \cmidrule(lr){2-3}\cmidrule(lr){4-5}
 Tier & mean & pass & mean & pass & mean & pass rate \\
 \midrule
-Calm & $-0.97$ & 0/8 & $+0.0002$ & 5/8 & 1.30 & 0.000 \\
-Hard & $+16.30$ & 8/8 & $-0.0107$ & 1/8 & 0.92 & 0.125 \\
-Extreme & $+11.38$ & 8/8 & $-0.0118$ & 1/8 & 0.86 & 0.125 \\
+Calm & $-0.97$ & 0/8 & $+0.0002$ & 1/8 & 1.32 & 0.000 \\
+Hard & $+16.30$ & 8/8 & $-0.0107$ & 0/8 & 0.93 & 0.000 \\
+Extreme & $+11.38$ & 8/8 & $-0.0118$ & 1/8 & 0.91 & 0.125 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\Cref{tab:f4} and \cref{fig:f4} give a mixed verdict. Calm is platykurtic (mean excess kurtosis $-0.97$, aggregational Gaussianity $-0.58$) and fails the conjunction on all eight seeds. Hard and Extreme pass excess kurtosis and aggregational Gaussianity on all eight seeds, but absolute-return autocorrelation is slightly negative at this episode length; each tier passes the three-check conjunction on only 1 of 8 seeds. Thus the canonical generator passes 2 of 24 seeded panels. The informational Fano ratios are reported as observations only. They do not identify why variance concentrates, and they no longer decide certification.
+\Cref{tab:f4} and \cref{fig:f4} give a mixed verdict. Calm is platykurtic (mean excess kurtosis $-0.97$), although its returns move closer to Gaussian in absolute-kurtosis distance on aggregation (mean $+0.57$), and fails the conjunction on all eight seeds. Hard and Extreme pass excess kurtosis and aggregation on all eight seeds, but neither clears the calibrated ACF threshold consistently: Hard passes 0 of 8 and Extreme 1 of 8. Thus the canonical generator passes 1 of 24 seeded panels. The informational Fano ratios are reported as observations only. They do not identify why variance concentrates and do not decide certification.
 
-An opt-in \texttt{vol\_clustering} knob adds deterministic EMA persistence while preserving the zero-knob golden path. On the same diagnostic seeds at strength $0.5$, autocorrelation passes rise from 5/8 to 8/8 on Calm, 1/8 to 8/8 on Hard and 1/8 to 5/8 on Extreme. With Fano correctly excluded from the gate, the three-check pass rates become 0/8, 8/8 and 5/8. This is still in-sample calibration: strength $0.5$ was tuned and rechecked on the diagnosis panel. The newer opt-in jump-burst knobs are implemented but have no committed calibration experiment here, so neither they nor the exploratory Fano proxy support a remediation claim.
+An opt-in \texttt{vol\_clustering} knob adds deterministic EMA persistence while preserving the zero-knob golden path. Under the calibrated ACF rule at strength $0.5$, the three-check pass rates are 0/8, 8/8 and 4/8 for Calm, Hard and Extreme. The follow-up Calm grid in \cref{sec:calm-tails} fails its predeclared volatility-constrained selection rule, which is a negative result rather than a preset claim. The opt-in jump-burst knobs and the exploratory Fano ratio therefore support no remediation claim.
 
 \begin{figure}[t]
 \centering
@@ -134,6 +134,8 @@ An opt-in \texttt{vol\_clustering} knob adds deterministic EMA persistence while
 \caption{Per-seed stylized-fact values by tier. Only kurtosis, absolute-return autocorrelation and aggregational Gaussianity are gated; Fano is exploratory.}
 \label{fig:f4}
 \end{figure}
+
+\input{sections/calm-tails-fragment}
 
 \subsection{F5: The manipulation boundary and size response}\label{sec:f5}
 
@@ -189,6 +191,8 @@ The result (\cref{tab:f5}, \cref{fig:f5}) is consistent with the linear model's 
 
 \input{sections/positive-control-fragment}
 
+\input{sections/manipulation-sweeps-fragment}
+
 \subsection{F6: Adverse-selection markout decomposition}\label{sec:f6}
 
 \texttt{compare\_informed\_vs\_uninformed} runs twenty-four paired episodes in which the identical meta-order flow is sided on the alpha in one leg and on a coin flip in the other, holding schedule, sizes and price path fixed, and reports mean maker markout per filled unit at horizons of 1, 5 and 20 bars. Markout is measured in the tape's absolute price units (the mid starts at 100) per unit of filled quantity; the evidence commits per-episode vectors, and the gap CIs below are t-based 95\% over the twenty-four paired episodes.
@@ -209,9 +213,9 @@ Horizon (bars) & Informed & Uninformed & Gap & Gap 95\% CI \\
 \end{tabular}
 \end{table}
 
-Two certifications must be separated here: the sign of the \emph{gap} and the sign of the \emph{levels}, and they come out on opposite sides.
+Two quantities must be separated here: the sign of the \emph{paired estimated gap} and the sign of the \emph{levels}, and they come out on opposite sides.
 
-The gap certification passes at every horizon (\cref{tab:f6}, \cref{fig:f6}): makers filled by informed flow mark out worse than the paired-uninformed control at $h = 1$, 5 and 20, the per-unit gap widens from 0.072 to 0.436 as the information realizes, and every horizon's paired CI excludes zero, including the smallest ($h = 1$: $[0.052, 0.094]$ over per-episode paired gaps). That is the signature shape of adverse selection: the loss is in the drift after the fill, not in the fill itself. The claim is scoped to the gap, the differential cost of informed over uninformed flow, and not to maker profitability levels.
+The paired estimated gap is positive at every horizon (\cref{tab:f6}, \cref{fig:f6}): makers filled by informed flow mark out worse than the paired-uninformed control at $h = 1$, 5 and 20, the per-unit gap widens from 0.072 to 0.436 as the information realizes, and every horizon's paired CI excludes zero, including the smallest ($h = 1$: $[0.052, 0.094]$ over per-episode paired gaps). That is the signature shape of adverse selection: the loss is in the drift after the fill, not in the fill itself. The claim is scoped to the paired estimated gap, the differential cost of informed over uninformed flow, and not to maker profitability levels.
 
 The level result goes against the environment, and we report it with the same candor as F4. Makers earn a \emph{positive} mean markout against informed flow at every horizon (0.689, 0.489, 0.386 per unit), which is on the wrong side of the \cref{sec:principles} standard that a realistic market should not let makers profit from informed flow. The cause is calibration and design, not accounting: fills are struck at the pre-move mid, so every fill books the full quoted depth as spread capture, the default quote depths are wide relative to the drift the $\alpha = 2.0$ meta-orders realize over 20 bars, and the price path is exogenous, so quotes never widen in equilibrium response to toxicity as they would in \citet{glosten1985bid}. At this calibration the probe therefore measures markout accounting against a fixed drift, in which informed flow costs makers relative to uninformed flow but not in absolute terms. Recalibrating the informed alpha or striking fills at post-impact prices so the level turns negative, and adding a variant where quotes widen with realized toxicity, are the named follow-ups.
 
@@ -223,6 +227,8 @@ The single-episode maker decomposition illustrates the exact identity on one see
 \caption{Markout per filled unit by horizon: informed flow versus the paired-uninformed control.}
 \label{fig:f6}
 \end{figure}
+
+\input{sections/endogenous-adverse-fragment}
 
 \subsection{F7: Failure-mode distributions}\label{sec:f7}
 
@@ -281,7 +287,7 @@ flat (no resolved dominant) & 2 & 0 \\
 
 The replication overturns the single-seed narrative, and we report that plainly. At seed 0 the story was clean: \texttt{kelly\_vol\_target} sweeps the control board (peak share 1.00, final 0.81), collapses under the shock schedule once the regime turns Hard, and \texttt{equal\_weight\_long} inherits dominance (final 0.67). Across eight seeds that story is the exception. Under the shock schedule a \texttt{kelly\_vol\_target} lineage ends dominant on 7 of 8 seeds (final shares near 0.90); the seed-0 handoff to the long book happens once. The control side is itself seed-dependent: \texttt{kelly\_vol\_target} wins 4 seeds, \texttt{equal\_weight\_long} wins 2, and on 2 seeds no species resolves dominance at all (all eleven end persistent at small shares, with a \texttt{flat} variant holding the largest share at 0.10). The root-level winner differs between the two schedules on 5 of 8 seeds, so shocks do reorder outcomes more often than not, but with no consistent direction. Extinction pressure is more stable than identity: shocked runs produce a resolved dominant on 8/8 seeds with 4 to 7 extinctions per run (at seed 0, both behavioral counterparties are gone or collapsed on both schedules, \texttt{overconfident} by generation 1).
 
-The honest conclusion is methodological. One replicator trajectory is one draw from a heavy-tailed outcome distribution, and single-run ecology narratives, including the one this paper's earlier draft promoted to the abstract, do not survive replication. What the probe reliably produces at this scale is the outcome distribution itself: which lineages can win, how often shocks reorder the board, and how much of the population goes extinct, per committed seed set. Sharper claims need more seeds, varied shock orderings and path-matched schedule pairs, all of which are mechanical extensions of the committed script.
+The conclusion is methodological. One replicator trajectory is one draw from a heavy-tailed outcome distribution, and single-run ecology narratives do not survive replication. What the probe reliably produces at this scale is the outcome distribution itself: which lineages can win, how often shocks reorder the board, and how much of the population goes extinct, per committed seed set. Sharper claims need more seeds, varied shock orderings and path-matched schedule pairs, all of which are mechanical extensions of the committed script.
 
 \begin{figure}[t]
 \centering

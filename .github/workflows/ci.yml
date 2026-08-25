@@ -42,6 +42,11 @@ jobs:
         run: cargo fmt --all --check
       - name: Clippy (deny warnings)
         run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Rustdoc (deny warnings)
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          RUSTDOCFLAGS: -Dwarnings
+        run: cargo doc --workspace --no-deps
       - name: Test
         run: cargo test --workspace
       # One wasm build is enough to prove the target compiles; keep it off the

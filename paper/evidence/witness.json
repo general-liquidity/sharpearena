@@ -73,7 +73,7 @@
       "alpha": 0.05
     },
     "eligibility_rule": "per-run gate passes on every seed (pass^k rate exactly 1.00) and the kernel's rank_eligible conjunction holds on the pooled run",
-    "policy": "signal = s*z + sqrt(1-s^2)*eps; z = standardized true next-bar return (oracle), eps ~ N(0,1) seeded by (seed, s); action = sign(signal)/n where |signal| > deadband, else flat (sign_follow) or the previous position (deadband_hold)",
+    "policy": "signal = s*z + sqrt(1-s^2)*eps; z = standardized true next-bar return (oracle), eps ~ N(0,1) seeded by (seed, variant) and reused at every s; action = sign(signal)/n where |signal| > deadband, else flat (sign_follow) or the previous position (deadband_hold)",
     "variants": {
       "sign_follow": {
         "deadband": 0.0,

@@ -3,9 +3,10 @@
 `PyMarketClearing` accepts an `impact_exponent` (ctor kwarg or `set_impact_exponent`):
 `1.0` (the default) is the frozen linear golden-hash path and must stay byte-identical
 to the pre-concavity binding; below `1.0` the permanent (Kyle) flow term becomes
-`sign(Q) * |Q|**exponent`, concave in flow, which is the Huberman-Stanzl regime in
-which round-trip manipulation can pay. The `EndogenousMarketEnv` and the manipulation
-probe reach the same knob through their `impact_exponent` kwarg/field.
+`sign(Q / V) * |Q / V|**exponent`, concave in normalized flow, which is the
+Huberman-Stanzl regime in which round-trip manipulation can pay. The
+`EndogenousMarketEnv` and the manipulation probe reach the same knob through their
+`impact_exponent` kwarg/field.
 """
 
 import importlib.util

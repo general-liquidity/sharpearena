@@ -1,6 +1,7 @@
-//! Information-disclosure difficulty: the axis orthogonal to [`DistributionMode`].
+//! Information-disclosure difficulty: the axis orthogonal to
+//! [`DistributionMode`](crate::scenario_gen::DistributionMode).
 //!
-//! [`DistributionMode`](crate::DistributionMode) governs *how adversarial the price path
+//! [`DistributionMode`](crate::scenario_gen::DistributionMode) governs *how adversarial the price path
 //! is* (volatility, jumps, regime structure). It says nothing about *how much of that
 //! market the agent is allowed to see*. Two agents on the identical Calm panel can face
 //! very different problems: one shown a 50-bar history plus fundamentals and news

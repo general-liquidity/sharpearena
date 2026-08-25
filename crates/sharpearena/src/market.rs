@@ -129,8 +129,9 @@ const VOL_FACTOR_CAP: f64 = 3.0;
 /// The impact coefficients: Kyle's permanent `lambda`, Almgren-Chriss temporary `eta`,
 /// and the ADV-like `volume_scale` (`V`) that defines dimensionless flow. The linear
 /// path is `(lambda * Q + eta * q_i) / V`. On the opt-in nonlinear path, permanent
-/// impact is `lambda * sign(Q/V) * |Q/V|^kappa`; this normalization keeps `lambda`
-/// comparable when the share/notional unit is rescaled.
+/// impact is `lambda * sign(Q/V) * |Q/V|^beta`; this normalization keeps `lambda`
+/// dimensionless (for the declared `beta`) and comparable when the share/notional unit is
+/// rescaled.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MarketParams {
     /// Kyle's permanent price-impact coefficient (per unit normalized net flow).
@@ -142,7 +143,7 @@ pub struct MarketParams {
     /// Optional volatility scaling of the **temporary impact**. `0.0` (default) is off —
     /// the fill is the static Kyle/Almgren-Chriss cost. When `> 0`, the temporary-impact
     /// term is multiplied by `min(1 + vol_scale * trailing_vol, VOL_FACTOR_CAP)`, where
-    /// `trailing_vol` is the mean of squared cleared returns over the last [`VOL_WINDOW`]
+    /// `trailing_vol` is the mean of squared cleared returns over the last `VOL_WINDOW`
     /// *past* bars — so execution costs widen as realized volatility rises.
     pub vol_scale: f64,
 }
@@ -851,12 +852,13 @@ pub fn clear_bar_robust(
 /// [`clear_bar_robust`] with an explicit **permanent-impact exponent**: the concavity
 /// ablation that makes the manipulation probe falsifiable (see the module docs).
 ///
-/// With `impact_exponent = 1.0` this *is* [`clear_bar_robust`]: [`signed_pow`] then
+/// With `impact_exponent = 1.0` this *is* [`clear_bar_robust`]: `signed_pow` then
 /// returns the flow unchanged (the same bits, no `powf` evaluated), so the cleared path is
 /// bit-for-bit the frozen linear path the golden hashes are pinned to. Any other exponent
-/// replaces `Q` with `sign(Q) * |Q|^exponent` in the permanent (Kyle) term of both the
-/// temporary fill and the permanent multiplier update; the Almgren-Chriss own-size term
-/// stays linear. A general power requires `powf`, a libm transcendental outside the
+/// replaces the normalized flow `Q/V` with `sign(Q/V) * |Q/V|^exponent` in the permanent
+/// (Kyle) term of both the temporary fill and the permanent multiplier update; the
+/// Almgren-Chriss own-size term stays linear. A general power requires `powf`, a libm
+/// transcendental outside the
 /// mul/add/div-only cross-runtime guarantee, which is why the exponent is gated onto these
 /// opt-in entry points exactly as the [`EllipticUncertaintySet`] is and never touches
 /// [`clear_bar`].

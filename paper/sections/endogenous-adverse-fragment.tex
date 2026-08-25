@@ -1,0 +1,71 @@
+% Fragment: the endogenous arm of the F6 adverse-selection probe.
+% Written as a follow-up subsection to \cref{sec:f6}; evidence lives under the new
+% "endogenous" key of paper/evidence/f6-adverse-selection.json (the pre-existing keys are
+% byte-identical to their committed golden) and the figure is paper/figures/f6-endogenous.pdf.
+% Producer: python paper/src/make-f6-adverse-selection.py
+
+\subsection{F6, endogenous arm: maker markout when the flow moves the price}\label{sec:f6-endogenous}
+
+The F6 design of \cref{sec:f6} fixes the efficient-price path, so it measures the informed-versus-uninformed \emph{gap} but cannot speak to maker profitability \emph{levels}: a maker whose fills never move the price against it books the full quoted depth on every print, and the positive levels reported there are partly that artifact. This subsection adds the arm that makes the level question answerable. The same twenty-four paired episodes are rerun with the cleared price endogenous: the taker flow actually filled against the maker ladder moves the mid through the permanent-impact law of the shared-book clearing engine of \cref{sec:env}. Let $S_t$ be the efficient price (the meta-orders' alpha increments plus ordinary volatility, identical across both legs and both arms), $Q_t$ the signed taker quantity filled in bar $t$ (meta-order children plus noise flow, buys positive), $\lambda$ Kyle's permanent-impact coefficient \citep{kyle1985continuous} and $V$ the engine's ADV-like volume normalizer. Makers then quote around
+\begin{equation}\label{eq:f6-endo}
+\mathrm{mid}_t \;=\; S_t\, M_t,
+\qquad
+M_{t+1} \;=\; M_t \bigl(1 + \lambda\, Q_t / V\bigr),
+\qquad
+M_0 = 1,
+\end{equation}
+the engine's running multiplier, updated after the bar clears so the reference price a maker quotes against is moved only by flow strictly before it. Temporary impact is not a separate term: the maker ladder itself is the temporary component (a taker pays the quoted depth, which is what the engine's Almgren-Chriss $\eta$ term models in the maker-less market \citep{almgren2001optimal}), so the arm adds exactly one mechanism to the exogenous scenario: a filled unit moves the next reference mid by $\mathrm{mid}_t\,\lambda/V$ in the taker's direction. At $\lambda = 0$ the arm reproduces the exogenous scenario bit for bit, and a cross-check in the test suite feeds the identical flow sequence to the native clearing engine and matches its cleared mids to relative $10^{-12}$, so \cref{eq:f6-endo} is the engine's law and not a paraphrase of it. The calibration sets $V = 240$, one episode's realized taker volume (mean 239 filled units over the 48 exogenous-arm episodes), and the engine's default $\lambda = 0.1$, so a filled unit displaces the mid by $0.042$ price units at the initial mid of 100; a parent order fills a mean 22.4 of its 60 offered units, displacing the mid by a mean $0.81\%$ over its own window (t-based 95\% CI $[0.77, 0.85]\%$ over episodes, sided with the parent in both legs, and zero by construction in the exogenous arm).
+
+\begin{table}[t]
+\centering
+\caption{Maker markout per filled unit (price units per unit quantity) under the exogenous and endogenous price paths, 24 paired episodes, horizons in bars. Every cell is the mean over per-episode values (episode markout over episode filled quantity, all makers; toxic rate is the share of all maker fills marking out negative), with t-based 95\% CIs, $\mathrm{df}=23$; this is the convention of the committed per-episode vectors and of the gap CIs in \cref{tab:f6}, so the exogenous rows differ from the pooled quantity-weighted aggregates of \cref{tab:f6} in the third decimal. The evidence also serializes paired endogenous-minus-exogenous changes and their CIs. Endogenous arm at $\lambda = 0.1$, $V = 240$.}
+\label{tab:f6-endo}
+\footnotesize
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{llrrrrr}
+\toprule
+Path & $h$ & Informed & Uninformed & Gap & \multicolumn{2}{c}{Toxic-fill rate (inf / uninf)} \\
+\midrule
+exogenous  & 1  & 0.689 $[0.683, 0.695]$ & 0.762 $[0.740, 0.783]$ & 0.073 $[0.052, 0.094]$ & 0.016 & 0.044 \\
+exogenous  & 5  & 0.488 $[0.470, 0.507]$ & 0.794 $[0.720, 0.867]$ & 0.305 $[0.228, 0.383]$ & 0.221 & 0.157 \\
+exogenous  & 20 & 0.385 $[0.341, 0.430]$ & 0.827 $[0.711, 0.942]$ & 0.441 $[0.303, 0.579]$ & 0.381 & 0.279 \\
+\midrule
+endogenous & 1  & 0.622 $[0.614, 0.629]$ & 0.693 $[0.672, 0.715]$ & 0.072 $[0.051, 0.093]$ & 0.034 & 0.056 \\
+endogenous & 5  & 0.352 $[0.327, 0.376]$ & 0.652 $[0.579, 0.724]$ & 0.300 $[0.225, 0.375]$ & 0.323 & 0.209 \\
+endogenous & 20 & 0.240 $[0.192, 0.289]$ & 0.670 $[0.558, 0.782]$ & 0.430 $[0.294, 0.565]$ & 0.437 & 0.297 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two things happen when the flow moves the price, and they are the two the design predicts (\cref{tab:f6-endo}, \cref{fig:f6-endo}). First, the gap survives essentially unchanged: $0.072$, $0.300$ and $0.430$ per unit at $h = 1$, 5 and 20 against $0.073$, $0.305$ and $0.441$ in the exogenous arm, every CI excluding zero. Permanent impact is direction-agnostic from the maker's seat, since the maker is on the wrong side of the move its own fill causes whichever way the taker trades, so it cancels out of the informed-minus-uninformed difference; the gap is the information, and the arm confirms it is not an artifact of the fixed path. Second, the levels fall in both legs at every horizon: informed markout drops from $0.385$ to $0.240$ per unit at $h = 20$, uninformed from $0.827$ to $0.670$, and the informed toxic-fill rate rises from $0.381$ to $0.437$. That drop is the impact cost the exogenous design could not book.
+
+\begin{table}[t]
+\centering
+\caption{Endogenous-arm markout per filled unit at $h = 20$ as the permanent-impact coefficient sweeps, $V = 240$ throughout, the same 24 paired episodes, and exploratory pointwise t-based 95\% CIs ($\mathrm{df}=23$); no sweep-wide multiplicity claim is made. ``Impact/unit'' is the mid displacement per filled unit at the initial mid, $100\,\lambda/V$. The $\lambda = 0$ row is the exogenous arm.}
+\label{tab:f6-endo-sweep}
+\footnotesize
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{rrrrrr}
+\toprule
+$\lambda$ & Impact/unit & Informed & Uninformed & Gap & Toxic (inf) \\
+\midrule
+0.00 & 0.000 & $+0.385$ $[+0.341, +0.430]$ & $+0.827$ $[+0.711, +0.942]$ & 0.441 $[0.303, 0.579]$ & 0.381 \\
+0.05 & 0.021 & $+0.313$ $[+0.267, +0.359]$ & $+0.748$ $[+0.635, +0.862]$ & 0.435 $[0.299, 0.572]$ & 0.415 \\
+0.10 & 0.042 & $+0.240$ $[+0.192, +0.289]$ & $+0.670$ $[+0.558, +0.782]$ & 0.430 $[0.294, 0.565]$ & 0.437 \\
+0.20 & 0.083 & $+0.095$ $[+0.039, +0.152]$ & $+0.513$ $[+0.403, +0.623]$ & 0.418 $[0.282, 0.554]$ & 0.479 \\
+0.30 & 0.125 & $-0.050$ $[-0.117, +0.017]$ & $+0.356$ $[+0.245, +0.467]$ & 0.406 $[0.268, 0.544]$ & 0.507 \\
+0.40 & 0.167 & $-0.196$ $[-0.275, -0.117]$ & $+0.198$ $[+0.084, +0.312]$ & 0.393 $[0.251, 0.536]$ & 0.525 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The economically meaningful question is whether makers still profit against informed flow once their own fills move the price, and at this calibration the answer is yes: the informed level at $h = 20$ is $0.240$ with pointwise CI $[0.192, 0.289]$, positive but $0.145$ per unit lower than the exogenous arm's. The sweep in \cref{tab:f6-endo-sweep} is an exploratory six-value calibration, not a multiplicity-adjusted crossing estimate. Its sampled informed level declines from $+0.095$ at $\lambda=0.2$ to $-0.050$ at $\lambda=0.3$ (whose pointwise interval crosses zero) and $-0.196$ at $\lambda=0.4$, while the uninformed level remains positive over these six values and the paired gap changes from $0.441$ to $0.393$. Thus the data bracket an observed sign change between sampled values; they do not identify a crossover at $\lambda\approx0.27$ or attach uncertainty to an interpolated value. The default calibration ($\lambda=0.1$) is one explicitly sampled point below that bracket.
+
+The scope is stated plainly. The impact model is the engine's stylized linear permanent impact with a single volume normalizer, not an estimated impact curve, and linearity is itself a modeling commitment \citep{huberman2004price}; the temporary component is folded into the maker ladder rather than carried as a separate $\eta$ term; fills are still struck at the maker's quote around the pre-move mid; and the quoting side is one follower model, the same fixed Avellaneda-Stoikov-plus-fixed-spread roster as \cref{sec:f6}, which never widens in response to realized toxicity, so this is still not the equilibrium quote response of \citet{glosten1985bid}. What the arm establishes is narrower: on this sampled calibration grid, with the same quotes and information, informed-flow maker profitability declines as flow impact increases, while the paired estimated gap changes modestly. The exogenous arm and all previously committed F6 evidence are unchanged byte for byte; the endogenous evidence, per-episode vectors and paired arm changes included, lives under the \texttt{endogenous} key of the same artifact.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{f6-endogenous}
+\caption{The endogenous arm of F6. Left: maker markout per filled unit by horizon, informed versus paired-uninformed flow, exogenous versus endogenous path ($\lambda = 0.1$, $V = 240$), with t-based 95\% CIs over 24 paired episodes; paired arm changes are serialized in the evidence. Right: endogenous markout per filled unit at $h = 20$ across an exploratory six-value $\lambda$ sweep, with pointwise 95\% CI bands. The sampled informed level changes sign between $\lambda=0.2$ and $0.4$; no interpolated crossover estimate is claimed. Dashed line: the default calibration.}
+\label{fig:f6-endo}
+\end{figure}

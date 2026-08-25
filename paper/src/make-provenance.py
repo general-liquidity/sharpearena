@@ -36,6 +36,9 @@ source_paths = files(
         "crates/**/*.rs",
         "crates/sharpearena-py/python/**/*.py",
         "paper/src/*.py",
+        "paper/main.tex",
+        "paper/sections/*.tex",
+        "paper/refs.bib",
     )
 )
 source_records = [
@@ -57,8 +60,12 @@ head = subprocess.check_output(
     ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
 ).strip()
 manifest = {
-    "schema_version": 1,
-    "repository_head": head,
+    "schema_version": 2,
+    # A manifest cannot contain the hash of the commit that will contain the
+    # manifest without becoming self-referential.  Record the checked-out base
+    # commit honestly; source_snapshot_sha256 binds the candidate's actual
+    # (possibly not-yet-committed) source bytes.
+    "repository_base_head": head,
     "source_snapshot_sha256": snapshot,
     "source_snapshot_scope": [
         "Cargo.toml",
@@ -67,6 +74,9 @@ manifest = {
         "crates/**/*.rs",
         "crates/sharpearena-py/python/**/*.py",
         "paper/src/*.py",
+        "paper/main.tex",
+        "paper/sections/*.tex",
+        "paper/refs.bib",
     ],
     "reproduction_entrypoint": "commands in paper/sections/A-commands.tex",
     "source_files": source_records,

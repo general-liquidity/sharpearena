@@ -14,15 +14,15 @@
     },
     {
       "path": "paper/evidence/f4-realism.json",
-      "sha256": "a3044937d31ba643bba28822f0ea120466e5fcdccd4e99556d9d4e17a0083067"
+      "sha256": "47b41889a3a9c28322cea6634c42c82063e5d88e08eabe5405a853637be5ca0f"
     },
     {
       "path": "paper/evidence/f5-manipulation.json",
-      "sha256": "9072b66285dc5c44068acad908049101f4b0b491efe5f67b265f3b019038e320"
+      "sha256": "84657a65dd154f5563a828963bd811dbfb9c2ded377cf0c720e5045814806fe4"
     },
     {
       "path": "paper/evidence/f6-adverse-selection.json",
-      "sha256": "4e8c57621254e500cb3d1d328fc2aec41bd24694927a3debc67c30a5291793e1"
+      "sha256": "2a0e4c913e303ea3dab18dbd359b68001181ac9d01f581dcf72ff6ae4559d8a0"
     },
     {
       "path": "paper/evidence/f7-failures.json",
@@ -42,55 +42,67 @@
     },
     {
       "path": "paper/evidence/witness.json",
-      "sha256": "2a0924078d7f477ef30c8d70af323ec23d7712c441d6d6282c494bb65d817ec9"
+      "sha256": "e074751bf50c6489a3eda5a817b2cfcf2cf3b5c6103516334de1ae2189416391"
     },
     {
       "path": "paper/figures/f1-baselines.pdf",
-      "sha256": "e6fed8cc1eaab77da7b4313938a76835ef3a6595a331f1f349a2d47fa80149e5"
+      "sha256": "ad58424da601f21fe7f6b19322715bf8356229fde71ab6b19cd43a5764b69249"
     },
     {
       "path": "paper/figures/f2-regret.pdf",
-      "sha256": "db9827afee14da9aad330cf2dd2f788b99e25b3eff23aa03d5fefc14a0991602"
+      "sha256": "dd8b7e61d24f209f8657a1c5e03e2086dac6505367b6532dc9bea88800bcc4ef"
     },
     {
       "path": "paper/figures/f3-transfer-matrix.pdf",
-      "sha256": "1a12dbd853fa442f1e146db2ea5c86e67bd31d4efb67732c988399925ea68875"
+      "sha256": "63d7b9b2b71bef7af217f343e518079dc214a713289869c69c04538afce5554b"
+    },
+    {
+      "path": "paper/figures/f4-calm-calibration.pdf",
+      "sha256": "96fe198d019819a06e73f70adaead24b39fd0718109e55319be61265867433b7"
     },
     {
       "path": "paper/figures/f4-realism.pdf",
-      "sha256": "752a858fa9316f55b7eec0a0c40d4de08b321ee9d2d25f63595303766ac369bc"
+      "sha256": "5f4b3efb484cd901e0fa191eb2b778ef2a6fd5b50563076ed521f088872f46f8"
     },
     {
       "path": "paper/figures/f5-boundaries.pdf",
-      "sha256": "899357fec1008675c9c23ca730204203f208bcf5042958ce83a4cb58bcdcf93a"
+      "sha256": "36acfcef35d47711110acd4e2282656ab1354efffc5e18bd0982e1de882578f6"
     },
     {
       "path": "paper/figures/f5-concave.pdf",
-      "sha256": "eee4733cd5a92d815a5bbd1435bf6f1b0dd58463d69575cbef6d15c2e6c2f9ba"
+      "sha256": "e816991a650c3f427e39be87ae1c4c618afaecd581be4b7c4998ae1eb3152f23"
+    },
+    {
+      "path": "paper/figures/f5-extended-sweeps.pdf",
+      "sha256": "dab08e51a9d4904e7412b558f6bb39a624a4986568d925a11f2f69406c56a273"
     },
     {
       "path": "paper/figures/f5-positive-control.pdf",
-      "sha256": "39f557d2177b69c949146c596fbd70c577320007ccf788190832e5e7bb0a13fe"
+      "sha256": "0f4493406dc951e3224abdd46dd23188ea6ff42766663d0361e3024a7e561a78"
     },
     {
       "path": "paper/figures/f5-size-response.pdf",
-      "sha256": "2bbb1795d57305f3c306e80c445c18137ea62b4b7cef01f8e4a61ecfa35aea35"
+      "sha256": "07bb0cb0bd9ab01e9f48321c03601c46755b5b0398df8f9f807296a12e3657e8"
+    },
+    {
+      "path": "paper/figures/f6-endogenous.pdf",
+      "sha256": "e027cb7733f487ab0c99e420ba47df4abaf0a355801c987d535834798c9999f9"
     },
     {
       "path": "paper/figures/f6-markouts.pdf",
-      "sha256": "d504935416a4024b1aefd0b63533f16f187fa339785cb97455deb2aa6dd7813b"
+      "sha256": "6c85786fbc9545479965a9ee33b4fbdbb4f0bc2e60da852848a1e57c738bea79"
     },
     {
       "path": "paper/figures/f7-failures.pdf",
-      "sha256": "04d29f61e1130a0b4c77c1307425f21adeaf81bf331c957fc0bc2f3f7e30935c"
+      "sha256": "5ab6de3fb67c1862061c7bb8861a6b3c3739ce9b823ffdb335c7a04e71762ff9"
     },
     {
       "path": "paper/figures/f8-ecology-control.pdf",
-      "sha256": "99c61bf31b3115ac3e9f523145c433b1e1504e998783d9802b2de4ce829b0b24"
+      "sha256": "dd8c3817fea0510b2b91c0e3db522fe80724553c0d4fbe1625987c9e25508ff4"
     },
     {
       "path": "paper/figures/f8-ecology-shocked.pdf",
-      "sha256": "f07fa2a30687b9736d593ca5aefa95ae5316369604455c00536de8bfad660828"
+      "sha256": "8854388b2f3cdb78b5d8c08267f5b8430253ebb4677beb1c1022d6976b011104"
     },
     {
       "path": "paper/figures/predictability.pdf",
@@ -98,36 +110,36 @@
     },
     {
       "path": "paper/figures/witness.pdf",
-      "sha256": "8ed17ec76781641768cc8f910b3ed0c4b65d2b0483b041450ea9e4425340ebba"
+      "sha256": "a25a90b3c01d831cb94d09fa7a791a9cd2cb723f8b295e8a7ce838c044338d80"
     }
   ],
-  "repository_head": "9f16e9fb1251ba7f54ef95eac17f94098d3d4f95",
+  "repository_base_head": "fa4943897a3b53a85eb81515e547d175072162c4",
   "reproduction_entrypoint": "commands in paper/sections/A-commands.tex",
-  "schema_version": 1,
+  "schema_version": 2,
   "source_files": [
     {
       "path": "Cargo.lock",
-      "sha256": "7ec8b27b3f1f625c78b07d2d6b20f67b32aba2e37c40b08f072f9424ed7d72f9"
+      "sha256": "fe38765f8e27551096bb61f3f3efd8e3159ffd71eb09a873c1d5db9d4be86a1a"
     },
     {
       "path": "Cargo.toml",
-      "sha256": "1311bb1430f895c67ed479d8464104e413c9efbbfb10d20afac055cf7521839f"
+      "sha256": "291d9c876a5c17eec2ef786e0f53d047ef32300538bcf6c8945220647113cdc2"
     },
     {
       "path": "crates/sharpearena-py/Cargo.toml",
-      "sha256": "5e7372bc5a29fcced61dc6fb0e0ff9319e0e87ad6f139ae36a9faefb84155307"
+      "sha256": "27c5a108766c119e08cb0a80536a8f0f6a7a9af8060d39d009afc13513511208"
     },
     {
       "path": "crates/sharpearena-py/pyproject.toml",
-      "sha256": "328b597fe7cc1083f8ff332a4b0565d573c33684851a2f02753aedfe52cb49fa"
+      "sha256": "ce01ef55fb2c1d15145c0dee976e3d6db19d69b2c3ee5035f085c72da09843d7"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/__init__.py",
-      "sha256": "1c670902ad8d816fc8aef9a9f5ace97e954d7055305690e25119e90516575ee9"
+      "sha256": "97752854b6d3a10351a8d66c0e4479e87f5ccfd127728321d3010e0bd1317e73"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/adverse_selection.py",
-      "sha256": "68c8ffe21eee74499a6fce7ef19e677aff6435803091a84afe17f31b57085935"
+      "sha256": "b08074dc784aa2a2a9208bf72ef1b78a9f10b48e81196e534c67859053b993ba"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/baselines.py",
@@ -227,11 +239,11 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/manipulation.py",
-      "sha256": "875378ab2c7259a50abb6d954b33d0563299ca0a70952dc2a8afa8bf2eeee553"
+      "sha256": "b8348db62dc93fc9d1adf18c7e7515b1ced6d5942d4caa7e921162738b78ca4c"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/market_env.py",
-      "sha256": "e0e1a14c6531ab8b4c5f1eecc9423e1d22ee0c02b7530bf53af3aad0ab74586d"
+      "sha256": "37dfb260e62745bb433231943e3c7bf36cad04e09c5e895f4f1cebc1c5a136e5"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/market_making.py",
@@ -275,7 +287,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/realism.py",
-      "sha256": "0227c2fec3f1953311515e6877754a571fd33ed626d016f21016d9d06f0073bd"
+      "sha256": "cdc23cf67a0f41cb4d3c9a474af1db19afa61fbc970f920fa9a7cf8ce57dde37"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/regime_eval.py",
@@ -367,7 +379,7 @@
     },
     {
       "path": "crates/sharpearena-wasm/Cargo.toml",
-      "sha256": "c8435d7b60d3f3700c1d28e225f929fb862f0caf9ba48ada41ea3c4e700174e2"
+      "sha256": "8cd48af5a3f797437280cadd28792a0b822a0802fc8b8d98e9b2f5c0c7225465"
     },
     {
       "path": "crates/sharpearena-wasm/src/lib.rs",
@@ -415,15 +427,15 @@
     },
     {
       "path": "crates/sharpearena/src/market.rs",
-      "sha256": "d2cd2139bd7b2b32a748fe2ef2015c26a3cb2aa1674bd85293c41691c0b116af"
+      "sha256": "ded6dab398828eb79bf8d23c466ac695a0705dc055f1ab80ccbb2be372aed6ff"
     },
     {
       "path": "crates/sharpearena/src/richness.rs",
-      "sha256": "fadff4efc0aebd14523bd464ed140daa21557f92c132473a7cbd462dfa5daef4"
+      "sha256": "1ea1a14e3f184aba8999fe18f7e27e9654a4404cf5f806d7d4eb5dc5400b2061"
     },
     {
       "path": "crates/sharpearena/src/scenario_gen.rs",
-      "sha256": "c15f75dc4501c374712f27c309eb80bd21acfe3720bd405c19d5c73086a87ffd"
+      "sha256": "19ec76db1b68eed87197acd0d2b6536abb58385bf6be210d5bf762f24761560e"
     },
     {
       "path": "crates/sharpearena/src/vec_env.rs",
@@ -436,6 +448,86 @@
     {
       "path": "crates/sharpearena/tests/smoke.rs",
       "sha256": "b5b365c6b175d29f7c6a4ac62eb1cf3fb0566b838408afa15e2c141c527ecbd8"
+    },
+    {
+      "path": "paper/main.tex",
+      "sha256": "43f7204884c5532900bbba269a33602caae7f3890b3e6d64868d694d8b3d96eb"
+    },
+    {
+      "path": "paper/refs.bib",
+      "sha256": "c99679b599563d018ff9a15ba352e29d7bae9d1b33d759acc6f5be1c2654ce51"
+    },
+    {
+      "path": "paper/sections/00-abstract.tex",
+      "sha256": "52880466c487799a40a4bb0a5394ac31e44b5e711f9df1b1e7ff498b429122e1"
+    },
+    {
+      "path": "paper/sections/01-introduction.tex",
+      "sha256": "9148a4f0701256edae41a9d191c51af3d202ec72a195aa69377ee0a44b7fe83b"
+    },
+    {
+      "path": "paper/sections/02-principles.tex",
+      "sha256": "4b4391151e100343c5060cb0e23c6fb828bb669f8fa7aa79e71ac173baa8a115"
+    },
+    {
+      "path": "paper/sections/03-environment.tex",
+      "sha256": "25bae69737cd7a24e5eb8aa6ecd5aa644510cff462997a8793b8e3609855834a"
+    },
+    {
+      "path": "paper/sections/04-contract.tex",
+      "sha256": "fd8942f85418ae9e13c48c490e86786a19d1d1934e0ee8c8b32fab555095c21e"
+    },
+    {
+      "path": "paper/sections/05-experiments.tex",
+      "sha256": "6ce479f0e5edf239fe8cdb15e313756d2ce70db38916611623ce695411ed783d"
+    },
+    {
+      "path": "paper/sections/06-related.tex",
+      "sha256": "e1e30ba8ef0a4f301aff64dad6c9670823aeab5d94b477481b569eb466390a29"
+    },
+    {
+      "path": "paper/sections/07-limitations.tex",
+      "sha256": "955ab1203f6421a5157154246e8283b1a5e34081c840670522ffb014d3cc8ab8"
+    },
+    {
+      "path": "paper/sections/08-reproducibility.tex",
+      "sha256": "29f8b3e8283e8017844a000284958ef552467b1f2f0e100bf84ef6f95bf86c1d"
+    },
+    {
+      "path": "paper/sections/A-commands.tex",
+      "sha256": "8639a60de6ca7153a09ad988f6169c54c6f7cc83919b11c2aa869d3d326aa2e9"
+    },
+    {
+      "path": "paper/sections/arena-witness-fragment.tex",
+      "sha256": "219c79ac09420f86518d061b289ea7113ec7408fe2e4e7906337ccb4c49fe7bd"
+    },
+    {
+      "path": "paper/sections/calm-tails-fragment.tex",
+      "sha256": "ded02567a5af74d82160e793bf76d6331c7cb5c9a2b501ff2c548d11e6b468e5"
+    },
+    {
+      "path": "paper/sections/concave-fragment.tex",
+      "sha256": "86886edc76f934f919bdc1ff1d29529a6a41a36e7a1d2c3f8b803bd08b7fd888"
+    },
+    {
+      "path": "paper/sections/endogenous-adverse-fragment.tex",
+      "sha256": "56dfb93a583622cc40e97f34d888c70af37296aaa7a94c397788d01315144083"
+    },
+    {
+      "path": "paper/sections/manipulation-sweeps-fragment.tex",
+      "sha256": "af0d32cbd2d84118b8c88b15bad10e96c68e194a14f845375ece541b181753c8"
+    },
+    {
+      "path": "paper/sections/positive-control-fragment.tex",
+      "sha256": "b9b0660b6d8a75edd5f62238392454e0aa3158a235a97ea5cc5b2548ee6f2fea"
+    },
+    {
+      "path": "paper/sections/predictability-fragment.tex",
+      "sha256": "41c2d2b798bdcee596e450a1e038578c439799dc11bea0944e2bde4ef126abc8"
+    },
+    {
+      "path": "paper/sections/sealed-seeds-fragment.tex",
+      "sha256": "c8d029e33fc0d0107b7f7c774724f464bd3f8cece1200a7ffc5901fd184c702b"
     },
     {
       "path": "paper/src/make-f1-baselines.py",
@@ -451,15 +543,15 @@
     },
     {
       "path": "paper/src/make-f4-realism.py",
-      "sha256": "454c75fedb233a59d9bcd195fcbb71c536778bb56cdef4cd4ce4fed84990f101"
+      "sha256": "1a37851e8dd337da8ed3231c8442dd483a2f35aab95ea4bc94b3b080d6934714"
     },
     {
       "path": "paper/src/make-f5-manipulation.py",
-      "sha256": "77d546f994b48db0252b9872610c6833950557d281254b6a56a4b66ed50b181f"
+      "sha256": "3d2a9689d677c9a4ca092e88748f90a529c1b39f44fc301961bb6cbc53fb10d8"
     },
     {
       "path": "paper/src/make-f6-adverse-selection.py",
-      "sha256": "865020c117efa3ec426c81f35c27e6a941908dc7a9f6664bed0fe659bcc01997"
+      "sha256": "649ea7f51aa81665c705653072589d40d772b13068cf690934ccb71d016baaca"
     },
     {
       "path": "paper/src/make-f7-failures.py",
@@ -479,7 +571,7 @@
     },
     {
       "path": "paper/src/make-provenance.py",
-      "sha256": "31876dc47b4d2e4eb95bcec940d2574665e0e8bf077a3a76320243f1a4f76784"
+      "sha256": "7db24c49025efc67df503c2fd52a847de75689d88d15aa4de323fcfbc77bf07b"
     },
     {
       "path": "paper/src/make-sealed-seeds.py",
@@ -487,7 +579,7 @@
     },
     {
       "path": "paper/src/make-witness.py",
-      "sha256": "60bbcb5ff30379a1d6d3f861a2d53e2a4ce0518402b89928695ad1509112fe92"
+      "sha256": "7371eb7d11ca5b706b98de97f5f5a700f8700a93679182e3e8d1039848f17d2b"
     }
   ],
   "source_snapshot_scope": [
@@ -496,7 +588,10 @@
     "crates/**/*.toml",
     "crates/**/*.rs",
     "crates/sharpearena-py/python/**/*.py",
-    "paper/src/*.py"
+    "paper/src/*.py",
+    "paper/main.tex",
+    "paper/sections/*.tex",
+    "paper/refs.bib"
   ],
-  "source_snapshot_sha256": "9ec60ea9b6b5d483d99d987778b4bf00fa7895cff5681737a618687210fdf0fa"
+  "source_snapshot_sha256": "15854652346f8bcf3f6d58d5e4f28f96fef90a5f805716c4742c39dec6dec959"
 }

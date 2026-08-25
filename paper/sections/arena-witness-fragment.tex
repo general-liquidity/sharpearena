@@ -5,30 +5,30 @@ The baseline board of \cref{sec:f1} contains no rank-eligible policy, leaving op
 \mathrm{signal}_t(s)=s z_t+\sqrt{1-s^2}\,\varepsilon_t,
 \qquad 0\le s\le1.
 \]
-The same $\varepsilon_t$ is reused at every $s$ (common random numbers), so changing signal strength does not silently change the experiment. A sign-following policy trades every bar; a deadband policy trades only when $|\mathrm{signal}|>1$ and otherwise holds. Both are scored through the unchanged SharpeBench conjunction over 16 seeds. The script first checks the full coarse acceptance set. It refines a crossing by bisection only when coarse eligibility is monotone; otherwise it reports the observed set without calling any crossing a threshold. All ten attained series are monotone after the common-random-number correction.
+The same $\varepsilon_t$ is reused at every $s$ (common random numbers), so changing signal strength does not silently change the experiment. A sign-following policy trades every bar; a deadband policy trades only when $|\mathrm{signal}|>1$ and otherwise holds. Both are scored through the unchanged SharpeBench conjunction over 16 seeds. The per-seed gate uses the probabilistic Sharpe ratio (PSR), the probability under the kernel's stated sampling model that Sharpe exceeds its reference threshold. The script records the full coarse acceptance set. It refines an \emph{observed crossing bracket} by bisection only when that coarse set is monotone; otherwise it reports the observed set without calling any crossing a threshold. These are numerical brackets on the stated grid and common random numbers, not a proof that eligibility is globally monotone between unsampled strengths. All ten attained coarse series are monotone.
 
 \begin{table}[t]
 \centering
-\caption{Observed eligibility thresholds in signal-truth correlation $s$. Intervals are bisection brackets after a monotone coarse-grid check. ``None'' means that no sampled $s\le1$ is eligible. At every attained threshold, the last failing gate is the requirement that every seed's marginal PSR reach $0.90$.}
+\caption{Observed eligibility crossing brackets in signal-truth correlation $s$. Intervals are bisection brackets after a monotone coarse-grid check, not global optima or theorem-level thresholds. ``None'' means that no sampled $s\le1$ is eligible. At every attained crossing, the last failing gate is the requirement that every seed's marginal PSR reach $0.90$.}
 \label{tab:witness}
 \small
 \begin{tabular}{llccc}
 \toprule
 Variant & Band & Calm & Hard & Extreme \\
 \midrule
-\texttt{sign\_follow} & held-out & none & $[0.7250,0.7281]$ & $[0.3000,0.3031]$ \\
+\texttt{sign\_follow} & gap-band witness & none & $[0.7250,0.7281]$ & $[0.3000,0.3031]$ \\
 \texttt{sign\_follow} & F1 table & none & $[0.7875,0.7906]$ & $[0.4438,0.4469]$ \\
-\texttt{deadband\_hold} & held-out & $[0.9000,0.9031]$ & $[0.5031,0.5063]$ & $[0.3813,0.3844]$ \\
+\texttt{deadband\_hold} & gap-band witness & $[0.9000,0.9031]$ & $[0.5031,0.5063]$ & $[0.3813,0.3844]$ \\
 \texttt{deadband\_hold} & F1 table & $[0.6563,0.6594]$ & $[0.6188,0.6219]$ & $[0.3688,0.3719]$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The result is an existence proof and a calibration, not evidence about an agent. The deadband construction is eligible on every tier, so the acceptance set is non-empty. The every-seed gate is last to open at all ten observed thresholds; pooled DSR and bootstrap gates open earlier. The sign follower never becomes eligible on Calm, even at $s=1$, because its every-bar turnover costs more than the low-volatility signal is worth. Thus the environment does not impose an activity requirement, but its cost model does require a Calm policy to ration turnover.
+The result is an existence proof and a calibration, not evidence about an agent. The deadband construction is eligible on every tier, so the observed acceptance set is non-empty. The every-seed gate is last to open at all ten observed thresholds; pooled DSR and bootstrap gates open earlier. The sign follower never becomes eligible on Calm, even at $s=1$, because its every-bar turnover costs more than the low-volatility signal is worth. Thus the environment does not impose an activity requirement, but its cost model does require a Calm policy to ration turnover (\cref{fig:witness}).
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=0.95\linewidth]{witness}
-\caption{Witness sweep on the held-out band. Filled markers are eligible sampled points; dashed lines mark bisection thresholds only after monotonicity is verified. The right panels show how many of the 16 seed-level PSR tests pass.}
+\caption{Witness sweep on the gap-band witness subset. Filled markers are eligible sampled points; dashed lines mark bisection thresholds only after monotonicity is verified. The right panels show how many of the 16 seed-level PSR tests pass.}
 \label{fig:witness}
 \end{figure}

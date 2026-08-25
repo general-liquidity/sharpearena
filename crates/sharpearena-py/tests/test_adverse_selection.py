@@ -6,19 +6,25 @@ informational edge, because then "adverse selection" is just noise with a metric
 it. The rest of the file checks that the measurement is exact (the decomposition is an
 identity, not an estimate), reproducible from a seed, and honest about what it saw.
 
-Pure numpy and gymnasium: no native extension, no pettingzoo, so nothing here skips.
+Pure numpy and gymnasium: no native extension, no pettingzoo, so nothing here skips
+except the one cross-check of the endogenous arm against the native clearing engine.
 """
 
+import hashlib
 import json
+import math
 
 import pytest
 
 from sharpearena.adverse_selection import (
     AdverseSelectionParams,
+    EndogenousImpact,
     MakerMarkout,
     MetaOrder,
+    compare_endogenous_arms,
     compare_informed_vs_uninformed,
     fill_markout,
+    informed_displacement,
     run_adverse_selection,
 )
 from sharpearena.market_making import MMParams, fixed_spread_policy
@@ -263,3 +269,206 @@ def test_params_reject_incoherent_scenarios(overrides):
 def test_policy_count_must_match_the_roster():
     with pytest.raises(ValueError, match="expected 2 policies"):
         run_adverse_selection(params=_short(), policies=[fixed_spread_policy(0.5)])
+
+
+# ---------------------------------------------------------------------------
+# The endogenous arm: filled flow moves the mid through the engine's impact law
+# ---------------------------------------------------------------------------
+
+# SHA-256 of the exogenous arm's report (``to_dict``, sorted keys) and mid path at seed 0,
+# captured before the endogenous arm existed. The exogenous scenario is committed paper
+# evidence, so it must not move by a byte when the endogenous arm is added or changed.
+_EXOGENOUS_GOLDEN = {
+    ("default", True): (
+        "218ffaba56211be86530a5d0b32e1976753ee6f0cf1e8558b0d9898e81266393",
+        "1474007f74592c71e24a9fa2a2b5bceb5ba7bc73114ee2fbf8c7fd20d85f51ed",
+    ),
+    ("default", False): (
+        "c176afef207f89373ec273ea6b0c6eda12beb637d2c4c98d829bc447d1f840e4",
+        "1474007f74592c71e24a9fa2a2b5bceb5ba7bc73114ee2fbf8c7fd20d85f51ed",
+    ),
+    ("short", True): (
+        "9e4bf58dba2ae92fb353e3ee343c9373b2a157d114d4995039e57fa859e93918",
+        "9254f749eaf29fe853d29cd0f94dfc3f969c433112bb7fb95dcddf0887589eef",
+    ),
+    ("short", False): (
+        "1806271460552141da7703549dc2b9c1cbe5948c98d0b25802bfb0c18e5d1b95",
+        "9254f749eaf29fe853d29cd0f94dfc3f969c433112bb7fb95dcddf0887589eef",
+    ),
+}
+
+
+def _sha(obj) -> str:
+    return hashlib.sha256(json.dumps(obj, sort_keys=True).encode()).hexdigest()
+
+
+@pytest.mark.parametrize("config,informed", list(_EXOGENOUS_GOLDEN))
+def test_exogenous_arm_is_byte_identical_to_its_golden_hash(config, informed):
+    """The exogenous arm is what the paper's F6 evidence was produced from; adding the
+    endogenous arm must leave its report and its mid path bit for bit unchanged."""
+    from dataclasses import replace
+
+    params = AdverseSelectionParams() if config == "default" else _short()
+    report = run_adverse_selection(params=replace(params, informed=informed), seed=0)
+    want_dict, want_mid = _EXOGENOUS_GOLDEN[(config, informed)]
+    assert _sha(report.to_dict()) == want_dict
+    assert _sha(list(report.mid_path)) == want_mid
+    assert all(m == 1.0 for m in report.impact_multiplier_path)
+    assert report.efficient_path == report.mid_path
+
+
+def test_endogenous_arm_at_zero_impact_is_the_exogenous_arm():
+    """``kyle_lambda = 0`` must reproduce the exogenous scenario exactly: same fills, same
+    mid path, same markouts. This pins the two arms to one code path."""
+    exo = run_adverse_selection(params=_short(), seed=3)
+    endo = run_adverse_selection(
+        params=_short(), seed=3, impact=EndogenousImpact(kyle_lambda=0.0)
+    )
+    assert endo.fills == exo.fills
+    assert endo.mid_path == exo.mid_path
+    assert [m.markout for m in endo.makers] == [m.markout for m in exo.makers]
+    assert informed_displacement(endo) == 0.0
+
+
+def test_endogenous_arm_moves_the_mid_in_the_direction_of_the_flow():
+    """Each parent's own filled flow must push the reference mid the way it is trading, in
+    both legs: a buying parent leaves the multiplier higher at its end than at its start,
+    a selling parent lower. In the informed leg that direction is the alpha's; in the
+    uninformed leg it is the coin's, so the impact follows the flow, not the information.
+    """
+    for seed in range(6):
+        for informed in (True, False):
+            report = run_adverse_selection(
+                params=_short(informed=informed), seed=seed, impact=EndogenousImpact()
+            )
+            path = report.impact_multiplier_path
+            for order in report.meta_orders:
+                move = path[order.end_step] - path[order.start_step]
+                assert order.side * move > 0.0, (seed, informed, order)
+            assert informed_displacement(report) > 0.0
+    # And the mid actually differs from the efficient path once flow moves it.
+    report = run_adverse_selection(params=_short(), seed=0, impact=EndogenousImpact())
+    assert report.mid_path != report.efficient_path
+    assert all(
+        mid == pytest.approx(eff * mult)
+        for mid, eff, mult in zip(
+            report.mid_path, report.efficient_path, report.impact_multiplier_path
+        )
+    )
+
+
+def test_endogenous_impact_lowers_maker_markout_levels_and_keeps_the_gap():
+    """Permanent impact is adverse for the maker whichever way the taker trades: the maker
+    is on the wrong side of the move its own fill causes. So both legs' markout levels fall
+    relative to the exogenous arm at the longest horizon, while the informed-uninformed gap,
+    which is the information and not the impact, survives with the same sign."""
+    result = compare_endogenous_arms(params=_short(), n_episodes=8)
+    h = max(_H)
+    exo, endo = result["means"]["exogenous"], result["means"]["endogenous"]
+    for leg in ("informed", "uninformed"):
+        assert endo[leg]["markout_per_unit"][h] < exo[leg]["markout_per_unit"][h]
+    assert result["informed_is_worse"]["endogenous"][h]
+    assert result["informed_is_worse"]["exogenous"][h]
+    # The exogenous arm of the comparison is the existing scenario, episode for episode.
+    row = result["per_episode"]["exogenous"]["informed"]["markout_per_unit"][h][0]
+    report = run_adverse_selection(params=_short(), seed=0)
+    qty = sum(m.filled_qty for m in report.makers)
+    assert row == pytest.approx(sum(m.markout[h] for m in report.makers) / qty)
+
+
+def test_endogenous_arm_is_deterministic_under_a_fixed_seed():
+    a = run_adverse_selection(params=_short(), seed=11, impact=EndogenousImpact())
+    b = run_adverse_selection(params=_short(), seed=11, impact=EndogenousImpact())
+    c = run_adverse_selection(
+        params=_short(), seed=11, impact=EndogenousImpact(kyle_lambda=0.2)
+    )
+    assert json.dumps(a.to_dict()) == json.dumps(b.to_dict())
+    assert a.mid_path == b.mid_path and a.fills == b.fills
+    assert a.mid_path != c.mid_path
+    x = compare_endogenous_arms(params=_short(), n_episodes=3, seed_base=5)
+    y = compare_endogenous_arms(params=_short(), n_episodes=3, seed_base=5)
+    assert x == y
+
+
+def test_endogenous_report_serializes_its_impact_block():
+    report = run_adverse_selection(params=_short(), seed=2, impact=EndogenousImpact())
+    blob = json.loads(json.dumps(report.to_dict()))
+    assert blob["impact"]["kyle_lambda"] == 0.1
+    assert blob["impact"]["final_multiplier"] == report.impact_multiplier_path[-1]
+    assert "impact" not in run_adverse_selection(params=_short(), seed=2).to_dict()
+    assert len(report.net_flow) == len(report.mid_path) - 1
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"kyle_lambda": -0.1},
+        {"kyle_lambda": math.nan},
+        {"kyle_lambda": math.inf},
+        {"volume_scale": 0.0},
+        {"volume_scale": -240.0},
+        {"volume_scale": math.nan},
+    ],
+)
+def test_impact_params_reject_incoherent_coefficients(kwargs):
+    with pytest.raises(ValueError):
+        EndogenousImpact(**kwargs)
+
+
+def test_impact_per_unit_is_the_engine_scaling():
+    assert EndogenousImpact(kyle_lambda=0.1, volume_scale=240.0).impact_per_unit(
+        100.0
+    ) == pytest.approx(100.0 * 0.1 / 240.0)
+
+
+def test_endogenous_impact_rejects_a_nonpositive_recurrence_factor():
+    """Do not let an extreme normalized sell flow enter the log-markout domain."""
+    impact = EndogenousImpact(kyle_lambda=10.0, volume_scale=1.0)
+    with pytest.raises(ValueError, match="finite positive multiplier"):
+        impact.multiplier_for_flow(-1.0)
+    assert impact.multiplier_for_flow(0.0) == 1.0
+    assert impact.multiplier_for_flow(1.0) == 11.0
+    with pytest.raises(ValueError, match="finite positive multiplier"):
+        run_adverse_selection(
+            params=_short(), seed=0, impact=EndogenousImpact(kyle_lambda=10.0, volume_scale=1.0)
+        )
+
+
+def test_endogenous_multiplier_matches_the_native_clearing_engine():
+    """The Python recurrence must be the engine's, not a paraphrase of it.
+
+    The identical filled-flow sequence is fed to the native ``PyMarketClearing`` (one
+    agent, one symbol, ``eta = 0``) as target weights sized so that its signed order each
+    bar equals the scenario's flow, and the cleared mid it reports must equal its own
+    exogenous mid times the scenario's multiplier at every bar. A twin engine with no flow
+    supplies the exogenous mid.
+    """
+    native = pytest.importorskip("sharpearena.sharpearena_py")
+    impact = EndogenousImpact(kyle_lambda=0.1, volume_scale=240.0)
+    report = run_adverse_selection(params=_short(), seed=3, impact=impact)
+    capital = 1000.0
+    kwargs = dict(
+        n_symbols=1,
+        n_days=len(report.net_flow) + 21,  # 20 warm-up bars plus one bar past the flow
+        seed=3,
+        n_agents=1,
+        capital=capital,
+        kyle_lambda=impact.kyle_lambda,
+        eta=0.0,
+        volume_scale=impact.volume_scale,
+    )
+    live = native.PyMarketClearing(**kwargs)
+    quiet = native.PyMarketClearing(**kwargs)
+    weight = 0.0
+    for t, flow in enumerate(report.net_flow):
+        exo = json.loads(quiet.step_market("[[0.0]]"))["cleared_mids"][0]
+        mult = report.impact_multiplier_path[t]
+        weight += flow * (exo * mult) / capital
+        res = json.loads(live.step_market(json.dumps([[weight]])))
+        assert res["net_flow"][0] == pytest.approx(flow, abs=1e-9)
+        assert res["cleared_mids"][0] == pytest.approx(exo * mult, rel=1e-12)
+    exo = json.loads(quiet.step_market("[[0.0]]"))["cleared_mids"][0]
+    res = json.loads(live.step_market(json.dumps([[weight]])))
+    assert res["cleared_mids"][0] == pytest.approx(
+        exo * report.impact_multiplier_path[-1], rel=1e-12
+    )
