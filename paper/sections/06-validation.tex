@@ -94,20 +94,20 @@ Push wt. & PnL & 95\% CI \\
 \end{tabular}
 \end{table}
 
-\Cref{tab:f5} and \cref{fig:f5} are consistent with the linear model's no-manipulation conditions on the sampled grid. On every axis the pump loses money at every sampled coefficient, with every per-point 95\% CI excluding zero, including the realistic center of the grid ($\lambda = 0.1$, $\eta = 0.05$: impact PnL $-3.4 \times 10^{-4}$, CI $[-4.3, -2.6] \times 10^{-4}$). The size response is bounded and decreasing: the least-bad size is the smallest sampled push weight and the loss grows to $-5.1 \times 10^{-4}$ at full size.
+\Cref{tab:f5} and \cref{fig:f5,fig:f5-size} are consistent with the linear model's no-manipulation conditions on the sampled grid. On every axis the pump loses money at every sampled coefficient, with every per-point 95\% CI excluding zero, including the realistic center of the grid ($\lambda = 0.1$, $\eta = 0.05$: impact PnL $-3.4 \times 10^{-4}$, CI $[-4.3, -2.6] \times 10^{-4}$). The size response is bounded and decreasing: the least-bad size is the smallest sampled push weight and the loss grows to $-5.1 \times 10^{-4}$ at full size.
 
-\begin{figure}[t]
+\begin{figure}[tbp]
 \centering
-\begin{subfigure}[t]{0.55\linewidth}
-\includegraphics[width=\linewidth]{f5-boundaries}
-\caption{Boundary sweeps per impact axis.}
-\end{subfigure}\hfill
-\begin{subfigure}[t]{0.42\linewidth}
-\includegraphics[width=\linewidth]{f5-size-response}
-\caption{Size response in the push weight.}
-\end{subfigure}
-\caption{The manipulation probe: impact-attributed PnL is negative everywhere and worsens with impact strength and with size.}
+\includegraphics[width=0.92\linewidth]{f5-boundaries}
+\caption{The manipulation probe, boundary sweeps per impact axis: impact-attributed PnL is negative at every sampled coefficient on every axis.}
 \label{fig:f5}
+\end{figure}
+
+\begin{figure}[tbp]
+\centering
+\includegraphics[width=0.92\linewidth]{f5-size-response}
+\caption{The manipulation probe, size response in the push weight: the loss is bounded and decreasing in size, so the least-bad push is the smallest one sampled.}
+\label{fig:f5-size}
 \end{figure}
 
 \subsubsection{Normalized-flow concavity: a falsifiable symmetric probe}\label{sec:f5-concave}
