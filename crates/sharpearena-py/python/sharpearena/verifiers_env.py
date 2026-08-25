@@ -28,10 +28,14 @@ from typing import Any, Optional, Sequence
 
 import numpy as np
 
-from .sharpearena_py import score_run  # the real SharpeBench scorer (pyo3)
+from .decision_parser import (
+    DecisionParseError,
+    build_parser,
+    parse_decision,
+)
 from .gym import SharpeArenaEnv
-from .decision_parser import build_parser, format_reward, parse_decision
 from .mandate import mandate_breach, sample_mandate, validate_mandate
+from .sharpearena_py import score_run  # the real SharpeBench scorer (pyo3)
 
 try:  # pragma: no cover - exercised only when verifiers is installed
     import verifiers as vf
@@ -47,6 +51,7 @@ except Exception:  # noqa: BLE001 - any import failure means "not available"
 # (a plural `states`/`infos` param would be treated as a group func), `**kwargs` so
 # the signature-filtering rubric can pass whatever it has.
 # ---------------------------------------------------------------------------
+
 
 def _returns_from_state(state: Optional[dict]) -> list[float]:
     """Per-bar realized returns recorded by the rollout, if any."""
@@ -86,7 +91,9 @@ def deflated_sharpe_reward(
 ) -> float:
     """The **real** deflated Sharpe (SharpeBench kernel), deflated for ``n_trials`` of
     declared in-sample search — the metric the benchmark ranks on."""
-    return float(_composite(_returns_from_state(state), n_trials).get("deflated_sharpe", 0.0))
+    return float(
+        _composite(_returns_from_state(state), n_trials).get("deflated_sharpe", 0.0)
+    )
 
 
 def pass_k_reward(
@@ -97,7 +104,11 @@ def pass_k_reward(
     **kwargs: Any,
 ) -> float:
     """1.0 iff the run clears the per-run PSR bar (the kernel's ``passed_k`` gate)."""
-    return 1.0 if _composite(_returns_from_state(state), n_trials).get("passed_k", False) else 0.0
+    return (
+        1.0
+        if _composite(_returns_from_state(state), n_trials).get("passed_k", False)
+        else 0.0
+    )
 
 
 def process_check_reward(
@@ -108,7 +119,12 @@ def process_check_reward(
     """Penalize block-severity events surfaced in the env's per-bar ``info`` (the
     sim-exploitation guard, e.g. a manipulative order). 1.0 = clean."""
     events: Sequence[dict] = (state or {}).get("events", []) if state else []
-    bad = sum(1 for e in events if "manipulative" in str(e.get("event", "")).lower())
+    bad = sum(
+        1
+        for e in events
+        if "manipulative" in str(e.get("event", "")).lower()
+        or str(e.get("event", "")).lower() == "protocol_error"
+    )
     return 1.0 if bad == 0 else max(0.0, 1.0 - 0.25 * bad)
 
 
@@ -144,7 +160,9 @@ def mandate_reward(
     return float(1.0 - mandate_breach(m, rets, list(events)))
 
 
-def build_rubric(parser: Any = None, *, reward_scheme: str = "default", mandate: bool = True):
+def build_rubric(
+    parser: Any = None, *, reward_scheme: str = "default", mandate: bool = True
+):
     """The reward bundle. The ``reward_scheme`` selects the primary GRPO objective from the
     pluggable registry (``"default"`` = the dense realized-return reward); the real deflated
     Sharpe is a secondary objective; the **mandate** is a weighted reward (not a metric) — the
@@ -161,13 +179,16 @@ def build_rubric(parser: Any = None, *, reward_scheme: str = "default", mandate:
 # The multi-turn rollout
 # ---------------------------------------------------------------------------
 
+
 def _last_assistant_text(messages: Any) -> str:
     """The most recent assistant message's text content (decision), or ``""``."""
     for m in reversed(list(messages or [])):
         role = m.get("role") if isinstance(m, dict) else getattr(m, "role", None)
         if role != "assistant":
             continue
-        content = m.get("content") if isinstance(m, dict) else getattr(m, "content", None)
+        content = (
+            m.get("content") if isinstance(m, dict) else getattr(m, "content", None)
+        )
         if isinstance(content, str):
             return content
         if isinstance(content, list):
@@ -180,7 +201,9 @@ def _last_assistant_text(messages: Any) -> str:
     return ""
 
 
-def render_observation(obs: dict, symbols: Sequence[str], *, final: bool = False) -> str:
+def render_observation(
+    obs: dict, symbols: Sequence[str], *, final: bool = False
+) -> str:
     """A compact textual bar observation for the model's next decision."""
     closes = obs.get("closes")
     positions = obs.get("positions")
@@ -192,7 +215,13 @@ def render_observation(obs: dict, symbols: Sequence[str], *, final: bool = False
         rows.append(f"{s}: close={c:.4f} pos={p:.4f}")
     cash_v = float(cash[0]) if cash is not None and len(cash) else 0.0
     head = "Final bar — episode complete." if final else "Market update."
-    tail = "" if final else " Respond with <reasoning> and an <action> of target weights."
+    tail = (
+        ""
+        if final
+        else " Respond with <reasoning> and an <action> containing canonical Decision JSON: "
+        '{"orders":[{"symbol":"SYM00","action":"buy","target_weight":0.25}],'
+        '"reasoning":"brief rationale"}. An empty orders array is a hold.'
+    )
     return f"{head} cash={cash_v:.2f}. " + "; ".join(rows) + "." + tail
 
 
@@ -248,6 +277,7 @@ if _HAS_VERIFIERS:
             state["_oo_done"] = False
             state["returns"] = []
             state["events"] = []
+            state["protocol_failures"] = 0
             state["_oo_last_obs"] = obs
             # Thread the scenario mandate into state so mandate_reward can read it.
             # Prefer the dataset row's mandate; fall back to the (leak-free) seed-derived
@@ -282,12 +312,36 @@ if _HAS_VERIFIERS:
             self._ensure_env(state)
             env = state["_oo_env"]
             symbols = state["_oo_symbols"]
-            action = parse_decision(_last_assistant_text(messages), symbols)
+            try:
+                action = parse_decision(
+                    _last_assistant_text(messages),
+                    symbols,
+                    max_abs_weight=self._max_weight,
+                )
+            except DecisionParseError as error:
+                state["protocol_failures"] += 1
+                state["events"].append(
+                    {"event": "protocol_error", "detail": str(error)}
+                )
+                state["_oo_done"] = True
+                self._close_env(state)
+                return [
+                    vf.UserMessage(
+                        role="user",
+                        content=(
+                            "Episode terminated: the completion was not a canonical "
+                            f"SharpeArena Decision ({error}). No hold was fabricated."
+                        ),
+                    )
+                ]
             # Record the chosen target weights as an event so the mandate breach checker
             # can see the structural decision (a short under long_only, net exposure under
             # market_neutral) — the env's own events only carry market-side facts.
             state["events"].append(
-                {"event": "target_weights", "weights": [float(x) for x in action.tolist()]}
+                {
+                    "event": "target_weights",
+                    "weights": [float(x) for x in action.tolist()],
+                }
             )
             obs, reward, terminated, truncated, info = env.step(action)
             state["returns"].append(float(reward))

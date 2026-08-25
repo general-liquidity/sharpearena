@@ -110,6 +110,28 @@ def test_step_batch_rejects_wrong_decision_count():
         env.step_batch(json.dumps([{"orders": [], "reasoning": ""}]))
 
 
+def test_native_vec_accepts_one_frozen_csv_for_all_execution_seeds():
+    csv_text = """date,symbol,close
+2026-01-01,AAA,100
+2026-01-01,BBB,50
+2026-01-02,AAA,101
+2026-01-02,BBB,49
+2026-01-03,AAA,102
+2026-01-03,BBB,51
+2026-01-04,AAA,103
+2026-01-04,BBB,52
+2026-01-05,AAA,104
+2026-01-05,BBB,53
+"""
+    vec = VecTradingEnv.from_csv(csv_text, seeds=[11, 12], autoreset_mode="disabled")
+    batch = json.loads(vec.reset_batch())
+    assert batch["n"] == 2
+    assert batch["observations"][0] == batch["observations"][1]
+
+    scalar = TradingEnv.from_csv(csv_text, seed=11)
+    assert batch["observations"][0] == json.loads(scalar.reset())
+
+
 def test_vector_wrapper_reset_step_shapes():
     env = SharpeArenaVectorEnv(seeds=[1, 2, 3, 4], n_symbols=4, n_days=60)
     assert env.num_envs == 4
@@ -139,7 +161,9 @@ def test_vector_wrapper_num_envs_from_count():
 
 def test_hard_distribution_diverges_from_calm():
     def rollout(mode: str) -> list[float]:
-        env = SharpeArenaVectorEnv(seeds=[5], n_symbols=4, n_days=60, distribution_mode=mode)
+        env = SharpeArenaVectorEnv(
+            seeds=[5], n_symbols=4, n_days=60, distribution_mode=mode
+        )
         env.reset()
         out = []
         for _ in range(40):
@@ -152,7 +176,9 @@ def test_hard_distribution_diverges_from_calm():
 
 
 def test_next_step_defers_reset_to_following_step():
-    env = SharpeArenaVectorEnv(seeds=[1], n_symbols=3, n_days=25, autoreset_mode="next_step")
+    env = SharpeArenaVectorEnv(
+        seeds=[1], n_symbols=3, n_days=25, autoreset_mode="next_step"
+    )
     assert env._autoreset_mode == "next_step"
     env.reset()
     prev_ended = False
@@ -175,7 +201,9 @@ def test_next_step_defers_reset_to_following_step():
 
 
 def test_same_step_surfaces_final_obs():
-    env = SharpeArenaVectorEnv(seeds=[1], n_symbols=3, n_days=25, autoreset_mode="same_step")
+    env = SharpeArenaVectorEnv(
+        seeds=[1], n_symbols=3, n_days=25, autoreset_mode="same_step"
+    )
     assert env._autoreset_mode == "same_step"
     env.reset()
     saw_reset = False
@@ -192,7 +220,9 @@ def test_same_step_surfaces_final_obs():
 
 
 def test_disabled_never_resets():
-    env = SharpeArenaVectorEnv(seeds=[1], n_symbols=3, n_days=25, autoreset_mode="disabled")
+    env = SharpeArenaVectorEnv(
+        seeds=[1], n_symbols=3, n_days=25, autoreset_mode="disabled"
+    )
     env.reset()
     infos = {}
     for _ in range(80):

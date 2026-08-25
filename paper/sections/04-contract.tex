@@ -4,7 +4,7 @@ An agent is an external program in any language that reads a \texttt{MarketObser
 
 \subsection{Authoritative artifacts}
 
-The contract has four authoritative artifacts, all committed. \texttt{CONTRACT\_VERSION}, currently \texttt{1.0}, is the single source of truth for the wire version and lives in the contract module of the core crate. Two JSON Schemas, draft 2020-12, define \texttt{MarketObservation} and \texttt{Decision} for non-Rust implementers; \cref{sec:spaces} enumerates their fields. A conformance kit of fixture documents, covering the normal multi-symbol case, a single symbol, an empty-portfolio start, signed-weight shorting and a legacy decision shape, is exercised by a committed conformance test. And a governance document states the evolution rules in writing.
+The contract has four authoritative artifacts, all committed. \texttt{CONTRACT\_VERSION}, currently \texttt{1.0}, is the single source of truth for the wire version and lives in the contract module of the core crate. Two JSON Schemas, draft 2020-12, define \texttt{MarketObservation} and \texttt{Decision} for non-Rust implementers; \cref{sec:spaces} enumerates their fields. A conformance kit of fixture documents, covering the normal multi-symbol case, a single symbol, an empty-portfolio start, signed-weight shorting and a legacy decision shape, is exercised by a committed conformance test. And a governance document states the evolution rules in writing. The schema closes the JSON shape but cannot know the symbols in the current observation, so one canonical runtime parser additionally enforces episode semantics. The MCP, training and local-agent surfaces all call it; a semantic fault returns without advancing the environment.
 
 \subsection{Additive-only evolution}
 

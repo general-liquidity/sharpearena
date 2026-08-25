@@ -43,6 +43,13 @@ NEWLY_EXPORTED = [
     "informed_displacement",
     # market_making
     "closed_form_reference_policy",
+    # local-model field, observed-trial strategy search, and paper-only forward arm
+    "LocalFieldRunner",
+    "OllamaClient",
+    "StrategySearchRunner",
+    "PaperRiskGuard",
+    "PaperTradingSession",
+    "prepare_forward_window_commitment",
 ]
 
 

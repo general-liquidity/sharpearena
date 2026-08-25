@@ -21,8 +21,8 @@ from typing import Any, Optional
 
 import numpy as np
 
+from .decision_parser import DecisionParseError, parse_decision
 from .gym import SharpeArenaEnv
-from .sharpearena_py import validate_decision_json
 
 try:  # pragma: no cover - exercised only when mcp is installed
     from mcp.server.fastmcp import FastMCP
@@ -44,18 +44,9 @@ def _obs_payload(obs: dict, symbols: list[str]) -> dict:
 
 
 def _decision_to_weights(decision_json: str, symbols: list[str]) -> np.ndarray:
-    """Map a wire-contract ``Decision`` JSON to a target-weight vector over ``symbols``.
+    """Strictly parse one canonical Decision over the episode's symbol axis."""
 
-    Caller is expected to have validated ``decision_json`` first; unknown symbols are
-    ignored and unmentioned symbols default to a 0.0 (flat) weight.
-    """
-    d = json.loads(decision_json)
-    by_symbol: dict[str, float] = {}
-    for order in d.get("orders", []) or []:
-        sym = order.get("symbol")
-        if sym is not None:
-            by_symbol[sym] = float(order.get("target_weight", 0.0))
-    return np.array([by_symbol.get(s, 0.0) for s in symbols], dtype=np.float64)
+    return parse_decision(decision_json, symbols)
 
 
 def build_server(env_kwargs: Optional[dict] = None) -> "FastMCP":
@@ -95,11 +86,16 @@ def build_server(env_kwargs: Optional[dict] = None) -> "FastMCP":
         decision returns ``{"error": ...}`` (structured content, not an exception).
         """
         env = _env()
-        if not validate_decision_json(decision_json):
+        try:
+            weights = _decision_to_weights(decision_json, env.symbols)
+        except DecisionParseError as error:
             return json.dumps(
-                {"error": "decision_json does not match the Decision wire contract; call spec()"}
+                {
+                    "error": "invalid_decision",
+                    "detail": str(error),
+                    "environment_advanced": False,
+                }
             )
-        weights = _decision_to_weights(decision_json, env.symbols)
         obs, reward, terminated, truncated, info = env.step(weights)
         return json.dumps(
             {

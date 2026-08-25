@@ -10,11 +10,21 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ## [Unreleased]
 
+### Added
+- py: a local open-weight field runner with a fixed prompt scaffold, constrained Ollama inference, strict canonical `Decision` validation, native vector stepping, cadence/thinking controls, stable sharding, append-only resume, exact process traces and model/runtime provenance; `sharpearena-compile-bench` validates complete journals and emits ordinary SharpeBench submissions without introducing a reverse package dependency.
+- py: a closed, non-executable strategy DSL whose host records every raw generated candidate, derives the deflation trial count from observed generation, selects on a validation split and evaluates only the winner on a disjoint test split.
+- py: a separate forward paper-trading evidence class with read-only Binance/Alpaca market data, in-memory or Alpaca-paper-only submission, deny-first native risk preflight, append-only decision/order/refusal evidence and a SharpeBench-compatible commitment with a separate private reveal preimage. No real-capital endpoint or override exists.
+- docs: local-agent architecture, August 2026 frontier-model/server matrix, sandbox-and-environment research, and an end-to-end Gordon portability assessment. The Gordon report recommends no code port into the default scaffold.
+
 ### Changed
-- paper: the companion citation reads SharpeBench version 0.10.0.
+- docs/paper: state the directed composition explicitly: SharpeArena owns the environment and sandbox, a validated artifact crosses the boundary, and SharpeBench owns field-level scoring. The build is distinguished from the still-unrun local-model experiment.
+- paper: the companion citation reads SharpeBench version 0.11.0.
 - paper: `paper/evidence/provenance.json` is regenerated against the current tree and its source snapshot excludes build outputs (`target/`, `.venv/`, `__pycache__/`), so the manifest is reproducible across machines; `paper/src/check-provenance.py` validates it and exits nonzero on any mismatch.
 - paper: `04-contract.tex` states the per-runtime golden coverage exactly (native and Python assert all seven, WebAssembly asserts the canonical and clustered scenarios); the F1 pass^k difference half-width is corrected to 0.35 at the stated p = 1/2 convention; the positive control notes that the fourth familywise-positive cell clears zero at the boundary.
 - market_making: the closed-form reference quoting policy is exported as `closed_form_reference_policy`; `analytically_optimal_policy` is kept as a deprecated alias, so the public symbol no longer asserts an optimality the docstrings retract.
+
+### Fixed
+- py: MCP, `verifiers`, and local-model execution now share the canonical fail-closed decision parser. Unknown or duplicate symbols, malformed actions, and non-finite or out-of-range weights return typed faults without advancing the environment instead of silently becoming a different or flat action. The signed target is authoritative: an action label never invents a sign constraint, because `sell` may reduce a long and `buy` may cover a short.
 
 ## [0.15.0] - 2026-08-25
 

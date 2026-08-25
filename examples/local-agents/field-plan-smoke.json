@@ -1,0 +1,35 @@
+{
+  "models": [
+    {
+      "model": "qwen3.8:27b",
+      "sampling": {
+        "temperature": 0.0,
+        "top_p": 1.0,
+        "seed": 1701,
+        "max_tokens": 384,
+        "thinking": false
+      },
+      "scaffold": "minimal-stateless-v1",
+      "decision_cadence": 5,
+      "precommitted_n_trials": 1,
+      "entry_class": "field",
+      "source_url": "https://huggingface.co/Qwen/Qwen3.8-27B",
+      "license_id": "Apache-2.0"
+    }
+  ],
+  "datasets": [
+    {
+      "dataset_id": "synthetic-calm-smoke",
+      "tier": "calm",
+      "n_symbols": 2,
+      "n_days": 24,
+      "periods_per_year": 252
+    }
+  ],
+  "seeds": [9000001, 9000002],
+  "repetitions": 2,
+  "max_steps": 12,
+  "parallel_requests": 2,
+  "shard_index": 0,
+  "shard_count": 1
+}

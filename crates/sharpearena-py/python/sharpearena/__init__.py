@@ -10,86 +10,149 @@ The native binding exchanges the language-agnostic wire JSON at its boundary:
 takes a decision JSON string. The pure-Python layers parse/build that JSON.
 """
 
-from .sharpearena_py import TradingEnv, VecTradingEnv, score_run, validate_decision_json
-from .gym import SharpeArenaEnv
-from .vector import SharpeArenaVectorEnv
-from .check_env import check_env, check_determinism_across_constructors
-from .wrappers import (
-    TimeLimit,
-    CausalNormalizeObservation,
-    CausalNormalizeReward,
-    FrameStack,
-    RecordEpisodeStatistics,
+from .adverse_selection import (
+    AdverseSelectionParams,
+    AdverseSelectionReport,
+    EndogenousImpact,
+    Fill,
+    MakerMarkout,
+    MetaOrder,
+    compare_endogenous_arms,
+    compare_informed_vs_uninformed,
+    fill_markout,
+    informed_displacement,
+    run_adverse_selection,
 )
-from .generalization import (
-    train_test_seeds,
-    evaluate_seeds,
-    generalization_gap,
-    cross_regime_transfer,
-)
-from .verifiers_env import SharpeArenaVerifiersEnv, load_environment, build_rubric
-from .dataset import build_scenario_dataset, seed_ranges_disjoint
-from .decision_parser import parse_decision
-from .lookahead_guard import LookaheadGuard, LookaheadViolation, guarded, wrap_policy
-from .trace import SCHEMA_VERSION, RolloutTraceWriter, load_trace, trace_to_returns
-from .metrics import RunMetrics, cost_adjusted_score
-from .wrappers_vector import (
-    VectorCausalNormalizeObservation,
-    VectorRecordEpisodeStatistics,
-)
-from .spaces import flatten_obs, unflatten_obs, flat_dim, FlattenObservation
-from .execution_noise import ExecutionNoiseWrapper
-from .mandate import (
-    Mandate,
-    sample_mandate,
-    mandate_text,
-    mandate_breach,
-    mandate_from_dict,
-    validate_mandate,
-)
-from .verifiers_env import mandate_reward
 from .baselines import (
-    run_baselines,
-    leaderboard_markdown,
-    MinVariancePolicy,
-    MaxSharpePolicy,
-    KellyVolTargetPolicy,
     BEHAVIORAL_POLICIES,
     DispositionEffectPolicy,
+    KellyVolTargetPolicy,
+    MaxSharpePolicy,
+    MinVariancePolicy,
     OverconfidentPolicy,
+    leaderboard_markdown,
+    run_baselines,
 )
+from .bench_bridge import BenchBridgeError, compile_benchmark_evidence
+from .cascade import LiquidationCascadeEnv, cascade_summary, cascade_survived
+from .check_env import check_determinism_across_constructors, check_env
+from .checkpoint import CheckpointableEnv, CheckpointState
 from .confidence import (
     deflated_sharpe_ci,
     paired_dsr_diff,
     pairwise_significance,
     significance_markdown,
 )
-from .rewards import (
-    REWARD_SCHEMES,
-    list_reward_schemes,
-    build_scheme_rubric,
-    differential_sharpe,
-    sortino,
-    drawdown_penalized,
-    turnover_penalized,
-    loss_averse,
-    risk_aware,
-    time_inhomogeneous_vol_aversion,
-    time_aversion_schedule,
+from .curriculum import (
+    AdaptiveCurriculumEnv,
+    AdaptiveScheduler,
+    CurriculumEnv,
+    regime_curriculum,
 )
-from .indicators import CausalIndicatorObservation, INDICATORS, DEFAULT_INDICATORS
-from .risk import DrawdownStopper, TurbulenceHalt, CrossSectionalDeleverage
+from .data_blocks import (
+    block_windows,
+    find_continuous_blocks,
+    make_block_env,
+    sample_block_window,
+)
+from .dataset import build_scenario_dataset, seed_ranges_disjoint
+from .decision_parser import parse_decision
+from .deferred import (
+    Claim,
+    ClaimRejected,
+    DeferredDesk,
+    LeakedResolution,
+    Outcome,
+    UnresolvedClaim,
+    claims_from_json,
+    outcomes_from_series,
+    resolve_claims,
+    score_claim,
+    summarize,
+)
+from .discrete import DiscreteAction
+from .ecology import (
+    allocate_seats,
+    baseline_species,
+    classify_outcomes,
+    competition_payoffs,
+    detect_coalitions,
+    liquidity_shocks,
+    market_payoffs,
+    mutating_innovator,
+    population_table,
+    regime_shocks,
+    replicator_step,
+    run_ecology,
+    steady_shocks,
+)
+from .eval_seeds import (
+    EVAL_SEEDS,
+    EVAL_SET_VERSION,
+    assert_no_regression,
+    evaluate_eval_set,
+    sealed_eval_seeds,
+)
+from .execution import ExecutionEnv, execution_quality, immediate_policy, twap_policy
+from .execution_noise import ExecutionNoiseWrapper
 from .failure_taxonomy import (
     FailureMode,
-    classify_episode_failure,
     FailureRollup,
+    classify_episode_failure,
     rollup_failure_modes,
 )
-from .news import SyntheticNewsObservation, news_series
-from .discrete import DiscreteAction
-from .pairs import SpreadObservation, KalmanSpreadObservation
-from .regime_eval import evaluate_per_regime, radar_score
-from .portfolio_env import PortfolioEnv
+from .forecast import (
+    ForecastChannelObservation,
+    calibrated_forecast,
+    forecast_skill_curve,
+)
+from .functional import SharpeArenaFuncEnv
+from .generalization import (
+    cross_regime_transfer,
+    evaluate_seeds,
+    generalization_gap,
+    train_test_seeds,
+)
+from .gym import SharpeArenaEnv
+from .indicators import DEFAULT_INDICATORS, INDICATORS, CausalIndicatorObservation
+from .lob_env import LOBMarketEnv, noise_trader_policy, symmetric_quote_policy
+from .local_agents import (
+    DatasetSpec,
+    EvidenceJournal,
+    FieldPlan,
+    LocalFieldRunner,
+    ModelIdentity,
+    ModelRunConfig,
+    OllamaClient,
+    PromptRenderer,
+    SamplingConfig,
+)
+from .lookahead_guard import LookaheadGuard, LookaheadViolation, guarded, wrap_policy
+from .mandate import (
+    Mandate,
+    mandate_breach,
+    mandate_from_dict,
+    mandate_text,
+    sample_mandate,
+    validate_mandate,
+)
+from .manipulation import (
+    DISCLAIMER,
+    AsymmetricResult,
+    AsymmetricSchedule,
+    BoundaryReport,
+    ManipulationParams,
+    ManipulationResult,
+    SizeResponse,
+    asymmetric_round_trip_schedule,
+    impact_boundary_sweep,
+    momentum_follower_policy,
+    pump_and_dump_schedule,
+    run_asymmetric_probe,
+    run_manipulation_probe,
+    size_response,
+)
+from .market_env import EndogenousMarketEnv
 from .market_making import (
     MarketMakingEnv,
     MMParams,
@@ -98,122 +161,100 @@ from .market_making import (
     fixed_spread_policy,
     mm_regret,
 )
-from .execution import ExecutionEnv, execution_quality, twap_policy, immediate_policy
-from .forecast import (
-    calibrated_forecast,
-    ForecastChannelObservation,
-    forecast_skill_curve,
-)
+from .metrics import RunMetrics, cost_adjusted_score
+from .minari_export import to_minari, to_minari_train_test
+from .news import SyntheticNewsObservation, news_series
 from .obs_extra import (
+    CounterfactualInfo,
+    KalmanTrendObservation,
     MultiTimescaleMomentum,
     RollingCovarianceObservation,
-    KalmanTrendObservation,
     TimeToHorizonObservation,
-    CounterfactualInfo,
 )
-from .data_blocks import (
-    find_continuous_blocks,
-    block_windows,
-    sample_block_window,
-    make_block_env,
+from .pairs import KalmanSpreadObservation, SpreadObservation
+from .paper_trading import (
+    AlpacaMarketData,
+    AlpacaPaperBroker,
+    BinancePublicData,
+    ForwardEvidenceJournal,
+    InMemoryPaperBroker,
+    PaperAccount,
+    PaperOrder,
+    PaperRiskConfig,
+    PaperRiskGuard,
+    PaperTradingSession,
+    prepare_forward_window_commitment,
 )
-from .cascade import LiquidationCascadeEnv, cascade_survived, cascade_summary
-from .lob_env import LOBMarketEnv, symmetric_quote_policy, noise_trader_policy
-from .reward_misspecification import (
-    MISSPECIFIED_REWARDS,
-    MISSPECIFIED_PROXY_POLICIES,
-    misspecification_gap,
-    demonstrate_punishment,
-)
-from .minari_export import to_minari, to_minari_train_test
 from .pettingzoo_env import MultiAgentSharpeArenaEnv, make_aec_env
-from .market_env import EndogenousMarketEnv
-from .checkpoint import CheckpointableEnv, CheckpointState
-from .functional import SharpeArenaFuncEnv
-from .curriculum import (
-    CurriculumEnv,
-    regime_curriculum,
-    AdaptiveScheduler,
-    AdaptiveCurriculumEnv,
-)
+from .portfolio_env import PortfolioEnv
 from .preprocessing import (
-    PreprocessingConfig,
-    ExecutionNoiseConfig,
     CANONICAL_PREPROCESSING,
-    make_preprocessed_env,
+    ExecutionNoiseConfig,
+    PreprocessingConfig,
     describe_preprocessing,
-)
-from .eval_seeds import (
-    EVAL_SEEDS,
-    evaluate_eval_set,
-    assert_no_regression,
-    EVAL_SET_VERSION,
-    sealed_eval_seeds,
+    make_preprocessed_env,
 )
 from .realism import (
-    stylized_facts,
-    certify_realism,
-    RealismReport,
-    DEFAULT_THRESHOLDS,
     CALM_CALIBRATION_CANDIDATE_KNOBS,
+    DEFAULT_THRESHOLDS,
+    RealismReport,
+    certify_realism,
+    stylized_facts,
 )
+from .regime_eval import evaluate_per_regime, radar_score
 from .registration import register_envs
-from .adverse_selection import (
-    AdverseSelectionParams,
-    AdverseSelectionReport,
-    MetaOrder,
-    MakerMarkout,
-    Fill,
-    EndogenousImpact,
-    run_adverse_selection,
-    compare_informed_vs_uninformed,
-    compare_endogenous_arms,
-    informed_displacement,
-    fill_markout,
+from .reward_misspecification import (
+    MISSPECIFIED_PROXY_POLICIES,
+    MISSPECIFIED_REWARDS,
+    demonstrate_punishment,
+    misspecification_gap,
 )
-from .manipulation import (
-    ManipulationParams,
-    ManipulationResult,
-    BoundaryReport,
-    SizeResponse,
-    run_manipulation_probe,
-    impact_boundary_sweep,
-    size_response,
-    pump_and_dump_schedule,
-    momentum_follower_policy,
-    DISCLAIMER,
-    AsymmetricSchedule,
-    AsymmetricResult,
-    asymmetric_round_trip_schedule,
-    run_asymmetric_probe,
+from .rewards import (
+    REWARD_SCHEMES,
+    build_scheme_rubric,
+    differential_sharpe,
+    drawdown_penalized,
+    list_reward_schemes,
+    loss_averse,
+    risk_aware,
+    sortino,
+    time_aversion_schedule,
+    time_inhomogeneous_vol_aversion,
+    turnover_penalized,
 )
-from .ecology import (
-    run_ecology,
-    population_table,
-    replicator_step,
-    allocate_seats,
-    mutating_innovator,
-    steady_shocks,
-    regime_shocks,
-    liquidity_shocks,
-    baseline_species,
-    market_payoffs,
-    competition_payoffs,
-    detect_coalitions,
-    classify_outcomes,
+from .risk import CrossSectionalDeleverage, DrawdownStopper, TurbulenceHalt
+from .sharpearena_py import (
+    TradingEnv,
+    VecTradingEnv,
+    decision_schema_json,
+    score_run,
+    validate_decision_json,
 )
-from .deferred import (
-    DeferredDesk,
-    Claim,
-    Outcome,
-    LeakedResolution,
-    UnresolvedClaim,
-    ClaimRejected,
-    resolve_claims,
-    outcomes_from_series,
-    claims_from_json,
-    score_claim,
-    summarize,
+from .spaces import FlattenObservation, flat_dim, flatten_obs, unflatten_obs
+from .strategy_generation import (
+    OllamaStrategyGenerator,
+    StrategyCandidate,
+    StrategySearchPlan,
+    StrategySearchRunner,
+)
+from .trace import SCHEMA_VERSION, RolloutTraceWriter, load_trace, trace_to_returns
+from .vector import SharpeArenaVectorEnv
+from .verifiers_env import (
+    SharpeArenaVerifiersEnv,
+    build_rubric,
+    load_environment,
+    mandate_reward,
+)
+from .wrappers import (
+    CausalNormalizeObservation,
+    CausalNormalizeReward,
+    FrameStack,
+    RecordEpisodeStatistics,
+    TimeLimit,
+)
+from .wrappers_vector import (
+    VectorCausalNormalizeObservation,
+    VectorRecordEpisodeStatistics,
 )
 
 # Farama plugin convention: register the versioned env IDs at import time (idempotent).
@@ -223,7 +264,34 @@ __all__ = [
     "TradingEnv",
     "VecTradingEnv",
     "score_run",
+    "decision_schema_json",
     "validate_decision_json",
+    "BenchBridgeError",
+    "compile_benchmark_evidence",
+    "DatasetSpec",
+    "EvidenceJournal",
+    "FieldPlan",
+    "LocalFieldRunner",
+    "ModelIdentity",
+    "ModelRunConfig",
+    "OllamaClient",
+    "PromptRenderer",
+    "SamplingConfig",
+    "OllamaStrategyGenerator",
+    "StrategyCandidate",
+    "StrategySearchPlan",
+    "StrategySearchRunner",
+    "AlpacaMarketData",
+    "AlpacaPaperBroker",
+    "BinancePublicData",
+    "ForwardEvidenceJournal",
+    "InMemoryPaperBroker",
+    "PaperAccount",
+    "PaperOrder",
+    "PaperRiskConfig",
+    "PaperRiskGuard",
+    "PaperTradingSession",
+    "prepare_forward_window_commitment",
     "SharpeArenaEnv",
     "SharpeArenaVectorEnv",
     "LookaheadGuard",

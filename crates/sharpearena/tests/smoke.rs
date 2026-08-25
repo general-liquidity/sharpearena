@@ -3,7 +3,8 @@
 //! contract round-trips through the public types.
 
 use sharpearena::{
-    run_backtest, BuyAndHold, CostModel, Dataset, Decision, MarketObservation, Window,
+    run_backtest, Action, BuyAndHold, CostModel, Dataset, Decision, MarketObservation, Order,
+    TradingEnv, Window,
 };
 
 /// The engine surface: run a baseline agent over a synthetic point-in-time dataset and get
@@ -44,4 +45,41 @@ fn reexported_wire_contract_parses() {
         r#"{ "orders": [{ "symbol": "AAPL", "action": "buy", "target_weight": 0.5 }] }"#;
     let decision: Decision = serde_json::from_str(legacy_decision).expect("legacy decision parses");
     assert_eq!(decision.orders.len(), 1);
+}
+
+/// The environment advertises signed target weights, so the public composed surface must
+/// open an actual short rather than accepting the wire value and silently clamping it to
+/// zero inside the shared engine.
+#[test]
+fn signed_target_opens_a_short_through_the_public_environment() {
+    let data = Dataset::synthetic(1, 40, 19);
+    let symbol = data.symbols().into_iter().next().expect("one symbol");
+    let mut env = TradingEnv::new(data, Window { start: 10, end: 30 }, CostModel::default(), 3);
+    let observation = env.reset();
+    let decision = Decision {
+        orders: vec![Order {
+            symbol: symbol.clone(),
+            action: Action::Sell,
+            target_weight: -0.5,
+            confidence: 1.0,
+            rationale: "regression: signed target".to_string(),
+        }],
+        reasoning: String::new(),
+        cost: None,
+    };
+    decision
+        .validate_for(&observation)
+        .expect("the canonical contract accepts the signed target");
+
+    let stepped = env.step(decision);
+    let position = stepped
+        .observation
+        .portfolio
+        .iter()
+        .find(|position| position.symbol == symbol)
+        .expect("the short position is present in the next observation");
+    assert!(
+        position.shares < 0.0,
+        "a negative target must create negative shares, not a flat hold"
+    );
 }

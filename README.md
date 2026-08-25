@@ -15,7 +15,7 @@
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue?style=flat-square)](#license)
 [![Unsafe](https://img.shields.io/badge/unsafe-forbidden-success?style=flat-square)](#architecture)
 
-**[Why](#why) · [Quickstart](#quickstart) · [Train an agent](#train-an-agent) · [Surfaces](#use-it-from-anywhere) · [The contract](#the-agent-contract) · [Architecture](#architecture) · [Tech stack](#tech-stack)**
+**[Why](#why) · [Local agents](#run-local-open-weight-agents) · [Quickstart](#quickstart) · [Train an agent](#train-an-agent) · [Surfaces](#use-it-from-anywhere) · [The contract](#the-agent-contract) · [Architecture](#architecture) · [Tech stack](#tech-stack)**
 
 </div>
 
@@ -85,7 +85,41 @@ Beyond the core `reset`/`step` lifecycle, the environment now ships a full **rei
 
 The determinism-critical core (the engine, scoring, scenario generation, mandates, the market-clearing model, the execution-noise integrity knob) lives in **Rust** so a published number is byte-identical across every surface; the per-ecosystem adapters (gymnasium, PettingZoo, Minari, verifiers, MCP) are thin and live in the language each ecosystem speaks.
 
-**Not yet shipped:** the [PrimeIntellect](https://app.primeintellect.ai) Environments-Hub listing and the Gordon conforming-agent adapter.
+**Not yet shipped:** the [PrimeIntellect](https://app.primeintellect.ai) Environments-Hub listing. Gordon is not a package dependency or the default scaffold: its architecture has been assessed as an optional future treatment arm, while the reproducible field keeps a minimal, fixed scaffold. See [`docs/GORDON_PORT_ASSESSMENT.md`](docs/GORDON_PORT_ASSESSMENT.md).
+
+## Run local open-weight agents
+
+The local field runner is built, but no model result is reported yet. SharpeArena owns the point-in-time environment, canonical `Decision` parsing, execution and process trace. Completed journals cross a validated artifact boundary into SharpeBench, which owns field-level statistics and ranking:
+
+```text
+local model + fixed scaffold
+            ↓
+SharpeArena environment and sandbox
+            ↓
+append-only decisions, process trace and returns
+            ↓
+sharpearena-compile-bench
+            ↓
+SharpeBench scorer and leaderboard
+```
+
+This is operational interdependence without a package cycle. SharpeArena uses the small published SharpeBench protocol/simulator/kernel crates; SharpeBench does not depend on the full SharpeArena package. The bridge refuses incomplete grids, failed cells, coordinate collisions, conflicting completions and invalid return hashes.
+
+The shipped local path includes constrained Ollama inference, strict host-side validation, native vector stepping, cadence and thinking controls, stable sharding, append-only resume and exact model/runtime provenance. Syntax-constrained output is not trusted as semantic validation: malformed JSON, unknown or duplicate symbols, action/weight contradictions, timeouts and transport failures are recorded as faults and never flattened into a hold. CI uses deterministic model doubles; it downloads no weights and reports no performance result.
+
+```bash
+sharpearena-local-field \
+  --plan examples/local-agents/field-plan-smoke.json \
+  --evidence local-evidence/field.jsonl \
+  --inspect
+
+sharpearena-compile-bench local-evidence/field.jsonl \
+  --output-dir local-evidence/bench
+```
+
+Two adjacent paths are also built. Strategy generation emits a closed, non-executable JSON DSL; every raw candidate is counted before validation or deduplication, validation and test windows are disjoint, and the observed candidate count is supplied to the deflation calculation. The forward arm accepts read-only market data and submits only to an in-memory broker or Alpaca's fixed paper endpoint after a deny-first native risk check. It has no real-capital endpoint or override, and its provider-time-dependent evidence is explicitly non-replayable.
+
+The August 2026 model study distinguishes frontier availability from local feasibility. It covers Gemma 4, Qwen3.8, Kimi K3, DeepSeek V4, GLM-5.2, Inkling and Ornith 1.5, plus llama.cpp, vLLM, SGLang, TensorRT-LLM, Transformers and Ollama. On the current 16 GB RTX A4000, the trillion-parameter flagships are comparison targets rather than local downloads; feasible field arms must be selected by exact checkpoint, quantization and measured placement. See [`docs/LOCAL_AGENT_ARCHITECTURE.md`](docs/LOCAL_AGENT_ARCHITECTURE.md), [`docs/LOCAL_MODEL_MATRIX_2026.md`](docs/LOCAL_MODEL_MATRIX_2026.md) and [`docs/SANDBOX_ENVIRONMENT_RESEARCH_2026.md`](docs/SANDBOX_ENVIRONMENT_RESEARCH_2026.md).
 
 ## Quickstart
 
@@ -243,7 +277,7 @@ sharpebench-sim (published) ...... the leak-free point-in-time engine
 |:--|:--|
 | **`sharpearena`** | The Rust moat: `TradingEnv` (`reset`/`step`), `VecTradingEnv` (batched), the procedural scenario generator, the mandate and execution-noise cores, the `MarketClearing` impact engine, the `Scenario`/crisis-suite bundle, the re-exported wire contract plus scored `Run`, `CONTRACT_VERSION`, the conformance kit, and reference agents. |
 | **`sharpearena-wasm`** | Pure JSON kernels (`run_baseline`, `replay_run`, `generate_scenario`, ...) plus wasm-bindgen exports, the identical engine for JS/TS. |
-| **`sharpearena-py`** | A pyo3 extension over the Rust cores plus the thin ecosystem adapters: Gymnasium (`Env`/`vector`/registration), PettingZoo (competition + endogenous market), `verifiers`, Minari export, checkpointing, `FuncEnv`, wrappers, traces, and MCP (built by maturin). Optional extras: `verifiers`, `minari`, `pettingzoo`. |
+| **`sharpearena-py`** | A pyo3 extension over the Rust cores plus the thin ecosystem adapters: Gymnasium (`Env`/`vector`/registration), PettingZoo (competition + endogenous market), `verifiers`, Minari, checkpointing, `FuncEnv`, wrappers, traces and MCP; the local open-weight field scheduler and SharpeBench artifact bridge; the observed-trial strategy DSL; and the separate paper-only forward arm (built by maturin). Optional extras: `verifiers`, `minari`, `pettingzoo`, `mcp`. |
 | **`@general-liquidity/sharpearena`** | The typed npm wrapper over the WASM kernel. |
 
 ## Tech stack

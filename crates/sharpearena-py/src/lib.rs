@@ -133,6 +133,7 @@ fn build_costs(
         financing_bps: financing_bps.unwrap_or(d.financing_bps),
         max_participation: max_participation.unwrap_or(d.max_participation),
         trf_cost: d.trf_cost,
+        noise: d.noise,
     }
 }
 
@@ -424,6 +425,66 @@ impl PyVecTradingEnv {
         })
     }
 
+    /// Build a batch over one frozen long-format CSV. Every lane sees identical
+    /// point-in-time market data while `seeds` select independent execution-noise
+    /// streams. This is the historical-data counterpart to the synthetic constructor.
+    #[classmethod]
+    #[pyo3(signature = (
+        csv_text,
+        seeds,
+        window_start = None,
+        window_end = None,
+        fee_bps = None,
+        slippage_bps = None,
+        impact_bps = None,
+        financing_bps = None,
+        max_participation = None,
+        autoreset_mode = "next_step",
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn from_csv(
+        _cls: &Bound<'_, PyType>,
+        csv_text: &str,
+        seeds: Vec<u64>,
+        window_start: Option<usize>,
+        window_end: Option<usize>,
+        fee_bps: Option<f64>,
+        slippage_bps: Option<f64>,
+        impact_bps: Option<f64>,
+        financing_bps: Option<f64>,
+        max_participation: Option<f64>,
+        autoreset_mode: &str,
+    ) -> PyResult<Self> {
+        if seeds.is_empty() {
+            return Err(PyValueError::new_err("seeds must be non-empty"));
+        }
+        let data = Dataset::from_csv(csv_text).map_err(PyValueError::new_err)?;
+        let window = build_window(window_start, window_end, data.len());
+        if window.start >= window.end || window.end > data.len() {
+            return Err(PyValueError::new_err(format!(
+                "invalid window [{}, {}) over {} bars",
+                window.start,
+                window.end,
+                data.len()
+            )));
+        }
+        let costs = build_costs(
+            fee_bps,
+            slippage_bps,
+            impact_bps,
+            financing_bps,
+            max_participation,
+        );
+        let reset_mode = parse_autoreset_mode(autoreset_mode)?;
+        let envs = seeds
+            .iter()
+            .map(|&seed| CoreEnv::new(data.clone(), window, costs, seed))
+            .collect();
+        Ok(PyVecTradingEnv {
+            inner: CoreVecEnv::from_envs(envs, seeds).with_autoreset_mode(reset_mode),
+        })
+    }
+
     /// The number of lanes (`B`).
     #[getter]
     fn num_envs(&self) -> usize {
@@ -510,12 +571,18 @@ impl PyVecTradingEnv {
 /// Score a sequence of per-period returns with the **same SharpeBench kernel** the
 /// benchmark uses — the real deflated Sharpe / PSR / pass^k / process verdict, not a
 /// Python reimplementation. `n_trials` folds in the agent's declared in-sample search
-/// budget (more search ⇒ more deflation). Returns the `CompositeScore` as a JSON
-/// string. This is what lets the `verifiers` rubric reward be *calibrated* rather than
-/// approximate.
+/// budget (more search ⇒ more deflation). `periods_per_year` is explicit so a
+/// historical hourly, daily, or weekly field cannot silently inherit the daily-equity
+/// default. Returns the `CompositeScore` as a JSON string. This is what lets the
+/// `verifiers` rubric reward be *calibrated* rather than approximate.
 #[pyfunction]
-#[pyo3(signature = (returns, n_trials = 0))]
-fn score_run(returns: Vec<f64>, n_trials: u32) -> PyResult<String> {
+#[pyo3(signature = (returns, n_trials = 0, periods_per_year = 252.0))]
+fn score_run(returns: Vec<f64>, n_trials: u32, periods_per_year: f64) -> PyResult<String> {
+    if !periods_per_year.is_finite() || periods_per_year <= 0.0 {
+        return Err(PyValueError::new_err(
+            "periods_per_year must be finite and positive",
+        ));
+    }
     let outcomes: Vec<bool> = returns.iter().map(|r| *r > 0.0).collect();
     let confidences = vec![0.5_f64; returns.len()];
     let run = Run {
@@ -531,9 +598,10 @@ fn score_run(returns: Vec<f64>, n_trials: u32) -> PyResult<String> {
         in_sample_trials: n_trials,
         candidates: Vec::new(),
     };
-    // SharpeArena scenarios are daily bars; the 0.5 deflation prior is annualized and the
-    // kernel converts it per period through this value, so name it explicitly.
-    let score = score_agent(&submission, &ScoreConfig::for_periods_per_year(252.0));
+    let score = score_agent(
+        &submission,
+        &ScoreConfig::for_periods_per_year(periods_per_year),
+    );
     serde_json::to_string(&score).map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
@@ -600,6 +668,14 @@ fn paired_dsr_diff(
 #[pyfunction]
 fn validate_decision_json(decision_json: &str) -> bool {
     serde_json::from_str::<Decision>(decision_json).is_ok()
+}
+
+/// The exact published JSON Schema embedded in the wheel. Model adapters use this
+/// for constrained decoding, so a packaged evaluator cannot drift from the repository
+/// contract or depend on a source-tree-relative file at runtime.
+#[pyfunction]
+fn decision_schema_json() -> &'static str {
+    include_str!("../../sharpearena/contract/decision.schema.json")
 }
 
 /// Deterministically sample the scenario mandate from `seed`, returned as wire JSON
@@ -1094,6 +1170,7 @@ fn sharpearena_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(bootstrap_dsr_ci, m)?)?;
     m.add_function(wrap_pyfunction!(paired_dsr_diff, m)?)?;
     m.add_function(wrap_pyfunction!(validate_decision_json, m)?)?;
+    m.add_function(wrap_pyfunction!(decision_schema_json, m)?)?;
     m.add_function(wrap_pyfunction!(sample_mandate_json, m)?)?;
     m.add_function(wrap_pyfunction!(mandate_breach, m)?)?;
     m.add_function(wrap_pyfunction!(perturb_action, m)?)?;

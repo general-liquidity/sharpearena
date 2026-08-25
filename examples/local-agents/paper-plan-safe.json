@@ -1,0 +1,29 @@
+{
+  "agent_id": "local-open-weight-policy",
+  "model_digest": "replace-with-ollama-or-model-artifact-digest",
+  "symbols": ["BTCUSDT"],
+  "market_data": {
+    "provider": "binance-public",
+    "interval": "1h",
+    "limit": 120
+  },
+  "broker": {
+    "provider": "in-memory"
+  },
+  "account": {
+    "cash": 10000,
+    "equity": 10000,
+    "session_start_equity": 10000,
+    "peak_equity": 10000,
+    "positions": {}
+  },
+  "risk": {
+    "allowed_symbols": ["BTCUSDT"],
+    "max_order_notional": 500,
+    "max_gross_exposure": 0.25,
+    "max_daily_loss": 0.01,
+    "max_drawdown": 0.05,
+    "allow_shorting": false,
+    "kill_switch": false
+  }
+}

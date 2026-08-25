@@ -10,15 +10,14 @@ import numpy as np
 import pytest
 
 pytest.importorskip("verifiers")
-import verifiers as vf
-
 import sharpearena
+import verifiers as vf
 from sharpearena.dataset import (
     EVAL_SEED_BASE,
     build_scenario_dataset,
     seed_ranges_disjoint,
 )
-from sharpearena.decision_parser import parse_decision
+from sharpearena.decision_parser import DecisionParseError, parse_decision
 from sharpearena.mandate import (
     STYLES,
     Mandate,
@@ -27,16 +26,6 @@ from sharpearena.mandate import (
     mandate_text,
     sample_mandate,
     validate_mandate,
-)
-from sharpearena.verifiers_env import (
-    SharpeArenaVerifiersEnv,
-    build_rubric,
-    deflated_sharpe_reward,
-    load_environment,
-    mandate_reward,
-    pass_k_reward,
-    process_check_reward,
-    realized_return_reward,
 )
 from sharpearena.rewards import (
     REWARD_SCHEMES,
@@ -47,6 +36,16 @@ from sharpearena.rewards import (
     loss_averse,
     sortino,
     turnover_penalized,
+)
+from sharpearena.verifiers_env import (
+    SharpeArenaVerifiersEnv,
+    build_rubric,
+    deflated_sharpe_reward,
+    load_environment,
+    mandate_reward,
+    pass_k_reward,
+    process_check_reward,
+    realized_return_reward,
 )
 
 RETS = [0.01, -0.005, 0.012, 0.003, -0.001, 0.008, -0.002, 0.006]
@@ -63,13 +62,17 @@ def test_score_run_is_the_real_kernel():
 def test_rewards_are_calibrated_to_the_kernel():
     """The deflated-Sharpe reward equals the kernel's deflated_sharpe exactly."""
     expected = json.loads(sharpearena.score_run(RETS, 0))["deflated_sharpe"]
-    assert deflated_sharpe_reward(state={"returns": RETS, "events": []}) == pytest.approx(expected)
+    assert deflated_sharpe_reward(
+        state={"returns": RETS, "events": []}
+    ) == pytest.approx(expected)
     assert pass_k_reward(state={"returns": RETS}) in (0.0, 1.0)
-    assert process_check_reward(state={"events": [{"event": "manipulative_order"}]}) < 1.0
-    assert process_check_reward(state={"events": []}) == 1.0
-    assert deflated_sharpe_reward(state={"returns": RETS}, n_trials=1000) <= deflated_sharpe_reward(
-        state={"returns": RETS}, n_trials=0
+    assert (
+        process_check_reward(state={"events": [{"event": "manipulative_order"}]}) < 1.0
     )
+    assert process_check_reward(state={"events": []}) == 1.0
+    assert deflated_sharpe_reward(
+        state={"returns": RETS}, n_trials=1000
+    ) <= deflated_sharpe_reward(state={"returns": RETS}, n_trials=0)
 
 
 def test_rubric_and_environment_construct():
@@ -81,6 +84,7 @@ def test_rubric_and_environment_construct():
 
 
 # -- the dense GRPO reward ---------------------------------------------------
+
 
 def test_dense_reward_is_bounded_and_varies():
     """tanh-squashed realized return stays in [-1, 1] and differs across series."""
@@ -95,22 +99,39 @@ def test_dense_reward_is_bounded_and_varies():
 
 # -- the decision parser -----------------------------------------------------
 
-def test_parse_decision_clamps_and_handles_malformed():
+
+def test_parse_decision_uses_only_the_canonical_wire_contract():
     symbols = ["AAA", "BBB", "CCC"]
-    w = parse_decision('<action>{"weights": {"AAA": 0.5, "BBB": -0.3}}</action>', symbols)
+    decision = {
+        "orders": [
+            {"symbol": "AAA", "action": "buy", "target_weight": 0.5},
+            {"symbol": "BBB", "action": "sell", "target_weight": -0.3},
+        ],
+        "reasoning": "test",
+    }
+    w = parse_decision(f"<action>{json.dumps(decision)}</action>", symbols)
     assert w.tolist() == [0.5, -0.3, 0.0]
-    # out-of-range weights clamp to [-1, 1]; unknown symbols ignored.
-    w2 = parse_decision('<action>{"weights": {"AAA": 5.0, "ZZZ": 9.0}}</action>', symbols)
-    assert w2.tolist() == [1.0, 0.0, 0.0]
-    # explicit flat and malformed both yield all-zero (hold).
-    assert parse_decision('<action>{"flat": true}</action>', symbols).tolist() == [0, 0, 0]
-    assert parse_decision("not xml at all", symbols).tolist() == [0, 0, 0]
-    assert parse_decision('<action>{not json}</action>', symbols).tolist() == [0, 0, 0]
-    # bare JSON (no XML wrapper) is accepted too.
-    assert parse_decision('{"weights": {"CCC": 0.4}}', symbols).tolist() == [0, 0, 0.4]
+    assert parse_decision('{"orders": [], "reasoning": "hold"}', symbols).tolist() == [
+        0,
+        0,
+        0,
+    ]
+
+    bad = [
+        '<action>{"weights": {"AAA": 0.5}}</action>',
+        '<action>{"flat": true}</action>',
+        "not xml at all",
+        "<action>{not json}</action>",
+        '{"orders":[{"symbol":"AAA","action":"buy","target_weight":5.0}]}',
+        '{"orders":[{"symbol":"ZZZ","action":"buy","target_weight":0.5}]}',
+    ]
+    for completion in bad:
+        with pytest.raises(DecisionParseError):
+            parse_decision(completion, symbols)
 
 
 # -- the multi-row scenario dataset -----------------------------------------
+
 
 def test_build_scenario_dataset_multirow_and_disjoint():
     train = build_scenario_dataset(n_windows=8, n_symbols=3, n_days=40, mode="train")
@@ -125,6 +146,7 @@ def test_build_scenario_dataset_multirow_and_disjoint():
 
 
 # -- per-scenario mandates (the MiniGrid Fetch pattern) ----------------------
+
 
 def test_sample_mandate_is_deterministic_and_varies():
     """Same seed -> identical mandate; the style varies across the seed space."""
@@ -157,8 +179,18 @@ def test_mandate_breach_clean_vs_breached():
     assert mandate_breach(capped, [-0.30, 0.0], clean_events) > 0.0
     # market-neutral: a balanced long/short book is clean, a one-sided book breaches.
     neutral = Mandate(style="market_neutral")
-    assert mandate_breach(neutral, [], [{"event": "target_weights", "weights": [0.5, -0.5]}]) == 0.0
-    assert mandate_breach(neutral, [], [{"event": "target_weights", "weights": [0.5, 0.5]}]) > 0.0
+    assert (
+        mandate_breach(
+            neutral, [], [{"event": "target_weights", "weights": [0.5, -0.5]}]
+        )
+        == 0.0
+    )
+    assert (
+        mandate_breach(
+            neutral, [], [{"event": "target_weights", "weights": [0.5, 0.5]}]
+        )
+        > 0.0
+    )
     # breach is bounded in [0, 1].
     assert 0.0 <= mandate_breach(long_only, [-0.9, -0.9], short_events) <= 1.0
 
@@ -204,7 +236,9 @@ def test_mandate_new_fields_round_trip_and_validate():
     assert mandate_from_dict(legacy).max_inventory is None
 
 
-@pytest.mark.skipif(not _HAS_INVENTORY, reason="binding predates max_inventory; rebuild required")
+@pytest.mark.skipif(
+    not _HAS_INVENTORY, reason="binding predates max_inventory; rebuild required"
+)
 def test_mandate_inventory_cap_breach():
     """Gross exposure under the cap is clean; over it draws a bounded, squared breach."""
     m = Mandate(style="unconstrained", max_inventory=1.0)
@@ -222,12 +256,20 @@ def test_mandate_inventory_cap_breach():
     assert blown == 1.0
 
 
-@pytest.mark.skipif(not _HAS_PAIRS, reason="binding predates pairs_convergence; rebuild required")
+@pytest.mark.skipif(
+    not _HAS_PAIRS, reason="binding predates pairs_convergence; rebuild required"
+)
 def test_mandate_pairs_convergence_breach():
     """Pairs-convergence rewards dollar-neutrality; a directional book breaches."""
     m = Mandate(style="pairs_convergence")
-    assert mandate_breach(m, [], [{"event": "target_weights", "weights": [0.5, -0.5]}]) == 0.0
-    assert mandate_breach(m, [], [{"event": "target_weights", "weights": [0.5, 0.5]}]) > 0.0
+    assert (
+        mandate_breach(m, [], [{"event": "target_weights", "weights": [0.5, -0.5]}])
+        == 0.0
+    )
+    assert (
+        mandate_breach(m, [], [{"event": "target_weights", "weights": [0.5, 0.5]}])
+        > 0.0
+    )
     # a long-only market never draws the short-requiring pairs_convergence mandate.
     assert all(
         sample_mandate(s, n_symbols=4, allow_short=False).style != "pairs_convergence"
@@ -240,10 +282,18 @@ def test_mandate_reward_is_bounded_and_objective_conditioned():
     assert mandate_reward(state={"returns": [], "events": []}) == 1.0  # no mandate -> 1
     long_only = Mandate(style="long_only").to_dict()
     clean = mandate_reward(
-        state={"mandate": long_only, "returns": [0.01], "events": [{"event": "target_weights", "weights": [0.4]}]}
+        state={
+            "mandate": long_only,
+            "returns": [0.01],
+            "events": [{"event": "target_weights", "weights": [0.4]}],
+        }
     )
     shorted = mandate_reward(
-        state={"mandate": long_only, "returns": [0.01], "events": [{"event": "target_weights", "weights": [-0.4]}]}
+        state={
+            "mandate": long_only,
+            "returns": [0.01],
+            "events": [{"event": "target_weights", "weights": [-0.4]}],
+        }
     )
     assert clean == 1.0
     assert 0.0 <= shorted < clean <= 1.0
@@ -268,13 +318,18 @@ def test_rubric_includes_the_mandate_reward():
 
 def test_rollout_threads_mandate_into_state():
     env = SharpeArenaVerifiersEnv(
-        dataset=build_scenario_dataset(n_windows=1, n_symbols=2, n_days=20, mode="train"),
+        dataset=build_scenario_dataset(
+            n_windows=1, n_symbols=2, n_days=20, mode="train"
+        ),
         rubric=build_rubric(),
         max_turns=6,
         max_episode_bars=3,
     )
     mandate = Mandate(style="long_only", max_drawdown=0.10).to_dict()
-    state = {"info": {"seed": 5, "n_symbols": 2, "n_days": 20, "mandate": mandate}, "answer": "5"}
+    state = {
+        "info": {"seed": 5, "n_symbols": 2, "n_days": 20, "mandate": mandate},
+        "answer": "5",
+    }
     _run(env.setup_state(state))
     assert validate_mandate(state["mandate"])
     assert state["mandate"]["style"] == "long_only"
@@ -285,6 +340,7 @@ def test_rollout_threads_mandate_into_state():
 
 
 # -- the actual bug fix: a rollout steps a market and populates state --------
+
 
 def _run(coro):
     return asyncio.run(coro)
@@ -297,7 +353,9 @@ def _assistant(text):
 def test_rollout_steps_market_and_populates_state():
     """Driving env_response directly fills state['returns']/['events'] from a REAL market."""
     env = SharpeArenaVerifiersEnv(
-        dataset=build_scenario_dataset(n_windows=2, n_symbols=3, n_days=30, mode="train"),
+        dataset=build_scenario_dataset(
+            n_windows=2, n_symbols=3, n_days=30, mode="train"
+        ),
         rubric=build_rubric(),
         max_turns=8,
         max_episode_bars=4,
@@ -308,7 +366,19 @@ def test_rollout_steps_market_and_populates_state():
     symbols = state["_oo_symbols"]
     assert len(symbols) == 3
 
-    decision = f'<reasoning>go</reasoning><action>{{"weights": {{"{symbols[0]}": 0.5}}}}</action>'
+    decision = json.dumps(
+        {
+            "orders": [
+                {
+                    "symbol": symbols[0],
+                    "action": "buy",
+                    "target_weight": 0.5,
+                }
+            ],
+            "reasoning": "go",
+        }
+    )
+    decision = f"<reasoning>go</reasoning><action>{decision}</action>"
     for _ in range(4):
         _run(env.env_response([_assistant(decision)], state))
 
@@ -325,22 +395,29 @@ def test_rollout_steps_market_and_populates_state():
     assert realized_return_reward(state=state) != 0.0
 
 
-def test_malformed_decision_does_not_crash_episode():
-    """A bad completion is treated as flat/hold — the rollout keeps stepping."""
+def test_malformed_decision_is_flagged_and_terminates_without_a_hold():
+    """A bad completion is a protocol failure and never enters the return series."""
     env = SharpeArenaVerifiersEnv(
-        dataset=build_scenario_dataset(n_windows=1, n_symbols=2, n_days=20, mode="train"),
+        dataset=build_scenario_dataset(
+            n_windows=1, n_symbols=2, n_days=20, mode="train"
+        ),
         rubric=build_rubric(),
         max_turns=6,
         max_episode_bars=3,
     )
     state = {"info": {"seed": 3, "n_symbols": 2, "n_days": 20}, "answer": "3"}
     _run(env.setup_state(state))
-    for _ in range(3):
-        _run(env.env_response([_assistant("garbage, no action tag")], state))
-    assert len(state["returns"]) == 3
+    response = _run(env.env_response([_assistant("garbage, no action tag")], state))
+    assert "No hold was fabricated" in response[0].content
+    assert state["returns"] == []
+    assert state["protocol_failures"] == 1
+    assert state["events"][0]["event"] == "protocol_error"
+    assert state["_oo_done"] is True
+    assert process_check_reward(state=state) < 1.0
 
 
 # -- the pluggable reward-scheme registry -----------------------------------
+
 
 def _batch_sharpe(returns):
     a = np.asarray(returns, dtype=float)
@@ -400,7 +477,13 @@ def test_all_schemes_are_bounded():
         [-10.0] * 20,
         [0.0] * 10,
     ]
-    for fn in (differential_sharpe, sortino, drawdown_penalized, turnover_penalized, loss_averse):
+    for fn in (
+        differential_sharpe,
+        sortino,
+        drawdown_penalized,
+        turnover_penalized,
+        loss_averse,
+    ):
         for s in series:
             v = fn(state={"returns": s, "events": weights_events})
             assert -1.0 <= v <= 1.0
@@ -416,7 +499,9 @@ def test_differential_sharpe_tracks_batch_sharpe_sign_and_order():
     assert differential_sharpe(state={"returns": down}) < 0.0
     # higher batch Sharpe -> higher DSR reward.
     assert _batch_sharpe(high) > _batch_sharpe(up)
-    assert differential_sharpe(state={"returns": high}) >= differential_sharpe(state={"returns": up})
+    assert differential_sharpe(state={"returns": high}) >= differential_sharpe(
+        state={"returns": up}
+    )
     # too-short an episode is a non-signal (0.0), never a NaN.
     assert differential_sharpe(state={"returns": [0.01, 0.02]}) == 0.0
 
@@ -451,8 +536,12 @@ def test_turnover_penalty_reads_target_weight_events():
     busy = turnover_penalized(state={"returns": rets, "events": churned})
     assert quiet > busy
     # non-weight (market) events are ignored — no turnover, no penalty.
-    market = turnover_penalized(state={"returns": rets, "events": [{"event": "manipulative_order"}]})
-    assert market == pytest.approx(turnover_penalized(state={"returns": rets, "events": []}))
+    market = turnover_penalized(
+        state={"returns": rets, "events": [{"event": "manipulative_order"}]}
+    )
+    assert market == pytest.approx(
+        turnover_penalized(state={"returns": rets, "events": []})
+    )
 
 
 def test_loss_averse_weights_losses_more():

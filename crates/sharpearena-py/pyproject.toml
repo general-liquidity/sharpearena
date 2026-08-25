@@ -25,6 +25,14 @@ dependencies = [
     "gymnasium>=1.0",
 ]
 
+[project.scripts]
+sharpearena-local-field = "sharpearena.local_field_cli:main"
+sharpearena-ollama-shim = "sharpearena.ollama_shim:main"
+sharpearena-openai-shim = "sharpearena.openai_compatible_shim:main"
+sharpearena-compile-bench = "sharpearena.bench_bridge:main"
+sharpearena-strategy-search = "sharpearena.strategy_cli:main"
+sharpearena-paper = "sharpearena.paper_cli:main"
+
 [project.optional-dependencies]
 verifiers = ["verifiers"]
 minari = ["minari"]

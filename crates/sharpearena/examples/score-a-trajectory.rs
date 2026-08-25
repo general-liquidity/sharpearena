@@ -28,6 +28,7 @@ fn main() {
         agent_id: "buy-and-hold".to_string(),
         runs: vec![run_traj],
         in_sample_trials: 0,
+        declared_mandate: None,
     };
 
     // 2) verify: recompute the scoreable submission from the decisions + frozen data
