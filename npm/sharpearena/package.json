@@ -1,6 +1,6 @@
 {
   "name": "@general-liquidity/sharpearena",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "description": "The leak-free, point-in-time reinforcement-learning environment for trading agents. Run reference baselines and recompute-to-verify any trajectory through the identical Rust engine as the SharpeBench harness, compiled to WASM.",
   "keywords": [
     "trading",

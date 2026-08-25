@@ -121,30 +121,30 @@
       "sha256": "1b261a44ed779c208322c8dce4d35a385c5070d610b882aca6d456ca198389dc"
     }
   ],
-  "generated_at_head": "056adbea06210a67a62615e5178bcc23144a0f8d",
+  "generated_at_head": "fe42e13383e4e8e9d7e7e4f4ea02305fb1221005",
   "generated_at_head_dirty": true,
   "reproduction_entrypoint": "commands in paper/sections/A-commands.tex",
   "schema_version": 3,
   "source_files": [
     {
       "path": "Cargo.lock",
-      "sha256": "08ae68cf7a5cf151e7be86b535362cf9936beafd6b9ec823feef3ec8d27d8c50"
+      "sha256": "150f430ec2aa9a19238241ef4c1ae305e16eef1686fe9002ed1dfb1ae6fa8f0e"
     },
     {
       "path": "Cargo.toml",
-      "sha256": "e33510a19835aa4e79cb6cf8fe01b0d9fe9ef96503c0933fd57bcb0ae024add7"
+      "sha256": "355a67dad5fa41834fabad191a7a7874967c663611f629e2cbca01f2d2be2bd4"
     },
     {
       "path": "crates/sharpearena-py/Cargo.toml",
-      "sha256": "d42560d0fcc614bd19d2c5c1fe3e55f240683d462a5c51a0fb4c099344326d31"
+      "sha256": "bb58716b8a7673b61abf75ec63b0795a511309402f3e488636dfd2bdcb06c015"
     },
     {
       "path": "crates/sharpearena-py/pyproject.toml",
-      "sha256": "e18c13cdb0d7931cfffad32e07e7846a554c2bcf1e63c9afeb9afe642cce34df"
+      "sha256": "25d6bd645ff53253e9c43f778902ec912ba21a198ea49d74e987a66606e8b48f"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/__init__.py",
-      "sha256": "47ba4b3df0e654798a89472b1f5140d8f4d0fbc1b44d7b52f6f64a4eb55b5cf5"
+      "sha256": "86df5080d4b4daad50af0e9373018a9a4abf646a7b499e730eb11bcff6e478b1"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/adverse_selection.py",
@@ -388,7 +388,7 @@
     },
     {
       "path": "crates/sharpearena-wasm/Cargo.toml",
-      "sha256": "9310aad9a30c7a0bc349b6590eedbe0d8fd88bd4011e6aac5c4586c8e93e4bdc"
+      "sha256": "f071a4f7ede3931e379c0338b476497c90e2828ec425e989a2945b4a2337709b"
     },
     {
       "path": "crates/sharpearena-wasm/src/lib.rs",
@@ -598,6 +598,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "db11fbb13c3035d0f45c08defeb4064fc36e1d1138606e58449ebf30337a070e",
+  "source_snapshot_sha256": "5a668a072e11b067c3ab993994e8fba193c86d2aea828835145b1080801fd8e1",
   "validator": "paper/src/check-provenance.py"
 }

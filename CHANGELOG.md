@@ -6,9 +6,11 @@ version covers the Rust crates, the npm package and the PyPI package; each
 section is one `v*` tag and links the commits it was built from. The wire
 contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
-[Unreleased]: https://github.com/general-liquidity/sharpearena/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/general-liquidity/sharpearena/compare/v0.16.0...HEAD
 
 ## [Unreleased]
+
+## [0.16.0] - 2026-08-26
 
 ### Added
 - py: a local open-weight field runner with a fixed prompt scaffold, constrained Ollama inference, strict canonical `Decision` validation, native vector stepping, cadence/thinking controls, stable sharding, append-only resume, exact process traces and model/runtime provenance; `sharpearena-compile-bench` validates complete journals and emits ordinary SharpeBench submissions without introducing a reverse package dependency.
@@ -210,6 +212,7 @@ First published release, as OpenOutcry.
 ### Fixed
 - ci: toolchain pinned to 1.96.0 for the wasm32 target; a virtualenv for maturin ([bb0ee4d](https://github.com/general-liquidity/sharpearena/commit/bb0ee4d)).
 
+[0.16.0]: https://github.com/general-liquidity/sharpearena/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/general-liquidity/sharpearena/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/general-liquidity/sharpearena/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/general-liquidity/sharpearena/compare/v0.12.0...v0.13.0
