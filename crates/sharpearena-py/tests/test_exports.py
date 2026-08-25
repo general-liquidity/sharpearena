@@ -41,6 +41,8 @@ NEWLY_EXPORTED = [
     "EndogenousImpact",
     "compare_endogenous_arms",
     "informed_displacement",
+    # market_making
+    "closed_form_reference_policy",
 ]
 
 

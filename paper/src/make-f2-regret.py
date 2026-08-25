@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """F2: regret against the closed-form Avellaneda-Stoikov reference policy.
 
-``sharpearena.mm_regret`` runs the candidate and ``analytically_optimal_policy``
+``sharpearena.mm_regret`` runs the candidate and ``closed_form_reference_policy``
 on identical seeded episodes and reports the mean reward gap. Candidates: the
 closed-form policy itself (must be ~0 by construction) and fixed-spread quoters
 across a half-spread grid. The script additionally rolls both policies per
@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 from sharpearena import (
     MarketMakingEnv,
     MMParams,
-    analytically_optimal_policy,
+    closed_form_reference_policy,
     fixed_spread_policy,
     mm_regret,
 )
@@ -51,7 +51,7 @@ def _episode_reward(env: MarketMakingEnv, policy, seed: int) -> float:
 
 def _per_episode_regret(policy, params: MMParams) -> list[float]:
     """Per-episode reward gap to the closed-form policy on shared seeds."""
-    optimal = analytically_optimal_policy(params)
+    optimal = closed_form_reference_policy(params)
     env = MarketMakingEnv(params)
     out = []
     for i in range(N_EPISODES):
@@ -77,7 +77,7 @@ def main() -> None:
 
     params = MMParams()
     optimal_regret = mm_regret(
-        analytically_optimal_policy(params),
+        closed_form_reference_policy(params),
         params=params,
         n_episodes=N_EPISODES,
         seed_base=SEED_BASE,

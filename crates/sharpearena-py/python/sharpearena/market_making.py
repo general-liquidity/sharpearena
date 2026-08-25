@@ -31,6 +31,7 @@ Python — NOT part of the cross-runtime byte-identical scored core.
 from __future__ import annotations
 
 import math
+import warnings
 from dataclasses import dataclass, replace
 from typing import Callable, Optional
 
@@ -50,7 +51,7 @@ class MMParams:
     depth-decay constants; ``arrival_rate`` is the per-side Poisson market-order intensity
     per unit time; ``n_steps``/``dt`` set the horizon (total time ``n_steps*dt``). The
     closed-form reference policy is a pure function of these, so the same params instance
-    feeds both the env and :func:`analytically_optimal_policy`.
+    feeds both the env and :func:`closed_form_reference_policy`.
     """
 
     sigma: float = 2.0
@@ -72,7 +73,7 @@ class MMParams:
         return self.n_steps * self.dt
 
 
-def _optimal_depths(q: float, tau: float, p: MMParams) -> tuple[float, float]:
+def _reference_depths(q: float, tau: float, p: MMParams) -> tuple[float, float]:
     """Avellaneda-Stoikov closed-form ``(bid_depth, ask_depth)`` at inventory ``q``, remaining
     time ``tau``. Half-spread widens with time-to-go and skews by inventory; depths are
     clipped to the env's quotable ``[0, max_depth]`` band."""
@@ -215,7 +216,7 @@ class MarketMakingEnv(gym.Env):
 # -- policies ---------------------------------------------------------------
 
 
-def analytically_optimal_policy(env_params: MMParams) -> Policy:
+def closed_form_reference_policy(env_params: MMParams) -> Policy:
     """The Avellaneda-Stoikov closed-form reference quoting policy as a ``(obs)->action``
     callable, the fixed analytical reference this benchmark scores regret against. It is
     the source model's asymptotic closed form, not a proven optimum for this env's reward.
@@ -229,10 +230,25 @@ def analytically_optimal_policy(env_params: MMParams) -> Policy:
     def policy(obs: dict) -> Action:
         q = float(np.asarray(obs["inventory"]).reshape(-1)[0])
         tau = float(np.asarray(obs["time_remaining"]).reshape(-1)[0])
-        bid, ask = _optimal_depths(q, tau, p)
+        bid, ask = _reference_depths(q, tau, p)
         return np.array([bid, ask], dtype=np.float32)
 
     return policy
+
+
+def analytically_optimal_policy(env_params: MMParams) -> Policy:
+    """Deprecated alias for :func:`closed_form_reference_policy`.
+
+    The old name asserted an optimality this policy does not have; it is kept so
+    existing call sites keep working, and it emits a ``DeprecationWarning``.
+    """
+    warnings.warn(
+        "analytically_optimal_policy is deprecated; the policy is a closed-form "
+        "reference, not a proven optimum. Use closed_form_reference_policy.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return closed_form_reference_policy(env_params)
 
 
 def fixed_spread_policy(half_spread: float) -> Policy:
@@ -266,20 +282,20 @@ def mm_regret(
     n_episodes: int = 16,
     seed_base: int = 0,
 ) -> float:
-    """Mean reward gap between :func:`analytically_optimal_policy` and ``policy`` over
+    """Mean reward gap between :func:`closed_form_reference_policy` and ``policy`` over
     ``n_episodes`` seeded episodes, the regret-versus-reference metric. Both policies run
     on the *same* seeds, so the reference scores ~0 regret against itself and a worse
     policy scores a positive gap; the zero point is the reference, not a proven optimum.
     """
     p = params or MMParams()
-    optimal = analytically_optimal_policy(p)
+    reference = closed_form_reference_policy(p)
     env = MarketMakingEnv(p)
     gap = 0.0
     for i in range(n_episodes):
         seed = seed_base + i
-        opt_r = _rollout_reward(env, optimal, seed)
+        ref_r = _rollout_reward(env, reference, seed)
         pol_r = _rollout_reward(env, policy, seed)
-        gap += opt_r - pol_r
+        gap += ref_r - pol_r
     return gap / n_episodes
 
 
@@ -287,6 +303,7 @@ __all__ = [
     "MMParams",
     "MarketMakingEnv",
     "analytically_optimal_policy",
+    "closed_form_reference_policy",
     "fixed_spread_policy",
     "mm_regret",
 ]

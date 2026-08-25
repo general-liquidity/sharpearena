@@ -4,10 +4,10 @@ All commands run from the repository root with the \texttt{sharpearena} Python p
 
 \paragraph{Content provenance.}
 \begin{verbatim}
-python paper/src/make-provenance.py
-  -> paper/evidence/provenance.json
+python paper/src/make-provenance.py   # write paper/evidence/provenance.json
+python paper/src/check-provenance.py  # validate it against the tree
 \end{verbatim}
-The manifest records the source-tree revision \texttt{fa494389}, a content hash over the Rust, Python, manifest and producer-source snapshot, and the SHA-256 digest of every JSON and figure artifact. The content snapshot, rather than a package label, identifies the exact source state every number in this paper was produced from.
+The manifest records the commit it was generated at, whether the working tree was dirty at that moment, a content hash over the Rust, Python, manifest and producer-source snapshot, and the SHA-256 digest of every JSON and figure artifact. The source snapshot is source only: paths under build directories, virtual environments and bytecode caches are excluded, so the same tree yields the same snapshot hash on a different machine. The manifest is a release-time snapshot rather than a continuously maintained view of the working tree: regenerating it is part of the release procedure, and \texttt{check-provenance.py} recomputes every recorded digest, re-expands the recorded scope and exits nonzero on any mismatch, so a manifest that has fallen behind its tree is a detectable failure rather than a silent one. Read that way, the content snapshot rather than a package label identifies the source state the numbers in this paper were produced from.
 
 \paragraph{The design-property checks (\cref{sec:leakfree,sec:determinism,sec:replay,sec:contract}).}
 \begin{verbatim}

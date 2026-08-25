@@ -1,4 +1,8 @@
 {
+  "artifact_scope": [
+    "paper/evidence/*.json",
+    "paper/figures/*.pdf"
+  ],
   "artifacts": [
     {
       "path": "paper/evidence/f1-baselines.json",
@@ -42,7 +46,7 @@
     },
     {
       "path": "paper/evidence/witness.json",
-      "sha256": "e074751bf50c6489a3eda5a817b2cfcf2cf3b5c6103516334de1ae2189416391"
+      "sha256": "4feb37b09c5709f8285711e4506021cb638e4491c8e261f1bef22581fde2be9f"
     },
     {
       "path": "paper/figures/f1-baselines.pdf",
@@ -58,7 +62,7 @@
     },
     {
       "path": "paper/figures/f4-calm-calibration.pdf",
-      "sha256": "96fe198d019819a06e73f70adaead24b39fd0718109e55319be61265867433b7"
+      "sha256": "0f5a7c3da5700df0aaedaeb133b8b0742bee75f64eaf823514ddd14215d90df2"
     },
     {
       "path": "paper/figures/f4-realism.pdf",
@@ -66,7 +70,7 @@
     },
     {
       "path": "paper/figures/f5-boundaries.pdf",
-      "sha256": "36acfcef35d47711110acd4e2282656ab1354efffc5e18bd0982e1de882578f6"
+      "sha256": "51f1daf38ab7ceeb5a702e476b4af98caa86979873b04dc5500ef86d51982b75"
     },
     {
       "path": "paper/figures/f5-concave.pdf",
@@ -82,7 +86,7 @@
     },
     {
       "path": "paper/figures/f5-size-response.pdf",
-      "sha256": "07bb0cb0bd9ab01e9f48321c03601c46755b5b0398df8f9f807296a12e3657e8"
+      "sha256": "f60b71eec2c77966c72ee152e83069cdc8447304a059bfcd299632a1c5eef7ec"
     },
     {
       "path": "paper/figures/f6-endogenous.pdf",
@@ -106,40 +110,41 @@
     },
     {
       "path": "paper/figures/predictability.pdf",
-      "sha256": "c9d6b12c5cd39fd8be8d768a607588b9b4cef581e6f2d1ce07abe67e3d4d7b0b"
+      "sha256": "7e686763a90ab073603decd78810b531b2a36a41469d56ba686537d1ca1a68b5"
     },
     {
       "path": "paper/figures/witness.pdf",
-      "sha256": "a25a90b3c01d831cb94d09fa7a791a9cd2cb723f8b295e8a7ce838c044338d80"
+      "sha256": "1b261a44ed779c208322c8dce4d35a385c5070d610b882aca6d456ca198389dc"
     }
   ],
-  "repository_base_head": "fa4943897a3b53a85eb81515e547d175072162c4",
+  "generated_at_head": "d93d90f7c338b5bae5df12357eb7a4c4ab42e397",
+  "generated_at_head_dirty": true,
   "reproduction_entrypoint": "commands in paper/sections/A-commands.tex",
-  "schema_version": 2,
+  "schema_version": 3,
   "source_files": [
     {
       "path": "Cargo.lock",
-      "sha256": "fe38765f8e27551096bb61f3f3efd8e3159ffd71eb09a873c1d5db9d4be86a1a"
+      "sha256": "2b87cedae439b25bc6be9b06633d1bb4b3e1353f8bad87cd863a640c11899fb3"
     },
     {
       "path": "Cargo.toml",
-      "sha256": "291d9c876a5c17eec2ef786e0f53d047ef32300538bcf6c8945220647113cdc2"
+      "sha256": "e33510a19835aa4e79cb6cf8fe01b0d9fe9ef96503c0933fd57bcb0ae024add7"
     },
     {
       "path": "crates/sharpearena-py/Cargo.toml",
-      "sha256": "27c5a108766c119e08cb0a80536a8f0f6a7a9af8060d39d009afc13513511208"
+      "sha256": "61ab6e039d718c805750062ab4793bec4d90d05e4bc05e8a36e2c6255f3a3c3d"
     },
     {
       "path": "crates/sharpearena-py/pyproject.toml",
-      "sha256": "ce01ef55fb2c1d15145c0dee976e3d6db19d69b2c3ee5035f085c72da09843d7"
+      "sha256": "2bb34d30b0ff1a09a124261699d0223325ee8d531d5a02a318efee86d6968647"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/__init__.py",
-      "sha256": "97752854b6d3a10351a8d66c0e4479e87f5ccfd127728321d3010e0bd1317e73"
+      "sha256": "9caa03d28bfd406771a30f42a390cec55ab558f53cce88569212eb537975c382"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/adverse_selection.py",
-      "sha256": "b08074dc784aa2a2a9208bf72ef1b78a9f10b48e81196e534c67859053b993ba"
+      "sha256": "88bb34008d01ef57635c3c2e8b9cee337f9a65f5c73a0a5bb4f0bbb58e3d50a9"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/baselines.py",
@@ -247,7 +252,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/market_making.py",
-      "sha256": "488b722f94c328175d73ecfdcc9acb7c569afa511026faf3eb6bbbe6ce398228"
+      "sha256": "7ef90175d276c46fd636ad43c29401d359f21c02633d0118cffe2b16f99a3cda"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/mcp_server.py",
@@ -339,47 +344,11 @@
     },
     {
       "path": "crates/sharpearena-py/src/lib.rs",
-      "sha256": "25890f5762165c405864dd832b40f956b158013c74109c9eac6ca71b8751a4d3"
-    },
-    {
-      "path": "crates/sharpearena-py/target/debug/build/serde-ff447c49c588f692/out/private.rs",
-      "sha256": "f8e9470772811a1bdcd201fb21e14cbf37a57d192b38cd98f66bd4a83442c26b"
-    },
-    {
-      "path": "crates/sharpearena-py/target/debug/build/serde_core-d53d15f99a98fd49/out/private.rs",
-      "sha256": "27ad1b5fb4eebeb1da6419cbfad3ac1922ed1d817fcbab0a1dae1bdfd38d8307"
-    },
-    {
-      "path": "crates/sharpearena-py/target/debug/build/target-lexicon-2d563e2d4765b9e6/out/host.rs",
-      "sha256": "cd6584db077b3ad7d7e79d85b7dc8800304d0cc9b6181d0b3da5a4058ac3fe3b"
-    },
-    {
-      "path": "crates/sharpearena-py/target/release/build/serde-1ddf8bfdf8757bba/out/private.rs",
-      "sha256": "f8e9470772811a1bdcd201fb21e14cbf37a57d192b38cd98f66bd4a83442c26b"
-    },
-    {
-      "path": "crates/sharpearena-py/target/release/build/serde-b76fe31312755928/out/private.rs",
-      "sha256": "f8e9470772811a1bdcd201fb21e14cbf37a57d192b38cd98f66bd4a83442c26b"
-    },
-    {
-      "path": "crates/sharpearena-py/target/release/build/serde_core-3000d716b1720a4b/out/private.rs",
-      "sha256": "27ad1b5fb4eebeb1da6419cbfad3ac1922ed1d817fcbab0a1dae1bdfd38d8307"
-    },
-    {
-      "path": "crates/sharpearena-py/target/release/build/serde_core-7bc9b3f80826db70/out/private.rs",
-      "sha256": "27ad1b5fb4eebeb1da6419cbfad3ac1922ed1d817fcbab0a1dae1bdfd38d8307"
-    },
-    {
-      "path": "crates/sharpearena-py/target/release/build/target-lexicon-61fd3fb9d5cf24de/out/host.rs",
-      "sha256": "3f1e636b79f8bc77758ef3d8341b34c3270407c165aa058246ca51d934c7ba62"
-    },
-    {
-      "path": "crates/sharpearena-py/target/release/build/target-lexicon-ad2abd2fa0479100/out/host.rs",
-      "sha256": "cd6584db077b3ad7d7e79d85b7dc8800304d0cc9b6181d0b3da5a4058ac3fe3b"
+      "sha256": "c64d4f1000d6cb21e1fec31770aef2348fa6e09617faf2a1af62557e803ab8ce"
     },
     {
       "path": "crates/sharpearena-wasm/Cargo.toml",
-      "sha256": "8cd48af5a3f797437280cadd28792a0b822a0802fc8b8d98e9b2f5c0c7225465"
+      "sha256": "9310aad9a30c7a0bc349b6590eedbe0d8fd88bd4011e6aac5c4586c8e93e4bdc"
     },
     {
       "path": "crates/sharpearena-wasm/src/lib.rs",
@@ -455,39 +424,39 @@
     },
     {
       "path": "paper/refs.bib",
-      "sha256": "c99679b599563d018ff9a15ba352e29d7bae9d1b33d759acc6f5be1c2654ce51"
+      "sha256": "39f87c12556f69bccc2fd49b3ee032b1380e4837f4ff3919245f38507f0f8ced"
     },
     {
       "path": "paper/sections/00-abstract.tex",
-      "sha256": "52880466c487799a40a4bb0a5394ac31e44b5e711f9df1b1e7ff498b429122e1"
+      "sha256": "3233d9216bbfaa47c7f57dc1031e8ba9e0ca23482f585577fda01d7699b4b8ed"
     },
     {
       "path": "paper/sections/01-introduction.tex",
-      "sha256": "9148a4f0701256edae41a9d191c51af3d202ec72a195aa69377ee0a44b7fe83b"
+      "sha256": "f55220c24da7578100ee498c74d21f656a28c80bd921ecd86d06a6c315503680"
     },
     {
       "path": "paper/sections/02-principles.tex",
-      "sha256": "4b4391151e100343c5060cb0e23c6fb828bb669f8fa7aa79e71ac173baa8a115"
+      "sha256": "012c8ac99ece98941e3dff2f1e72a32fe2f25366450d21b31942c611b923e801"
     },
     {
       "path": "paper/sections/03-environment.tex",
-      "sha256": "25bae69737cd7a24e5eb8aa6ecd5aa644510cff462997a8793b8e3609855834a"
+      "sha256": "ed125a94b2968413c20bb43e534c12f36d79362bcba92b097169129a254af005"
     },
     {
       "path": "paper/sections/04-contract.tex",
-      "sha256": "fd8942f85418ae9e13c48c490e86786a19d1d1934e0ee8c8b32fab555095c21e"
+      "sha256": "66729002129cbc75180754977728096db248bf37b0987bebfeaf64d956773a9c"
     },
     {
       "path": "paper/sections/05-experiments.tex",
-      "sha256": "6ce479f0e5edf239fe8cdb15e313756d2ce70db38916611623ce695411ed783d"
+      "sha256": "1b82c7fbec0bf2d666a60f2ef5cd79c1382f5ba75788d7dda27d37f453027707"
     },
     {
       "path": "paper/sections/06-related.tex",
-      "sha256": "e1e30ba8ef0a4f301aff64dad6c9670823aeab5d94b477481b569eb466390a29"
+      "sha256": "6d1d362cfb30ec4e8fa47fee5f3b73280af9c48124edf833ec3e1b7b90eb246f"
     },
     {
       "path": "paper/sections/07-limitations.tex",
-      "sha256": "955ab1203f6421a5157154246e8283b1a5e34081c840670522ffb014d3cc8ab8"
+      "sha256": "033193d3ba4e2efffd8ef8b2dd0d8b625ff3de90418d02c9314dabf687013aea"
     },
     {
       "path": "paper/sections/08-reproducibility.tex",
@@ -495,39 +464,43 @@
     },
     {
       "path": "paper/sections/A-commands.tex",
-      "sha256": "8639a60de6ca7153a09ad988f6169c54c6f7cc83919b11c2aa869d3d326aa2e9"
+      "sha256": "fb748bf304f3d209d82ed54063082e747e19974617e0f033af58b33111d9c01b"
     },
     {
       "path": "paper/sections/arena-witness-fragment.tex",
-      "sha256": "219c79ac09420f86518d061b289ea7113ec7408fe2e4e7906337ccb4c49fe7bd"
+      "sha256": "ca2273d79bf33e95bf358ac49e7e76bd11f9fd77ad16e9eec1369399ca0defc2"
     },
     {
       "path": "paper/sections/calm-tails-fragment.tex",
-      "sha256": "ded02567a5af74d82160e793bf76d6331c7cb5c9a2b501ff2c548d11e6b468e5"
+      "sha256": "a806acb44d97a01a12ae4f597a0c24ae8a3b15a5b0eb1c78bd0cb77c0c43bbbc"
     },
     {
       "path": "paper/sections/concave-fragment.tex",
-      "sha256": "86886edc76f934f919bdc1ff1d29529a6a41a36e7a1d2c3f8b803bd08b7fd888"
+      "sha256": "fee6965deebc565ba9ff2608c4bb76df09170d029fe9f127ddf9ec2e068edb74"
     },
     {
       "path": "paper/sections/endogenous-adverse-fragment.tex",
-      "sha256": "56dfb93a583622cc40e97f34d888c70af37296aaa7a94c397788d01315144083"
+      "sha256": "a31e5d967337eb2e54574e505fcb44d810ce9680634f782be63d626eb37d32ce"
     },
     {
       "path": "paper/sections/manipulation-sweeps-fragment.tex",
-      "sha256": "af0d32cbd2d84118b8c88b15bad10e96c68e194a14f845375ece541b181753c8"
+      "sha256": "16a2757c892f67816425cd81955ecdd913decc83761d51f7c516af65acf34efd"
     },
     {
       "path": "paper/sections/positive-control-fragment.tex",
-      "sha256": "b9b0660b6d8a75edd5f62238392454e0aa3158a235a97ea5cc5b2548ee6f2fea"
+      "sha256": "d80477763341beafcda0d3c8598c8c15f5420328441cb6dbfb1bd3de55ed23f4"
     },
     {
       "path": "paper/sections/predictability-fragment.tex",
-      "sha256": "41c2d2b798bdcee596e450a1e038578c439799dc11bea0944e2bde4ef126abc8"
+      "sha256": "8fba4e0e4d2b05be6b1c1da7253305a7f662a910860412159a6cca92acef6357"
     },
     {
       "path": "paper/sections/sealed-seeds-fragment.tex",
-      "sha256": "c8d029e33fc0d0107b7f7c774724f464bd3f8cece1200a7ffc5901fd184c702b"
+      "sha256": "ac0e4754dc6f530b60aaeb6b1c1877630f4ff5a098bd938c718abec592640a3b"
+    },
+    {
+      "path": "paper/src/check-provenance.py",
+      "sha256": "732d0929f7f22b4ab33ffac1ce5da37c95f6c4cc0a10011b7d0fa485377f43ff"
     },
     {
       "path": "paper/src/make-f1-baselines.py",
@@ -535,7 +508,7 @@
     },
     {
       "path": "paper/src/make-f2-regret.py",
-      "sha256": "697529661ca3a8903365e5d8f42835c4768a7e2c9ab9940b669e540a63593742"
+      "sha256": "0d617ebec5f1491acdf67fedd5fe47a6d2952bc592955b7ec9e4e5d3ebbafada"
     },
     {
       "path": "paper/src/make-f3-generalization.py",
@@ -543,11 +516,11 @@
     },
     {
       "path": "paper/src/make-f4-realism.py",
-      "sha256": "1a37851e8dd337da8ed3231c8442dd483a2f35aab95ea4bc94b3b080d6934714"
+      "sha256": "adbcb7cc786e3e8872b4dc6bceded087d21e435e681bdc80e5e633a94378d5b2"
     },
     {
       "path": "paper/src/make-f5-manipulation.py",
-      "sha256": "3d2a9689d677c9a4ca092e88748f90a529c1b39f44fc301961bb6cbc53fb10d8"
+      "sha256": "49377c776038a878ac0c2d9f8dd681d58f4052fc96ba2a820982fd44eed3f997"
     },
     {
       "path": "paper/src/make-f6-adverse-selection.py",
@@ -567,11 +540,11 @@
     },
     {
       "path": "paper/src/make-predictability.py",
-      "sha256": "3e856323764e006d17fe566aeae7200824ffdaaa588ca4ef94809f43d66c3834"
+      "sha256": "6b42020f5fc5b24664cb3a1c3ddbd63f36e2b2e112e0ec7fd47556c17a427aba"
     },
     {
       "path": "paper/src/make-provenance.py",
-      "sha256": "7db24c49025efc67df503c2fd52a847de75689d88d15aa4de323fcfbc77bf07b"
+      "sha256": "5867622221bd8bdd4fbd4d00f62720a9134d93ec75524e4e859d85ecae589539"
     },
     {
       "path": "paper/src/make-sealed-seeds.py",
@@ -579,8 +552,15 @@
     },
     {
       "path": "paper/src/make-witness.py",
-      "sha256": "7371eb7d11ca5b706b98de97f5f5a700f8700a93679182e3e8d1039848f17d2b"
+      "sha256": "09c0c78a77c83a72fc45f642fe6da884e142c97050a3f325b46054898b083ffc"
     }
+  ],
+  "source_snapshot_excludes": [
+    "target",
+    ".venv",
+    "__pycache__",
+    "node_modules",
+    ".git"
   ],
   "source_snapshot_scope": [
     "Cargo.toml",
@@ -593,5 +573,7 @@
     "paper/sections/*.tex",
     "paper/refs.bib"
   ],
-  "source_snapshot_sha256": "15854652346f8bcf3f6d58d5e4f28f96fef90a5f805716c4742c39dec6dec959"
+  "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
+  "source_snapshot_sha256": "0c5a56fc955c65892a085eeb41ce06411a09196e8756a516d34563e36f0604dc",
+  "validator": "paper/src/check-provenance.py"
 }

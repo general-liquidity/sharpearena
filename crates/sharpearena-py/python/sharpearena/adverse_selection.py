@@ -364,9 +364,9 @@ def _default_policies(p: MMParams, n_makers: int) -> list[Policy]:
     then progressively tighter fixed-spread quoters. Tighter quotes win priority and so
     absorb more of the meta-order, which is the behaviour the report should make visible.
     """
-    from .market_making import analytically_optimal_policy, fixed_spread_policy
+    from .market_making import closed_form_reference_policy, fixed_spread_policy
 
-    policies: list[Policy] = [analytically_optimal_policy(p)]
+    policies: list[Policy] = [closed_form_reference_policy(p)]
     for i in range(1, n_makers):
         policies.append(fixed_spread_policy(max(p.tick_size, 0.9 - 0.25 * (i - 1))))
     return policies[:n_makers]

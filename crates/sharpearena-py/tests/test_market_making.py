@@ -1,9 +1,9 @@
-"""Tests for the Avellaneda-Stoikov market-making env and its analytical optimum.
+"""Tests for the Avellaneda-Stoikov market-making env and its closed-form reference.
 
 Covers the gymnasium contract (construct / reset / step / terminal liquidation),
 determinism-given-seed, the inventory hard cap and squared running penalty, and the
-math-validation fixture: the closed-form A-S optimal policy beats a naive fixed-spread
-maker in mean reward over seeded episodes, with ``mm_regret(optimal) == 0`` and
+math-validation fixture: the closed-form A-S reference policy beats a naive fixed-spread
+maker in mean reward over seeded episodes, with ``mm_regret(reference) == 0`` and
 ``mm_regret(naive) > 0``.
 """
 
@@ -15,7 +15,7 @@ import pytest
 from sharpearena.market_making import (
     MMParams,
     MarketMakingEnv,
-    analytically_optimal_policy,
+    closed_form_reference_policy,
     fixed_spread_policy,
     mm_regret,
 )
@@ -77,7 +77,7 @@ def test_time_remaining_counts_down_to_zero():
 
 def test_same_seed_identical_trajectory():
     p = MMParams(n_steps=50)
-    pol = analytically_optimal_policy(p)
+    pol = closed_form_reference_policy(p)
     a = _rollout(MarketMakingEnv(p), pol, seed=7)
     b = _rollout(MarketMakingEnv(p), pol, seed=7)
     assert a[0] == b[0]  # identical reward sequence
@@ -86,7 +86,7 @@ def test_same_seed_identical_trajectory():
 
 def test_distinct_seeds_distinct_trajectories():
     p = MMParams(n_steps=50)
-    pol = analytically_optimal_policy(p)
+    pol = closed_form_reference_policy(p)
     a = _rollout(MarketMakingEnv(p), pol, seed=1)
     b = _rollout(MarketMakingEnv(p), pol, seed=2)
     assert a[0] != b[0]
@@ -119,7 +119,7 @@ def test_squared_inventory_penalty_applied():
 
 def test_optimal_beats_naive_in_mean_reward():
     p = MMParams()
-    optimal = analytically_optimal_policy(p)
+    optimal = closed_form_reference_policy(p)
     naive = fixed_spread_policy(0.3)
     env = MarketMakingEnv(p)
     opt_mean = np.mean([sum(_rollout(env, optimal, s)[0]) for s in range(24)])
@@ -129,14 +129,14 @@ def test_optimal_beats_naive_in_mean_reward():
 
 def test_regret_optimal_is_zero_and_naive_positive():
     p = MMParams()
-    optimal = analytically_optimal_policy(p)
+    optimal = closed_form_reference_policy(p)
     assert mm_regret(optimal, params=p, n_episodes=24) == pytest.approx(0.0, abs=1e-9)
     assert mm_regret(fixed_spread_policy(0.3), params=p, n_episodes=24) > 0.0
 
 
 def test_optimal_depths_skew_with_inventory():
     p = MMParams()
-    pol = analytically_optimal_policy(p)
+    pol = closed_form_reference_policy(p)
     tau = p.horizon
     base = {"mid": np.array([100.0]), "time_remaining": np.array([tau]), "cash": np.array([0.0])}
     flat = pol({**base, "inventory": np.array([0.0])})
@@ -149,7 +149,7 @@ def test_optimal_depths_skew_with_inventory():
 
 def test_half_spread_widens_with_time_to_go():
     p = MMParams()
-    pol = analytically_optimal_policy(p)
+    pol = closed_form_reference_policy(p)
     base = {"mid": np.array([100.0]), "inventory": np.array([0.0]), "cash": np.array([0.0])}
     early = pol({**base, "time_remaining": np.array([p.horizon])})
     late = pol({**base, "time_remaining": np.array([p.dt])})
@@ -157,3 +157,17 @@ def test_half_spread_widens_with_time_to_go():
     # late half-spread floors at the order-book term (1/gamma)*ln(1+gamma/kappa).
     floor = (1.0 / p.gamma) * math.log1p(p.gamma / p.kappa)
     assert late[0] == pytest.approx(0.5 * p.gamma * p.sigma**2 * p.dt + floor)
+
+
+def test_deprecated_alias_matches_and_warns():
+    import warnings
+
+    from sharpearena.market_making import analytically_optimal_policy
+
+    p = MMParams()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        alias = analytically_optimal_policy(p)
+    assert any(issubclass(w.category, DeprecationWarning) for w in caught)
+    obs = {"inventory": np.array([3.0]), "time_remaining": np.array([0.5])}
+    assert np.allclose(alias(obs), closed_form_reference_policy(p)(obs))

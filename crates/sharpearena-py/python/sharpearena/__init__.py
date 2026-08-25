@@ -94,6 +94,7 @@ from .market_making import (
     MarketMakingEnv,
     MMParams,
     analytically_optimal_policy,
+    closed_form_reference_policy,
     fixed_spread_policy,
     mm_regret,
 )
@@ -332,6 +333,7 @@ __all__ = [
     "MarketMakingEnv",
     "MMParams",
     "analytically_optimal_policy",
+    "closed_form_reference_policy",
     "fixed_spread_policy",
     "mm_regret",
     "ExecutionEnv",

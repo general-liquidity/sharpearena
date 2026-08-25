@@ -6,12 +6,31 @@ version covers the Rust crates, the npm package and the PyPI package; each
 section is one `v*` tag and links the commits it was built from. The wire
 contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
-[Unreleased]: https://github.com/general-liquidity/sharpearena/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/general-liquidity/sharpearena/compare/v0.15.0...HEAD
 
 ## [Unreleased]
 
+### Changed
+- paper: the companion citation reads SharpeBench version 0.10.0.
+- paper: `paper/evidence/provenance.json` is regenerated against the current tree and its source snapshot excludes build outputs (`target/`, `.venv/`, `__pycache__/`), so the manifest is reproducible across machines; `paper/src/check-provenance.py` validates it and exits nonzero on any mismatch.
+- paper: `04-contract.tex` states the per-runtime golden coverage exactly (native and Python assert all seven, WebAssembly asserts the canonical and clustered scenarios); the F1 pass^k difference half-width is corrected to 0.35 at the stated p = 1/2 convention; the positive control notes that the fourth familywise-positive cell clears zero at the boundary.
+- market_making: the closed-form reference quoting policy is exported as `closed_form_reference_policy`; `analytically_optimal_policy` is kept as a deprecated alias, so the public symbol no longer asserts an optimality the docstrings retract.
+
+## [0.15.0] - 2026-08-25
+
 ### Added
-- adverse_selection: an endogenous arm (`EndogenousImpact`, `compare_endogenous_arms`) in which informed meta-order flow moves the mid through the engine's permanent-impact law (cross-checked against the native clearing engine to 1e-12); makers still profit against informed flow at the default calibration, and the informed-side level crosses zero near lambda 0.27 while the informed-uninformed gap survives the whole sweep ([b750c51](https://github.com/general-liquidity/sharpearena/commit/b750c51)).
+- py: two pyo3 entry points expose the native scenario serialization, and `crates/sharpearena-py/tests/test_python_golden.py` recomputes FNV-1a in pure Python to assert all seven committed scenario goldens plus determinism through the bindings ([c4b5785](https://github.com/general-liquidity/sharpearena/commit/c4b5785)).
+- paper: the witness artifact serializes all five noise paths per cell under `noise_replicates`, which is what the witness table summarizes ([c4b5785](https://github.com/general-liquidity/sharpearena/commit/c4b5785)).
+
+### Changed
+- paper: the re-review residuals are closed. No site classifies an F3 cell by the single realized 0.34 gap; cells are read only through their seed-paired bootstrap intervals. The experiments preamble gains a findings map (ten findings across fifteen subsections), scoping statement 1 separates the tier-generator findings from F2, F5 and F6, the positive control separates its three granularities, F2 reports its minimum detectable effect, F8 drops "more often than not" for raw and resolved counts, pass^k and clean-rate differences carry binomial widths, and the provenance hash is stated once ([c4b5785](https://github.com/general-liquidity/sharpearena/commit/c4b5785)).
+- README: the witness threshold and the market-making cost figures are restated from `witness.json` and `f2-regret.json` ([c4b5785](https://github.com/general-liquidity/sharpearena/commit/c4b5785)).
+- paper: the companion citation reads SharpeBench version 0.9.0 ([c4b5785](https://github.com/general-liquidity/sharpearena/commit/c4b5785)).
+
+## [0.14.0] - 2026-08-25
+
+### Added
+- adverse_selection: an endogenous arm (`EndogenousImpact`, `compare_endogenous_arms`) in which informed meta-order flow moves the mid through the engine's permanent-impact law (cross-checked against the native clearing engine to 1e-12); makers still profit against informed flow at the default calibration, the sampled informed level changes sign between the lambda 0.2 and 0.3 grid points, and the informed-uninformed gap survives the whole sweep ([b750c51](https://github.com/general-liquidity/sharpearena/commit/b750c51)).
 - manipulation: `side` on the asymmetric schedules (mirrored short round trips) and the 60-cell extended sweep over push size, lambda, leg length, hold, short side and follower gain, corrected over the global 195-cell family; the strongest sampled cell is the 45:5 slow-accumulate schedule under concave impact, and followers destroy the manipulator's profit ([b750c51](https://github.com/general-liquidity/sharpearena/commit/b750c51)).
 - manipulation: a fixed-cell 32-fresh-seed confirmation of the selected positive-control schedule (+26.3e-4, [23.7, 28.9]e-4) ([b750c51](https://github.com/general-liquidity/sharpearena/commit/b750c51)).
 - realism: the absolute-return autocorrelation check now uses a reproducible IID-null calibration of the finite-panel estimator instead of a fixed threshold at zero, and aggregational Gaussianity tests reduction in absolute excess kurtosis so platykurtic tape converging to Gaussian is not failed by definition; Fano stays exploratory ([b750c51](https://github.com/general-liquidity/sharpearena/commit/b750c51)).
@@ -181,6 +200,10 @@ First published release, as OpenOutcry.
 ### Fixed
 - ci: toolchain pinned to 1.96.0 for the wasm32 target; a virtualenv for maturin ([bb0ee4d](https://github.com/general-liquidity/sharpearena/commit/bb0ee4d)).
 
+[0.15.0]: https://github.com/general-liquidity/sharpearena/compare/v0.14.0...v0.15.0
+[0.14.0]: https://github.com/general-liquidity/sharpearena/compare/v0.13.0...v0.14.0
+[0.13.0]: https://github.com/general-liquidity/sharpearena/compare/v0.12.0...v0.13.0
+[0.12.0]: https://github.com/general-liquidity/sharpearena/compare/v0.11.1...v0.12.0
 [0.11.1]: https://github.com/general-liquidity/sharpearena/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/general-liquidity/sharpearena/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/general-liquidity/sharpearena/compare/v0.9.0...v0.10.0
