@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import json
 import math
+import sys
 from dataclasses import replace
 from pathlib import Path
 
@@ -53,14 +54,19 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from sharpearena import (
-    AsymmetricSchedule,
-    ManipulationParams,
-    impact_boundary_sweep,
-    run_asymmetric_probe,
-    run_manipulation_probe,
-    size_response,
-)
+try:
+    from sharpearena import (
+        AsymmetricSchedule,
+        ManipulationParams,
+        impact_boundary_sweep,
+        run_asymmetric_probe,
+        run_manipulation_probe,
+        size_response,
+    )
+except ImportError:  # --figures-only reads the committed JSON and needs no bindings
+    AsymmetricSchedule = ManipulationParams = None
+    impact_boundary_sweep = run_asymmetric_probe = None
+    run_manipulation_probe = size_response = None
 
 PAPER = Path(__file__).resolve().parents[1]
 EVIDENCE = PAPER / "evidence"
@@ -117,7 +123,9 @@ CONFIRM_T_CRIT_DF31 = 2.0395134463964077
 # ``follower_gain`` runs on the canonical follower arm (temporary impact on, three
 # momentum followers) rather than the theory arm, since that is where followers exist.
 EXTENDED_EXPONENTS = (1.0, 0.5)
-EXTENDED_BASE_SCHEDULE = AsymmetricSchedule.uniform(9, 1)
+EXTENDED_BASE_SCHEDULE = (
+    None if AsymmetricSchedule is None else AsymmetricSchedule.uniform(9, 1)
+)
 EXTENDED_AXES: dict[str, tuple] = {
     "push_weight": (0.2, 0.4, 0.6, 0.8, 1.0),
     "kyle_lambda": (0.025, 0.05, 0.1, 0.2, 0.4),
@@ -570,32 +578,73 @@ def main() -> None:
         "extended_sweeps": extended,
     }
     (EVIDENCE / "f5-manipulation.json").write_text(json.dumps(out, indent=2))
+    make_figures(out)
+
+
+def make_figures(out: dict, wanted: list[str] | None = None) -> None:
+    """Render the F5 figures from the evidence dict (the committed JSON shape).
+
+    ``wanted`` restricts which PDFs are written; every figure is still laid out
+    so the code path stays exercised, only the save is skipped.
+    """
+    FIGURES.mkdir(parents=True, exist_ok=True)
+    boundaries = out["boundaries"]
+    size = out["size_response"]
+    dispersion = out["dispersion"]
+    concave = out["concave"]
+    positive_control = out["positive_control"]
+    extended = out["extended_sweeps"]
+
+    def _save(fig, name: str) -> None:
+        if wanted is None or name in wanted:
+            fig.savefig(FIGURES / name)
+            print(f"wrote {FIGURES / name}")
+        plt.close(fig)
 
     # Figure 1: impact P&L along each swept axis, boundary marked where found.
-    fig, axes = plt.subplots(1, len(boundaries), figsize=(10, 3.2), sharey=True)
-    for ax, (axis, rep) in zip(axes, boundaries.items()):
-        ax.plot(rep["values"], rep["impact_pnl"], marker="o")
+    # A 2+1 grid sized for its 0.55-linewidth subfigure slot (about 3.0 in),
+    # so fonts land at 8 to 9 pt at print size.
+    fig = plt.figure(figsize=(3.05, 3.5))
+    gs = fig.add_gridspec(2, 4)
+    slots = [gs[0, 0:2], gs[0, 2:4], gs[1, 1:3]]
+    first_ax = None
+    for slot, (axis, rep) in zip(slots, boundaries.items()):
+        ax = fig.add_subplot(slot, sharey=first_ax)
+        first_ax = first_ax or ax
+        ax.plot(rep["values"], rep["impact_pnl"], marker="o", markersize=3,
+                linewidth=1.2)
         ax.axhline(0.0, color="black", linewidth=0.8)
         if rep["boundary"] is not None:
             ax.axvline(rep["boundary"], linestyle="--", color="red", linewidth=0.8)
-        ax.set_xlabel(axis)
-    axes[0].set_ylabel("impact P&L")
+        ax.set_xlabel(axis, fontsize=9)
+        ax.xaxis.set_major_locator(plt.MaxNLocator(3))
+        ax.ticklabel_format(axis="y", style="sci", scilimits=(-2, 2))
+        ax.yaxis.get_offset_text().set_fontsize(8)
+        ax.tick_params(labelsize=8)
+        if slot is slots[1]:
+            ax.tick_params(labelleft=False)
+        else:
+            ax.set_ylabel("impact P&L", fontsize=9)
     fig.tight_layout()
-    fig.savefig(FIGURES / "f5-boundaries.pdf")
-    plt.close(fig)
+    _save(fig, "f5-boundaries.pdf")
 
-    # Figure 2: payoff vs push size, with the peak marked.
-    fig, ax = plt.subplots(figsize=(5, 3.5))
-    ax.plot(size["push_weights"], size["impact_pnl"], marker="o")
+    # Figure 2: payoff vs push size, with the peak marked. Sized for its
+    # 0.42-linewidth slot and matched in height to Figure 1.
+    fig, ax = plt.subplots(figsize=(2.35, 3.5))
+    ax.plot(size["push_weights"], size["impact_pnl"], marker="o", markersize=3,
+            linewidth=1.2)
     ax.axhline(0.0, color="black", linewidth=0.8)
     ax.axvline(size["peak_push_weight"], linestyle="--", color="red", linewidth=0.8)
     verdict = "bounded" if size["bounded"] else "UNBOUNDED"
-    ax.set_title(f"size response ({verdict})", fontsize=10)
-    ax.set_xlabel("push weight")
-    ax.set_ylabel("impact P&L")
+    ax.set_title(f"size response ({verdict})", fontsize=9)
+    ax.set_xlabel("push weight", fontsize=9)
+    ax.set_ylabel("impact P&L", fontsize=9)
+    ax.xaxis.set_major_locator(plt.MaxNLocator(4))
+    ax.ticklabel_format(axis="y", style="sci", scilimits=(-2, 2))
+    ax.yaxis.get_offset_text().set_fontsize(8)
+    ax.tick_params(labelsize=8)
     fig.tight_layout()
-    fig.savefig(FIGURES / "f5-size-response.pdf")
-    plt.close(fig)
+    _save(fig, "f5-size-response.pdf")
 
     # Figure 3: the concavity ablation. Impact P&L (with 95% CIs) along the permanent-
     # impact axis and the push-size axis, linear vs each concave exponent.
@@ -629,8 +678,7 @@ def main() -> None:
     ax_l.set_ylabel("impact P&L")
     ax_l.legend(fontsize=8)
     fig.tight_layout()
-    fig.savefig(FIGURES / "f5-concave.pdf")
-    plt.close(fig)
+    _save(fig, "f5-concave.pdf")
 
     # Figure 4: the positive control. One column per exponent, one row per arm; impact P&L
     # with 95% CIs against the up/down duration ratio, one line per size split.
@@ -663,8 +711,7 @@ def main() -> None:
                 ax.set_ylabel(f"{arm_name}\nimpact P&L", fontsize=9)
     grid_axes[0][0].legend(fontsize=7, frameon=False)
     fig.tight_layout()
-    fig.savefig(FIGURES / "f5-positive-control.pdf")
-    plt.close(fig)
+    _save(fig, "f5-positive-control.pdf")
 
     # Figure 5: the extended sweeps. One panel per axis; impact P&L against the axis value,
     # one line per exponent, pointwise 95% shading and familywise 95% error bars. The
@@ -716,9 +763,13 @@ def main() -> None:
     panels[0][0].legend(fontsize=7, frameon=False)
     panels[1][1].legend(fontsize=7, frameon=False)
     fig.tight_layout()
-    fig.savefig(FIGURES / "f5-extended-sweeps.pdf")
-    plt.close(fig)
+    _save(fig, "f5-extended-sweeps.pdf")
 
 
 if __name__ == "__main__":
-    main()
+    if "--figures-only" in sys.argv:
+        names = [a for a in sys.argv[1:] if not a.startswith("--")]
+        data = json.loads((EVIDENCE / "f5-manipulation.json").read_text())
+        make_figures(data, wanted=names or None)
+    else:
+        main()

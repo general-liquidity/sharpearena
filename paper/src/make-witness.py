@@ -42,12 +42,24 @@ Bands: the primary band is the canonical held-out band (16 seeds, 10,000-seed ga
 the train band, as in F3); the F1 table band (seeds 0-15) is rerun as a cross-check so
 the reader can place the witness next to Table 1. Tiers: Calm, Hard, Extreme.
 
+Noise replication (audit M-13). A threshold located under one ``eps`` path is a
+functional of that draw, and the bisection bracket is numerical resolution, not a
+statistical interval. So every (variant, band, tier) cell is rerun under
+``N_NOISE_REPS`` independent noise paths: replicate 0 is the primary path serialized
+under ``boundaries`` (byte-identical to the single-path run), replicates 1.. redraw
+``eps`` (still common across strengths within a replicate) and repeat the coarse sweep,
+the monotonicity check and the bisection. ``noise_replicates`` records every crossing
+bracket and its midpoint, with mean, min, max over replicates, and names any replicate
+on which eligibility is never attained.
+
 Writes ``paper/evidence/witness.json`` and ``paper/figures/witness.pdf``.
 """
 from __future__ import annotations
 
 import json
 import math
+import os
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import matplotlib
@@ -78,6 +90,9 @@ RESAMPLE_SEED = 0x5BA7_2026
 # Coarse strength grid, then bisection to this resolution.
 STRENGTHS = (0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.5, 0.6, 0.8, 1.0)
 BISECT_RESOLUTION = 0.005
+# Independent eps paths per (variant, band, tier). Replicate 0 is the primary path.
+N_NOISE_REPS = 5
+NOISE_REP_STRIDE = 0x2545_F491
 # Kernel gate thresholds (sharpebench-core ScoreConfig defaults), restated for the report.
 KERNEL_GATES = {
     "per_run_psr_bar": 0.90,
@@ -120,14 +135,17 @@ def replay_tape(seed: int, tier: str) -> np.ndarray:
     return np.vstack(rows)
 
 
-def _noise_seed(seed: int, variant: str) -> int:
+def _noise_seed(seed: int, variant: str, noise_rep: int = 0) -> int:
     # Common random numbers across strengths: changing s mixes the same eps path
     # with the same truth path, rather than silently changing the experiment.
+    # noise_rep = 0 reproduces the single-path run exactly.
     variant_offset = 0 if variant == "sign_follow" else 0x9E37_79B9
-    return (int(seed) * 1_000_003 + variant_offset) % (2**32)
+    return (int(seed) * 1_000_003 + variant_offset + noise_rep * NOISE_REP_STRIDE) % (2**32)
 
 
-def rollout(seed: int, tier: str, strength: float, variant: str) -> dict:
+def rollout(
+    seed: int, tier: str, strength: float, variant: str, noise_rep: int = 0
+) -> dict:
     """One episode of the mixed-signal policy. Returns the per-bar reward series, the
     realized directional accuracy of the signal, and a tape-invariance flag."""
     deadband, hold = VARIANTS[variant]
@@ -136,7 +154,7 @@ def rollout(seed: int, tier: str, strength: float, variant: str) -> dict:
     sigma = rets.std(axis=0, ddof=1)
     sigma = np.where(sigma > 0.0, sigma, 1.0)
     z = rets / sigma
-    rng = np.random.default_rng(_noise_seed(seed, variant))
+    rng = np.random.default_rng(_noise_seed(seed, variant, noise_rep))
     eps = rng.standard_normal(rets.shape)
     signal = strength * z + math.sqrt(1.0 - strength * strength) * eps
 
@@ -171,7 +189,9 @@ def rollout(seed: int, tier: str, strength: float, variant: str) -> dict:
     }
 
 
-def score_strength(seeds: list[int], tier: str, strength: float, variant: str) -> dict:
+def score_strength(
+    seeds: list[int], tier: str, strength: float, variant: str, noise_rep: int = 0
+) -> dict:
     """Score one strength exactly like ``run_baselines``: per-seed gate, pooled kernel."""
     per_seed: list[list[float]] = []
     per_seed_pass: list[bool] = []
@@ -179,7 +199,7 @@ def score_strength(seeds: list[int], tier: str, strength: float, variant: str) -
     accuracies: list[float] = []
     invariant = True
     for seed in seeds:
-        ro = rollout(seed, tier, strength, variant)
+        ro = rollout(seed, tier, strength, variant, noise_rep)
         per_seed.append(ro["returns"])
         accuracies.append(ro["accuracy"])
         invariant &= ro["tape_invariant"]
@@ -221,7 +241,9 @@ def score_strength(seeds: list[int], tier: str, strength: float, variant: str) -
     }
 
 
-def locate_boundary(seeds: list[int], tier: str, rows: list[dict], variant: str) -> dict:
+def locate_boundary(
+    seeds: list[int], tier: str, rows: list[dict], variant: str, noise_rep: int = 0
+) -> dict:
     """Refine a threshold only when the observed coarse eligibility set is monotone."""
     eligible_idx = [i for i, r in enumerate(rows) if r["eligible"]]
     if not eligible_idx:
@@ -257,7 +279,7 @@ def locate_boundary(seeds: list[int], tier: str, rows: list[dict], variant: str)
     points: list[dict] = []
     while hi["strength"] - lo["strength"] > BISECT_RESOLUTION:
         mid = round(0.5 * (lo["strength"] + hi["strength"]), 5)
-        row = score_strength(seeds, tier, mid, variant)
+        row = score_strength(seeds, tier, mid, variant, noise_rep)
         points.append(row)
         if row["eligible"]:
             hi = row
@@ -281,24 +303,147 @@ def locate_boundary(seeds: list[int], tier: str, rows: list[dict], variant: str)
     }
 
 
+SLIM_ROW_KEYS = ("strength", "eligible", "pass_k_rate", "n_seeds_passing", "min_seed_psr",
+                 "deflated_sharpe", "bootstrap_p", "signal_accuracy")
+
+
+def run_cell(task: tuple[str, str, str, int]) -> tuple[tuple[str, str, str, int], dict]:
+    """Coarse sweep + boundary for one (variant, band, tier, noise replicate)."""
+    variant, band_name, tier, noise_rep = task
+    seeds = BANDS[band_name]
+    rows = [score_strength(seeds, tier, s, variant, noise_rep) for s in STRENGTHS]
+    assert all(r["tape_invariant"] for r in rows), "tape is not policy-invariant"
+    boundary = locate_boundary(seeds, tier, rows, variant, noise_rep)
+    return task, {"sweep": rows, "boundary": boundary}
+
+
+def _crossing(boundary: dict) -> float | None:
+    """Point estimate of the crossing: the midpoint of the bisection bracket. Its
+    half-width is BISECT_RESOLUTION/2 (numerical), separate from the noise range."""
+    if not boundary.get("threshold_identified"):
+        return None
+    if boundary.get("lo") is None:
+        return float(boundary["hi"])
+    return round(0.5 * (boundary["lo"] + boundary["hi"]), 6)
+
+
+def summarize_replicates(cells: list[dict]) -> dict:
+    """Per-(variant, band, tier) summary over noise replicates."""
+    reps = []
+    for k, cell in enumerate(cells):
+        b = cell["boundary"]
+        reps.append({
+            "noise_rep": k,
+            "attained": bool(b.get("attained")),
+            "threshold_identified": bool(b.get("threshold_identified")),
+            "grid_non_monotone": bool(b.get("grid_non_monotone", False)),
+            "lo": b.get("lo"),
+            "hi": b.get("hi"),
+            "crossing": _crossing(b),
+            "binding_gates": b.get("binding_gates"),
+            "accepted_strengths": b.get("accepted_strengths", []),
+            "hi_row": b.get("hi_row"),
+            "lo_row": b.get("lo_row"),
+            "sweep": [{k2: r[k2] for k2 in SLIM_ROW_KEYS} for r in cell["sweep"]],
+            "bisection_points": [
+                {k2: r[k2] for k2 in SLIM_ROW_KEYS} for r in b.get("points", [])
+            ],
+        })
+    crossings = [r["crossing"] for r in reps if r["crossing"] is not None]
+    binding = [tuple(r["binding_gates"]) for r in reps if r["binding_gates"] is not None]
+    summary = {
+        "n_reps": len(reps),
+        "n_attained": sum(r["attained"] for r in reps),
+        "n_threshold_identified": len(crossings),
+        "unattained_reps": [r["noise_rep"] for r in reps if not r["attained"]],
+        "non_monotone_reps": [r["noise_rep"] for r in reps if r["grid_non_monotone"]],
+        "crossings": crossings,
+        "brackets": [[r["lo"], r["hi"]] for r in reps if r["crossing"] is not None],
+        "mean": float(np.mean(crossings)) if crossings else None,
+        "min": float(min(crossings)) if crossings else None,
+        "max": float(max(crossings)) if crossings else None,
+        "range": float(max(crossings) - min(crossings)) if crossings else None,
+        "sd_ddof1": float(np.std(crossings, ddof=1)) if len(crossings) > 1 else None,
+        "bracket_half_width": BISECT_RESOLUTION / 2.0,
+        "binding_gates_consistent": len(set(binding)) <= 1,
+        "binding_gates": sorted({g for bg in binding for g in bg}),
+    }
+    return {"replicates": reps, "summary": summary}
+
+
 def main() -> None:
     EVIDENCE.mkdir(parents=True, exist_ok=True)
     FIGURES.mkdir(parents=True, exist_ok=True)
 
-    results: dict[str, dict] = {}
+    all_noise_seeds = [
+        _noise_seed(seed, variant, rep)
+        for variant in VARIANTS for seed in {s for b in BANDS.values() for s in b}
+        for rep in range(N_NOISE_REPS)
+    ]
+    assert len(set(all_noise_seeds)) == len(all_noise_seeds), "noise seeds collide"
+
+    tasks = [
+        (variant, band_name, tier, rep)
+        for variant in VARIANTS
+        for band_name in BANDS
+        for tier in TIERS
+        for rep in range(N_NOISE_REPS)
+    ]
+    cells: dict[tuple[str, str, str, int], dict] = {}
+    workers = max(1, min(len(tasks), os.cpu_count() or 1))
+    with ProcessPoolExecutor(max_workers=workers) as pool:
+        for task, cell in pool.map(run_cell, tasks):
+            cells[task] = cell
+            b = cell["boundary"]
+            print(
+                f"{task[0]:14s} {task[1]:9s} {task[2]:8s} rep={task[3]} boundary s in "
+                f"[{b.get('lo')}, {b.get('hi')}] binding={b.get('binding_gates')}"
+            )
+
+    results: dict[str, dict] = {
+        variant: {
+            band_name: {tier: cells[(variant, band_name, tier, 0)] for tier in TIERS}
+            for band_name in BANDS
+        }
+        for variant in VARIANTS
+    }
+    noise_replicates = {
+        "config": {
+            "n_noise_reps": N_NOISE_REPS,
+            "noise_rep_stride": NOISE_REP_STRIDE,
+            "noise_seed_rule": (
+                "(seed * 1_000_003 + variant_offset + noise_rep * noise_rep_stride) mod 2^32; "
+                "noise_rep = 0 is the primary path serialized under 'boundaries'"
+            ),
+            "crossing_point": (
+                "midpoint of the bisection bracket [lo, hi]; half-width = "
+                "bisect_resolution / 2 is numerical resolution, separate from the "
+                "min..max range over noise replicates"
+            ),
+            "summary_statistics": "mean, min, max, range, sd (ddof=1) over identified crossings",
+        },
+        "by_cell": {
+            variant: {
+                band_name: {
+                    tier: summarize_replicates(
+                        [cells[(variant, band_name, tier, k)] for k in range(N_NOISE_REPS)]
+                    )
+                    for tier in TIERS
+                }
+                for band_name in BANDS
+            }
+            for variant in VARIANTS
+        },
+    }
     for variant in VARIANTS:
-        results[variant] = {}
-        for band_name, seeds in BANDS.items():
-            results[variant][band_name] = {}
+        for band_name in BANDS:
             for tier in TIERS:
-                rows = [score_strength(seeds, tier, s, variant) for s in STRENGTHS]
-                assert all(r["tape_invariant"] for r in rows), "tape is not policy-invariant"
-                boundary = locate_boundary(seeds, tier, rows, variant)
-                results[variant][band_name][tier] = {"sweep": rows, "boundary": boundary}
+                s = noise_replicates["by_cell"][variant][band_name][tier]["summary"]
                 print(
-                    f"{variant:14s} {band_name:9s} {tier:8s} boundary s in "
-                    f"[{boundary.get('lo')}, {boundary.get('hi')}] "
-                    f"binding={boundary.get('binding_gates')}"
+                    f"{variant:14s} {band_name:9s} {tier:8s} crossings={s['crossings']} "
+                    f"mean={s['mean']} min={s['min']} max={s['max']} "
+                    f"attained={s['n_attained']}/{s['n_reps']} "
+                    f"non_monotone={s['non_monotone_reps']}"
                 )
 
     out = {
@@ -349,18 +494,31 @@ def main() -> None:
             }
             for variant in VARIANTS
         },
+        "noise_replicates": noise_replicates,
     }
     (EVIDENCE / "witness.json").write_text(json.dumps(out, indent=2))
     print(f"wrote {EVIDENCE / 'witness.json'}")
 
     # Figure: held-out band, one row per policy variant. Left, pooled DSR with CI against
     # s (filled markers where eligible, boundary marked). Right, pass^k rate against s.
+    # The shaded band and the horizontal error bar are the min..max crossing range over
+    # the noise replicates; the dashed line is the primary-path bracket.
     colors = {"calm": "#1a73e8", "hard": "#d93025", "extreme": "#5f6368"}
     fig, axes = plt.subplots(len(VARIANTS), 2, figsize=(9.0, 3.1 * len(VARIANTS)))
     for row_i, variant in enumerate(VARIANTS):
         ax_d, ax_p = axes[row_i]
-        for tier in TIERS:
+        for tier_i, tier in enumerate(TIERS):
             res = results[variant]["held_out"][tier]
+            summ = noise_replicates["by_cell"][variant]["held_out"][tier]["summary"]
+            if summ["n_threshold_identified"] > 0:
+                for ax in (ax_d, ax_p):
+                    ax.axvspan(summ["min"], summ["max"], color=colors[tier], alpha=0.15,
+                               linewidth=0)
+                ax_p.errorbar(
+                    [summ["mean"]], [0.15 + 0.12 * tier_i],
+                    xerr=[[summ["mean"] - summ["min"]], [summ["max"] - summ["mean"]]],
+                    fmt="|", color=colors[tier], capsize=3, linewidth=1.0, zorder=4,
+                )
             rows = sorted(
                 res["sweep"] + res["boundary"].get("points", []),
                 key=lambda r: r["strength"],
@@ -385,9 +543,12 @@ def main() -> None:
                       marker="o", markersize=3, linewidth=1.0, label=tier)
         ax_d.axhline(KERNEL_GATES["dsr_bar"], color="black", linestyle=":", linewidth=0.8)
         ax_d.set_ylabel(f"{variant}\npooled deflated Sharpe")
-        ax_d.set_title("filled = rank-eligible; dotted = DSR bar", fontsize=9)
+        ax_d.set_title("filled = rank-eligible; dotted = DSR bar; shaded = noise range",
+                       fontsize=9)
         ax_p.axhline(1.0, color="black", linestyle=":", linewidth=0.8)
         ax_p.set_ylabel("pass^k rate (16 held-out seeds)")
+        ax_p.set_title(f"bars = crossing mean, min..max over {N_NOISE_REPS} noise paths",
+                       fontsize=9)
         ax_p.set_ylim(-0.02, 1.05)
         if row_i == 0:
             ax_d.legend(fontsize=8, frameon=False)

@@ -1,34 +1,35 @@
-\subsection{Rank-eligibility witness: the acceptance set is non-empty}\label{sec:witness}
+\subsection{Rank-eligibility witness: the eligibility set is non-empty}\label{sec:witness}
 
-The baseline board of \cref{sec:f1} contains no rank-eligible policy, leaving open whether the conjunction can be satisfied at all. We answer by construction with an out-of-band oracle, not an entrant. For each seed, the script replays the deterministic, policy-invariant tape one bar ahead and mixes standardized next-bar truth $z_t$ with one fixed seeded noise path $\varepsilon_t$:
+The baseline board of \cref{sec:f1} contains no rank-eligible policy, leaving open whether the conjunction can be satisfied at all. We answer by construction with an out-of-band oracle, not an entrant. For each seed, the script replays the deterministic, policy-invariant tape one bar ahead and mixes standardized next-bar truth $z_t$ with a seeded noise path $\varepsilon_t$:
 \[
 \mathrm{signal}_t(s)=s z_t+\sqrt{1-s^2}\,\varepsilon_t,
 \qquad 0\le s\le1.
 \]
-The same $\varepsilon_t$ is reused at every $s$ (common random numbers), so changing signal strength does not silently change the experiment. A sign-following policy trades every bar; a deadband policy trades only when $|\mathrm{signal}|>1$ and otherwise holds. Both are scored through the unchanged SharpeBench conjunction over 16 seeds. The per-seed gate uses the probabilistic Sharpe ratio (PSR), the probability under the kernel's stated sampling model that Sharpe exceeds its reference threshold. The script records the full coarse acceptance set. It refines an \emph{observed crossing bracket} by bisection only when that coarse set is monotone; otherwise it reports the observed set without calling any crossing a threshold. These are numerical brackets on the stated grid and common random numbers, not a proof that eligibility is globally monotone between unsampled strengths. All ten attained coarse series are monotone.
+Within one noise path the same $\varepsilon_t$ is reused at every $s$ (common random numbers), so changing signal strength does not silently change the experiment. A sign-following policy trades every bar; a deadband policy trades only when $|\mathrm{signal}|>1$ and otherwise holds. Both are scored through the unchanged SharpeBench conjunction over 16 seeds. The per-seed gate uses the probabilistic Sharpe ratio (PSR), the probability under the kernel's stated sampling model that Sharpe exceeds its reference threshold. The script records the full coarse eligibility set, the sampled strengths at which the kernel conjunction accepts. It refines an \emph{observed crossing bracket} by bisection only when that coarse set is monotone; otherwise it reports the observed set without calling any crossing a threshold. A crossing located under one noise path is a functional of that draw, so the whole procedure (coarse sweep, monotonicity check, bisection) is repeated under five independent noise paths per cell: the first is the path serialized as the primary witness, the other four redraw $\varepsilon_t$. Each bisection bracket is numerical resolution on the stated grid (half-width $0.0016$ in $s$), not a proof that eligibility is globally monotone between unsampled strengths; the spread of the crossing across noise paths is a separate, statistical quantity, and it is what \cref{tab:witness} reports. All 50 attained coarse series (10 cells, five paths each) are monotone.
 
 \begin{table}[t]
 \centering
-\caption{Observed eligibility crossing brackets in signal-truth correlation $s$. Intervals are bisection brackets after a monotone coarse-grid check, not global optima or theorem-level thresholds. ``None'' means that no sampled $s\le1$ is eligible. At every attained crossing, the last failing gate is the requirement that every seed's marginal PSR reach $0.90$.}
+\caption{Observed eligibility crossing in signal-truth correlation $s$: mean [min, max] of the bisection-bracket midpoint over five independent noise paths per cell. The min to max range is variation across noise realizations; the bisection bracket around each individual crossing has half-width $0.0016$ and is not shown. Crossings are found by bisection after a monotone coarse-grid check on every path, and are not global optima or theorem-level thresholds. ``none (0/5)'' means that no sampled $s\le1$ is eligible on any of the five paths. At every one of the 50 attained crossings, the last failing gate is the requirement that every seed's marginal PSR reach $0.90$.}
 \label{tab:witness}
 \small
+\setlength{\tabcolsep}{3.5pt}
 \begin{tabular}{llccc}
 \toprule
 Variant & Band & Calm & Hard & Extreme \\
 \midrule
-\texttt{sign\_follow} & gap-band witness & none & $[0.7250,0.7281]$ & $[0.3000,0.3031]$ \\
-\texttt{sign\_follow} & F1 table & none & $[0.7875,0.7906]$ & $[0.4438,0.4469]$ \\
-\texttt{deadband\_hold} & gap-band witness & $[0.9000,0.9031]$ & $[0.5031,0.5063]$ & $[0.3813,0.3844]$ \\
-\texttt{deadband\_hold} & F1 table & $[0.6563,0.6594]$ & $[0.6188,0.6219]$ & $[0.3688,0.3719]$ \\
+\texttt{sign\_follow} & gap-band witness & none (0/5) & $0.730\ [0.702,0.752]$ & $0.343\ [0.302,0.389]$ \\
+\texttt{sign\_follow} & F1 table & none (0/5) & $0.783\ [0.764,0.820]$ & $0.353\ [0.317,0.445]$ \\
+\texttt{deadband\_hold} & gap-band witness & $0.848\ [0.777,0.930]$ & $0.500\ [0.408,0.623]$ & $0.337\ [0.283,0.383]$ \\
+\texttt{deadband\_hold} & F1 table & $0.690\ [0.620,0.758]$ & $0.621\ [0.483,0.755]$ & $0.342\ [0.283,0.398]$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The result is an existence proof and a calibration, not evidence about an agent. The deadband construction is eligible on every tier, so the observed acceptance set is non-empty. The every-seed gate is last to open at all ten observed thresholds; pooled DSR and bootstrap gates open earlier. The sign follower never becomes eligible on Calm, even at $s=1$, because its every-bar turnover costs more than the low-volatility signal is worth. Thus the environment does not impose an activity requirement, but its cost model does require a Calm policy to ration turnover (\cref{fig:witness}).
+The result is an existence proof and a calibration, not evidence about an agent. The deadband construction is eligible on every tier on every noise path, so the observed eligibility set is non-empty. The every-seed gate is last to open at all 50 observed crossings; pooled DSR and bootstrap gates open earlier. The crossing itself is not a constant of the tier: across noise paths it moves by $0.05$ to $0.27$ in $s$ (a factor of 15 to 85 above the bisection resolution), widest for the deadband policy on Hard, so any single-path threshold is one draw from that range and the table should be read at the precision of the range, not of the bracket. Differences between the two bands are differences between two 16-seed scenario bands as well as between noise draws, and with five paths per cell we do not test them. The sign follower never becomes eligible on Calm, on any of the five paths, because its every-bar turnover costs more than the low-volatility signal is worth; at $s=1$ the noise term vanishes, so that endpoint is noise-invariant by construction, and the failure at every $s<1$ is what the replication adds. Thus the environment does not impose an activity requirement, but its cost model does require a Calm policy to ration turnover (\cref{fig:witness}).
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=0.95\linewidth]{witness}
-\caption{Witness sweep on the gap-band witness subset. Filled markers are eligible sampled points; dashed lines mark bisection thresholds only after monotonicity is verified. The right panels show how many of the 16 seed-level PSR tests pass.}
+\caption{Witness sweep on the gap-band witness subset under the primary noise path. Filled markers are eligible sampled points; dashed lines mark the primary-path bisection crossing, drawn only after monotonicity is verified. Shaded bands (both panels) and the horizontal bars (right panels) give the min to max range and the mean of the crossing over five independent noise paths. The right panels show how many of the 16 seed-level PSR tests pass.}
 \label{fig:witness}
 \end{figure}

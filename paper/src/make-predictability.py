@@ -29,6 +29,7 @@ policy scored through the public ``score_run`` kernel (deflated Sharpe). Writes
 from __future__ import annotations
 
 import json
+import sys
 import time
 from pathlib import Path
 
@@ -38,7 +39,10 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from sharpearena import TradingEnv, score_run
+try:
+    from sharpearena import TradingEnv, score_run
+except ImportError:  # --figures-only reads the committed JSON and needs no bindings
+    TradingEnv = score_run = None
 
 PAPER = Path(__file__).resolve().parents[1]
 EVIDENCE = PAPER / "evidence"
@@ -253,16 +257,23 @@ def main() -> None:
     out.write_text(json.dumps(evidence, indent=2))
     print(f"wrote {out}")
 
+    make_figure(per_tier)
+
+
+def make_figure(per_tier: dict) -> None:
     # Figure: accuracy by tier (left), DSR by tier (right), three adversaries.
+    # Two square-ish panels side by side, drawn at column width (5.5 in) so the
+    # 9 to 10 pt fonts land at print size.
+    FIGURES.mkdir(parents=True, exist_ok=True)
     names = ("baseline", "honest", "oracle")
     labels = ("baseline (prefix mean)", "honest (ridge AR)", "oracle (known seed)")
     colors = ("#9aa0a6", "#1a73e8", "#d93025")
-    fig, axes = plt.subplots(1, 2, figsize=(9.0, 3.2))
+    fig, axes = plt.subplots(1, 2, figsize=(5.5, 3.3))
     x = np.arange(len(TIERS))
     w = 0.26
     for ax, metric, title in (
         (axes[0], "accuracy_mean", "Directional accuracy (next bar)"),
-        (axes[1], "dsr_mean", "Deflated Sharpe (sign-following policy)"),
+        (axes[1], "dsr_mean", "Deflated Sharpe (sign policy)"),
     ):
         err_key = "accuracy_std" if metric == "accuracy_mean" else "dsr_std"
         for k, (name, label, color) in enumerate(zip(names, labels, colors)):
@@ -271,16 +282,23 @@ def main() -> None:
             ax.bar(x + (k - 1) * w, vals, w, yerr=errs, capsize=2,
                    label=label, color=color)
         ax.set_xticks(x)
-        ax.set_xticklabels(TIERS)
+        ax.set_xticklabels(TIERS, fontsize=9)
+        ax.tick_params(labelsize=9)
         ax.set_title(title, fontsize=10)
         ax.spines[["top", "right"]].set_visible(False)
     axes[0].axhline(0.5, ls=":", c="k", lw=0.8)
     axes[0].set_ylim(0, 1.05)
-    axes[0].legend(fontsize=7, frameon=False)
-    fig.tight_layout()
+    handles, labels_ = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels_, fontsize=8.5, frameon=False, ncol=3,
+               loc="lower center", bbox_to_anchor=(0.5, 0.0))
+    fig.tight_layout(rect=(0, 0.07, 1, 1))
     fig.savefig(FIGURES / "predictability.pdf")
     print(f"wrote {FIGURES / 'predictability.pdf'}")
 
 
 if __name__ == "__main__":
-    main()
+    if "--figures-only" in sys.argv:
+        data = json.loads((EVIDENCE / "predictability.json").read_text())
+        make_figure(data["tiers"])
+    else:
+        main()

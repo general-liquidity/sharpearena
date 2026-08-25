@@ -1,12 +1,15 @@
-"""Avellaneda-Stoikov market-making env with a closed-form optimal baseline.
+"""Avellaneda-Stoikov market-making env with a closed-form reference baseline.
 
 A canonical single-asset market-making environment: the agent quotes a bid and an ask
 around a mid that follows a seeded arithmetic random walk, earns the spread on filled
 market-order arrivals, and carries inventory risk (a squared running penalty plus a
 forced terminal liquidation at an unfavorable price). Shipped alongside is the
-Avellaneda-Stoikov *analytically optimal* quoting policy as a committed ground-truth
-baseline, so a learner can be scored on **regret versus a provable optimum** rather than
-on relative ranking alone.
+Avellaneda-Stoikov *closed-form* quoting policy as a committed reference baseline, so a
+learner can be scored on **regret versus a fixed analytical reference** rather than on
+relative ranking alone. The closed form is the source model's asymptotic approximation,
+and it is not proven optimal for this env's reward (which adds an inventory cap, a running
+inventory penalty and a terminal liquidation charge the source model lacks), so the metric
+is regret against a reference, not against a proven optimum.
 
 The model (Avellaneda & Stoikov 2008):
 
@@ -15,8 +18,8 @@ The model (Avellaneda & Stoikov 2008):
   maker's quote at depth ``delta`` with probability ``exp(-kappa * delta)``.
 * The maker's reservation (indifference) price skews with inventory ``q``:
   ``r = s - q * gamma * sigma**2 * tau`` (``tau`` = remaining time).
-* The optimal total spread is ``gamma*sigma**2*tau + (2/gamma)*ln(1 + gamma/kappa)``,
-  i.e. an optimal half-spread ``delta* = gamma*sigma**2*tau/2 + (1/gamma)*ln(1+gamma/kappa)``
+* The model's total spread is ``gamma*sigma**2*tau + (2/gamma)*ln(1 + gamma/kappa)``,
+  i.e. a half-spread ``delta* = gamma*sigma**2*tau/2 + (1/gamma)*ln(1+gamma/kappa)``
   quoted symmetrically around ``r`` — so the inventory-skewed quote depths are
   ``bid_depth = delta* + q*gamma*sigma**2*tau`` and ``ask_depth = delta* - q*gamma*sigma**2*tau``.
 
@@ -46,7 +49,7 @@ class MMParams:
     ``sigma``/``gamma``/``kappa`` are the A-S volatility, risk-aversion and order-book
     depth-decay constants; ``arrival_rate`` is the per-side Poisson market-order intensity
     per unit time; ``n_steps``/``dt`` set the horizon (total time ``n_steps*dt``). The
-    closed-form optimal policy is a pure function of these, so the same params instance
+    closed-form reference policy is a pure function of these, so the same params instance
     feeds both the env and :func:`analytically_optimal_policy`.
     """
 
@@ -70,7 +73,7 @@ class MMParams:
 
 
 def _optimal_depths(q: float, tau: float, p: MMParams) -> tuple[float, float]:
-    """Avellaneda-Stoikov optimal ``(bid_depth, ask_depth)`` at inventory ``q``, remaining
+    """Avellaneda-Stoikov closed-form ``(bid_depth, ask_depth)`` at inventory ``q``, remaining
     time ``tau``. Half-spread widens with time-to-go and skews by inventory; depths are
     clipped to the env's quotable ``[0, max_depth]`` band."""
     skew = q * p.gamma * p.sigma**2 * tau
@@ -213,10 +216,11 @@ class MarketMakingEnv(gym.Env):
 
 
 def analytically_optimal_policy(env_params: MMParams) -> Policy:
-    """The Avellaneda-Stoikov closed-form optimal quoting policy as a ``(obs)->action``
-    callable — the ground-truth optimum this benchmark scores regret against.
+    """The Avellaneda-Stoikov closed-form reference quoting policy as a ``(obs)->action``
+    callable, the fixed analytical reference this benchmark scores regret against. It is
+    the source model's asymptotic closed form, not a proven optimum for this env's reward.
 
-    Reservation price ``r = s - q*gamma*sigma**2*tau`` and optimal half-spread
+    Reservation price ``r = s - q*gamma*sigma**2*tau`` and the model half-spread
     ``delta* = gamma*sigma**2*tau/2 + (1/gamma)*ln(1+gamma/kappa)`` give inventory-skewed
     depths ``bid = delta*+q*gamma*sigma**2*tau``, ``ask = delta*-q*gamma*sigma**2*tau``.
     """
@@ -233,7 +237,8 @@ def analytically_optimal_policy(env_params: MMParams) -> Policy:
 
 def fixed_spread_policy(half_spread: float) -> Policy:
     """A naive symmetric fixed-spread maker: quotes ``half_spread`` on both sides, ignoring
-    inventory and time-to-go. The reference suboptimal policy regret is measured against."""
+    inventory and time-to-go. The candidate policy whose regret against the closed-form
+    reference the F2 sweep measures."""
 
     def policy(obs: dict) -> Action:
         return np.array([half_spread, half_spread], dtype=np.float32)
@@ -262,9 +267,9 @@ def mm_regret(
     seed_base: int = 0,
 ) -> float:
     """Mean reward gap between :func:`analytically_optimal_policy` and ``policy`` over
-    ``n_episodes`` seeded episodes — the regret-vs-optimal metric. Both policies run on the
-    *same* seeds, so the optimal scores ~0 regret against itself and a suboptimal policy
-    scores a positive gap.
+    ``n_episodes`` seeded episodes, the regret-versus-reference metric. Both policies run
+    on the *same* seeds, so the reference scores ~0 regret against itself and a worse
+    policy scores a positive gap; the zero point is the reference, not a proven optimum.
     """
     p = params or MMParams()
     optimal = analytically_optimal_policy(p)

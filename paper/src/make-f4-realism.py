@@ -22,6 +22,7 @@ no part in selection. The sweep never touches the canonical Calm tape.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import matplotlib
@@ -30,7 +31,10 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from sharpearena import SharpeArenaEnv, certify_realism
+try:
+    from sharpearena import SharpeArenaEnv, certify_realism
+except ImportError:  # --figures-only reads the committed JSON and needs no bindings
+    SharpeArenaEnv = certify_realism = None
 
 PAPER = Path(__file__).resolve().parents[1]
 EVIDENCE = PAPER / "evidence"
@@ -247,9 +251,18 @@ def calm_calibration() -> dict:
 
 
 def _plot_calm_calibration(calib: dict) -> None:
+    # Drawn at column width (5.5 in) so fonts land at print size. The per-check
+    # pass-fraction panel exists only when a preset was chosen; with no chosen
+    # preset the figure is the single calibration scatter (the committed
+    # evidence has chosen = null, so the old right-hand panel was blank axes).
+    FIGURES.mkdir(parents=True, exist_ok=True)
     cells = calib["cells"]
     chosen = calib["chosen"]
-    fig, (ax, bx) = plt.subplots(1, 2, figsize=(9, 3.8))
+    if chosen is None:
+        fig, ax = plt.subplots(figsize=(5.5, 3.9))
+        bx = None
+    else:
+        fig, (ax, bx) = plt.subplots(2, 1, figsize=(5.5, 6.6))
     markers = {0.0: "o", 0.3: "s", 0.5: "^"}
     for vc in CALM_VC_GRID:
         sub = [c for c in cells if c["knobs"]["vol_clustering"] == vc]
@@ -282,10 +295,12 @@ def _plot_calm_calibration(calib: dict) -> None:
             zorder=5,
             label="chosen preset",
         )
-    ax.set_xlabel("normalized tape perturbation (RMS / default vol)")
-    ax.set_ylabel("diagnostic seeds passing (of 8)")
+    ax.set_xlabel("normalized tape perturbation (RMS / default vol)", fontsize=10)
+    ax.set_ylabel("diagnostic seeds passing (of 8)", fontsize=10)
     ax.set_yticks(range(0, 9))
-    ax.legend(frameon=False, fontsize=7)
+    ax.tick_params(labelsize=9)
+    ax.legend(fontsize=9, frameon=True, facecolor="white", framealpha=0.85,
+              edgecolor="0.85")
 
     if chosen is not None:
         bands = ("diagnostic", "confirmation", "final", "wide")
@@ -297,10 +312,11 @@ def _plot_calm_calibration(calib: dict) -> None:
             ys = [rep["check_pass_counts"][g] / rep["n_seeds"] for g in gated]
             bx.bar(xs, ys, width=width, label=f"{band} ({rep['n_pass']}/{rep['n_seeds']})")
         bx.set_xticks(range(len(gated)))
-        bx.set_xticklabels(gated, rotation=20, ha="right", fontsize=8)
+        bx.set_xticklabels(gated, rotation=20, ha="right", fontsize=9)
         bx.set_ylim(0, 1.05)
-        bx.set_ylabel("per-check pass fraction, chosen preset")
-        bx.legend(frameon=False, fontsize=7, title="band (conjunction)")
+        bx.tick_params(labelsize=9)
+        bx.set_ylabel("per-check pass fraction, chosen preset", fontsize=10)
+        bx.legend(frameon=False, fontsize=9, title="band (conjunction)")
     fig.tight_layout()
     fig.savefig(FIGURES / "f4-calm-calibration.pdf")
     plt.close(fig)
@@ -379,4 +395,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    if "--figures-only" in sys.argv:
+        data = json.loads((EVIDENCE / "f4-realism.json").read_text())
+        _plot_calm_calibration(data["calm_calibration"])
+        print(f"wrote {FIGURES / 'f4-calm-calibration.pdf'}")
+    else:
+        main()

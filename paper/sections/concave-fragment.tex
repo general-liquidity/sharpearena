@@ -1,6 +1,6 @@
 \subsection{Normalized-flow concavity: a falsifiable symmetric probe}\label{sec:f5-concave}
 
-The linear F5 sweep is primarily a consistency check under the model assumptions of \citet{huberman2004price,gatheral2010no}. To make the probe capable of returning a positive, the engine supplies an opt-in permanent-impact exponent on dimensionless crowd flow $x=Q/V$:
+The linear F5 sweep is primarily a consistency check under the model assumptions of \citet{huberman2004price,gatheral2010no}. Empirical impact estimates are concave in traded quantity rather than linear \citep{almgren2005direct}, so a probe that can only express linear impact cannot return a positive even in principle. To make it capable of one, the engine supplies an opt-in permanent-impact exponent on dimensionless crowd flow $x=Q/V$:
 \[
 I_\beta(Q;V)=\lambda\,\operatorname{sign}(x)|x|^\beta,
 \qquad x=Q/V.
@@ -11,7 +11,7 @@ We rerun the symmetric push-and-unwind sweep at $\beta\in\{0.5,0.7\}$, eight see
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.72\linewidth]{f5-concave}
+\includegraphics[width=\linewidth]{f5-concave}
 \caption{Pointwise impact-attributed P\&L intervals for the sampled symmetric schedule under linear and normalized-flow concave impact.}
 \label{fig:f5-concave}
 \end{figure}

@@ -636,6 +636,61 @@ fn sealed_seed(salt: &[u8], slot: u64) -> PyResult<u64> {
     Ok(sharpearena::sealed_seed(salt, slot))
 }
 
+/// Generate a procedural scenario and return the native engine's own serde-JSON
+/// serialization of it, the exact bytes the Rust core (and, via the identical kernel,
+/// the WebAssembly build) fingerprints with its committed FNV-1a goldens. Exposing the
+/// serialization rather than a Python object lets a Python-side golden test assert the
+/// same cross-runtime fingerprints the native and wasm test suites pin.
+#[pyfunction]
+#[pyo3(signature = (
+    seed,
+    n_symbols = 4,
+    n_days = 120,
+    distribution_mode = "calm",
+    vol_clustering = 0.0,
+    jump_burst_probability = 0.0,
+    jump_burst_persistence = 0.0,
+    jump_burst_size = 0.0,
+))]
+#[allow(clippy::too_many_arguments)]
+fn generate_scenario_json(
+    seed: u64,
+    n_symbols: usize,
+    n_days: usize,
+    distribution_mode: &str,
+    vol_clustering: f64,
+    jump_burst_probability: f64,
+    jump_burst_persistence: f64,
+    jump_burst_size: f64,
+) -> PyResult<String> {
+    let mode = parse_distribution_mode(distribution_mode)?;
+    let spec = ScenarioSpec {
+        n_symbols,
+        n_days,
+        distribution_mode: mode,
+        vol_clustering,
+        jump_burst_probability,
+        jump_burst_persistence,
+        jump_burst_size,
+        ..ScenarioSpec::default()
+    };
+    serde_json::to_string(&generate_scenario(&spec, seed))
+        .map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
+/// The `ScenarioSpec::calm_calibration_candidate` preset generated at `seed`, as the
+/// native serde-JSON serialization, the surface behind the candidate's own committed
+/// golden fingerprint (a reproducible negative-result configuration, not a certified
+/// preset).
+#[pyfunction]
+fn calm_calibration_candidate_scenario_json(seed: u64) -> PyResult<String> {
+    serde_json::to_string(&generate_scenario(
+        &ScenarioSpec::calm_calibration_candidate(),
+        seed,
+    ))
+    .map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
 /// Perturb a `requested` action vector into a realized one via the deterministic Rust
 /// `exec_noise` core — the trading analog of ALE sticky actions. With probability
 /// `delay_prob` the `previous` action is returned (the order lands a bar late); otherwise
@@ -1043,6 +1098,11 @@ fn sharpearena_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(mandate_breach, m)?)?;
     m.add_function(wrap_pyfunction!(perturb_action, m)?)?;
     m.add_function(wrap_pyfunction!(sealed_seed, m)?)?;
+    m.add_function(wrap_pyfunction!(generate_scenario_json, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        calm_calibration_candidate_scenario_json,
+        m
+    )?)?;
     m.add("EVAL_SEED_BASE", sharpearena::EVAL_SEED_BASE)?;
     m.add("MIN_SEALED_SALT_BYTES", sharpearena::MIN_SEALED_SALT_BYTES)?;
     m.add(
