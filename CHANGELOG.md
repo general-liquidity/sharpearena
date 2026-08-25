@@ -10,7 +10,15 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+- adverse_selection: an endogenous arm (`EndogenousImpact`, `compare_endogenous_arms`) in which informed meta-order flow moves the mid through the engine's permanent-impact law (cross-checked against the native clearing engine to 1e-12); makers still profit against informed flow at the default calibration, and the informed-side level crosses zero near lambda 0.27 while the informed-uninformed gap survives the whole sweep ([b750c51](https://github.com/general-liquidity/sharpearena/commit/b750c51)).
+- manipulation: `side` on the asymmetric schedules (mirrored short round trips) and the 60-cell extended sweep over push size, lambda, leg length, hold, short side and follower gain, corrected over the global 195-cell family; the strongest sampled cell is the 45:5 slow-accumulate schedule under concave impact, and followers destroy the manipulator's profit ([b750c51](https://github.com/general-liquidity/sharpearena/commit/b750c51)).
+- manipulation: a fixed-cell 32-fresh-seed confirmation of the selected positive-control schedule (+26.3e-4, [23.7, 28.9]e-4) ([b750c51](https://github.com/general-liquidity/sharpearena/commit/b750c51)).
+- realism: the absolute-return autocorrelation check now uses a reproducible IID-null calibration of the finite-panel estimator instead of a fixed threshold at zero, and aggregational Gaussianity tests reduction in absolute excess kurtosis so platykurtic tape converging to Gaussian is not failed by definition; Fano stays exploratory ([b750c51](https://github.com/general-liquidity/sharpearena/commit/b750c51)).
+- scenario_gen, paper: the Calm-tier tail calibration sweep (99 cells, pre-declared selection rule, disjoint confirmation band); under the calibrated checks no Calm configuration qualifies as certified and the candidate knobs are shipped as `CALM_CALIBRATION_CANDIDATE_KNOBS` with a test that they do not masquerade as a preset ([b750c51](https://github.com/general-liquidity/sharpearena/commit/b750c51)).
+
+### Changed
+- paper: F4 recalibrated (canonical panels 1/24), F3 reports bootstrap intervals instead of a single-gap noise floor, the witness and F3 seed bands are named as the gap-band subset they are, the abstract no longer claims Python bindings are byte-pinned, and the F5 extension intervals use the global family; README aligned ([b750c51](https://github.com/general-liquidity/sharpearena/commit/b750c51)).
 
 ## [0.13.0] - 2026-08-25
 
