@@ -4,13 +4,75 @@ SharpeArena is a Rust workspace of three crates. The crate \texttt{sharpearena} 
 
 \subsection{Point-in-time observation, and the guard behind it}\label{sec:leakfree}
 
-The engine owns the time cursor. On each step it emits a \texttt{MarketObservation} whose per-symbol snapshot carries a trailing window of closes up to the decision date, with optional fundamentals and news channels derived from that same trailing window. There is no API on the data layer that returns a bar after the cursor, so a policy cannot observe a future bar: the property is the shape of the interface, not a rule. It is also only a property of the interface: it bounds what can be requested, not what can be inferred from the trailing window a request returns (see \cref{sec:limitations}). A property test iterates every scenario tier and asserts that no surfaced window extends past the cleared bar and that each window is a suffix of the true history.
+The engine owns the time cursor. On each step it emits a \texttt{MarketObservation} whose per-symbol snapshot carries a trailing window of closes up to the decision date, with optional fundamentals and news channels derived from that same trailing window. There is no API on the data layer that returns a bar after the cursor, so a policy cannot observe a future bar. The guarantee bounds what can be requested, not what can be inferred from the trailing window a request returns (see \cref{sec:limitations}). A property test iterates every scenario tier and asserts that no surfaced window extends past the cleared bar and that each window is a suffix of the true history.
 
 One layer out, at the agent-harness boundary, sits \texttt{LookaheadGuard}, a refusal layer for tools and policies that try to read what the environment will not give. It carries a deny-list of named operations, each mapped to the reason it is refused: reading the raw dataset (the answer key), slicing past the current index, peeking the next bar, or feeding the scenario seed to the policy as a feature, which would identify the episode and trivialize generalization. Substring tells catch novel operation names, and an index check bounds any point-in-time slice: reading an index strictly greater than the current bar raises. A research escape hatch exists as an explicit environment variable, so relaxing the guard is a recorded decision rather than an accident. The guard is defense in depth behind the structural guarantee: a harness that bypasses it still cannot make the environment leak.
 
+\subsection{Observation and action spaces}\label{sec:spaces}
+
+An implementer sees two JSON documents and nothing else. \Cref{tab:obs-space} gives the observation, \cref{tab:act-space} the decision; both schemas are draft 2020-12, both close the object with \texttt{additionalProperties: false}, and both are committed beside the conformance kit of \cref{sec:contract}.
+
+The observation is flat. \texttt{date} is the clock: an ISO-8601 date naming the decision point, and the bound every other field respects. \texttt{cash} is the agent's own cash. \texttt{symbols} carries one snapshot per tradable instrument, and \texttt{portfolio} the agent's own holdings, never a peer's pending state. A snapshot's \texttt{close\_history} is the trailing window: the last $L$ closes up to and including \texttt{date}, oldest first, where $L$ is the scenario's disclosure setting. The default is 20 closes with no optional channels; the shipped presets are a data-poor tier at 3 closes and a data-rich tier at 50 closes plus fundamentals and news. Both optional channels are derived from the surfaced window itself and therefore inherit its cutoff: \texttt{fundamentals} is a named map computed from those closes (trailing return, window high, window low) and \texttt{news} is one deterministic headline per symbol whose wording is a function of the window's trailing return. The v1.0 observation carries no mandate field. The mandate is a scenario-level object (\cref{sec:mandates}) rendered into the episode prompt by the Python task layer, so the fixed reference policies of \cref{sec:experiments} act mandate-blind, which is what the failure taxonomy of \cref{sec:f7} counts.
+
+\begin{table}[t]
+\centering
+\caption{The \texttt{MarketObservation} wire object at contract v1.0. Optional fields default to empty and are absent from the schema's \texttt{required} list by construction, which is what makes an additive field backwards-compatible.}
+\label{tab:obs-space}
+\footnotesize
+\begin{tabular}{@{}llll@{}}
+\toprule
+Field & Type & Presence & Meaning \\
+\midrule
+\multicolumn{4}{@{}l}{\emph{Object} \texttt{MarketObservation}} \\
+\texttt{date} & string (ISO-8601) & required & decision point; the point-in-time cutoff \\
+\texttt{cash} & number & required & cash available to this agent \\
+\texttt{symbols} & array of \texttt{SymbolSnapshot} & required & one snapshot per tradable instrument \\
+\texttt{portfolio} & array of \texttt{PositionState} & required & this agent's holdings; empty at a cold start \\
+\addlinespace
+\multicolumn{4}{@{}l}{\emph{Object} \texttt{SymbolSnapshot}} \\
+\texttt{symbol} & string & required & instrument identifier \\
+\texttt{close\_history} & array of number & required & trailing closes through \texttt{date}, oldest first \\
+\texttt{fundamentals} & map string to number & optional & derived fields; empty by default \\
+\texttt{news} & array of string & optional & derived headlines; empty by default \\
+\addlinespace
+\multicolumn{4}{@{}l}{\emph{Object} \texttt{PositionState}} \\
+\texttt{symbol} & string & required & instrument identifier \\
+\texttt{shares} & number & required & signed holding; negative is a short \\
+\texttt{avg\_price} & number & required & displayed average entry price \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The action space is a signed target-weight vector over the observed universe. A \texttt{Decision} is a list of per-instrument orders plus an optional free-text \texttt{reasoning} string that the trajectory records. An empty order list is a hold. Within an order, \texttt{action} is a label drawn from a closed four-variant enum (\texttt{buy}, \texttt{sell}, \texttt{hold}, \texttt{close}) and carries no sizing; all sizing is in \texttt{target\_weight}, which is a signed target portfolio weight for that symbol. The sign is the shorting semantics: a negative \texttt{target\_weight} is a short position, and the \texttt{signed-weight-short} conformance fixture exercises exactly that case, pairing \texttt{action: sell} with \texttt{target\_weight: -0.3} while a sibling order holds at $0.0$ and a third buys at $0.5$. Adding a fifth action variant is classified as breaking (\cref{sec:contract}) precisely because a consumer that matches the enum exhaustively would misparse it.
+
+Four bounds are asserted by the conformance kit rather than by the schema's type system: every \texttt{action} lies in the enum, every \texttt{target\_weight} is finite, every order \texttt{symbol} is drawn from the universe the observation actually offered, and every \texttt{confidence} lies in $[0,1]$. The schema places no numeric bound on \texttt{target\_weight} itself; the gross-exposure ceiling an episode is graded against is a property of its sampled mandate (\cref{sec:mandates}). A legacy decision that omits \texttt{confidence}, \texttt{rationale} and \texttt{reasoning} still parses and is still well-formed, and the \texttt{legacy-decision-shape} fixture asserts it on every commit.
+
+\begin{table}[t]
+\centering
+\caption{The \texttt{Decision} wire object at contract v1.0. Optional fields carry the stated default, so a decision written against an earlier revision of the surface still parses.}
+\label{tab:act-space}
+\footnotesize
+\begin{tabular}{@{}llll@{}}
+\toprule
+Field & Type & Presence & Meaning \\
+\midrule
+\multicolumn{4}{@{}l}{\emph{Object} \texttt{Decision}} \\
+\texttt{orders} & array of \texttt{Order} & required & per-instrument instructions; empty is a hold \\
+\texttt{reasoning} & string & optional (\texttt{""}) & rationale captured into the trajectory \\
+\addlinespace
+\multicolumn{4}{@{}l}{\emph{Object} \texttt{Order}} \\
+\texttt{symbol} & string & required & identifier; must be an observed symbol \\
+\texttt{action} & enum & required & \texttt{buy}, \texttt{sell}, \texttt{hold} or \texttt{close}; label only \\
+\texttt{target\_weight} & number & required & signed target weight; negative is a short \\
+\texttt{confidence} & number & optional ($0.5$) & stated conviction in $[0,1]$ \\
+\texttt{rationale} & string & optional (\texttt{""}) & per-order rationale \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 \subsection{Determinism across runtimes}\label{sec:determinism}
 
-A scenario is a pure function of one 64-bit seed. The generator's price transform uses only multiply, add, divide and max; it never calls \texttt{ln} or \texttt{exp}, which differ across libm implementations, so a generated panel is byte-identical on any platform and any runtime. The commitment is pinned, not assumed: the source commits FNV-1a fingerprints of canonical generated scenarios and of a scripted order sequence's fill tape. Tests recompute the hashes on every commit, and WebAssembly parity tests require native-identical returns, traces and scenarios. The generator is deliberately public and deterministic; that makes the hashes checkable and future bars computable from a recovered seed. \Cref{sec:predictability} measures the boundary: a causal AR adversary finds no undisclosed stressed-tier edge, but a public bounded band of $2^{16}$ seeds is exhaustively inverted from one observed bar in about one second. Held-out evaluation therefore requires high-entropy unpublished seeds, not merely disjoint public bands.
+A scenario is a pure function of one 64-bit seed. The generator's price transform uses only multiply, add, divide and max; it never calls \texttt{ln} or \texttt{exp}, which differ across libm implementations, so a generated panel is byte-identical on any platform and any runtime. The source commits FNV-1a fingerprints of canonical generated scenarios and of a scripted order sequence's fill tape. Tests recompute the hashes on every commit, and WebAssembly parity tests require native-identical returns, traces and scenarios. The generator is deliberately public and deterministic; that makes the hashes checkable and future bars computable from a recovered seed. \Cref{sec:predictability} measures the boundary: a causal AR adversary finds no undisclosed stressed-tier edge, but a public bounded band of $2^{16}$ seeds is exhaustively inverted from one observed bar in about one second. Held-out evaluation therefore requires high-entropy unpublished seeds, not merely disjoint public bands.
 
 \subsection{Recompute-from-decisions tamper evidence}\label{sec:replay}
 
@@ -18,11 +80,15 @@ A rollout trace is a versioned JSONL artifact that records the agent's decisions
 
 \subsection{Procedural scenarios and disjoint seed bands}\label{sec:scenarios}
 
-Scenario families follow Procgen's integer-seed-interval model \citep{cobbe2020procgen}: Calm, Hard and Extreme volatility-and-jump tiers, a cointegrated-pairs family with a genuinely mean-reverting spread, and a regime-shift family that hands a trend regime over to a whipsaw. The Rust core exposes \texttt{train\_test\_split}, which carves a disjoint test family (two separated integer intervals, with the disjointness asserted in tests) from a bounded train interval and refuses an unbounded one, and \texttt{cross\_regime\_split}, which holds the seed band fixed while swapping the regime, a strictly stronger robustness probe than a within-tier split. The evaluation protocol fixes the canonical bands: train seeds $[0,256)$, an unsampled gap of 10{,}000 seeds, and a held-out test band $[10256,10512)$. The fixed-policy F3 and witness producers instead document their own 16-seed subsets: $[0,16)$ and $[10016,10032)$; the latter is a separated gap-band evaluation subset, not the canonical held-out namespace. The Python layer additionally reserves an absolute evaluation namespace starting at seed $10^6$ and commits a named held-out regression set inside it, with a disjointness guard asserting the set never touches the train band. All of these bands are public and therefore enumerable; for an adversarial evaluation the recommended mode is the sealed derivation of \cref{sec:sealed-seeds}, which keeps the band structure checkable while hiding the concrete seeds behind a salt. Overfitting is then a measurement: \texttt{generalization\_gap} scores the same policy on disjoint named bands and reports the differenced deflated Sharpe, and \texttt{cross\_regime\_transfer} reports the in-distribution minus zero-shot out-of-distribution gap over identical seeds, which is zero by construction when the regimes coincide.
+Scenario families follow Procgen's integer-seed-interval model \citep{cobbe2020procgen}: Calm, Hard and Extreme volatility-and-jump tiers, a cointegrated-pairs family with a mean-reverting spread, and a regime-shift family that hands a trend regime over to a whipsaw. The Rust core exposes \texttt{train\_test\_split}, which carves a disjoint test family (two separated integer intervals, with the disjointness asserted in tests) from a bounded train interval and refuses an unbounded one, and \texttt{cross\_regime\_split}, which holds the seed band fixed while swapping the regime, a different and generally harder probe than a within-tier split. The evaluation protocol fixes the canonical bands: train seeds $[0,256)$, an unsampled gap of 10{,}000 seeds, and a held-out test band $[10256,10512)$. The fixed-policy F3 and witness producers instead document their own 16-seed subsets: $[0,16)$ and $[10016,10032)$; the latter is a separated gap-band evaluation subset, not the canonical held-out namespace.
+
+The Python layer additionally reserves an absolute evaluation namespace starting at seed $10^6$ and commits a named held-out regression set inside it, with a disjointness guard asserting the set never touches the train band. All of these bands are public and therefore enumerable; for an adversarial evaluation the recommended mode is the sealed derivation of \cref{sec:sealed-seeds}, which keeps the band structure checkable while hiding the concrete seeds behind a salt.
+
+Overfitting is then a measurement. \texttt{generalization\_gap} scores the same policy on disjoint named bands and reports the differenced deflated Sharpe, and \texttt{cross\_regime\_transfer} reports the in-distribution minus zero-shot out-of-distribution gap over identical seeds, which is zero by construction when the regimes coincide.
 
 \subsection{The task suite and the closed-form reference policy}\label{sec:tasks}
 
-Beyond the canonical position-trading environment, the suite ships a simplex-allocation portfolio task, a VWAP/TWAP implementation-shortfall execution task, and two market models with genuine microstructure: an endogenous shared-book market where aggregate agent flow moves the cleared price through a Kyle permanent-impact term \citep{kyle1985continuous} and an Almgren--Chriss temporary-impact term \citep{almgren2001optimal}, and a deterministic limit-order-book market with integer ticks, price-time priority, a single-price call-auction uncross and a read-only walk-the-book sweep-cost query.
+Beyond the canonical position-trading environment, the suite ships a simplex-allocation portfolio task, a VWAP/TWAP implementation-shortfall execution task, and two market models: an endogenous shared-book market where aggregate agent flow moves the cleared price through a Kyle permanent-impact term \citep{kyle1985continuous} and an Almgren--Chriss temporary-impact term \citep{almgren2001optimal}, and a deterministic limit-order-book market with integer ticks, price-time priority, a single-price call-auction uncross and a read-only walk-the-book sweep-cost query.
 
 Both market models clear once per step at a single price, so the trading mechanism is closer to a frequent batch auction \citep{budish2015high} than to a continuous-time limit order book. The competition margins that continuous markets create, latency races, queue-position value, sniping of stale quotes, do not exist in the environment, and no maker-taker fees or rebates are modeled: every Sharpe, regret and markout in \cref{sec:experiments} is gross of fees. The restriction is deliberate, it keeps clearing deterministic and byte-reproducible, and it makes the environment a batch-auction laboratory rather than a latency one, but it is a scope restriction and results should be read inside it.
 
@@ -30,13 +96,11 @@ The market-making task is the suite's calibration instrument. It implements the 
 
 \subsection{Mandates and deferred claims}\label{sec:mandates}
 
-Each scenario can sample a trading mandate, long-only, market-neutral, drawdown-capped or beat-a-benchmark, and the objective is conditioned on it: \texttt{mandate\_breach} detects structural violations from the realized weights and returns, and the training rubric penalizes wrong-objective behavior rather than merely not rewarding it. A deterministic failure taxonomy classifies every episode into a single worst-case-first disposition, cascade-wiped before bankrupt before stopped-out before mandate breach before clean, and a suite-level rollup tallies the distribution with a schema that always carries every mode.
+Each scenario can sample a trading mandate, and the objective is conditioned on it. A mandate pairs one of five structural styles, long-only, market-neutral, momentum, unconstrained and pairs-convergence, with up to three optional constraints layered on top of that style: a realized-drawdown cap, a per-bar gross-exposure cap on $\sum_i |w_i|$, and a benchmark symbol to beat. Unconstrained is the permissive control, and the two styles that need a short leg, market-neutral and pairs-convergence, are excluded when the environment disallows shorting, so a sampled mandate is never unsatisfiable by construction: \texttt{mandate\_breach} detects structural violations from the realized weights and returns, and the training rubric penalizes wrong-objective behavior rather than merely not rewarding it. A deterministic failure taxonomy classifies every episode into a single worst-case-first disposition, cascade-wiped before bankrupt before stopped-out before mandate breach before clean, and a suite-level rollup tallies the distribution with a schema that always carries every mode.
 
 Questions that resolve after the episode get the same structural treatment as look-ahead. A \texttt{DeferredDesk} is the only object the agent touches: its entire state is a list of claims and one integer clock advanced by the harness, it holds no dataset and no environment reference, and it computes no score, so there is no code path from a claim to its resolving datum. Resolution is a free function over claims and outcomes that refuses any outcome available at or before the claim's commit bar and any outcome predating the stated horizon. The agent cannot see the answer at commit time because the object it holds cannot produce one.
 
 \subsection{The probe layer: distrusting the simulator}\label{sec:probes}
-
-A synthetic market can flatter agents in ways real markets do not, so the suite probes itself.
 
 \textbf{Realism.} A stylized-facts battery computes excess kurtosis, absolute-return autocorrelation, gain/loss skew and aggregational Gaussianity in the sense of the classical catalogue \citep{cont2001empirical}, plus a timescale-asymmetry statistic in the sense of \citet{zumbach2009time} and an exploratory Fano exceedance-count ratio (the variance-to-mean ratio of the number of large-return exceedances per equal-length block, which is 1 for an IID Poisson-like count and above 1 when exceedances bunch). \texttt{certify\_realism} gates kurtosis, an ACF value above the fixed 95th-percentile IID null for its exact short-panel estimator, and movement of absolute excess kurtosis toward zero on aggregation. Fano is reported but ungated: it is normalized by its exact conditional-IID finite-panel expectation, yet 12 count windows remain too noisy for a certificate. Certification is reported beside the results rather than required for the leaderboard, and the canonical configuration fails it on 23 of 24 seeded panels (\cref{sec:f4}). The intended endgame is a generator revision that passes on disjoint calibration seeds or leaderboard claims conditioned on certification; until then the gate keeps the failure visible.
 

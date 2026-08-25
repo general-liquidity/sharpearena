@@ -15,9 +15,39 @@
     "reasoning": {
       "type": "string",
       "description": "Free-text rationale captured into the trajectory. Optional; defaults to empty."
+    },
+    "cost": {
+      "$ref": "#/$defs/DecisionCost",
+      "description": "Self-reported compute spend for producing this decision. Optional; omitted entirely when not reported. The scoring kernel accumulates it into the run cost that drives the cost-normalized leaderboard columns."
     }
   },
   "$defs": {
+    "DecisionCost": {
+      "type": "object",
+      "description": "Self-reported spend for one decision. Every field defaults to zero, so a partial report still validates.",
+      "additionalProperties": false,
+      "properties": {
+        "cost_usd": {
+          "type": "number",
+          "description": "Dollar cost of the compute spent on this decision. The preferred unit."
+        },
+        "tokens_in": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Prompt/input tokens consumed."
+        },
+        "tokens_out": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Completion/output tokens produced."
+        },
+        "reasoning_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Reasoning tokens, surfaced separately. Providers typically bill these inside tokens_out, so they are not re-added to the token total."
+        }
+      }
+    },
     "Order": {
       "type": "object",
       "required": ["symbol", "action", "target_weight"],

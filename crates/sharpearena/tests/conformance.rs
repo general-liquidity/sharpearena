@@ -16,7 +16,10 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
-use sharpearena::{Action, Agent, BuyAndHold, Decision, MarketObservation, CONTRACT_VERSION};
+use sharpearena::{
+    Action, Agent, BuyAndHold, Decision, DecisionCost, MarketObservation, Order, PositionState,
+    SymbolSnapshot, CONTRACT_VERSION,
+};
 
 /// The frozen wire version this kit certifies against. A bump here is a deliberate,
 /// reviewed event (see `GOVERNANCE.md`), not an accident of editing.
@@ -98,5 +101,119 @@ fn conformance_fixtures_yield_well_formed_decisions() {
     assert!(
         fixtures >= 4,
         "expected the full conformance kit, found {fixtures}"
+    );
+}
+
+// -- published schema vs the types it claims to describe ----------------------
+
+/// Every key a fully-populated value serializes to, at the top level.
+fn serialized_keys<T: serde::Serialize>(value: &T) -> BTreeSet<String> {
+    match serde_json::to_value(value).expect("value serializes") {
+        serde_json::Value::Object(map) => map.keys().cloned().collect(),
+        other => panic!("expected a JSON object, got {other}"),
+    }
+}
+
+/// The property names a schema object declares.
+fn schema_properties(schema: &serde_json::Value, pointer: &str) -> BTreeSet<String> {
+    schema
+        .pointer(pointer)
+        .unwrap_or_else(|| panic!("schema has no {pointer}"))
+        .as_object()
+        .unwrap_or_else(|| panic!("{pointer} is not an object"))
+        .keys()
+        .cloned()
+        .collect()
+}
+
+/// `contract/decision.schema.json` is published as the authoritative wire contract, and it
+/// sets `additionalProperties: false`. That makes any field present on the Rust type but
+/// absent from the schema an interoperability break rather than a documentation gap: a
+/// conforming non-Rust implementer validating a Rust-emitted decision would reject it.
+/// `Decision::cost` drifted in exactly this way, and it was invisible because `cost` is
+/// `skip_serializing_if = "Option::is_none"`, so only a cost-reporting agent tripped it.
+/// This test populates every optional field so the comparison sees the full surface.
+#[test]
+fn published_decision_schema_matches_the_protocol_types() {
+    let schema: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string("contract/decision.schema.json").expect("schema is readable"),
+    )
+    .expect("schema is valid JSON");
+
+    let order = Order {
+        symbol: "TSLA".into(),
+        action: Action::Sell,
+        target_weight: -0.3,
+        confidence: 0.7,
+        rationale: "downtrend".into(),
+    };
+    let decision = Decision {
+        orders: vec![order.clone()],
+        reasoning: "tilt short".into(),
+        cost: Some(DecisionCost {
+            cost_usd: 0.014,
+            tokens_in: 2048,
+            tokens_out: 256,
+            reasoning_tokens: 64,
+        }),
+    };
+
+    assert_eq!(
+        serialized_keys(&decision),
+        schema_properties(&schema, "/properties"),
+        "Decision fields and decision.schema.json properties have drifted",
+    );
+    assert_eq!(
+        serialized_keys(&order),
+        schema_properties(&schema, "/$defs/Order/properties"),
+        "Order fields and the schema's Order definition have drifted",
+    );
+    assert_eq!(
+        serialized_keys(&decision.cost.expect("cost was populated above")),
+        schema_properties(&schema, "/$defs/DecisionCost/properties"),
+        "DecisionCost fields and the schema's DecisionCost definition have drifted",
+    );
+}
+
+/// The same guard for the observation half of the contract.
+#[test]
+fn published_observation_schema_matches_the_protocol_types() {
+    let schema: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string("contract/observation.schema.json").expect("schema is readable"),
+    )
+    .expect("schema is valid JSON");
+
+    let snapshot = SymbolSnapshot {
+        symbol: "TSLA".into(),
+        close_history: vec![240.0, 235.5],
+        fundamentals: [("pe".to_string(), 61.4)].into_iter().collect(),
+        news: vec!["deliveries beat".into()],
+    };
+    let position = PositionState {
+        symbol: "TSLA".into(),
+        shares: 0.5,
+        avg_price: 250.0,
+    };
+    let observation = MarketObservation {
+        date: "2025-05-05".into(),
+        cash: 1.0,
+        symbols: vec![snapshot.clone()],
+        portfolio: vec![position.clone()],
+    };
+
+    assert_eq!(
+        serialized_keys(&observation),
+        schema_properties(&schema, "/properties"),
+        "MarketObservation fields and observation.schema.json properties have drifted",
+    );
+    assert_eq!(
+        serialized_keys(&snapshot),
+        schema_properties(&schema, "/$defs/SymbolSnapshot/properties"),
+        "SymbolSnapshot fields and the schema's definition have drifted",
+    );
+    assert_eq!(
+        serialized_keys(&position),
+        schema_properties(&schema, "/$defs/PositionState/properties"),
+        "PositionState fields and the schema's definition have drifted",
     );
 }
