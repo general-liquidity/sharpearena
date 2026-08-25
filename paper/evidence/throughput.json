@@ -1,0 +1,120 @@
+{
+  "panel": {
+    "n_symbols": 4,
+    "n_days": 120
+  },
+  "episodes_per_repeat": 500,
+  "repeats": 3,
+  "steps_per_repeat": 60000,
+  "python_generation_scenarios_per_s": {
+    "median": 44026.09874705792,
+    "runs": [
+      47877.586546391605,
+      44026.09874705792,
+      34286.262906591175
+    ]
+  },
+  "python_steps_per_s": {
+    "median": 14240.219158767613,
+    "runs": [
+      14955.504383398762,
+      13259.233077860088,
+      14240.219158767613
+    ]
+  },
+  "python_episode_wall_ms": {
+    "median": 8.426836600061506,
+    "runs": [
+      8.02380159997847,
+      9.050297200097702,
+      8.426836600061506
+    ]
+  },
+  "canonical_evaluation": {
+    "band": [
+      10256,
+      10512
+    ],
+    "seeds": 256,
+    "tiers": [
+      "calm",
+      "hard",
+      "extreme"
+    ],
+    "policy_rows": 18,
+    "episodes": 4608,
+    "seconds": {
+      "median": 301.90276069997344,
+      "runs": [
+        305.03928490000544,
+        301.90276069997344,
+        276.79904429998714
+      ]
+    }
+  },
+  "native": {
+    "generation_scenarios_per_s": {
+      "median": 50031.0,
+      "runs": [
+        50596.0,
+        50031.0,
+        49719.1
+      ]
+    },
+    "steps_per_s": {
+      "median": 747468.0,
+      "runs": [
+        743761.0,
+        747468.0,
+        748812.0
+      ]
+    },
+    "episode_wall_ms": {
+      "median": 0.161,
+      "runs": [
+        0.161,
+        0.161,
+        0.16
+      ]
+    }
+  },
+  "wasm": {
+    "panel": {
+      "n_symbols": 4,
+      "n_days": 120
+    },
+    "episodes_per_repeat": 500,
+    "repeats": 3,
+    "steps_per_episode": 100,
+    "wasm_generation_scenarios_per_s": {
+      "median": 29211.408807823984,
+      "runs": [
+        25325.816630957266,
+        29211.408807823984,
+        30492.825038268496
+      ]
+    },
+    "wasm_steps_per_s": {
+      "median": 508126.982965551,
+      "runs": [
+        501615.704183174,
+        508126.982965551,
+        534321.0435931167
+      ]
+    },
+    "wasm_episode_wall_ms": {
+      "median": 0.1968012,
+      "runs": [
+        0.1993558,
+        0.1968012,
+        0.1871534
+      ]
+    },
+    "node": "v24.18.0"
+  },
+  "host": {
+    "platform": "Windows-11-10.0.26220-SP0",
+    "processor": "AMD64 Family 25 Model 8 Stepping 2, AuthenticAMD",
+    "python": "3.12.6"
+  }
+}

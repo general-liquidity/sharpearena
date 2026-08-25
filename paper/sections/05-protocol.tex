@@ -1,0 +1,54 @@
+\section{Benchmarking protocol}\label{sec:protocol}
+
+This section is written for someone who wants to evaluate an agent in SharpeArena rather than for someone reading our results. It fixes the seed bands, the seed counts, the seed-custody mode, the scoring path and the verification step. The rules below are the ones our own producers follow, stated prescriptively; where a producer departs from them, we say so and say why.
+
+\subsection{Seed bands: what to train on and what to evaluate on}\label{sec:protocol-bands}
+
+Train on the bounded band $[0,256)$. Evaluate on the held-out band $[10256,10512)$. The unsampled gap of 10{,}000 seeds between them is part of the protocol, not a formatting artifact: adjacent integer seeds are cheap to enumerate from a published train interval, and the gap makes an accidental overlap visible as an out-of-band seed rather than as a plausible one. \texttt{train\_test\_split} carves that structure and refuses an unbounded train interval; the disjointness is asserted in the crate's tests rather than left to the caller.
+
+Two bands that appear in this paper are \emph{not} the canonical held-out namespace, and results reported on them should not be described as held-out results. The fixed-policy F3 producer uses a 16-seed train subset $[0,16)$ and a 16-seed gap-band evaluation subset $[10016,10032)$; the rank-eligibility witness of \cref{sec:witness} uses the same gap-band subset and, separately, the F1 table band. Both subsets are separated from the train band, and neither is $[10256,10512)$. We use them because the fixed reference policies have nothing to overfit, so the smaller subsets cost nothing in interpretation and buy tractable runtimes for a probe repeated under five noise paths per cell. A submitted agent has parameters and therefore does not get that exemption: report it on the full canonical band.
+
+Report the cross-regime transfer matrix alongside the within-tier gap. A within-tier gap is structurally blind to the quantity \cref{sec:f3} measures, namely how much score a regime switch moves for a policy selected on one tier, and both metrics run from the same committed scripts. The Python surface additionally reserves an absolute evaluation namespace starting at seed $10^6$ with a committed held-out regression set inside it and a disjointness guard against the train band; use that namespace for regression testing a harness, not for reporting agent scores.
+
+\subsection{Seed counts}\label{sec:protocol-seeds}
+
+Run all 256 seeds of the held-out band on each tier you report. The reason is resolution, and this paper measures it directly. At 16 seeds, a per-seed pass rate near one half carries a nominal 95\% half-width of about $0.24$, and a difference between two such rates about $0.35$ (\cref{sec:f1}); a bounded, heavily deflated score bootstrapped over 16 seeds produces intervals that span most of $[0,1]$ (\cref{sec:f3}); and on the market-making task, 16 paired episodes detect a mean regret of about 12 reward units at 80\% power and a two-sided 5\% level, roughly a third of the regret a badly miscalibrated quoter incurs (\cref{sec:f2}). Sixteen seeds resolve the shape of a curve and the sign of a collapse. They do not resolve a ranking between two nearby agents, and a leaderboard built on them would be reporting seed luck.
+
+State the dispersion convention beside every number. We report three: seed-resampled percentile bootstrap intervals for deflated-Sharpe quantities, t-based intervals over committed per-episode vectors for paired quantities, and plain counts where the quantity is a count. Whichever convention you use, serialize the per-seed or per-episode vector behind the interval, as the producers under \texttt{paper/src/} do, so a reader can recompute it. Any claim narrower than the reported interval is outside the design's reach and should not be made.
+
+\subsection{Seed custody, and what is forbidden}\label{sec:protocol-custody}
+
+Every band named above is public and therefore enumerable. \Cref{sec:predictability} measures what that costs: a scan of a public $2^{16}$ band recovers the true seed from a single observed bar in about a second, and a recovered seed makes every future bar of the episode exactly computable. For any evaluation whose result is meant to survive an adversarial reading, use the sealed derivation of \cref{sec:sealed-seeds}: publish the salt hash before entries arrive, withhold the salt during scoring, and reveal it afterwards so anyone can recompute the named seeds and replay the run. The band structure stays checkable without the salt, so disjointness from the train band remains verifiable by construction.
+
+Any public bounded-band evaluation should be treated as compromised until it documents sealed seed custody, a pre-entry commitment, a non-reuse policy and a reveal deadline. This is a statement about the protocol, not an accusation about any particular run: the scan is cheap enough that assuming it was not performed is unreasonable.
+
+Three prohibitions bind a submitted agent, and each has an enforcing layer rather than a promise. Reaching past the cursor is forbidden: reading the raw dataset, slicing past the current index and peeking the next bar are refused by \texttt{LookaheadGuard} at the harness boundary and are structurally unavailable at the environment's own surface (\cref{sec:leakfree}). Feeding the scenario seed to the policy as a feature is forbidden, because it identifies the episode and makes the generalization protocol meaningless. Enumerating or reconstructing the evaluation seeds, by band scan or otherwise, is forbidden, and sealed derivation is what makes that prohibition enforceable rather than honour-based. Relaxing the guard is possible for research use through an explicit environment variable, which records the decision; a run that sets it is not a protocol-conformant evaluation.
+
+\subsection{Scoring and verification}\label{sec:protocol-scoring}
+
+The environment contains no scorer, and an entrant does not supply one. Scores are computed by the SharpeBench kernel: deflated Sharpe with the declared trial count \citep{bailey2014deflated}, a per-run reliability gate, and the process gates that zero entries bypassing risk controls \citep{toca2026sharpebench}. Rank eligibility is the conjunction of those legs, not any one of them, and \cref{sec:f1} shows why: deflation alone crowns drift on the calm tier, and the reliability gate alone misses the search breadth deflation discounts. Declare the trial count honestly. \Cref{sec:f3} contains a worked instance of what happens otherwise: the same policy on the same sixteen seeds scores $0.1231$ or $0.1114$ depending only on how many trials the deflation prior is told to consume.
+
+Submit the trajectory, not the returns. A conformant trajectory is a versioned JSONL artifact recording the agent's decisions; returns, NAV and every derived quantity are recomputed at verification time by replaying those decisions against the frozen scenario (\cref{sec:replay}). To verify a submission, regenerate the scenario from the declared seed and pass it with the trajectory to the replay verifier (\texttt{replay\_submission} in the Rust core, \texttt{replayRun} in the npm package), then check that the recomputed run is byte-identical to the reported one. Because the engine is deterministic across the covered surface, a mismatch is evidence of tampering or of a misdeclared scenario, and the npm package's test suite exercises exactly that case by doctoring every order's target weight and asserting the replay diverges. A reviewer who runs the verifier does not have to trust the entrant, the host or us.
+
+\subsection{Compute cost}\label{sec:protocol-compute}
+
+The protocol above is cheap, and we measure that rather than assert it. \Cref{tab:throughput} reports throughput for the three shipped surfaces on the canonical $4 \times 120$ panel, measured on one AMD Zen~3 desktop under Windows 11 by the single command in \cref{app:commands}, which times the Python surface in process and shells out to the other two. The three surfaces do not run identical workloads, and the table says which is which. The scenario-generation column is the same function emitting the same canonical JSON bytes on all three, so those three numbers are directly comparable. The stepping columns are not. The native row steps a scalar \texttt{TradingEnv} through the Rust API with no serialization per step. The Python row steps the Gymnasium adapter, which crosses the binding and encodes a JSON \texttt{Decision} on every step, and pays a factor of about 52 for it. The WebAssembly row runs a whole baseline episode inside the kernel with one boundary crossing per episode, so its per-step figure measures the kernel rather than the interface.
+
+\begin{table}[t]
+\centering
+\caption{Measured throughput per surface on a $4\times120$ panel, median of three repeats of 500 episodes each. Scenario generation produces the canonical JSON serialization on every surface and is the one directly comparable column. Steps per second and episode wall time reflect each surface's own stepping path, described in the text: the native and Python rows step 120 bars per episode, the WebAssembly row runs a 100-bar baseline episode inside the kernel.}
+\label{tab:throughput}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{l p{5.0cm} rrr}
+\toprule
+Surface & Stepping path & Scenarios/s & Steps/s & Episode (ms) \\
+\midrule
+Native Rust & scalar \texttt{TradingEnv} through the Rust API, no per-step serialization & 50{,}031 & 747{,}468 & 0.161 \\
+WebAssembly & baseline episode inside the kernel, one boundary crossing per episode & 29{,}211 & 508{,}127 & 0.197 \\
+Python & Gymnasium adapter, JSON \texttt{Decision} encoded on every step & 44{,}026 & 14{,}240 & 8.43 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The number that matters for a submission is the cost of one protocol-conformant evaluation. Running the full six-policy reference field over the canonical held-out band on all three tiers, 4{,}608 episodes and 552{,}960 steps, takes \SI{302}{\second} of wall clock on the Python surface, the slowest of the three and the one an entrant is most likely to use. That is roughly 1{,}830 steps per second rather than the 14{,}240 of the stepping row, because the evaluation figure also carries the reference policies' own computation and the SharpeBench kernel's scoring; a single agent's single-tier evaluation is one sixth of it. A learning baseline is not blocked by the environment either: at the Python surface's measured stepping rate, ten million environment steps cost about \SI{12}{\minute} of environment time, and at the native rate about \SI{13}{\second}, so the compute constraint \cref{sec:limitations} names belongs to the learner rather than to the simulator. Throughput is hardware-dependent, and it is the one class of number in this paper a replicator should expect to differ.
