@@ -121,7 +121,7 @@
       "sha256": "1b261a44ed779c208322c8dce4d35a385c5070d610b882aca6d456ca198389dc"
     }
   ],
-  "generated_at_head": "2dbf9656355070ff54f7bb1e8eb0170183bd8a88",
+  "generated_at_head": "5d76482e464bd8c05b6ed7505f60c148dea4db2e",
   "generated_at_head_dirty": true,
   "reproduction_entrypoint": "commands in paper/sections/A-commands.tex",
   "schema_version": 3,
@@ -528,7 +528,7 @@
     },
     {
       "path": "paper/sections/09-limitations.tex",
-      "sha256": "4d70d1739e2229cc8a08977bb40d0afbb492d8c0c890eebffda199a11c4fa7f0"
+      "sha256": "926068ead357a5b3204a61a7cdbb3ea01e65409ca921d21b2ace5dc6c279a745"
     },
     {
       "path": "paper/sections/10-reproducibility.tex",
@@ -618,6 +618,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "fcbf5b885ab89c112413a42d18c79dadf728ec503686fb8bcdf7702eaef65b1f",
+  "source_snapshot_sha256": "28901637da4e6696fef6f4205c998df78aab260c06087d90f0be601f208a6786",
   "validator": "paper/src/check-provenance.py"
 }
