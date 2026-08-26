@@ -6,9 +6,27 @@ version covers the Rust crates, the npm package and the PyPI package; each
 section is one `v*` tag and links the commits it was built from. The wire
 contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
-[Unreleased]: https://github.com/general-liquidity/sharpearena/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/general-liquidity/sharpearena/compare/v0.17.0...HEAD
 
 ## [Unreleased]
+
+## [0.17.0] - 2026-08-26
+
+### Added
+- py: `EdgeManifest`, a closed schema binding a generated candidate to its hypothesis, the mechanism it claims, the regimes and instruments it claims them in, its invariants, quantitative kill conditions and a verification plan. Falsifiability is part of the candidate artifact instead of prose written after selection. The schema is closed: a missing required field invalidates the candidate rather than synthesizing a default, and every threshold carries an explicit unit drawn from a closed enum, so a table cannot mix basis points, dollars and unit fractions in one untyped column. The manifest is recorded with the raw candidate and its trial ordinal, before validation or deduplication, and kill conditions are evaluated only outside the selection sample ([89c77cf](https://github.com/general-liquidity/sharpearena/commit/89c77cf)).
+- py: strict silver-to-gold trace promotion, which turns a flagged production trace into a frozen regression scenario. A malformed or incomplete trace is rejected rather than skipped. The fingerprint is deterministic over environment, model, scaffold, contract, data and the process-event sequence. Deterministic checks run before anything else, silver candidates are immutable and carry the triggering check with the source trace hash, promotion to gold requires a recorded operator decision, and what is frozen is a minimal scenario plus its expected invariant rather than a transcript. The existing permissive reader is untouched: strictness is a separate mode, not a tightening of the exploratory path ([94197b3](https://github.com/general-liquidity/sharpearena/commit/94197b3)).
+- py: a counterfactual ledger. Every decision the environment produces gets a record whether or not it was acted on, so the gap between what was considered and what was executed is measurable rather than invisible. Selection effects are what these products exist to measure, and leaving the unexecuted half unrecorded would hide exactly that. It costs nothing in the deterministic arm, where the counterfactual is recomputable from the frozen scenario ([12c1d94](https://github.com/general-liquidity/sharpearena/commit/12c1d94)).
+- py: `submission_unknown` is a representable paper-execution state. A forward order could previously be submitted, acknowledged, filled or rejected, but there was no way to say the submission got no verdict at all. The state is reachable only from `submitted` and leaves only to `reconciled_accepted` or `reconciled_absent`; ack latency is `None` until a real acknowledgment arrives and is computed from two recorded timestamps. A replacement is permitted only after the broker confirms absence, queried by the deterministic client order id, and exactly once; a broker that cannot be queried raises rather than resolving anything, so an unanswerable query can never be mistaken for a confirmed absence. The store is written before the submit call, on the unknown transition and after every reconciliation, so an order left unresolved by a crash is still unresolved after a restart rather than silently resubmitted. Account state, previously read from the plan file and never reconciled, is now reconciled against the broker while keeping the session anchor and ratcheting peak equity. Every transition and the hash of each raw broker acknowledgment reaches the forward evidence, which stays distinct from deterministic backtest evidence and carries no replay guarantee. No real-capital path is added: the origin is validated and then reassigned unconditionally to the paper host, both new calls are GETs that read state, and the deny-first risk guard, redirect refusal and market-only restriction are untouched ([ee32c33](https://github.com/general-liquidity/sharpearena/commit/ee32c33)).
+
+### Changed
+- paper: `paper/evidence/provenance.json` is re-pinned over this work and passes at 117 sources and 29 artifacts ([4c5cb88](https://github.com/general-liquidity/sharpearena/commit/4c5cb88)).
+
+### Fixed
+- transport: a masked hold is a failed cell, never a return series. The external transports cannot signal an error through the `Agent` trait, so a wire fault returned an empty-orders hold and recorded the fault into a `TransportHealth`. Against the native engine an empty-orders decision is a **true hold**: the position persists. A wedged agent therefore rode its last position for the rest of the window, the run completed, and it yielded a return series indistinguishable from a deliberately conservative agent's. The health record was the only mitigation, and the crate re-exported neither `TransportDiagnostics` nor `TransportHealth`, so no consumer could name the type, let alone read it; a repository-wide search found zero readers. `transport_gate` is the reader: `run_backtest_checked` runs an external agent and converts any recorded fault into a typed failed `CellOutcome`, and the diagnostics types are re-exported alongside the transports they describe. A failure is evidence, never a hold ([7d633d7](https://github.com/general-liquidity/sharpearena/commit/7d633d7)).
+
+### Known limitations
+- py: partial-fill accumulation in the paper arm is last-write-wins rather than summing fill deltas, so a sequence of partial fills records the last reported quantity instead of the accumulated one.
+- py: `reconcile_all` has no retry. An unanswerable broker query raises and halts the run, which is the safe direction, but it stops a session on a flaky broker.
 
 ## [0.16.0] - 2026-08-26
 
@@ -212,6 +230,7 @@ First published release, as OpenOutcry.
 ### Fixed
 - ci: toolchain pinned to 1.96.0 for the wasm32 target; a virtualenv for maturin ([bb0ee4d](https://github.com/general-liquidity/sharpearena/commit/bb0ee4d)).
 
+[0.17.0]: https://github.com/general-liquidity/sharpearena/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/general-liquidity/sharpearena/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/general-liquidity/sharpearena/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/general-liquidity/sharpearena/compare/v0.13.0...v0.14.0

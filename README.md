@@ -3,7 +3,7 @@
 
 # SharpeArena
 
-### The point-in-time environment for trading agents, and the contract they speak
+### The agentic point-in-time environment for trading agents, and the contract they speak
 
 *Whoever defines the agent interface owns the ecosystem. SharpeArena is the leak-free trading floor every agent runs on, and the language-agnostic contract that makes any agent scorable.*
 
@@ -25,10 +25,13 @@
 
 An eval is useless without an environment. A benchmark scores *trajectories*; something has to **produce** them. SharpeArena is that producer: a leak-free, point-in-time market environment wrapped in a dead-simple, language-agnostic agent contract. **The harness sends an `Observation`, the agent returns a `Decision`, repeat.**
 
-Two properties make it trustworthy rather than a toy:
+The agent on the other side of that loop is increasingly a language model rather than a policy network, so the environment is built to drive one: a fixed prompt scaffold, constrained decoding, strict host-side validation of the canonical `Decision`, exact model and runtime provenance on every record, and a typed fault whenever the model's output or its transport fails. Around that loop sit two adjacent arms, a strategy generator whose deflation trial count comes from candidates the **host** counted rather than the model reported, and a forward paper arm that submits only to a paper endpoint. Classical RL agents run through the identical stepping surface; nothing about the Gymnasium, PettingZoo or `verifiers` paths changed to make room for the agentic one.
 
-1. **Look-ahead is structurally impossible.** The environment owns the time cursor and the data layer has *no API to read a future bar*, so an agent cannot peek by construction, not by policing.
+Three properties make it trustworthy rather than a toy:
+
+1. **Look-ahead is structurally impossible.** The environment owns the time cursor and the data layer has *no API to read a future bar*, so an agent cannot peek by construction, not by policing. A `LookaheadGuard` refuses agent operations that read future data, and the deferred-claims desk holds no dataset, no env and no path to future data at all.
 2. **Trajectories are recompute-from-raw-decisions.** A run records only the agent's decisions; a separate verifier replays them against the frozen data to recompute a **byte-identical** result. A tampered trajectory recomputes differently, so an agent cannot lie about its returns.
+3. **A failure is evidence, never a hold.** A wire fault, a malformed decision, an unknown symbol or a timeout produces a typed failed cell. It is never flattened into an empty-orders decision, which against this engine is a *true hold* that silently carries the previous position forward and yields a return series indistinguishable from a deliberately conservative agent's.
 
 The strategic bet is **interface ownership**: if every trading agent in the open ecosystem conforms to SharpeArena's `Observation`/`Decision` contract, then [SharpeBench](https://crates.io/crates/sharpebench-core) is the natural scorer and the whole funnel (env, trajectory, score, leaderboard) runs on one standard. This is the OpenAI-Gym moment for trading agents. The interface *is* the product; the simulator is the credibility behind it.
 
@@ -82,6 +85,8 @@ Beyond the core `reset`/`step` lifecycle, the environment now ships a full **rei
 | **Benchmark protocol** | A committed [`EVALUATION.md`](EVALUATION.md): the canonical eval contract, the disjoint train/held-out split, and a baseline leaderboard (no baseline is rank-eligible: drift saturates the deflated Sharpe on Calm but no baseline passes pass^k on every seed, and pass^k degrades Calm to Hard to Extreme). |
 | **Behavioral counterparties** | Deliberately biased policies (`DispositionEffectPolicy` trims winners early and holds/tops up losers; `OverconfidentPolicy` over-sizes a 3-bar signal and churns the book every step) as counterparties and a realism floor, not strategies. Kept out of the ranked reference set on purpose, so the deflation trial count the leaderboard is scored against stays honest. |
 | **Harness integration** | An MCP server (`reset` / `step` / `spec` tools) so any MCP agent harness drives an episode with zero glue, a `LookaheadGuard` that refuses agent operations reading future data, versioned JSONL rollout traces that re-score offline through the SharpeBench kernel, and a cost-adjusted `RunMetrics` block for leaderboard ranking. |
+| **Transport fault gate** | `run_backtest_checked` runs an external agent and converts any fault recorded in `TransportHealth` into a typed failed `CellOutcome`, and `TransportDiagnostics` / `TransportHealth` are re-exported so a consumer can name the types at all. The external transports cannot signal an error through the `Agent` trait, so a wire fault produced an empty-orders decision, which against this engine is a true hold: the position persists. A wedged agent used to ride its last position for the rest of the window and complete with a return series indistinguishable from a conservative agent's. A failure is now a failed cell, never a return series. |
+| **Agentic candidate discipline** | An `EdgeManifest` per generated candidate (hypothesis, mechanism, claimed regimes and instruments, invariants, unit-typed kill conditions, verification plan; closed schema, missing required field invalidates), a counterfactual ledger that records every decision whether or not it was acted on, and strict silver-to-gold promotion of flagged traces into frozen minimal scenarios behind a recorded operator decision. |
 
 The determinism-critical core (the engine, scoring, scenario generation, mandates, the market-clearing model, the execution-noise integrity knob) lives in **Rust** so a published number is byte-identical across every surface; the per-ecosystem adapters (gymnasium, PettingZoo, Minari, verifiers, MCP) are thin and live in the language each ecosystem speaks.
 
@@ -94,7 +99,8 @@ The local field runner is built, but no model result is reported yet. SharpeAren
 ```text
 local model + fixed scaffold
             ↓
-SharpeArena environment and sandbox
+SharpeArena environment: point-in-time stepping, canonical
+decision parsing, execution and process trace
             ↓
 append-only decisions, process trace and returns
             ↓
@@ -105,7 +111,9 @@ SharpeBench scorer and leaderboard
 
 This is operational interdependence without a package cycle. SharpeArena uses the small published SharpeBench protocol/simulator/kernel crates; SharpeBench does not depend on the full SharpeArena package. The bridge refuses incomplete grids, failed cells, coordinate collisions, conflicting completions and invalid return hashes.
 
-The shipped local path includes constrained Ollama inference, strict host-side validation, native vector stepping, cadence and thinking controls, stable sharding, append-only resume and exact model/runtime provenance. Syntax-constrained output is not trusted as semantic validation: malformed JSON, unknown or duplicate symbols, action/weight contradictions, timeouts and transport failures are recorded as faults and never flattened into a hold. CI uses deterministic model doubles; it downloads no weights and reports no performance result.
+**On containment.** SharpeArena provides no process or container isolation and does not claim any. It runs the model process the operator points it at, in the operator's own environment. The fail-closed OCI containment path for *untrusted* entrants lives in the sibling `sharpebench-arena` crate, and that boundary has not been observed to hold: its smoke test skipped invisibly for its whole life and the daemon on the development machine is not running. What SharpeArena earns is a different property, structural leak-freedom: the time cursor belongs to the environment, the data layer has no API for a future bar, and the `LookaheadGuard` refuses agent operations that read future data. Leak-freedom is not containment. Run only models and scaffolds you trust.
+
+The shipped local path includes constrained Ollama inference, strict host-side validation, native vector stepping, cadence and thinking controls, stable sharding, append-only resume and exact model/runtime provenance. Syntax-constrained output is not trusted as semantic validation: malformed JSON, unknown or duplicate symbols, action/weight contradictions, timeouts and transport failures are recorded as faults and never flattened into a hold. That last property is enforced at the transport, not just intended: `run_backtest_checked` reads the recorded `TransportHealth` and turns any fault into a typed failed cell, so a wedged agent cannot ride its last position to the end of the window and return a series that reads as caution. CI uses deterministic model doubles; it downloads no weights and reports no performance result.
 
 ```bash
 sharpearena-local-field \
@@ -117,9 +125,19 @@ sharpearena-compile-bench local-evidence/field.jsonl \
   --output-dir local-evidence/bench
 ```
 
-Two adjacent paths are also built. Strategy generation emits a closed, non-executable JSON DSL; every raw candidate is counted before validation or deduplication, validation and test windows are disjoint, and the observed candidate count is supplied to the deflation calculation. The forward arm accepts read-only market data and submits only to an in-memory broker or Alpaca's fixed paper endpoint after a deny-first native risk check. It has no real-capital endpoint or override, and its provider-time-dependent evidence is explicitly non-replayable.
+Two adjacent paths are also built.
 
-The August 2026 model study distinguishes frontier availability from local feasibility. It covers Gemma 4, Qwen3.8, Kimi K3, DeepSeek V4, GLM-5.2, Inkling and Ornith 1.5, plus llama.cpp, vLLM, SGLang, TensorRT-LLM, Transformers and Ollama. On the current 16 GB RTX A4000, the trillion-parameter flagships are comparison targets rather than local downloads; feasible field arms must be selected by exact checkpoint, quantization and measured placement. See [`docs/LOCAL_AGENT_ARCHITECTURE.md`](docs/LOCAL_AGENT_ARCHITECTURE.md), [`docs/LOCAL_MODEL_MATRIX_2026.md`](docs/LOCAL_MODEL_MATRIX_2026.md) and [`docs/SANDBOX_ENVIRONMENT_RESEARCH_2026.md`](docs/SANDBOX_ENVIRONMENT_RESEARCH_2026.md).
+**Strategy generation on host-counted trials.** The generator emits a closed, non-executable JSON DSL. Every raw candidate is counted before validation or deduplication, validation and test windows are disjoint, and the observed candidate count, not a self-reported one, is what feeds the deflation calculation. Each candidate carries an **`EdgeManifest`**: a closed schema binding it to a hypothesis, the mechanism it claims, the regimes and instruments it claims them in, its invariants, quantitative kill conditions and a verification plan. Falsifiability is part of the artifact rather than prose written after selection. Because the schema is closed, a missing required field invalidates the candidate instead of synthesizing a default, and every threshold carries an explicit unit from a closed enum, so a table cannot silently mix basis points, dollars and unit fractions in one untyped column. Kill conditions are evaluated only outside the selection sample.
+
+**A forward paper arm.** It accepts read-only market data and submits only to an in-memory broker or Alpaca's fixed paper endpoint, after a deny-first native risk check. There is no real-capital endpoint and no override: the origin is validated and then reassigned unconditionally to the paper host, and redirects are refused. Its provider-time-dependent evidence is explicitly non-replayable and stays in a separate class from deterministic backtest evidence. The execution state machine treats "we never heard back" as its own state rather than collapsing it into a rejection: `submission_unknown` is reachable only from `submitted` and leaves only to a reconciled-accepted or reconciled-absent verdict, ack latency stays `None` until a real acknowledgment arrives, a replacement is permitted only after the broker confirms absence by deterministic client order id and exactly once, and a broker that cannot be queried raises rather than resolving anything. State is persisted before the submit call, on the unknown transition and after every reconciliation, so an order left unresolved by a crash is still unresolved after a restart rather than silently resubmitted. Account state is reconciled against the broker instead of read from the plan file, so limits are not measured against a stale book after the first remote fill.
+
+Two limitations of that arm are worth stating up front: partial-fill accumulation is last-write-wins rather than summing fill deltas, and `reconcile_all` has no retry, so an unanswerable broker query halts the run. Halting is the safe direction, but it will stop a session on a flaky broker.
+
+**Everything considered is recorded, not just what was executed.** A counterfactual ledger records every decision the environment produces whether or not it was acted on, so the gap between the considered and the executed set is measurable rather than invisible. Selection effects are the thing these products exist to measure; leaving the unexecuted half unrecorded would hide exactly that. In the deterministic arm it costs nothing, because the counterfactual is recomputable from the frozen scenario.
+
+**Flagged traces can become frozen regressions.** Strict silver-to-gold promotion turns a flagged production trace into a permanent scenario. A malformed or incomplete trace is rejected rather than skipped; the fingerprint is deterministic over environment, model, scaffold, contract, data and the process-event sequence; deterministic checks run before anything else; silver candidates are immutable and carry the triggering check with the source trace hash; promotion to gold requires a recorded operator decision; and what is frozen is a minimal scenario plus its expected invariant, not a transcript with a prose rubric attached. The existing permissive reader is untouched, so strictness is a separate mode rather than a tightening of the exploratory path.
+
+The August 2026 model study distinguishes frontier availability from local feasibility. It covers Gemma 4, Qwen3.8, Kimi K3, DeepSeek V4, GLM-5.2, Inkling and Ornith 1.5, plus llama.cpp, vLLM, SGLang, TensorRT-LLM, Transformers and Ollama. On the current 16 GB RTX A4000, the trillion-parameter flagships are comparison targets rather than local downloads; feasible field arms must be selected by exact checkpoint, quantization and measured placement. Of the tags pulled on that machine, `ornith:9b` at 5.24 GB is the only one that fits the card; `qwen3.6:27b` at 16.22 GB, `ornith:35b` at 19.71 GB and `qwen3.6:35b` at 22.29 GB all exceed 16 GB before the KV cache and will spill to CPU. Size an arm by the pulled size `ollama list` prints, not by the parameter count. See [`docs/LOCAL_AGENT_ARCHITECTURE.md`](docs/LOCAL_AGENT_ARCHITECTURE.md), [`docs/LOCAL_MODEL_MATRIX_2026.md`](docs/LOCAL_MODEL_MATRIX_2026.md) and [`docs/SANDBOX_ENVIRONMENT_RESEARCH_2026.md`](docs/SANDBOX_ENVIRONMENT_RESEARCH_2026.md).
 
 ## Quickstart
 
@@ -275,9 +293,9 @@ sharpebench-sim (published) ...... the leak-free point-in-time engine
 
 | Crate / package | Role |
 |:--|:--|
-| **`sharpearena`** | The Rust moat: `TradingEnv` (`reset`/`step`), `VecTradingEnv` (batched), the procedural scenario generator, the mandate and execution-noise cores, the `MarketClearing` impact engine, the `Scenario`/crisis-suite bundle, the re-exported wire contract plus scored `Run`, `CONTRACT_VERSION`, the conformance kit, and reference agents. |
+| **`sharpearena`** | The Rust moat: `TradingEnv` (`reset`/`step`), `VecTradingEnv` (batched), the procedural scenario generator, the mandate and execution-noise cores, the `MarketClearing` impact engine, the `Scenario`/crisis-suite bundle, the re-exported wire contract plus scored `Run`, `CONTRACT_VERSION`, the conformance kit, the `transport_gate` that turns a recorded transport fault into a typed failed cell, and reference agents. |
 | **`sharpearena-wasm`** | Pure JSON kernels (`run_baseline`, `replay_run`, `generate_scenario`, ...) plus wasm-bindgen exports, the identical engine for JS/TS. |
-| **`sharpearena-py`** | A pyo3 extension over the Rust cores plus the thin ecosystem adapters: Gymnasium (`Env`/`vector`/registration), PettingZoo (competition + endogenous market), `verifiers`, Minari, checkpointing, `FuncEnv`, wrappers, traces and MCP; the local open-weight field scheduler and SharpeBench artifact bridge; the observed-trial strategy DSL; and the separate paper-only forward arm (built by maturin). Optional extras: `verifiers`, `minari`, `pettingzoo`, `mcp`. |
+| **`sharpearena-py`** | A pyo3 extension over the Rust cores plus the thin ecosystem adapters: Gymnasium (`Env`/`vector`/registration), PettingZoo (competition + endogenous market), `verifiers`, Minari, checkpointing, `FuncEnv`, wrappers, traces and MCP; the local open-weight field scheduler and SharpeBench artifact bridge; the observed-trial strategy DSL with its closed `EdgeManifest`; the counterfactual ledger; strict silver-to-gold trace promotion; and the separate paper-only forward arm with its `submission_unknown` execution state machine (built by maturin). Optional extras: `verifiers`, `minari`, `pettingzoo`, `mcp`. |
 | **`@general-liquidity/sharpearena`** | The typed npm wrapper over the WASM kernel. |
 
 ## Tech stack
