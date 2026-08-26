@@ -121,7 +121,7 @@
       "sha256": "1b261a44ed779c208322c8dce4d35a385c5070d610b882aca6d456ca198389dc"
     }
   ],
-  "generated_at_head": "744b9f7283dfc79dde80fe159eb44d1cd70631d3",
+  "generated_at_head": "7adde439ea4c0cadfa6f3a142ec1227c4bf648e2",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
