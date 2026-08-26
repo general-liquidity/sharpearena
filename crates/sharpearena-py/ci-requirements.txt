@@ -1,5 +1,7 @@
 gymnasium==1.2.1
 h5py==3.13.0
+jax==0.6.1
+jaxlib==0.6.1
 jsonschema==4.23.0
 mcp==1.28.1
 minari==0.5.3
