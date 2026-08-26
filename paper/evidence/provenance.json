@@ -121,30 +121,41 @@
       "sha256": "1b261a44ed779c208322c8dce4d35a385c5070d610b882aca6d456ca198389dc"
     }
   ],
-  "generated_at_head": "5d76482e464bd8c05b6ed7505f60c148dea4db2e",
+  "generated_at_head": "0112c451d0890ec4326cfd7906ff99cfa29d8c01",
   "generated_at_head_dirty": true,
+  "model_artifact_scope": [
+    "paper/evidence/model-artifacts/*.json"
+  ],
+  "model_artifacts": [],
+  "model_identity_fields": [
+    "model",
+    "digest",
+    "quantization",
+    "server",
+    "server_version"
+  ],
   "reproduction_entrypoint": "commands in paper/sections/A-commands.tex",
-  "schema_version": 3,
+  "schema_version": 4,
   "source_files": [
     {
       "path": "Cargo.lock",
-      "sha256": "2ab075b4e33fa8ded68297740d5f306323fded382aea535c16d2f287c4fba43f"
+      "sha256": "27ac5d0ccfe81b40c4c5907db0cafaa33b1cf0bbf8f9dd712845ee4f4f70cd94"
     },
     {
       "path": "Cargo.toml",
-      "sha256": "27a322ca44e3de4c25a7b349364f816ab753a0046c64bfda59168cb2f34fa03e"
+      "sha256": "81343bce32351610111a0dd93de745d7687353c5312f70a511d1c977e4fbd623"
     },
     {
       "path": "crates/sharpearena-py/Cargo.toml",
-      "sha256": "2e3688dacb9e122a00c3e01c11f7ad2f25956dbea7de10702012bb22db36fbb5"
+      "sha256": "03dd5a73a831f39861ac2e946d880e1c5f9bab48288218fd1f042fd5dde7e1dc"
     },
     {
       "path": "crates/sharpearena-py/pyproject.toml",
-      "sha256": "efe46ed06db283bafebaf7c689ba9d2e1adc3447791cbd9c2ae5007085f658c3"
+      "sha256": "ca448af225a6052d4e494fd66d8b70ce8945aeef01828a2ed3cad952ce2b5337"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/__init__.py",
-      "sha256": "4eb16e8fbcdafecd974599dbbdad95a8fec7728bccbd84e5e62f89da66a3f331"
+      "sha256": "1bd359416be60f608cc426a4e1a6279adbba661b18c3e0773720f55f04a89e24"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/adverse_selection.py",
@@ -156,7 +167,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/bench_bridge.py",
-      "sha256": "07828a01064f568b4d253d5d37bfac280ba2c3e30e39e2684dda3137e6c83f39"
+      "sha256": "eca704ff07e42c48a961b362fd1fb8ea25efa42800bf7c037dd9851e685dbf4f"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/cascade.py",
@@ -176,7 +187,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/counterfactual.py",
-      "sha256": "4a1fd84022f85cf5775dc46924fba80c3e7e77c45cfd2e121a903a303e66e9bb"
+      "sha256": "523e9437ac225ff47ff04c02fae5b309158b71897c81b401923538ff798c0117"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/curriculum.py",
@@ -192,7 +203,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/decision_parser.py",
-      "sha256": "580a5be61acf2ef8dfb9b467583067e66f66de7c34f6688d2534491ed8bcf333"
+      "sha256": "e51907c14a590fbd13f6df5ae1bd295d1ab4c978bc64f9caa271fddec0ffbe36"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/deferred.py",
@@ -208,7 +219,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/edge_manifest.py",
-      "sha256": "178c344a0aa838ad3288a5cb246bdce8c8bbdf2b217b9eb25af213f1c5d274bb"
+      "sha256": "58be91d348e88b94febcc9cc58d261fa132edb9d4cf31c7b290c0af651e9e113"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/eval_seeds.py",
@@ -252,11 +263,11 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/local_agents.py",
-      "sha256": "850cfda0b76e816b71104a1bb88fba2614f81b9d19560adb398a5071e70e3d8c"
+      "sha256": "3bdbe318b844455b761d18df18ea8e6a7c0b5f2a4345fc2d5af207abd0e07ea9"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/local_field_cli.py",
-      "sha256": "64bb7cf1fc07831b117e1fcbb6afc7fea1c44b9c2ece5a0ca8f15528980d9502"
+      "sha256": "995a0d108e77b54407b1ad5a38928401632b79942779eb24b3df5c9c1a81c91e"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/lookahead_guard.py",
@@ -280,7 +291,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/mcp_server.py",
-      "sha256": "6df103958145ab5bfcbc98ee2ae377a61c3581cf614734b7111d5c9f6cc37faf"
+      "sha256": "cad8e49af939bf96b95bed4dcbcdbaeedf2c741cf4a9b0ded0d531de6f5a1e28"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/metrics.py",
@@ -300,11 +311,11 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/ollama_shim.py",
-      "sha256": "4d15691e211192b6b89bc8383808d45bf379ffa45803dab4008b0139a46a6dfe"
+      "sha256": "f176d7d9063a400fa61107d51cc4162bf713d87d636529b5c1f07ad451fc4c39"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/openai_compatible_shim.py",
-      "sha256": "32bebceda63996696c6d3dc7665bb4a70fa8a74c4beca3026b0653c90b3fb651"
+      "sha256": "fc40e3f56e39fa5196c8aa57146707364ddad7481439aea1ae461a20b60fdcba"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/pairs.py",
@@ -312,11 +323,11 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/paper_cli.py",
-      "sha256": "cfcb70715779b108ef1b8c090f70e78bbd6a53812d23e4c19b4ce1fe75ddd043"
+      "sha256": "980c47aac257be1468f689ebff012134a28a331dcd98fb5f0618751293e57771"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/paper_trading.py",
-      "sha256": "de91cebd233311bca6516420edacca8ddb59e81579258ea634bd9c7c7a12b207"
+      "sha256": "9c29ed9e2fcc8039c1d588c7855f720cef14e5f7d30a80aacbec29e7da6f9c1c"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/pettingzoo_env.py",
@@ -364,11 +375,11 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/strategy_cli.py",
-      "sha256": "91f50b8b0cae0a1fc08af1d087f5cdefc6bf3789773f6259548d0a4481307daf"
+      "sha256": "fa275cf1a284496eece933e391e0f8e86e9553baa512f3e3ce6f53fb6d84d9db"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/strategy_generation.py",
-      "sha256": "e45454bfd7a8b4713adc5dbadf2de5d99d212f21f0881d649bb34f998c048b95"
+      "sha256": "3ee165545c05d96693b3941f564432b02b287d2268519a8a5db7e6f52a18b42c"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/trace.py",
@@ -376,7 +387,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/trace_promotion.py",
-      "sha256": "db3e98ad95e715d6de177b0cc05b4c85d60eb28c66b227ca30e5946934f3ef3c"
+      "sha256": "4cf84f634bcffb6d14f3817408900f37f56c9128613970ce403125db65e72b2f"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/vector.py",
@@ -384,7 +395,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/verifiers_env.py",
-      "sha256": "ab7ad0600485c54935783629049110d0fe3604061de2f428edca1c2bda274545"
+      "sha256": "edb9315a8d0e9600119a4c039168ef9125fc4cb0d1327d2ad69c22d484b132df"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/wrappers.py",
@@ -396,11 +407,11 @@
     },
     {
       "path": "crates/sharpearena-py/src/lib.rs",
-      "sha256": "e6ac9a749104376eef0d9e6ae8f2c04d7559ac902e55ed862507cbac09f5693e"
+      "sha256": "6e7f6312d22043ebace7af8aee8762f649d6bb0ab62d2d2f513681a88b672728"
     },
     {
       "path": "crates/sharpearena-wasm/Cargo.toml",
-      "sha256": "cbb5a8fe58e0eb47627370b36cb51b9011b102d34869365b3549ec298abfb573"
+      "sha256": "00a35eb50a28e11e50543dbbe250c5db1ae1900b043432cf89ace60166a25ae7"
     },
     {
       "path": "crates/sharpearena-wasm/src/lib.rs",
@@ -408,7 +419,7 @@
     },
     {
       "path": "crates/sharpearena/Cargo.toml",
-      "sha256": "acc17db4269f28b03401858f1e6716d0153900aeaec7a4175ea13c3104de9869"
+      "sha256": "4ce28cbb5bc2ea7a72262bae78d75b3f56d912f1a218aa492b6cb0a77185dd1c"
     },
     {
       "path": "crates/sharpearena/examples/bench-steps.rs",
@@ -464,7 +475,7 @@
     },
     {
       "path": "crates/sharpearena/src/transport_gate.rs",
-      "sha256": "2e1dca4b40ce7a71f28fdb19c8a7178b2bbda5469fe76f6d5923535152fe1c4c"
+      "sha256": "ee10655f66533fd7885101b263e21140d0c2361ccdd1e5de0842c53c38b29ba4"
     },
     {
       "path": "crates/sharpearena/src/vec_env.rs",
@@ -476,7 +487,7 @@
     },
     {
       "path": "crates/sharpearena/tests/smoke.rs",
-      "sha256": "64988b06a4dc16afa73dafc9eb9e53c5c87b631830a3bb8895444a94ed756f01"
+      "sha256": "9b3e9e23e894792916ff3ec2b077056626c8a9a859e6f73379012ce056ebf3d0"
     },
     {
       "path": "paper/main.tex",
@@ -504,15 +515,15 @@
     },
     {
       "path": "paper/sections/04-contract.tex",
-      "sha256": "35de69d0a6544059554d551cecb09f5588c9c353ad835d913f99804e1d6a39b5"
+      "sha256": "923dcde4b2172785d46f69b9d9bd01a9b0999732cf3a3d5e152566c99581e443"
     },
     {
       "path": "paper/sections/05-agentic.tex",
-      "sha256": "572e411ded212713d1f5a37fad5aa5670190a90ab0616c0d6fd7e3642d42963e"
+      "sha256": "b9601c2902fc43e8b0be68096185e6ae91241d930eecd6a4d6f4af1b4a0e8f3d"
     },
     {
       "path": "paper/sections/05-protocol.tex",
-      "sha256": "36836c406faf63ef8eee894757f696efe42d12067536da59d9dfb46b118ce1fb"
+      "sha256": "ca509b6cbc641ecf9b06a628e7bd120d6323d3317d1cdf6be8d03ae5cb48521a"
     },
     {
       "path": "paper/sections/06-validation.tex",
@@ -528,7 +539,7 @@
     },
     {
       "path": "paper/sections/09-limitations.tex",
-      "sha256": "926068ead357a5b3204a61a7cdbb3ea01e65409ca921d21b2ace5dc6c279a745"
+      "sha256": "a672544ae2f832098cb95a4ae4dae57699977818cd2d74638b2a4e79816974ba"
     },
     {
       "path": "paper/sections/10-reproducibility.tex",
@@ -536,11 +547,11 @@
     },
     {
       "path": "paper/sections/A-commands.tex",
-      "sha256": "f2d3f514fe5ee49fe85508cc81b2d984873c9afa1032cf4dc0e9b492a6849298"
+      "sha256": "12d07bf401e10793197f9d60edb19effd833e43fe41585619763ceb4ca552beb"
     },
     {
       "path": "paper/src/check-provenance.py",
-      "sha256": "b66d5c84fee5b3479ddea4058ce778c5297f0abaec1dd516982eed4f0c472bbc"
+      "sha256": "8f86e957341a677ea53b35c7923e5a320abe0221407af6144a6a3ea5e979ac60"
     },
     {
       "path": "paper/src/make-f1-baselines.py",
@@ -584,7 +595,7 @@
     },
     {
       "path": "paper/src/make-provenance.py",
-      "sha256": "575f8809095bb0a9981859ebeeb7bf0602fc11a837ee165b7946052c1589b696"
+      "sha256": "53693d5c9b3978f9622c3054d7d5e08090fbc58ebcbd228b269f751181be14d5"
     },
     {
       "path": "paper/src/make-sealed-seeds.py",
@@ -618,6 +629,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "28901637da4e6696fef6f4205c998df78aab260c06087d90f0be601f208a6786",
+  "source_snapshot_sha256": "b87a383feeead3ee7563e57f8ecc93ce285a8a4ad4327b96064920196bfa808e",
   "validator": "paper/src/check-provenance.py"
 }
