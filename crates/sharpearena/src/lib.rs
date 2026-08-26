@@ -76,6 +76,12 @@ pub use market::{
     ImpactCoefficients, MarketClearing, MarketParams,
 };
 
+// --- Transport-fault gate: a masked hold is a failed cell, never a return series ----------
+
+pub mod transport_gate;
+pub use sharpebench_sim::transport::{DecideError, TransportDiagnostics, TransportHealth};
+pub use transport_gate::{run_backtest_checked, transport_fault, CellOutcome, TransportFault};
+
 // --- Point-in-time simulator surface (extraction from `sharpebench-sim`) ------------------
 
 pub use sharpebench_sim::{
@@ -98,7 +104,10 @@ pub use sharpebench_sim::{
     // O(1) env state snapshot (clone_state / restore_state) — sharpebench-sim 0.0.8.
     EnvState,
     // External transports — a conforming agent is just a program that reads observations
-    // (stdin / `POST /decide`) and writes decisions.
+    // (stdin / `POST /decide`) and writes decisions. The diagnostics types travel with
+    // them: a wire fault returns an empty-orders hold, so the health record is the only
+    // thing that distinguishes a masked fault from a deliberate hold, and a consumer that
+    // cannot name the type cannot read it. See `transport_gate`.
     ExternalAgent,
     HoldAgent,
     HttpAgent,
