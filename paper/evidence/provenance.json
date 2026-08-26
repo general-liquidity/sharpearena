@@ -121,7 +121,7 @@
       "sha256": "1b261a44ed779c208322c8dce4d35a385c5070d610b882aca6d456ca198389dc"
     }
   ],
-  "generated_at_head": "ee32c331afb727b9c7dd6dc909cbb94025c24f2c",
+  "generated_at_head": "4c5cb8851faa6e0935797e98f6ceb4008cef4d77",
   "generated_at_head_dirty": true,
   "reproduction_entrypoint": "commands in paper/sections/A-commands.tex",
   "schema_version": 3,
@@ -480,7 +480,7 @@
     },
     {
       "path": "paper/main.tex",
-      "sha256": "b0092add26f7daad2fde92c98d29c1d83f4dad387d9ae656a8651c790cab4882"
+      "sha256": "05b1935e7f64612873b4022ac71a9298935ccaf18e90293aedb60b52cec9862e"
     },
     {
       "path": "paper/refs.bib",
@@ -488,27 +488,31 @@
     },
     {
       "path": "paper/sections/00-abstract.tex",
-      "sha256": "4e20bc0bab4d13abd06672e4eb99bc169cfa7a4ca759704cb8a6b7ac43aea9a2"
+      "sha256": "91ec182059f0014b9594b5e8a9bf1087b8c15faa36d468cb3acf0403ca476c90"
     },
     {
       "path": "paper/sections/01-introduction.tex",
-      "sha256": "9d4af0872a869eb1e4f7195833e2b1265524acb2871d63c81474052fb438c145"
+      "sha256": "e9706596a18441d4d7004b0e94e7ff34cc487491085d7b984cf5050fe846ea26"
     },
     {
       "path": "paper/sections/02-principles.tex",
-      "sha256": "a34ebe517c28d49269987a0b9a507f91dec56cf96d853ffe724d251c754cf112"
+      "sha256": "bd8606694451c1aa136c7948706f444635c7dfa2a72a000c8bf2e48326a8d75c"
     },
     {
       "path": "paper/sections/03-environment.tex",
-      "sha256": "ddddb938680808b38b56e62a3d8d0bbc98290b664c98ead944721da5c5285ad5"
+      "sha256": "6f4e3ef8d8a05395a728b6e5f6aa7f78c3217288464c21b67bb33e6d3f4c9023"
     },
     {
       "path": "paper/sections/04-contract.tex",
-      "sha256": "df9fd219e0c81f27de906bdc2db6e1d9a3a519ced924efd487eb9287923308db"
+      "sha256": "35de69d0a6544059554d551cecb09f5588c9c353ad835d913f99804e1d6a39b5"
+    },
+    {
+      "path": "paper/sections/05-agentic.tex",
+      "sha256": "572e411ded212713d1f5a37fad5aa5670190a90ab0616c0d6fd7e3642d42963e"
     },
     {
       "path": "paper/sections/05-protocol.tex",
-      "sha256": "e41eeff92291b55f514a79598d2ca7297803da4d04514186d7c7f1e1017b8db8"
+      "sha256": "36836c406faf63ef8eee894757f696efe42d12067536da59d9dfb46b118ce1fb"
     },
     {
       "path": "paper/sections/06-validation.tex",
@@ -520,19 +524,19 @@
     },
     {
       "path": "paper/sections/08-related.tex",
-      "sha256": "b14ff3768cd10ae9518e88308c03fedf90adbe156dde14bf3a874e71f5db98b2"
+      "sha256": "2c5607edd31b874399382adfb1023928fd554a08c9b6140eaa655be62554dfed"
     },
     {
       "path": "paper/sections/09-limitations.tex",
-      "sha256": "985b415e2fe9c26cb9e48e72d901f98b6d2d340d755dbb771bef74770308aaed"
+      "sha256": "4d70d1739e2229cc8a08977bb40d0afbb492d8c0c890eebffda199a11c4fa7f0"
     },
     {
       "path": "paper/sections/10-reproducibility.tex",
-      "sha256": "cb565befb58e68aaa66bc40742d660b2996cc8a76024919e2f10200048d1ab23"
+      "sha256": "ee61c25aece548a5f271705e2b3a85b1fe81ad1089a90c4499e0d6846391056e"
     },
     {
       "path": "paper/sections/A-commands.tex",
-      "sha256": "a6cfa7822e6daca9079f7f06484e7e09bfa0eb9b6c6e31539a062dec0ed0e5cd"
+      "sha256": "f2d3f514fe5ee49fe85508cc81b2d984873c9afa1032cf4dc0e9b492a6849298"
     },
     {
       "path": "paper/src/check-provenance.py",
@@ -614,6 +618,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "d2a2b2b5c2aeede42cc257621a6f0a8d456d607e6e08154a6e39f08e491cf664",
+  "source_snapshot_sha256": "06a92e0e3e76d72b668ef9d51fb3e989dbd48a32574c57ead0941d7864a385aa",
   "validator": "paper/src/check-provenance.py"
 }

@@ -1,12 +1,14 @@
 \section{Design principles}\label{sec:principles}
 
-Every decision in the environment traces to one of seven principles.
+Every decision in the environment traces to one of eight principles.
 
 \textbf{Leak-free at the interface.} The environment owns the time cursor, and the data layer exposes no operation that returns a bar after it. An agent cannot peek through the interface because there is nothing to call, not because a rule forbids it. Detection layers exist, but they sit behind the structural guarantee, never in place of it. What an agent might infer in-band from the observations the interface does return, given a public deterministic generator, is a separate question, treated in \cref{sec:limitations}.
 
 \textbf{Deterministic across runtimes.} A published number must be byte-identical on any platform and any surface. The determinism-critical core is one Rust engine; its scenario transform uses only multiply, add, divide and max, because \texttt{ln} and \texttt{exp} differ across libm implementations. Golden hashes committed in the source pin the outputs, and the WebAssembly build asserts equality with the native engine rather than assuming it.
 
-\textbf{Recompute, do not trust.} A trajectory is evidence only if a third party can recompute it. Runs record the agent's decisions and nothing derived; replay against the frozen scenario reproduces returns byte-for-byte, and a tampered trajectory reproduces something else.
+\textbf{Recompute, do not trust.} A trajectory is evidence only if a third party can recompute it. Runs record the agent's decisions and nothing derived; replay against the frozen scenario reproduces returns byte-for-byte, and a tampered trajectory reproduces something else. The counterfactual ledger of \cref{sec:counterfactual} extends the same rule from the decisions that were acted on to the ones that were not, because scoring only the acted decisions is a survivorship filter on the agent's own policy.
+
+\textbf{A fault is never a decision.} When a failure has no representation, some plausible default absorbs it, and the default is indistinguishable from a real answer. A wire fault must not become a hold (\cref{sec:transport-gate}), and a submission whose outcome is unknown must not become an accepted or an absent one (\cref{sec:forward-paper}). The remedy in both cases is the same: make the failure state representable and typed, so that a downstream consumer must handle it rather than read past it. This principle is a property of the evidence rather than of the agent, which is why it sits beside determinism and replay instead of in an operations note.
 
 \textbf{The interface is stable under governance.} The agent interface is a tiny JSON surface that evolves additively under a written governance policy, with schemas and conformance fixtures as the authoritative artifacts. An interface that moves under its implementers cannot be built against; stability under governance is what makes the contract worth conforming to.
 

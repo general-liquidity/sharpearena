@@ -12,7 +12,7 @@ python paper/src/check-provenance.py
 The first command writes \texttt{paper/evidence/provenance.json}; the second validates it against the tree.
 The manifest records the commit it was generated at, whether the working tree was dirty at that moment, a content hash over the Rust, Python, manifest and producer-source snapshot, and the SHA-256 digest of every JSON and figure artifact. The source snapshot is source only: paths under build directories, virtual environments and bytecode caches are excluded, so the same tree yields the same snapshot hash on a different machine. The manifest is a release-time snapshot rather than a continuously maintained view of the working tree: regenerating it is part of the release procedure, and \texttt{check-provenance.py} recomputes every recorded digest, re-expands the recorded scope and exits nonzero on any mismatch, so a manifest that has fallen behind its tree is a detectable failure rather than a silent one. Read that way, the content snapshot rather than a package label identifies the source state the numbers in this paper were produced from.
 
-\paragraph{The design-property checks (\cref{sec:leakfree,sec:determinism,sec:replay,sec:contract}).}
+\paragraph{The design-property checks (\cref{sec:leakfree,sec:determinism,sec:replay,sec:contract,sec:transport-gate,sec:agentic}).}
 \begin{verbatim}
 cargo test -p sharpearena              # golden hashes, leak-free
                                        # property tests, conformance kit
@@ -23,7 +23,7 @@ python -m pytest crates/sharpearena-py # Python surface, check_env,
                                        # parser, local-field scheduler,
                                        # strategy ledger and paper-only arm
 \end{verbatim}
-The local-field tests inject deterministic model transports and do not download weights or produce an agent-performance result. The MCP regression cases assert that unknown and duplicate symbols and action/weight contradictions fail without advancing the environment. The paper-arm tests use in-memory transports and fixed endpoints; they do not send a broker order.
+The local-field tests inject deterministic model transports and do not download weights or produce an agent-performance result. The MCP regression cases assert that unknown and duplicate symbols and action/weight contradictions fail without advancing the environment. The paper-arm tests use in-memory transports and fixed endpoints; they do not send a broker order. The transport-gate cases of \cref{sec:transport-gate} include the characterization test that runs a wedged agent through the unguarded engine and asserts a full-length scoreable return series, so the defect the gate closes stays visible in the suite rather than only in the changelog. The container tests of the companion 	exttt{sharpebench-arena} crate are marked 	exttt{\#[ignore]} and are not exercised by any command above; \cref{sec:limitations} states their status.
 
 \paragraph{F1: baseline leaderboard (\cref{sec:f1}).}
 \begin{verbatim}
