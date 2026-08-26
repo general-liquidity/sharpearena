@@ -121,26 +121,26 @@
       "sha256": "1b261a44ed779c208322c8dce4d35a385c5070d610b882aca6d456ca198389dc"
     }
   ],
-  "generated_at_head": "4c5cb8851faa6e0935797e98f6ceb4008cef4d77",
+  "generated_at_head": "2dbf9656355070ff54f7bb1e8eb0170183bd8a88",
   "generated_at_head_dirty": true,
   "reproduction_entrypoint": "commands in paper/sections/A-commands.tex",
   "schema_version": 3,
   "source_files": [
     {
       "path": "Cargo.lock",
-      "sha256": "150f430ec2aa9a19238241ef4c1ae305e16eef1686fe9002ed1dfb1ae6fa8f0e"
+      "sha256": "2ab075b4e33fa8ded68297740d5f306323fded382aea535c16d2f287c4fba43f"
     },
     {
       "path": "Cargo.toml",
-      "sha256": "355a67dad5fa41834fabad191a7a7874967c663611f629e2cbca01f2d2be2bd4"
+      "sha256": "27a322ca44e3de4c25a7b349364f816ab753a0046c64bfda59168cb2f34fa03e"
     },
     {
       "path": "crates/sharpearena-py/Cargo.toml",
-      "sha256": "bb58716b8a7673b61abf75ec63b0795a511309402f3e488636dfd2bdcb06c015"
+      "sha256": "2e3688dacb9e122a00c3e01c11f7ad2f25956dbea7de10702012bb22db36fbb5"
     },
     {
       "path": "crates/sharpearena-py/pyproject.toml",
-      "sha256": "25d6bd645ff53253e9c43f778902ec912ba21a198ea49d74e987a66606e8b48f"
+      "sha256": "efe46ed06db283bafebaf7c689ba9d2e1adc3447791cbd9c2ae5007085f658c3"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/__init__.py",
@@ -400,7 +400,7 @@
     },
     {
       "path": "crates/sharpearena-wasm/Cargo.toml",
-      "sha256": "f071a4f7ede3931e379c0338b476497c90e2828ec425e989a2945b4a2337709b"
+      "sha256": "cbb5a8fe58e0eb47627370b36cb51b9011b102d34869365b3549ec298abfb573"
     },
     {
       "path": "crates/sharpearena-wasm/src/lib.rs",
@@ -618,6 +618,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "06a92e0e3e76d72b668ef9d51fb3e989dbd48a32574c57ead0941d7864a385aa",
+  "source_snapshot_sha256": "fcbf5b885ab89c112413a42d18c79dadf728ec503686fb8bcdf7702eaef65b1f",
   "validator": "paper/src/check-provenance.py"
 }
