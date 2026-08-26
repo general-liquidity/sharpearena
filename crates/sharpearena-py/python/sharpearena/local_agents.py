@@ -135,7 +135,14 @@ class ModelIdentity:
 
 
 def load_identity_manifest(path: os.PathLike[str] | str) -> tuple[ModelIdentity, ...]:
-    """Load explicit local-backend/model provenance from a closed JSON manifest."""
+    """Load explicit local-backend/model provenance from a closed JSON manifest.
+
+    The manifest is either one :class:`ModelIdentity` object or a non-empty array of
+    them, keyed by ``model``. The object is closed: an unknown field is an error
+    rather than an ignored key, so a typo in a provenance field cannot silently leave
+    that field at its default. Feed the result to :class:`OpenAICompatibleClient`,
+    whose backend cannot report quantization or offload for itself.
+    """
 
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
     records = payload if isinstance(payload, list) else [payload]
