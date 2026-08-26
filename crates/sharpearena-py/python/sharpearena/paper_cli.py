@@ -22,10 +22,12 @@ from .paper_trading import (
     BinancePublicData,
     ForwardEvidenceJournal,
     InMemoryPaperBroker,
+    LifecycleStore,
     PaperAccount,
     PaperRiskConfig,
     PaperRiskGuard,
     PaperTradingSession,
+    forward_window_from_preimage,
     prepare_forward_window_commitment,
 )
 
@@ -215,13 +217,25 @@ def _run_execute(args: argparse.Namespace) -> int:
             risk,
         )
     decision = json.loads(args.decision.read_text(encoding="utf-8"))
+    window = (
+        None
+        if args.window_preimage is None
+        else forward_window_from_preimage(args.window_preimage)
+    )
     session = PaperTradingSession(
         broker,
         ForwardEvidenceJournal(args.evidence),
         agent_id=plan.agent_id,
         model_digest=plan.model_digest,
+        lifecycles=LifecycleStore(args.lifecycle_state),
+        window=window,
+        # A broker that can report its own book is the authority on the account.
+        # The plan file only seeds it.
+        account_source=broker if hasattr(broker, "account_snapshot") else None,
     )
+    session.reconcile_all()
     responses = session.execute_decision(decision, plan.symbols, plan.account, latest)
+    session.lifecycles.save()
     print(
         json.dumps(
             {"plan_sha256": plan.plan_sha256, "paper_responses": responses},
@@ -255,6 +269,19 @@ def _parser() -> argparse.ArgumentParser:
     execute.add_argument("--evidence", type=Path, required=True)
     execute.add_argument("--inspect", action="store_true")
     execute.add_argument("--allow-remote-paper-submit", action="store_true")
+    execute.add_argument(
+        "--lifecycle-state",
+        type=Path,
+        default=None,
+        help="durable order-lifecycle table; without it an unknown submission "
+        "cannot be reconciled after a restart",
+    )
+    execute.add_argument(
+        "--window-preimage",
+        type=Path,
+        default=None,
+        help="private reveal preimage whose commitment stamps every record",
+    )
 
     commit = commands.add_parser("commit", help="prepare a forward-window commitment")
     commit.add_argument("--agent-id", required=True)
