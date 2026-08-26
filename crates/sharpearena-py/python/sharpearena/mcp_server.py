@@ -21,7 +21,7 @@ from typing import Any, Optional
 
 import numpy as np
 
-from .decision_parser import DecisionParseError, parse_decision
+from .decision_parser import DecisionParseError, parse_decision, portfolio_weights
 from .gym import SharpeArenaEnv
 
 try:  # pragma: no cover - exercised only when mcp is installed
@@ -43,10 +43,18 @@ def _obs_payload(obs: dict, symbols: list[str]) -> dict:
     }
 
 
-def _decision_to_weights(decision_json: str, symbols: list[str]) -> np.ndarray:
+def _decision_to_weights(
+    decision_json: str, symbols: list[str], observation: dict
+) -> np.ndarray:
     """Strictly parse one canonical Decision over the episode's symbol axis."""
 
-    return parse_decision(decision_json, symbols)
+    return parse_decision(
+        decision_json,
+        symbols,
+        current_weights=portfolio_weights(
+            observation["positions"], observation["closes"], observation["cash"][0]
+        ),
+    )
 
 
 def build_server(env_kwargs: Optional[dict] = None) -> "FastMCP":
@@ -64,7 +72,11 @@ def build_server(env_kwargs: Optional[dict] = None) -> "FastMCP":
         )
 
     server = FastMCP("sharpearena")
-    state: dict[str, Any] = {"env": None, "kwargs": dict(env_kwargs or {})}
+    state: dict[str, Any] = {
+        "env": None,
+        "last_observation": None,
+        "kwargs": dict(env_kwargs or {}),
+    }
 
     def _env() -> SharpeArenaEnv:
         if state["env"] is None:
@@ -76,6 +88,7 @@ def build_server(env_kwargs: Optional[dict] = None) -> "FastMCP":
         """(Re)create and reset the episode; return the initial observation JSON."""
         env = _env()
         obs, _info = env.reset()
+        state["last_observation"] = obs
         return json.dumps(_obs_payload(obs, env.symbols))
 
     @server.tool()
@@ -86,8 +99,18 @@ def build_server(env_kwargs: Optional[dict] = None) -> "FastMCP":
         decision returns ``{"error": ...}`` (structured content, not an exception).
         """
         env = _env()
+        if state["last_observation"] is None:
+            return json.dumps(
+                {
+                    "error": "episode_not_reset",
+                    "detail": "call reset before step",
+                    "environment_advanced": False,
+                }
+            )
         try:
-            weights = _decision_to_weights(decision_json, env.symbols)
+            weights = _decision_to_weights(
+                decision_json, env.symbols, state["last_observation"]
+            )
         except DecisionParseError as error:
             return json.dumps(
                 {
@@ -97,6 +120,7 @@ def build_server(env_kwargs: Optional[dict] = None) -> "FastMCP":
                 }
             )
         obs, reward, terminated, truncated, info = env.step(weights)
+        state["last_observation"] = obs
         return json.dumps(
             {
                 "observation": _obs_payload(obs, env.symbols),

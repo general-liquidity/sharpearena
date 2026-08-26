@@ -12,12 +12,18 @@ import json
 import math
 import os
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from hashlib import sha256
 from pathlib import Path
 from statistics import median, pstdev
 from typing import Any, Optional, Protocol, Sequence
 
+from .edge_manifest import (
+    EdgeManifest,
+    EdgeManifestError,
+    EdgeManifestLedger,
+    parse_edge_manifest,
+)
 from .local_agents import (
     DatasetSpec,
     LocalAgentError,
@@ -58,7 +64,13 @@ STRATEGY_GENERATION_SCHEMA: dict[str, Any] = {
             "items": {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["id", "thesis", "long_when", "gross_target"],
+                "required": [
+                    "id",
+                    "thesis",
+                    "long_when",
+                    "gross_target",
+                    "edge_manifest",
+                ],
                 "properties": {
                     "id": {"type": "string", "minLength": 1, "maxLength": 80},
                     "thesis": {"type": "string", "minLength": 1, "maxLength": 500},
@@ -71,6 +83,7 @@ STRATEGY_GENERATION_SCHEMA: dict[str, Any] = {
                         "exclusiveMinimum": 0,
                         "maximum": 1,
                     },
+                    "edge_manifest": {"$ref": "#/$defs/edge_manifest"},
                 },
             },
         }
@@ -132,6 +145,113 @@ STRATEGY_GENERATION_SCHEMA: dict[str, Any] = {
                 },
             ]
         },
+        "threshold": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["value", "unit"],
+            "properties": {
+                "value": {
+                    "oneOf": [
+                        {"type": "number"},
+                        {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {"type": "string", "minLength": 1},
+                        },
+                    ]
+                },
+                "unit": {
+                    "enum": [
+                        "basis_points",
+                        "categorical",
+                        "count",
+                        "days",
+                        "fraction",
+                        "percent",
+                        "ratio",
+                        "seconds",
+                        "usd",
+                        "z_score",
+                    ]
+                },
+            },
+        },
+        "edge_condition": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": [
+                "condition_id",
+                "metric",
+                "comparator",
+                "threshold",
+                "description",
+            ],
+            "properties": {
+                "condition_id": {"type": "string", "minLength": 1},
+                "metric": {"type": "string", "minLength": 1},
+                "comparator": {
+                    "enum": ["eq", "gt", "gte", "in", "lt", "lte", "neq", "not_in"]
+                },
+                "threshold": {"$ref": "#/$defs/threshold"},
+                "description": {"type": "string", "minLength": 1},
+            },
+        },
+        "verification_plan": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": [
+                "selection_metric",
+                "selection_split",
+                "confirmation_split",
+                "minimum_observations",
+            ],
+            "properties": {
+                "selection_metric": {"type": "string", "minLength": 1},
+                "selection_split": {"type": "string", "minLength": 1},
+                "confirmation_split": {"type": "string", "minLength": 1},
+                "minimum_observations": {"type": "integer", "minimum": 2},
+            },
+        },
+        "edge_manifest": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": [
+                "hypothesis",
+                "mechanism",
+                "regimes",
+                "instruments",
+                "invariants",
+                "kill_conditions",
+                "verification_plan",
+            ],
+            "properties": {
+                "hypothesis": {"type": "string", "minLength": 8},
+                "mechanism": {"type": "string", "minLength": 8},
+                "regimes": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {"type": "string", "minLength": 1},
+                },
+                "instruments": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {"type": "string", "minLength": 1},
+                },
+                "invariants": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 32,
+                    "items": {"$ref": "#/$defs/edge_condition"},
+                },
+                "kill_conditions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 32,
+                    "items": {"$ref": "#/$defs/edge_condition"},
+                },
+                "verification_plan": {"$ref": "#/$defs/verification_plan"},
+            },
+        },
     },
 }
 
@@ -147,6 +267,10 @@ class StrategyCandidate:
     long_when: dict[str, Any]
     short_when: Optional[dict[str, Any]]
     gross_target: float
+    edge_manifest: EdgeManifest
+    trial_ordinal: int = -1
+    manifest_sha256: str = ""
+    binding_sha256: str = ""
 
     @property
     def fingerprint(self) -> str:
@@ -157,6 +281,20 @@ class StrategyCandidate:
                 "gross_target": self.gross_target,
             }
         )
+
+    def as_record(self) -> dict[str, Any]:
+        return {
+            "candidate_id": self.candidate_id,
+            "thesis": self.thesis,
+            "long_when": self.long_when,
+            "short_when": self.short_when,
+            "gross_target": self.gross_target,
+            "edge_manifest": self.edge_manifest.as_record(),
+            "trial_ordinal": self.trial_ordinal,
+            "manifest_sha256": self.manifest_sha256,
+            "binding_sha256": self.binding_sha256,
+            "fingerprint": self.fingerprint,
+        }
 
 
 @dataclass(frozen=True)
@@ -205,6 +343,8 @@ class OllamaStrategyGenerator:
                         "content": (
                             "Generate point-in-time trading strategies in the supplied closed "
                             "JSON DSL. Do not emit code, tools, prose outside JSON, or future data. "
+                            "Attach the required edge_manifest to every candidate before seeing "
+                            "any validation or test result. "
                             f"Return exactly {requested_candidates} candidate objects."
                         ),
                     },
@@ -320,8 +460,17 @@ def _validate_condition(
 
 def parse_generated_pool(
     raw_response: str,
+    *,
+    ledger: Optional[EdgeManifestLedger] = None,
 ) -> tuple[int, list[StrategyCandidate], list[CandidateRejection]]:
-    """Validate a response while counting candidates before any rejection."""
+    """Validate a response while counting candidates before any rejection.
+
+    The edge-manifest ledger owns the ordering.  It assigns a trial ordinal,
+    validates the manifest, invokes the strategy validator, and only then
+    deduplicates.  The returned ``observed`` count therefore includes malformed
+    and duplicate proposals, while every accepted strategy carries the binding
+    hash that ties it to the model and split plan used by the caller.
+    """
 
     try:
         payload = json.loads(raw_response)
@@ -340,23 +489,29 @@ def parse_generated_pool(
             f"response.strategies exceeds the hard cap of {MAX_GENERATED_CANDIDATES}"
         )
 
-    candidates: list[StrategyCandidate] = []
-    rejected: list[CandidateRejection] = []
+    manifest_ledger = ledger or EdgeManifestLedger(
+        model_digest="unbound-parser-model",
+        split_plan_sha256="unbound-parser-split",
+    )
+    parsed: dict[int, StrategyCandidate] = {}
     seen_ids: set[str] = set()
-    seen_fingerprints: set[str] = set()
-    for index, item in enumerate(raw):
-        candidate_id = (
-            item.get("id")
-            if isinstance(item, dict) and isinstance(item.get("id"), str)
-            else None
-        )
-        try:
-            obj = _closed_object(
+
+    def validate_strategy(item: dict[str, Any]) -> str:
+        index = manifest_ledger.observed_trials
+        obj = _closed_object(
                 item,
-                {"id", "thesis", "long_when", "short_when", "gross_target"},
-                {"id", "thesis", "long_when", "gross_target"},
+                {
+                    "id",
+                    "thesis",
+                    "long_when",
+                    "short_when",
+                    "gross_target",
+                    "edge_manifest",
+                },
+                {"id", "thesis", "long_when", "gross_target", "edge_manifest"},
                 f"strategies[{index}]",
             )
+        try:
             if (
                 not isinstance(obj["id"], str)
                 or not obj["id"].strip()
@@ -392,17 +547,48 @@ def parse_generated_pool(
                     else _validate_condition(obj["short_when"], "short_when")
                 ),
                 gross_target=float(gross),
+                # The ledger has already parsed this before invoking the
+                # callback. Parsing again produces the typed value carried by
+                # the candidate without allowing strategy validation to run
+                # ahead of manifest validation.
+                edge_manifest=parse_edge_manifest(obj["edge_manifest"]),
             )
             if candidate.candidate_id in seen_ids:
                 raise StrategyProtocolError("duplicate candidate id")
-            if candidate.fingerprint in seen_fingerprints:
-                raise StrategyProtocolError("duplicate strategy fingerprint")
             seen_ids.add(candidate.candidate_id)
-            seen_fingerprints.add(candidate.fingerprint)
-            candidates.append(candidate)
-        except StrategyProtocolError as error:
-            rejected.append(CandidateRejection(index, candidate_id, str(error)))
-    return len(raw), candidates, rejected
+            parsed[index] = candidate
+            return candidate.fingerprint
+        except EdgeManifestError as error:
+            raise StrategyProtocolError(str(error)) from error
+
+    records = manifest_ledger.record_pool(raw, candidate_validator=validate_strategy)
+    candidates: list[StrategyCandidate] = []
+    rejected: list[CandidateRejection] = []
+    for record in records:
+        candidate_id = (
+            record.raw_candidate.get("id")
+            if isinstance(record.raw_candidate.get("id"), str)
+            else None
+        )
+        if not record.is_selectable:
+            reason = record.invalid_reason
+            if reason is None:
+                reason = (
+                    "duplicate strategy and edge manifest; first proposed at trial "
+                    f"{record.duplicate_of_ordinal}"
+                )
+            rejected.append(CandidateRejection(record.trial_ordinal, candidate_id, reason))
+            continue
+        candidate = parsed[record.trial_ordinal]
+        candidates.append(
+            replace(
+                candidate,
+                trial_ordinal=record.trial_ordinal,
+                manifest_sha256=record.manifest_sha256 or "",
+                binding_sha256=record.binding_sha256,
+            )
+        )
+    return manifest_ledger.observed_trials, candidates, rejected
 
 
 def _indicator(spec: dict[str, Any], prices: Sequence[float]) -> Optional[float]:
@@ -629,12 +815,17 @@ class StrategySearchRunner:
     def run(self, plan: StrategySearchPlan, evidence_path: Path) -> dict[str, Any]:
         identity = self.generator.identity(plan.model)
         generated: Optional[GenerationResult] = None
+        manifest_ledger: Optional[EdgeManifestLedger] = None
         try:
             generated = self.generator.generate(
                 plan.model, plan.prompt, plan.requested_candidates
             )
+            manifest_ledger = EdgeManifestLedger(
+                model_digest=identity.digest,
+                split_plan_sha256=plan.plan_sha256,
+            )
             observed_n_trials, candidates, rejected = parse_generated_pool(
-                generated.raw_response
+                generated.raw_response, ledger=manifest_ledger
             )
             if not candidates:
                 raise StrategyProtocolError("the model emitted no valid candidate")
@@ -674,7 +865,13 @@ class StrategySearchRunner:
                 "generation": {
                     "requested_candidates": plan.requested_candidates,
                     "observed_n_trials": observed_n_trials,
-                    "n_trials_source": "host-counted-generation-response",
+                    "n_trials_source": manifest_ledger.summary()["n_trials_source"],
+                    "edge_manifest_ledger": {
+                        "summary": manifest_ledger.summary(),
+                        "records": [
+                            record.as_record() for record in manifest_ledger.records
+                        ],
+                    },
                     "raw_response_sha256": sha256(
                         generated.raw_response.encode("utf-8")
                     ).hexdigest(),
@@ -685,8 +882,7 @@ class StrategySearchRunner:
                     "output_tokens": generated.output_tokens,
                     "duration_ns": generated.total_duration_ns,
                     "accepted": [
-                        {**asdict(candidate), "fingerprint": candidate.fingerprint}
-                        for candidate in candidates
+                        candidate.as_record() for candidate in candidates
                     ],
                     "rejected": [asdict(item) for item in rejected],
                 },
@@ -732,6 +928,22 @@ class StrategySearchRunner:
                 "generation": {
                     "requested_candidates": plan.requested_candidates,
                     "observed_n_trials": observed,
+                    "n_trials_source": (
+                        manifest_ledger.summary()["n_trials_source"]
+                        if manifest_ledger is not None
+                        else None
+                    ),
+                    "edge_manifest_ledger": (
+                        {
+                            "summary": manifest_ledger.summary(),
+                            "records": [
+                                record.as_record()
+                                for record in manifest_ledger.records
+                            ],
+                        }
+                        if manifest_ledger is not None
+                        else None
+                    ),
                     "raw_response_sha256": (
                         sha256(generated.raw_response.encode("utf-8")).hexdigest()
                         if generated is not None
@@ -751,13 +963,13 @@ class StrategySearchRunner:
 
 
 def _write_evidence(path: Path, evidence: dict[str, Any]) -> None:
+    """Append one complete search record without replacing earlier trials."""
+
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".partial")
-    with temporary.open("wb") as handle:
+    with path.open("ab") as handle:
         handle.write(_canonical_bytes(evidence) + b"\n")
         handle.flush()
         os.fsync(handle.fileno())
-    temporary.replace(path)
 
 
 __all__ = [

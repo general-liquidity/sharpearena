@@ -1,0 +1,7 @@
+{
+  "agent_id": "gordon",
+  "target_window": "2025-Q4",
+  "artifact_digest": "deadbeef",
+  "salt": "secret-salt",
+  "commit_hash": "0f8b5b145a6450e3c320a531541555508fd352300ebeeec1fe43e1d938b766a4"
+}

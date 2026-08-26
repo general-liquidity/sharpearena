@@ -33,6 +33,14 @@ SOURCE_SCOPE = (
 )
 
 ARTIFACT_SCOPE = ("paper/evidence/*.json", "paper/figures/*.pdf")
+MODEL_ARTIFACT_SCOPE = ("paper/evidence/model-artifacts/*.json",)
+MODEL_IDENTITY_FIELDS = (
+    "model",
+    "digest",
+    "quantization",
+    "server",
+    "server_version",
+)
 
 # `crates/**/*.rs` otherwise matches machine-local build outputs under
 # `crates/*/target/**/build/*/out/*.rs`, which are neither source nor
@@ -66,12 +74,57 @@ def records(paths: list[Path]) -> list[dict[str, str]]:
     ]
 
 
+def model_artifact_records(paths: list[Path]) -> list[dict]:
+    """Bind model identity files and expose their load-bearing fields.
+
+    Each file uses the same object-or-array shape accepted by
+    ``load_identity_manifest``.  The file digest binds every field; the summary
+    keeps model/checkpoint identity visible to a provenance reader without making
+    them open each nested artifact.
+    """
+
+    output: list[dict] = []
+    seen_models: set[str] = set()
+    for path in paths:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        identities = payload if isinstance(payload, list) else [payload]
+        if not identities or not all(isinstance(item, dict) for item in identities):
+            raise ValueError(f"{path.relative_to(ROOT)} must contain an identity object or array")
+        summaries = []
+        for index, identity in enumerate(identities):
+            missing = [
+                field
+                for field in MODEL_IDENTITY_FIELDS
+                if not isinstance(identity.get(field), str)
+                or not identity[field].strip()
+                or identity[field].strip().lower() in {"unknown", "unresolved"}
+            ]
+            if missing:
+                raise ValueError(
+                    f"{path.relative_to(ROOT)} identity {index} lacks explicit fields: {missing}"
+                )
+            model = identity["model"]
+            if model in seen_models:
+                raise ValueError(f"duplicate model identity across provenance files: {model}")
+            seen_models.add(model)
+            summaries.append({field: identity[field] for field in MODEL_IDENTITY_FIELDS})
+        output.append(
+            {
+                "path": path.relative_to(ROOT).as_posix(),
+                "sha256": sha256(path),
+                "identities": summaries,
+            }
+        )
+    return output
+
+
 source_records = records(files(SOURCE_SCOPE))
 snapshot = hashlib.sha256(
     "".join(f"{item['sha256']}  {item['path']}\n" for item in source_records).encode()
 ).hexdigest()
 
 artifacts = records([path for path in files(ARTIFACT_SCOPE) if path != OUT])
+model_artifacts = model_artifact_records(files(MODEL_ARTIFACT_SCOPE))
 
 head = subprocess.check_output(
     ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
@@ -83,7 +136,7 @@ dirty = bool(
 )
 
 manifest = {
-    "schema_version": 3,
+    "schema_version": 4,
     # A manifest cannot contain the hash of the commit that will contain the
     # manifest without becoming self-referential.  Record the commit this
     # generation ran at honestly, together with whether the tree was dirty;
@@ -100,13 +153,16 @@ manifest = {
         "environments are not part of the source snapshot."
     ),
     "artifact_scope": list(ARTIFACT_SCOPE),
+    "model_artifact_scope": list(MODEL_ARTIFACT_SCOPE),
+    "model_identity_fields": list(MODEL_IDENTITY_FIELDS),
     "reproduction_entrypoint": "commands in paper/sections/A-commands.tex",
     "validator": "paper/src/check-provenance.py",
     "source_files": source_records,
     "artifacts": artifacts,
+    "model_artifacts": model_artifacts,
 }
 OUT.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 print(
     f"wrote {OUT.relative_to(ROOT)}: {len(source_records)} sources, "
-    f"{len(artifacts)} artifacts"
+    f"{len(artifacts)} artifacts, {len(model_artifacts)} model artifact manifests"
 )

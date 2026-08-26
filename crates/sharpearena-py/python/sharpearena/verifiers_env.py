@@ -32,6 +32,7 @@ from .decision_parser import (
     DecisionParseError,
     build_parser,
     parse_decision,
+    portfolio_weights,
 )
 from .gym import SharpeArenaEnv
 from .mandate import mandate_breach, sample_mandate, validate_mandate
@@ -316,6 +317,11 @@ if _HAS_VERIFIERS:
                 action = parse_decision(
                     _last_assistant_text(messages),
                     symbols,
+                    current_weights=portfolio_weights(
+                        state["_oo_last_obs"]["positions"],
+                        state["_oo_last_obs"]["closes"],
+                        state["_oo_last_obs"]["cash"][0],
+                    ),
                     max_abs_weight=self._max_weight,
                 )
             except DecisionParseError as error:

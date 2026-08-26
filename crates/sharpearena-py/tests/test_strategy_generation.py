@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 
 import pytest
+import sharpearena.strategy_generation as strategy_generation
+from jsonschema import Draft202012Validator
 from sharpearena.local_agents import DatasetSpec, ModelIdentity, ModelRunConfig
 from sharpearena.strategy_cli import load_strategy_plan
 from sharpearena.strategy_cli import main as strategy_cli_main
@@ -29,6 +31,39 @@ def _condition(op="gt"):
     }
 
 
+def _edge_manifest(hypothesis="Three-bar momentum persists after costs."):
+    return {
+        "hypothesis": hypothesis,
+        "mechanism": "Short-horizon continuation reflects gradual information diffusion.",
+        "regimes": ["trending"],
+        "instruments": ["synthetic_panel"],
+        "invariants": [
+            {
+                "condition_id": "net-edge-positive",
+                "metric": "net_edge",
+                "comparator": "gt",
+                "threshold": {"value": 0.0, "unit": "basis_points"},
+                "description": "The edge remains positive after costs.",
+            }
+        ],
+        "kill_conditions": [
+            {
+                "condition_id": "drawdown-breach",
+                "metric": "drawdown",
+                "comparator": "gt",
+                "threshold": {"value": 20.0, "unit": "percent"},
+                "description": "Retire after a twenty-percent drawdown.",
+            }
+        ],
+        "verification_plan": {
+            "selection_metric": "deflated_sharpe",
+            "selection_split": "validation",
+            "confirmation_split": "test",
+            "minimum_observations": 8,
+        },
+    }
+
+
 def _response():
     return json.dumps(
         {
@@ -39,6 +74,7 @@ def _response():
                     "long_when": _condition("gt"),
                     "short_when": _condition("lt"),
                     "gross_target": 0.8,
+                    "edge_manifest": _edge_manifest(),
                 },
                 {
                     "id": "contrarian",
@@ -46,6 +82,9 @@ def _response():
                     "long_when": _condition("lt"),
                     "short_when": _condition("gt"),
                     "gross_target": 0.5,
+                    "edge_manifest": _edge_manifest(
+                        "Three-bar momentum mean-reverts after crowded moves."
+                    ),
                 },
                 {
                     "id": "trend-copy",
@@ -53,12 +92,14 @@ def _response():
                     "long_when": _condition("gt"),
                     "short_when": _condition("lt"),
                     "gross_target": 0.8,
+                    "edge_manifest": _edge_manifest(),
                 },
                 {
                     "id": "unsafe",
                     "thesis": "attempt an executable escape",
                     "long_when": _condition("gt"),
                     "gross_target": 0.5,
+                    "edge_manifest": _edge_manifest(),
                     "python": "import os",
                 },
             ]
@@ -87,7 +128,28 @@ def test_generation_schema_has_no_executable_code_surface():
     assert '"python"' not in text
     assert '"command"' not in text
     assert '"tool"' not in text
-    assert set(STRATEGY_GENERATION_SCHEMA["$defs"]) == {"value", "condition"}
+    assert set(STRATEGY_GENERATION_SCHEMA["$defs"]) == {
+        "value",
+        "condition",
+        "threshold",
+        "edge_condition",
+        "verification_plan",
+        "edge_manifest",
+    }
+    item = STRATEGY_GENERATION_SCHEMA["properties"]["strategies"]["items"]
+    assert "edge_manifest" in item["required"]
+
+    Draft202012Validator.check_schema(STRATEGY_GENERATION_SCHEMA)
+    validator = Draft202012Validator(STRATEGY_GENERATION_SCHEMA)
+    payload = json.loads(_response())
+    accepted = payload["strategies"][:2]
+    assert all(
+        not list(validator.iter_errors({"strategies": [candidate]}))
+        for candidate in accepted
+    )
+    assert list(
+        validator.iter_errors({"strategies": [payload["strategies"][3]]})
+    )
 
 
 def test_observed_trial_count_precedes_validation_and_deduplication():
@@ -95,8 +157,21 @@ def test_observed_trial_count_precedes_validation_and_deduplication():
     assert observed == 4
     assert [candidate.candidate_id for candidate in accepted] == ["trend", "contrarian"]
     assert [item.candidate_id for item in rejected] == ["trend-copy", "unsafe"]
-    assert "duplicate strategy fingerprint" in rejected[0].reason
+    assert "duplicate strategy and edge manifest" in rejected[0].reason
     assert "unknown fields" in rejected[1].reason
+
+
+def test_missing_or_invalid_manifest_is_counted_and_refused_before_selection():
+    payload = json.loads(_response())
+    payload["strategies"] = payload["strategies"][:2]
+    payload["strategies"][0].pop("edge_manifest")
+    payload["strategies"][1]["edge_manifest"].pop("mechanism")
+    observed, accepted, rejected = parse_generated_pool(json.dumps(payload))
+    assert observed == 2
+    assert accepted == []
+    assert [item.index for item in rejected] == [0, 1]
+    assert "required 'edge_manifest'" in rejected[0].reason
+    assert "mechanism" in rejected[1].reason
 
 
 def test_malformed_generation_fails_instead_of_inventing_a_trial_count():
@@ -126,6 +201,46 @@ def test_dsl_uses_trailing_values_and_normalizes_gross_exposure():
     ) == pytest.approx(0.8)
 
 
+def test_every_dsl_indicator_and_boolean_operator_has_numeric_semantics():
+    def comparison(indicator, threshold, *, window=None, op="gt"):
+        value = {"indicator": indicator}
+        if window is not None:
+            value["window"] = window
+        return {
+            "op": op,
+            "left": value,
+            "right": {"constant": threshold},
+        }
+
+    assert evaluate_condition(comparison("price", 7.0), [1.0, 2.0, 4.0, 8.0])
+    assert evaluate_condition(
+        comparison("sma", 14.0 / 3.0, window=3, op="gte"),
+        [1.0, 2.0, 4.0, 8.0],
+    )
+    assert evaluate_condition(
+        comparison("ema", 5.49, window=3), [1.0, 2.0, 4.0, 8.0]
+    )
+    assert evaluate_condition(
+        comparison("momentum", 2.99, window=3), [1.0, 2.0, 4.0, 8.0]
+    )
+    assert evaluate_condition(
+        comparison("rsi", 99.0, window=4), [1.0, 2.0, 4.0, 8.0]
+    )
+    assert evaluate_condition(
+        comparison("volatility", 0.01, window=4), [100.0, 110.0, 110.0, 121.0]
+    )
+    rising = comparison("momentum", 0.0, window=3)
+    falling = comparison("momentum", 0.0, window=3, op="lt")
+    prices = [100.0, 101.0, 102.0]
+    assert evaluate_condition(
+        {"op": "and", "conditions": [rising, {"op": "not", "condition": falling}]},
+        prices,
+    )
+    assert evaluate_condition(
+        {"op": "or", "conditions": [falling, rising]}, prices
+    )
+
+
 def test_search_selects_on_validation_and_tests_only_the_winner(tmp_path):
     plan = StrategySearchPlan(
         model=ModelRunConfig("test-fixture:synthetic"),
@@ -144,14 +259,68 @@ def test_search_selects_on_validation_and_tests_only_the_winner(tmp_path):
     assert json.loads(path.read_text()) == evidence
     assert evidence["generation"]["observed_n_trials"] == 4
     assert (
-        evidence["generation"]["n_trials_source"] == "host-counted-generation-response"
+        evidence["generation"]["n_trials_source"]
+        == "ledger-counted-before-validation-and-deduplication"
     )
+    ledger = evidence["generation"]["edge_manifest_ledger"]
+    assert ledger["summary"]["observed_trials"] == 4
+    assert [row["trial_ordinal"] for row in ledger["records"]] == [0, 1, 2, 3]
+    assert all(row["model_digest"] == "sha256:generator" for row in ledger["records"])
+    assert all(row["split_plan_sha256"] == plan.plan_sha256 for row in ledger["records"])
+    assert all(item["binding_sha256"] for item in evidence["generation"]["accepted"])
     assert set(evidence["selection"]["scores"]) == {"trend", "contrarian"}
     assert len(evidence["test"]["scores"]) == 2
     assert evidence["test"]["selected_candidate_only"] is True
     assert evidence["generated_code_executed"] is False
     assert evidence["generation"]["raw_response"] == _response()
     assert evidence["generation"]["prompt"] == plan.prompt
+
+    second = StrategySearchRunner(FixtureGenerator()).run(plan, path)
+    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    assert len(rows) == 2
+    assert rows[0]["generation"]["raw_response_sha256"] == rows[1]["generation"][
+        "raw_response_sha256"
+    ]
+    assert second["status"] == "completed"
+
+
+def test_selection_uses_descending_median_and_candidate_id_tie_break(
+    tmp_path, monkeypatch
+):
+    calls = []
+
+    def fixture_scores(candidates, dataset, seeds, n_trials, max_steps):
+        calls.append([candidate.candidate_id for candidate in candidates])
+        if len(candidates) == 1:
+            return {
+                candidates[0].candidate_id: [
+                    {"score": {"deflated_sharpe": 0.1}, "seed": seeds[0]}
+                ]
+            }
+        return {
+            candidate.candidate_id: [
+                {"score": {"deflated_sharpe": 0.7}, "seed": seed}
+                for seed in seeds
+            ]
+            for candidate in candidates
+        }
+
+    monkeypatch.setattr(strategy_generation, "_evaluate_candidates", fixture_scores)
+    plan = StrategySearchPlan(
+        model=ModelRunConfig("test-fixture:synthetic"),
+        prompt="Generate a small, interpretable family.",
+        requested_candidates=4,
+        validation_dataset=DatasetSpec("validation", n_days=16),
+        test_dataset=DatasetSpec("test", tier="hard", n_days=16),
+        validation_seeds=(1, 2),
+        test_seeds=(101,),
+        max_steps=8,
+    )
+    evidence = StrategySearchRunner(FixtureGenerator()).run(
+        plan, tmp_path / "selection.jsonl"
+    )
+    assert evidence["selection"]["selected_candidate_id"] == "contrarian"
+    assert calls == [["trend", "contrarian"], ["contrarian"]]
 
 
 def test_search_refuses_overlapping_validation_and_test_splits():

@@ -10,7 +10,7 @@ The products do not need a new monolithic “sandbox platform.” They need a la
 1. **Data-only local models:** keep the deterministic SharpeArena environment and evaluator in a trusted supervisor; keep Ollama or another model server in a separate trusted host process with GPU access; accept only the canonical, schema-constrained `Decision` object. A model completion is data, not executable code.
 2. **Third-party agent executables:** use the existing digest-pinned SharpeBench Docker launcher, which already removes networking, capabilities, host mounts, device access, and writable root state and applies CPU, memory, PID, file-descriptor, user, and tmpfs limits. Strengthen it with a required live negative-test suite and bounded diagnostics before calling the field ready.
 3. **Generated strategies:** keep a closed, validated strategy DSL as the default. If arbitrary generated code is later admitted, execute each candidate in a fresh no-network Docker or Wasm/WASI boundary; never execute generated Python or shell on the host.
-4. **Forward paper trading:** run it as a separate, explicitly non-replayable evidence class. The agent never receives a broker credential. A trusted supervisor validates the decision, applies the native risk gate, and alone calls a paper-only broker adapter through an allowlisted egress proxy.
+4. **Forward paper trading:** run it as a separate, explicitly non-replayable evidence class. The agent never receives a broker credential. A trusted supervisor validates the decision, applies the host-side risk gate, and alone calls a paper-only broker adapter through an allowlisted egress proxy.
 
 This preserves the right product relationship without creating a cyclic library dependency:
 
@@ -72,8 +72,8 @@ That is a strong local single-tenant baseline. It aligns with Docker’s officia
 
 Important remaining gaps are operational rather than a missing container boundary:
 
-1. The live Docker smoke test skips if Docker is absent. A release can therefore be green without ever exercising the actual isolation path.
-2. There is no hostile-fixture suite demonstrating that host files, Docker control, devices, loopback services, and network endpoints are unreachable.
+1. The live Docker tests are explicitly ignored in the generic suite and fail if an operator requests them without Docker. A Docker-enabled CI job has exercised the current boundary, but that is narrow evidence from one runner image.
+2. The shipped hostile probe covers seven boundary checks. Host-device denial, a fuller fork-exhaustion probe, cleanup after forced termination and the remaining Section 5.6 cases are still acceptance work.
 3. `--log-driver none` prevents unbounded container logging, but also removes useful forensics. The host transport should retain a bounded, redacted stderr/error record.
 4. Image digest pinning identifies bytes, not trust. The image build recipe, base-image provenance, SBOM, and vulnerability status should be recorded.
 5. A container restart/reset policy must be tied to evaluation independence. Reusing a stateful agent process across cells can leak memory between seeds even if the environment resets correctly.
@@ -91,7 +91,7 @@ SharpeArena already implements most of the environment substrate a frontier loca
 - disjoint training/evaluation seed bands, sealed evaluation seeds, provenance manifests, and deterministic golden traces;
 - native clone/restore plus replay-based checkpointing;
 - external-process and HTTP transports with timeouts, circuit breaking, and explicit health/error state;
-- Docker execution of untrusted entrant images;
+- a companion SharpeBench Docker launcher for untrusted entrant images (SharpeArena itself contains no container runtime);
 - retrospective historical/generated environments and a separately framed paper-trading path.
 
 The scan found one integration inconsistency and the implementation pass closed it. The strict `decision_parser.py` already rejected unknown and duplicate symbols, while `mcp_server.py::_decision_to_weights` ignored unknown symbols and let later duplicate orders overwrite earlier ones. Because schema validation cannot know the current episode's symbol set, a syntactically valid but semantically invalid MCP decision could silently become a different action. The MCP path now calls the same canonical fail-closed parser as the local-model and `verifiers` paths; an invalid decision returns a typed error with `environment_advanced: false`. Focused regression tests cover unknown symbols, duplicates and action/weight inconsistency. The remaining acceptance question is runtime isolation, not parser equivalence.
@@ -325,12 +325,12 @@ This is where the two-product division is useful: SharpeArena proves trajectory/
 One semantics should apply across JSON, stdio/HTTP, Gymnasium, MCP, vector, and paper-broker paths:
 
 1. parse the canonical closed-object schema;
-2. validate current-episode symbols, uniqueness, finiteness, weight bounds, shorting/mandate constraints, and action/weight consistency;
+2. validate current-episode symbols, uniqueness, finiteness, weight bounds, and shorting/mandate constraints; the signed target is authoritative and the action label is audit metadata whose relation to the target depends on the current position;
 3. return a typed fault carrying layer, reason, model/run/cell, and raw-output hash;
-4. never silently replace an invalid decision with zero weights or a hold;
+4. never let an invalid decision become an unflagged zero-weight action or scoreable hold; the stdio compatibility path must inspect transport health through the checked runner;
 5. in training APIs that require a continuing step, use an explicit invalid-action transition/penalty and mark it in `info`; in rank evaluation, follow the precommitted fault policy, which may abort or disqualify the cell.
 
-The current strict parser implements this principle, but the MCP helper’s ignore/overwrite behavior must be unified before use.
+The strict parser implements this principle across the local-model, MCP and training paths; the regression suite asserts that semantic faults do not advance the environment.
 
 ### 6.7 Partial observability and leakage
 
@@ -399,9 +399,9 @@ This arrangement also permits other environments to target SharpeBench and other
 ### Phase 0 — runtime readiness
 
 - Start Docker Desktop, enable WSL2 integration, expose the CLI in WSL, and record runtime/security information.
-- Add a required local/self-hosted sandbox readiness command; generic hosted CI may keep a non-blocking unit test, but a field cannot begin on a skipped live test.
+- Run the shipped `sharpebench sandbox-check` readiness command and the explicitly ignored live-boundary tests; a field cannot begin on an unexecuted live test.
 - Build and run the hostile fixture suite in Section 5.6 against the exact image/runtime.
-- Unify MCP semantic decision validation with the canonical strict parser.
+- Re-run the shipped MCP/parser semantic-equivalence regressions.
 
 **Exit:** all negative tests pass; Docker absence, missing limits, mutable image tags, or runtime drift aborts the field.
 
@@ -427,7 +427,7 @@ This arrangement also permits other environments to target SharpeBench and other
 
 ### Phase 3 — forward paper trading
 
-- Paper-only adapter, exact endpoint allowlist, supervisor-held credential, native risk/mandate gate, final-state reconciliation, kill switch, and bounded open orders/notional.
+- Paper-only adapter, exact endpoint allowlist, supervisor-held credential, host-side risk/mandate gate, final-state reconciliation, kill switch, and bounded open orders/notional.
 - Commit forward windows, configs, model/scaffold identities, and decision cadence before data arrive.
 - Separate evidence type and UI; no deterministic/replay badge.
 

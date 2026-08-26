@@ -31,13 +31,16 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--top-p", type=float, default=1.0)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--max-tokens", type=int, default=512)
+    parser.add_argument("--context-tokens", type=int, default=8192)
     parser.add_argument("--thinking", action="store_true")
+    parser.add_argument("--thinking-budget-tokens", type=int)
     parser.add_argument(
         "--supports-thinking",
         action="store_true",
         help="declare support for chat_template_kwargs.enable_thinking",
     )
     parser.add_argument("--decision-cadence", type=int, default=1)
+    parser.add_argument("--supports-thinking-budget", action="store_true")
     parser.add_argument("--identity-out", type=Path)
     return parser
 
@@ -52,7 +55,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             top_p=args.top_p,
             seed=args.seed,
             max_tokens=args.max_tokens,
+            context_tokens=args.context_tokens,
             thinking=args.thinking,
+            thinking_budget_tokens=args.thinking_budget_tokens,
         ),
         decision_cadence=args.decision_cadence,
     )
@@ -61,6 +66,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         base_url=args.base_url,
         timeout_seconds=args.timeout_seconds,
         supports_thinking=args.supports_thinking,
+        supports_thinking_budget=args.supports_thinking_budget,
     )
     return run_stdio(
         client,

@@ -109,13 +109,18 @@ def test_parse_decision_uses_only_the_canonical_wire_contract():
         ],
         "reasoning": "test",
     }
-    w = parse_decision(f"<action>{json.dumps(decision)}</action>", symbols)
-    assert w.tolist() == [0.5, -0.3, 0.0]
-    assert parse_decision('{"orders": [], "reasoning": "hold"}', symbols).tolist() == [
-        0,
-        0,
-        0,
-    ]
+    current = [0.1, 0.2, -0.1]
+    w = parse_decision(
+        f"<action>{json.dumps(decision)}</action>",
+        symbols,
+        current_weights=current,
+    )
+    assert w.tolist() == [0.5, -0.3, -0.1]
+    assert parse_decision(
+        '{"orders": [], "reasoning": "hold"}',
+        symbols,
+        current_weights=current,
+    ).tolist() == current
 
     bad = [
         '<action>{"weights": {"AAA": 0.5}}</action>',
@@ -127,7 +132,7 @@ def test_parse_decision_uses_only_the_canonical_wire_contract():
     ]
     for completion in bad:
         with pytest.raises(DecisionParseError):
-            parse_decision(completion, symbols)
+            parse_decision(completion, symbols, current_weights=current)
 
 
 # -- the multi-row scenario dataset -----------------------------------------

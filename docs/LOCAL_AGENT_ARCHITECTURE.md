@@ -29,11 +29,13 @@ graph acyclic while making the two products operationally interdependent.
 - Model inference is not claimed to be byte deterministic. Its artifact digest,
   server version, sampling settings, inference seed, cadence, response hashes, token
   counts, and latency are evidence.
-- An inference or schema failure fails that cell. It is never converted into a hold or
-  a flat return series.
+- In the direct-policy scheduler, an inference or schema failure fails that cell and
+  cannot become a scoreable return series. The stdio compatibility adapter necessarily
+  returns a flagged hold because the upstream `Agent` trait has no error variant;
+  `run_backtest_checked` is the explicit gate that refuses its recorded transport fault.
 - The local monetary cost is recorded as zero self-reported USD, with token counts kept
   separately. The harness does not mislabel tokens or wall time as dollars.
-- A field entry needs a public source URL and license identifier. Locally modified or
+- A field entry needs a public source URL, exact source revision, and license identifier. Locally modified or
   untraceable models are host or unverified-local entries, never independent field
   evidence.
 
@@ -48,7 +50,10 @@ graph acyclic while making the two products operationally interdependent.
 - a Cartesian scheduler over model, dataset/tier, seed, and repetition;
 - stable cell ordinals and hashes, deterministic sharding, and append-only resume;
 - exact native process events, canonical decisions, observation/response hashes,
-  return series, and per-cell score diagnostics.
+  return series, and per-cell score diagnostics. Model identity also records the
+  quantizer/converter, server commit, decoding/parser stack, cache and parallelism
+  settings, accelerator/runtime identity, and labels unavailable backend facts as
+  unresolved rather than inferring them.
 
 The plan schema is closed. Unknown keys, duplicate model arms, duplicate dataset IDs,
 invalid seeds, unsafe windows, and invalid cost controls fail before inference.
@@ -110,7 +115,7 @@ seeds, score records, and hashes.
 ```bash
 python -m sharpearena.strategy_cli \
   --plan examples/local-agents/strategy-search-smoke.json \
-  --evidence local-evidence/strategy-search.json \
+  --evidence local-evidence/strategy-search.jsonl \
   --inspect
 ```
 
@@ -122,12 +127,14 @@ not declared. It does not reveal searches performed before an entrant was submit
 There are two trust zones:
 
 1. The model server and minimal inference adapter are trusted local services. The
-   shipped Ollama adapter accepts only a bare loopback origin and refuses redirects.
+   shipped Ollama adapter accepts only a loopback origin (`127.0.0.1`, `::1`, or
+   `localhost`) and refuses redirects.
 2. Untrusted executable agents run through SharpeBench's Docker sandbox: digest-pinned
    image, no network or IPC, read-only root, non-root UID, all capabilities dropped,
    no-new-privileges, Docker's default seccomp policy, bounded CPU/RAM/PIDs/file
    descriptors, and small `noexec,nosuid,nodev` tmpfs mounts. Docker absence is an
-   error, never an unsandboxed fallback.
+   error by default; the sibling launcher exposes a separately named, owner-authored
+   local-development opt-in for unsandboxed execution.
 
 The strategy-generation path deliberately avoids executable code, so it does not need
 zone 2. A future code-writing scaffold must cross that boundary and must never receive
@@ -143,7 +150,7 @@ carries no replay guarantee. `sharpearena.paper_trading` includes:
 - authenticated read-only Alpaca stock bars;
 - an in-memory paper fill adapter;
 - an Alpaca adapter hard-pinned to `https://paper-api.alpaca.markets`;
-- a deny-first native risk guard with symbol, notional, gross exposure, daily-loss,
+- a deny-first host-side risk guard with symbol, notional, gross exposure, daily-loss,
   drawdown, shorting, and kill-switch controls;
 - batch preflight before the first remote paper order;
 - append-only decision, market snapshot, proposed-order, refusal, and paper-response
@@ -177,14 +184,26 @@ python -m sharpearena.paper_cli commit \
 
 Never commit the private preimage before the reveal deadline.
 
+After the deadline, combine the scored submission, published commitment, and private
+preimage into the exact `RevealedEntry` array accepted by `sharpebench arena score`:
+
+```bash
+python -m sharpearena.paper_cli reveal \
+  --submission local-evidence/submission.json \
+  --commitment local-evidence/public-commitment.json \
+  --private-preimage private/forward-preimage.json \
+  --output local-evidence/revealed-entry.json
+```
+
 ## Model-server diversity
 
 The scheduler depends on the `DecisionModel` protocol, not the Ollama class. Ollama is
-the first shipped backend because it is already installed on the Windows host and
-supports constrained output. Backend identity belongs in each model record. A future
-llama.cpp, vLLM, SGLang, or Transformers adapter must preserve the same fail-closed
-Decision validation and record the engine/version/quantization as an experimental axis;
-changing inference engines silently would confound the field.
+the first backend because it is installed on the Windows host and supports constrained
+output. The shipped OpenAI-compatible backend covers llama.cpp, vLLM, SGLang and
+compatible local servers through an explicit closed identity manifest. Both backends
+apply the same fail-closed Decision validation; backend name, version, quantization and
+offload remain experimental axes because changing engines silently would confound the
+field.
 
 ## CI boundary
 

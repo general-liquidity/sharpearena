@@ -133,6 +133,7 @@ jobs:
         run: |
           python -m venv .venv
           source .venv/bin/activate
-          pip install --upgrade pip maturin pytest numpy gymnasium verifiers
+          pip install --upgrade pip maturin
+          pip install --requirement ci-requirements.txt
           maturin develop
           python -m pytest -q

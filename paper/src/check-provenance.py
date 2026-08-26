@@ -21,6 +21,7 @@ MANIFEST = ROOT / "paper" / "evidence" / "provenance.json"
 # Fallback for a schema-2 manifest, which recorded no exclusion list.
 DEFAULT_EXCLUDES = ("target", ".venv", "__pycache__", "node_modules", ".git")
 DEFAULT_ARTIFACT_SCOPE = ("paper/evidence/*.json", "paper/figures/*.pdf")
+DEFAULT_MODEL_ARTIFACT_SCOPE = ("paper/evidence/model-artifacts/*.json",)
 
 
 def sha256(path: Path) -> str:
@@ -59,6 +60,17 @@ def check_group(name: str, records: list[dict]) -> list[str]:
     return problems
 
 
+def model_summaries(path: Path, fields: list[str]) -> list[dict[str, str]]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    identities = payload if isinstance(payload, list) else [payload]
+    if not identities or not all(isinstance(item, dict) for item in identities):
+        raise ValueError("must contain an identity object or array")
+    summaries = []
+    for identity in identities:
+        summaries.append({field: identity[field] for field in fields})
+    return summaries
+
+
 def main() -> int:
     if not MANIFEST.is_file():
         print(f"missing manifest: {MANIFEST}", file=sys.stderr)
@@ -68,6 +80,7 @@ def main() -> int:
     problems: list[str] = []
     problems += check_group("source", manifest["source_files"])
     problems += check_group("artifact", manifest["artifacts"])
+    problems += check_group("model artifact", manifest.get("model_artifacts", []))
 
     excludes = frozenset(manifest.get("source_snapshot_excludes", DEFAULT_EXCLUDES))
 
@@ -83,6 +96,27 @@ def main() -> int:
         if path != manifest_rel and path not in recorded_artifacts:
             problems.append(f"artifact: UNRECORDED {path}")
 
+    model_artifact_scope = list(
+        manifest.get("model_artifact_scope", DEFAULT_MODEL_ARTIFACT_SCOPE)
+    )
+    recorded_model_artifacts = {
+        item["path"]: item for item in manifest.get("model_artifacts", [])
+    }
+    for path in expand(model_artifact_scope, excludes):
+        if path not in recorded_model_artifacts:
+            problems.append(f"model artifact: UNRECORDED {path}")
+            continue
+        try:
+            actual = model_summaries(
+                ROOT / path,
+                list(manifest.get("model_identity_fields", [])),
+            )
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+            problems.append(f"model artifact: INVALID {path}: {error}")
+            continue
+        if actual != recorded_model_artifacts[path].get("identities"):
+            problems.append(f"model artifact: IDENTITY SUMMARY {path}")
+
     snapshot = hashlib.sha256(
         "".join(
             f"{item['sha256']}  {item['path']}\n" for item in manifest["source_files"]
@@ -97,15 +131,20 @@ def main() -> int:
 
     n_sources = len(manifest["source_files"])
     n_artifacts = len(manifest["artifacts"])
+    n_model_artifacts = len(manifest.get("model_artifacts", []))
     if problems:
         for problem in problems:
             print(problem)
         print(
             f"\nFAIL: {len(problems)} problem(s) over "
-            f"{n_sources} sources and {n_artifacts} artifacts"
+            f"{n_sources} sources, {n_artifacts} artifacts and "
+            f"{n_model_artifacts} model artifact manifests"
         )
         return 1
-    print(f"OK: {n_sources} sources and {n_artifacts} artifacts match the tree")
+    print(
+        f"OK: {n_sources} sources, {n_artifacts} artifacts and "
+        f"{n_model_artifacts} model artifact manifests match the tree"
+    )
     return 0
 
 

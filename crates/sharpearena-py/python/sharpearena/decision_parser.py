@@ -127,21 +127,22 @@ def parse_decision_payload(text: str) -> dict[str, Any]:
         # to a smaller positive target, a buy can cover a short while its target
         # remains negative, and a hold can preserve a non-zero position.  Those
         # relations need the current portfolio and cannot be inferred here.
-        confidence = _finite_number(raw.get("confidence", 0.5), f"{path}.confidence")
-        if not 0.0 <= confidence <= 1.0:
-            raise DecisionParseError(f"{path}.confidence must lie in [0, 1]")
-        rationale = raw.get("rationale", "")
-        if not isinstance(rationale, str):
-            raise DecisionParseError(f"{path}.rationale must be a string")
-        canonical_orders.append(
-            {
-                "symbol": symbol,
-                "action": action,
-                "target_weight": target,
-                "confidence": confidence,
-                "rationale": rationale,
-            }
-        )
+        canonical_order: dict[str, Any] = {
+            "symbol": symbol,
+            "action": action,
+            "target_weight": target,
+        }
+        if "confidence" in raw:
+            confidence = _finite_number(raw["confidence"], f"{path}.confidence")
+            if not 0.0 <= confidence <= 1.0:
+                raise DecisionParseError(f"{path}.confidence must lie in [0, 1]")
+            canonical_order["confidence"] = confidence
+        if "rationale" in raw:
+            rationale = raw["rationale"]
+            if not isinstance(rationale, str):
+                raise DecisionParseError(f"{path}.rationale must be a string")
+            canonical_order["rationale"] = rationale
+        canonical_orders.append(canonical_order)
 
     canonical: dict[str, Any] = {
         "orders": canonical_orders,
@@ -180,15 +181,25 @@ def decision_to_weights(
     decision: dict[str, Any],
     symbols: Sequence[str],
     *,
+    current_weights: Sequence[float],
     max_abs_weight: float = 1.0,
 ) -> np.ndarray:
-    """Map a validated ``Decision`` to the environment's target-weight vector."""
+    """Map a validated ``Decision`` to a full target-weight vector.
+
+    The wire contract is sparse: an omitted symbol is unchanged, and therefore
+    an empty order list is a true hold.  The Gym action is dense, so it must
+    begin from the current portfolio weights rather than an all-zero vector.
+    """
     if not math.isfinite(max_abs_weight) or max_abs_weight <= 0.0:
         raise ValueError("max_abs_weight must be finite and positive")
     index = {symbol: i for i, symbol in enumerate(symbols)}
     if len(index) != len(symbols):
         raise ValueError("symbols must be unique")
-    vector = np.zeros(len(symbols), dtype=np.float64)
+    vector = np.asarray(current_weights, dtype=np.float64).reshape(-1).copy()
+    if vector.shape != (len(symbols),):
+        raise ValueError("current_weights must match the symbol axis")
+    if not np.all(np.isfinite(vector)):
+        raise ValueError("current_weights must be finite")
     seen: set[str] = set()
     for order_index, order in enumerate(decision["orders"]):
         symbol = order["symbol"]
@@ -210,10 +221,34 @@ def decision_to_weights(
     return vector
 
 
+def portfolio_weights(
+    positions: Sequence[float], closes: Sequence[float], cash: float
+) -> np.ndarray:
+    """Compute current signed weights from a Gym observation.
+
+    ``positions`` are shares and ``closes`` are the point-in-time marks.  A
+    non-positive NAV cannot be represented as portfolio weights and is refused
+    rather than converted to a zero vector.
+    """
+
+    shares = np.asarray(positions, dtype=np.float64).reshape(-1)
+    prices = np.asarray(closes, dtype=np.float64).reshape(-1)
+    if shares.shape != prices.shape:
+        raise ValueError("positions and closes must have the same shape")
+    if not np.all(np.isfinite(shares)) or not np.all(np.isfinite(prices)):
+        raise ValueError("positions and closes must be finite")
+    cash_value = _finite_number(cash, "cash")
+    nav = cash_value + float(np.dot(shares, prices))
+    if not math.isfinite(nav) or nav <= 0.0:
+        raise DecisionParseError("current portfolio NAV must be positive")
+    return shares * prices / nav
+
+
 def parse_decision(
     text: str,
     symbols: Sequence[str],
     *,
+    current_weights: Sequence[float],
     max_abs_weight: float = 1.0,
 ) -> np.ndarray:
     """Parse one canonical completion into a target-weight vector.
@@ -224,7 +259,10 @@ def parse_decision(
     weights raise :class:`DecisionParseError`.
     """
     return decision_to_weights(
-        parse_decision_payload(text), symbols, max_abs_weight=max_abs_weight
+        parse_decision_payload(text),
+        symbols,
+        current_weights=current_weights,
+        max_abs_weight=max_abs_weight,
     )
 
 
@@ -245,5 +283,6 @@ __all__ = [
     "decision_to_weights",
     "parse_decision",
     "parse_decision_payload",
+    "portfolio_weights",
     "format_reward",
 ]

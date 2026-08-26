@@ -240,6 +240,39 @@ def test_a_duplicate_is_recorded_rather_than_dropped(tmp_path):
     assert len(ledger.selectable()) == 1
 
 
+def test_strategy_validation_runs_after_manifest_parse_and_before_deduplication():
+    ledger = EdgeManifestLedger(
+        None,
+        model_digest="sha256:model",
+        split_plan_sha256="sha256:split",
+    )
+    calls = []
+
+    def validator(candidate):
+        calls.append(candidate["id"])
+        if candidate["id"] == "broken-strategy":
+            raise ValueError("strategy DSL is invalid")
+        return "same-semantic-strategy"
+
+    malformed_manifest = _candidate(id="broken-manifest")
+    malformed_manifest["edge_manifest"].pop("mechanism")
+    records = ledger.record_pool(
+        [
+            malformed_manifest,
+            _candidate(id="broken-strategy"),
+            _candidate(id="first-valid"),
+            _candidate(id="duplicate-valid"),
+        ],
+        candidate_validator=validator,
+    )
+    assert calls == ["broken-strategy", "first-valid", "duplicate-valid"]
+    assert records[0].invalid_reason and "mechanism" in records[0].invalid_reason
+    assert records[1].invalid_reason == "strategy DSL is invalid"
+    assert records[2].is_selectable is True
+    assert records[3].duplicate_of_ordinal == 2
+    assert ledger.observed_trials == 4
+
+
 def test_binding_hash_ties_the_manifest_to_the_model_and_split_plan(tmp_path):
     left = EdgeManifestLedger(
         None, model_digest="sha256:model-a", split_plan_sha256="sha256:split"

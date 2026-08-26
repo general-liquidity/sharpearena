@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
+from hashlib import sha256
 from io import StringIO
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from sharpearena.local_agents import (
     FieldPlan,
     InferenceOutcome,
     InferenceResult,
+    LocalAgentError,
     LocalFieldRunner,
     ModelIdentity,
     ModelRunConfig,
@@ -79,6 +81,8 @@ class FixedModel:
                     output_tokens=5,
                     reasoning_tokens=0,
                     total_duration_ns=100,
+                    reasoning_tokens_available=False,
+                    raw_response=f"raw-{seed}",
                 )
             )
             for observation, seed in zip(observations, sampling_seeds)
@@ -95,6 +99,24 @@ class BrokenModel(FixedModel):
         ]
 
 
+class NoConfidenceModel(FixedModel):
+    def decide_many(
+        self, observations, model, renderer, *, max_workers, sampling_seeds=None
+    ):
+        outcomes = super().decide_many(
+            observations,
+            model,
+            renderer,
+            max_workers=max_workers,
+            sampling_seeds=sampling_seeds,
+        )
+        for outcome in outcomes:
+            assert outcome.result is not None
+            for order in outcome.result.decision["orders"]:
+                order.pop("confidence", None)
+        return outcomes
+
+
 def _plan(repetitions=2, shard_index=0, shard_count=1):
     return FieldPlan(
         models=(
@@ -102,6 +124,10 @@ def _plan(repetitions=2, shard_index=0, shard_count=1):
                 "test-fixture:synthetic",
                 SamplingConfig(seed=40),
                 decision_cadence=2,
+                entry_class="field",
+                source_url="https://example.test/models/test-fixture",
+                source_revision="0123456789abcdef",
+                license_id="MIT",
             ),
         ),
         datasets=(DatasetSpec("synthetic-calm", tier="calm", n_symbols=2, n_days=12),),
@@ -144,8 +170,12 @@ def test_field_runner_batches_scores_and_records_repetition_seed(tmp_path):
     assert all(
         record["tokens_in"] > 0 and record["tokens_out"] > 0 for record in records
     )
+    assert all(record["reasoning_tokens_source"] == "unavailable" for record in records)
+    assert all(record["retry_count"] == 0 for record in records)
+    assert all(record["raw_responses"] for record in records)
     assert {record["cell_ordinal"] for record in records} == {0, 1, 2, 3}
     assert all(record["field_shape"]["total_cells"] == 4 for record in records)
+    assert all(record["termination"] == "runner_step_budget" for record in records)
     # Cadence two means only steps 0, 2, and 4 carry the model-call cost.
     assert all(
         sum("cost" in decision for decision in record["decisions"]) == 3
@@ -187,6 +217,89 @@ def test_failed_inference_is_evidence_not_a_flat_return_series(tmp_path):
         assert record["failure"]["type"] == "DecisionParseError"
 
 
+@pytest.mark.parametrize(
+    ("events", "reward", "expected_type"),
+    [
+        ("not-a-list", 0.0, "InvalidProcessTrace"),
+        ([], float("nan"), "NonFiniteReward"),
+    ],
+)
+def test_native_step_faults_fail_the_cell_without_returns(
+    tmp_path, monkeypatch, events, reward, expected_type
+):
+    class FaultEnv:
+        def reset_batch(self):
+            return json.dumps(
+                {
+                    "observations": [
+                        {
+                            "date": "2026-01-01",
+                            "cash": 1.0,
+                            "symbols": [
+                                {"symbol": "AAA", "close_history": [1.0]}
+                            ],
+                            "portfolio": [],
+                        }
+                    ]
+                }
+            )
+
+        def step_batch(self, decisions):
+            return json.dumps(
+                {
+                    "observations": [{}],
+                    "rewards": [reward],
+                    "terminated": [False],
+                    "truncated": [False],
+                    "infos": [{"events": events}],
+                }
+            )
+
+    monkeypatch.setattr(LocalFieldRunner, "_build_env", staticmethod(lambda *_: FaultEnv()))
+    plan = FieldPlan(
+        models=_plan(repetitions=1).models,
+        datasets=_plan(repetitions=1).datasets,
+        seeds=(1,),
+        repetitions=1,
+        max_steps=2,
+    )
+    path = tmp_path / f"{expected_type}.jsonl"
+    counts = LocalFieldRunner(FixedModel()).run(plan, EvidenceJournal(path))
+    assert counts == {"completed": 0, "failed": 1, "skipped": 0}
+    record = json.loads(path.read_text())
+    assert record["failure"]["type"] == expected_type
+    assert "returns" not in record
+
+
+def test_one_scored_bar_is_insufficient_and_not_published_as_a_run(tmp_path):
+    source = _plan(repetitions=1)
+    plan = FieldPlan(
+        models=source.models,
+        datasets=source.datasets,
+        seeds=(1,),
+        repetitions=1,
+        max_steps=1,
+    )
+    path = tmp_path / "short.jsonl"
+    counts = LocalFieldRunner(FixedModel()).run(plan, EvidenceJournal(path))
+    assert counts == {"completed": 0, "failed": 1, "skipped": 0}
+    record = json.loads(path.read_text())
+    assert record["failure"]["type"] == "InsufficientReturns"
+    assert "returns" not in record
+
+
+def test_unreported_confidence_stays_absent_from_scored_calibration(tmp_path):
+    path = tmp_path / "no-confidence.jsonl"
+    counts = LocalFieldRunner(NoConfidenceModel()).run(
+        _plan(repetitions=1), EvidenceJournal(path)
+    )
+    assert counts == {"completed": 2, "failed": 0, "skipped": 0}
+    for line in path.read_text().splitlines():
+        record = json.loads(line)
+        assert record["confidences"] == []
+        assert record["outcomes"] == []
+
+
 def test_shards_are_disjoint_and_cover_the_field():
     full = {cell.key(_plan()) for cell in LocalFieldRunner.cells(_plan())}
     left_plan = _plan(shard_index=0, shard_count=2)
@@ -196,6 +309,27 @@ def test_shards_are_disjoint_and_cover_the_field():
     # The plan hash excludes shard_index, so cell identity is stable across shards.
     assert left.isdisjoint(right)
     assert left | right == full
+
+
+def test_two_executed_shards_recombine_into_one_complete_benchmark_field(tmp_path):
+    left_plan = _plan(shard_index=0, shard_count=2)
+    right_plan = _plan(shard_index=1, shard_count=2)
+    left = tmp_path / "left.jsonl"
+    right = tmp_path / "right.jsonl"
+    assert LocalFieldRunner(FixedModel()).run(left_plan, EvidenceJournal(left)) == {
+        "completed": 2,
+        "failed": 0,
+        "skipped": 0,
+    }
+    assert LocalFieldRunner(FixedModel()).run(right_plan, EvidenceJournal(right)) == {
+        "completed": 2,
+        "failed": 0,
+        "skipped": 0,
+    }
+    manifest = compile_benchmark_evidence([left, right], tmp_path / "bench")
+    assert manifest["field_shape"]["total_cells"] == 4
+    assert len(manifest["source_journals"]) == 2
+    assert manifest["outputs"][0]["runs_per_agent"] == 4
 
 
 def test_field_plan_rejects_ambiguous_coordinates_and_invalid_dataset_controls():
@@ -235,7 +369,7 @@ def test_prompt_renderer_is_stateless_and_carries_cadence():
     assert json.loads(messages[1]["content"])["decision_cadence_bars"] == 12
 
 
-def test_ollama_client_is_local_only_and_records_artifact_identity():
+def test_ollama_client_is_local_only_and_records_artifact_identity(monkeypatch):
     with pytest.raises(ValueError, match="non-loopback"):
         OllamaClient("https://models.example.com")
 
@@ -296,6 +430,8 @@ def test_ollama_client_is_local_only_and_records_artifact_identity():
                 "total_duration": 123,
             }
 
+    monkeypatch.setattr("sharpearena.local_agents._local_gpu_identity", lambda: {})
+    monkeypatch.setattr("sharpearena.local_agents._wrapper_version", lambda: "0.0-test")
     client = StubOllama()
     config = ModelRunConfig(
         "test-fixture:synthetic", SamplingConfig(seed=4, thinking=True)
@@ -318,6 +454,27 @@ def test_ollama_client_is_local_only_and_records_artifact_identity():
         "modelfile_sha256": None,
         "template_sha256": None,
         "parameters_sha256": None,
+        "quantizer": "unresolved",
+        "converter_version": "unresolved",
+        "quantization_calibration": "unresolved",
+        "server_commit": "unresolved",
+        "wrapper": "sharpearena",
+        "wrapper_version": "0.0-test",
+        "chat_template": "unresolved",
+        "reasoning_parser": "none",
+        "tool_parser": "canonical-decision-json",
+        "constrained_decoding_backend": "ollama-json-schema",
+        "kv_cache_dtype": "unresolved",
+        "tensor_parallelism": 1,
+        "batch_size": 1,
+        "parallel_slots": 1,
+        "prefix_cache": "unresolved",
+        "speculative_decoding": "unresolved",
+        "gpu_name": "unresolved",
+        "gpu_memory_mib": None,
+        "gpu_driver_version": "unresolved",
+        "gpu_compute_capability": "unresolved",
+        "cuda_version": "unresolved",
     }
     observation = {
         "date": "2026-01-01",
@@ -333,8 +490,10 @@ def test_ollama_client_is_local_only_and_records_artifact_identity():
         "reasoning_tokens": 0,
     }
     assert client.chat_payload["options"]["seed"] == 8
+    assert client.chat_payload["options"]["num_ctx"] == 8192
     assert client.chat_payload["think"] is True
     assert client.chat_payload["format"]["title"] == "Decision"
+    assert result.reasoning_tokens_available is False
 
 
 def test_openai_compatible_client_is_local_strict_and_provenance_complete(tmp_path):
@@ -365,7 +524,11 @@ def test_openai_compatible_client_is_local_strict_and_provenance_complete(tmp_pa
 
     class StubClient(OpenAICompatibleClient):
         def __init__(self):
-            super().__init__(identities, supports_thinking=True)
+            super().__init__(
+                identities,
+                supports_thinking=True,
+                supports_thinking_budget=True,
+            )
             self.chat_payload = None
 
         def _request(self, method, path, payload=None):
@@ -400,7 +563,10 @@ def test_openai_compatible_client_is_local_strict_and_provenance_complete(tmp_pa
             }
 
     client = StubClient()
-    config = ModelRunConfig("frontier-fixture", SamplingConfig(seed=7, thinking=True))
+    config = ModelRunConfig(
+        "frontier-fixture",
+        SamplingConfig(seed=7, thinking=True, thinking_budget_tokens=256),
+    )
     identity = client.identity(config)
     assert identity.server == "llama.cpp"
     assert identity.server_version == "b9999"
@@ -419,8 +585,12 @@ def test_openai_compatible_client_is_local_strict_and_provenance_complete(tmp_pa
         "tokens_out": 8,
         "reasoning_tokens": 3,
     }
+    assert result.reasoning_tokens_available is True
     assert client.chat_payload["seed"] == 11
-    assert client.chat_payload["chat_template_kwargs"] == {"enable_thinking": True}
+    assert client.chat_payload["chat_template_kwargs"] == {
+        "enable_thinking": True,
+        "thinking_budget": 256,
+    }
     response_format = client.chat_payload["response_format"]
     assert response_format["type"] == "json_schema"
     assert response_format["json_schema"]["strict"] is True
@@ -467,15 +637,62 @@ def test_openai_compatible_client_rejects_schema_valid_but_semantically_invalid_
 
     client = InvalidClient()
     client.identity(ModelRunConfig("frontier-fixture"))
-    with pytest.raises(Exception, match="invalid Decision"):
+    observation = {
+        "date": "2026-01-01",
+        "cash": 1000.0,
+        "symbols": [{"symbol": "AAA", "close_history": [100.0]}],
+        "portfolio": [],
+    }
+    outcome = client.decide_many(
+        [observation],
+        ModelRunConfig("frontier-fixture"),
+        PromptRenderer(),
+        max_workers=1,
+    )[0]
+    assert outcome.error_type == "DecisionResponseError"
+    assert "invalid Decision" in (outcome.error or "")
+    assert outcome.raw_response_sha256 == sha256(
+        json.dumps(
+            {
+                "orders": [
+                    {
+                        "symbol": "UNKNOWN",
+                        "action": "buy",
+                        "target_weight": 0.2,
+                    }
+                ]
+            }
+        ).encode()
+    ).hexdigest()
+
+
+def test_sampling_context_and_thinking_budget_are_explicit_capability_axes():
+    with pytest.raises(ValueError, match="context_tokens"):
+        SamplingConfig(context_tokens=0)
+    with pytest.raises(ValueError, match="requires thinking"):
+        SamplingConfig(thinking_budget_tokens=10)
+    config = ModelRunConfig(
+        "fixture", SamplingConfig(thinking=True, thinking_budget_tokens=10)
+    )
+    identity = ModelIdentity(
+        model="fixture",
+        digest="sha256:fixture",
+        parameter_size="1B",
+        quantization="Q4",
+        offload="GPU",
+        server="fixture",
+        server_version="1",
+    )
+    client = OpenAICompatibleClient((identity,), supports_thinking=True)
+    with pytest.raises(LocalAgentError, match="budget-capable"):
         client.decide(
             {
-                "date": "2026-01-01",
-                "cash": 1000.0,
-                "symbols": [{"symbol": "AAA", "close_history": [100.0]}],
+                "symbols": [{"symbol": "AAA", "close_history": [1.0]}],
                 "portfolio": [],
+                "cash": 1.0,
+                "date": "2026-01-01",
             },
-            ModelRunConfig("frontier-fixture"),
+            config,
             PromptRenderer(),
         )
 
@@ -606,16 +823,41 @@ def test_field_cli_rejects_unknown_plan_fields(tmp_path):
         load_plan(plan_path)
 
 
-def test_field_entries_require_public_source_and_license_provenance():
-    with pytest.raises(ValueError, match="source_url and license_id"):
+def test_field_entries_require_public_source_revision_and_license_provenance():
+    with pytest.raises(ValueError, match="source_url, source_revision, and license_id"):
         ModelRunConfig("anonymous:9b", entry_class="field")
     config = ModelRunConfig(
         "published:9b",
         entry_class="field",
         source_url="https://example.test/model-card",
+        source_revision="0123456789abcdef",
         license_id="Apache-2.0",
     )
     assert config.entry_class == "field"
+    with pytest.raises(ValueError, match="immutable revision"):
+        ModelRunConfig(
+            "published:9b",
+            entry_class="field",
+            source_url="https://example.test/model-card",
+            source_revision="main",
+            license_id="Apache-2.0",
+        )
+
+
+def test_unverified_local_model_cannot_compile_as_independent_benchmark_evidence(
+    tmp_path,
+):
+    plan = FieldPlan(
+        models=(ModelRunConfig("anonymous:9b"),),
+        datasets=(DatasetSpec("synthetic", n_symbols=1, n_days=12),),
+        seeds=(1,),
+        repetitions=1,
+        max_steps=3,
+    )
+    journal = tmp_path / "unverified.jsonl"
+    LocalFieldRunner(FixedModel()).run(plan, EvidenceJournal(journal))
+    with pytest.raises(BenchBridgeError, match="entry_class=field"):
+        compile_benchmark_evidence([journal], tmp_path / "compiled")
 
 
 def test_bench_bridge_compiles_complete_shards_and_preserves_frequency(tmp_path):
@@ -630,19 +872,49 @@ def test_bench_bridge_compiles_complete_shards_and_preserves_frequency(tmp_path)
     assert result["field_shape"]["repetitions"] == 2
     output = result["outputs"][0]
     assert output["periods_per_year"] == 252.0
-    assert output["execution_seeds_per_window"] == 2
+    assert output["execution_seeds_per_window"] == 1
     assert output["score_command"][-5:] == [
         "--periods-per-year",
         "252",
         "--execution-seeds-per-window",
-        "2",
+        "1",
         "--json",
     ]
     submissions = json.loads(Path(output["submissions_path"]).read_text())
     assert len(submissions) == 1
     assert len(submissions[0]["runs"]) == 4
     assert submissions[0]["in_sample_trials"] == 1
+    assert submissions[0]["candidates"] == []
     assert submissions[0]["runs"][0]["trace"]["events"]
+
+
+def test_bench_bridge_preserves_disclosed_selection_candidates(tmp_path):
+    candidate_returns = ((0.01, -0.005, 0.02), (0.002, 0.003, -0.001))
+    plan = FieldPlan(
+        models=(
+                ModelRunConfig(
+                    "test-fixture:synthetic",
+                    precommitted_n_trials=2,
+                    selection_candidates=candidate_returns,
+                    entry_class="field",
+                    source_url="https://example.test/models/test-fixture",
+                    source_revision="0123456789abcdef",
+                    license_id="MIT",
+                ),
+        ),
+        datasets=(DatasetSpec("synthetic-calm", n_symbols=2, n_days=12),),
+        seeds=(1,),
+        repetitions=1,
+        max_steps=5,
+    )
+    journal = tmp_path / "selection.jsonl"
+    LocalFieldRunner(FixedModel()).run(plan, EvidenceJournal(journal))
+    result = compile_benchmark_evidence([journal], tmp_path / "compiled-selection")
+    submissions = json.loads(
+        Path(result["outputs"][0]["submissions_path"]).read_text()
+    )
+    assert submissions[0]["in_sample_trials"] == 2
+    assert submissions[0]["candidates"] == [list(series) for series in candidate_returns]
 
 
 def test_bench_bridge_refuses_incomplete_or_failed_fields(tmp_path):

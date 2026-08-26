@@ -6,16 +6,33 @@ version covers the Rust crates, the npm package and the PyPI package; each
 section is one `v*` tag and links the commits it was built from. The wire
 contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
-[Unreleased]: https://github.com/general-liquidity/sharpearena/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/general-liquidity/sharpearena/compare/v0.18.0...HEAD
 
 ## [Unreleased]
+
+## [0.18.0] - 2026-08-26
+
+### Added
+- py: the local-model record now binds an immutable publisher revision, model artifact and runtime identity, context and optional thinking budgets, accelerator details, raw responses and hashes, provider-token availability, retry count, and explicit unresolved values for backend facts that cannot be observed. The release provenance manifest has a separately validated model-artifact scope that exposes checkpoint digest, quantization, server and server version.
+- py: the forward paper arm now opens its public commitment into the exact SharpeBench `RevealedEntry` shape. A shared fixture is checked by both Python and the published Rust `sharpebench-attest` primitive, so delimiter or hashing drift fails cross-language CI.
+- test: real loopback transport tests cover invalid JSON, HTTP failure, redirect refusal, unreachable endpoints, concurrent lane ordering and per-lane faults. Field shards are executed and recombined, every strategy-DSL indicator and Boolean operator is numerically pinned, and all terminal field-failure branches are exercised.
+
+### Changed
+- py: sparse `Decision.orders` now preserve the current weight of omitted symbols. Confidence is recorded only when the model supplied it; no synthetic 0.5 enters calibration evidence. Independent field evidence requires a public URL, immutable source revision and license, while host and unverified entries remain runnable but cannot cross the SharpeBench bridge.
+- py: generated-strategy evidence is append-only JSONL. Every raw trial first enters a manifest-bound ordinal ledger, selection candidates cross the benchmark boundary, and repetitions remain the explicit pass^k axis while execution noise stays one seed per recorded run.
+- ci: Python optional conformance dependencies are pinned and installed in CI, eliminating environment-dependent silent skips.
+
+### Fixed
+- py: model-server failures retain typed HTTP, transport, response or Decision fault classes and the raw-response hash where bytes existed. Unsupported numeric thinking budgets fail before a request is sent.
+- py: Binance and Alpaca market-data adapters reject malformed payloads consistently, and their complete OHLCV mappings and exact request normalization are tested.
+- docs/paper: containment, host-side risk, target/action semantics, forward commitment, OpenAI-compatible serving and reproducibility claims now match the shipped boundaries.
 
 ## [0.17.0] - 2026-08-26
 
 ### Added
 - py: `EdgeManifest`, a closed schema binding a generated candidate to its hypothesis, the mechanism it claims, the regimes and instruments it claims them in, its invariants, quantitative kill conditions and a verification plan. Falsifiability is part of the candidate artifact instead of prose written after selection. The schema is closed: a missing required field invalidates the candidate rather than synthesizing a default, and every threshold carries an explicit unit drawn from a closed enum, so a table cannot mix basis points, dollars and unit fractions in one untyped column. The manifest is recorded with the raw candidate and its trial ordinal, before validation or deduplication, and kill conditions are evaluated only outside the selection sample ([89c77cf](https://github.com/general-liquidity/sharpearena/commit/89c77cf)).
 - py: strict silver-to-gold trace promotion, which turns a flagged production trace into a frozen regression scenario. A malformed or incomplete trace is rejected rather than skipped. The fingerprint is deterministic over environment, model, scaffold, contract, data and the process-event sequence. Deterministic checks run before anything else, silver candidates are immutable and carry the triggering check with the source trace hash, promotion to gold requires a recorded operator decision, and what is frozen is a minimal scenario plus its expected invariant rather than a transcript. The existing permissive reader is untouched: strictness is a separate mode, not a tightening of the exploratory path ([94197b3](https://github.com/general-liquidity/sharpearena/commit/94197b3)).
-- py: a counterfactual ledger. Every decision the environment produces gets a record whether or not it was acted on, so the gap between what was considered and what was executed is measurable rather than invisible. Selection effects are what these products exist to measure, and leaving the unexecuted half unrecorded would hide exactly that. It costs nothing in the deterministic arm, where the counterfactual is recomputable from the frozen scenario ([12c1d94](https://github.com/general-liquidity/sharpearena/commit/12c1d94)).
+- py: a counterfactual ledger used by the paper-execution arm. Every intended paper order gets a record whether it was executed, resized, refused or not submitted, so the gap between what was considered and what was executed is measurable rather than invisible. The historical local-field scheduler does not yet instantiate it because the native target-weight step surface does not expose the per-order fill quantities the ledger requires ([12c1d94](https://github.com/general-liquidity/sharpearena/commit/12c1d94)).
 - py: `submission_unknown` is a representable paper-execution state. A forward order could previously be submitted, acknowledged, filled or rejected, but there was no way to say the submission got no verdict at all. The state is reachable only from `submitted` and leaves only to `reconciled_accepted` or `reconciled_absent`; ack latency is `None` until a real acknowledgment arrives and is computed from two recorded timestamps. A replacement is permitted only after the broker confirms absence, queried by the deterministic client order id, and exactly once; a broker that cannot be queried raises rather than resolving anything, so an unanswerable query can never be mistaken for a confirmed absence. The store is written before the submit call, on the unknown transition and after every reconciliation, so an order left unresolved by a crash is still unresolved after a restart rather than silently resubmitted. Account state, previously read from the plan file and never reconciled, is now reconciled against the broker while keeping the session anchor and ratcheting peak equity. Every transition and the hash of each raw broker acknowledgment reaches the forward evidence, which stays distinct from deterministic backtest evidence and carries no replay guarantee. No real-capital path is added: the origin is validated and then reassigned unconditionally to the paper host, both new calls are GETs that read state, and the deny-first risk guard, redirect refusal and market-only restriction are untouched ([ee32c33](https://github.com/general-liquidity/sharpearena/commit/ee32c33)).
 
 ### Changed
@@ -33,7 +50,7 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 ### Added
 - py: a local open-weight field runner with a fixed prompt scaffold, constrained Ollama inference, strict canonical `Decision` validation, native vector stepping, cadence/thinking controls, stable sharding, append-only resume, exact process traces and model/runtime provenance; `sharpearena-compile-bench` validates complete journals and emits ordinary SharpeBench submissions without introducing a reverse package dependency.
 - py: a closed, non-executable strategy DSL whose host records every raw generated candidate, derives the deflation trial count from observed generation, selects on a validation split and evaluates only the winner on a disjoint test split.
-- py: a separate forward paper-trading evidence class with read-only Binance/Alpaca market data, in-memory or Alpaca-paper-only submission, deny-first native risk preflight, append-only decision/order/refusal evidence and a SharpeBench-compatible commitment with a separate private reveal preimage. No real-capital endpoint or override exists.
+- py: a separate forward paper-trading evidence class with read-only Binance/Alpaca market data, in-memory or Alpaca-paper-only submission, deny-first host-side risk preflight, append-only decision/order/refusal evidence and a SharpeBench-compatible commitment with a separate private reveal preimage. No real-capital endpoint or override exists.
 - docs: local-agent architecture, August 2026 frontier-model/server matrix, sandbox-and-environment research, and an end-to-end Gordon portability assessment. The Gordon report recommends no code port into the default scaffold.
 
 ### Changed
@@ -230,6 +247,7 @@ First published release, as OpenOutcry.
 ### Fixed
 - ci: toolchain pinned to 1.96.0 for the wasm32 target; a virtualenv for maturin ([bb0ee4d](https://github.com/general-liquidity/sharpearena/commit/bb0ee4d)).
 
+[0.18.0]: https://github.com/general-liquidity/sharpearena/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/general-liquidity/sharpearena/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/general-liquidity/sharpearena/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/general-liquidity/sharpearena/compare/v0.14.0...v0.15.0

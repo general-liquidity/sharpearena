@@ -41,11 +41,21 @@ _MODEL_FIELDS = {
     "scaffold",
     "decision_cadence",
     "precommitted_n_trials",
+    "selection_candidates",
     "entry_class",
     "source_url",
+    "source_revision",
     "license_id",
 }
-_SAMPLING_FIELDS = {"temperature", "top_p", "seed", "max_tokens", "thinking"}
+_SAMPLING_FIELDS = {
+    "temperature",
+    "top_p",
+    "seed",
+    "max_tokens",
+    "context_tokens",
+    "thinking",
+    "thinking_budget_tokens",
+}
 _DATASET_FIELDS = {
     "dataset_id",
     "tier",
@@ -85,6 +95,17 @@ def load_plan(path: Path) -> FieldPlan:
             raise ValueError(f"models[{index}].sampling must be an object")
         _reject_unknown(sampling_payload, _SAMPLING_FIELDS, f"models[{index}].sampling")
         sampling = SamplingConfig(**sampling_payload)
+        if "selection_candidates" in item:
+            candidates = item["selection_candidates"]
+            if not isinstance(candidates, list) or not all(
+                isinstance(series, list) for series in candidates
+            ):
+                raise ValueError(
+                    f"models[{index}].selection_candidates must be an array of return arrays"
+                )
+            item["selection_candidates"] = tuple(
+                tuple(value for value in series) for series in candidates
+            )
         models.append(ModelRunConfig(sampling=sampling, **item))
     datasets = []
     for index, item in enumerate(payload.get("datasets", [])):
@@ -122,6 +143,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--openai-url", default="http://127.0.0.1:8000/v1")
     parser.add_argument("--identity-manifest", type=Path)
     parser.add_argument("--supports-thinking", action="store_true")
+    parser.add_argument("--supports-thinking-budget", action="store_true")
     parser.add_argument("--timeout-seconds", type=float, default=120.0)
     parser.add_argument(
         "--inspect",
@@ -160,6 +182,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             base_url=args.openai_url,
             timeout_seconds=args.timeout_seconds,
             supports_thinking=args.supports_thinking,
+            supports_thinking_budget=args.supports_thinking_budget,
         )
     counts = LocalFieldRunner(client).run(plan, EvidenceJournal(args.evidence))
     print(json.dumps(counts, sort_keys=True))

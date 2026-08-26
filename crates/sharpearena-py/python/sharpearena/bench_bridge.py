@@ -138,6 +138,23 @@ def _validate_field(records: Sequence[dict[str, Any]]) -> dict[str, Any]:
             raise BenchBridgeError(
                 f"field contains a failed/incomplete cell: {failure}"
             )
+        model_config = record.get("model_config")
+        if not isinstance(model_config, dict):
+            raise BenchBridgeError("completed cell contains no model_config object")
+        if model_config.get("entry_class") != "field":
+            raise BenchBridgeError(
+                "only a provenance-complete entry_class=field model may be compiled "
+                "into independent benchmark evidence"
+            )
+        if (
+            not model_config.get("source_url")
+            or not model_config.get("source_revision")
+            or not model_config.get("license_id")
+        ):
+            raise BenchBridgeError(
+                "field model_config lacks its public source URL, exact source revision, "
+                "or license identifier"
+            )
         model_index = record.get("model_index")
         dataset_index = record.get("dataset_index")
         seed_index = record.get("seed_index")
@@ -180,10 +197,15 @@ def _validate_field(records: Sequence[dict[str, Any]]) -> dict[str, Any]:
             )
         ):
             raise BenchBridgeError("completed cell contains invalid returns")
-        for name in ("confidences", "outcomes"):
-            values = record.get(name)
-            if not isinstance(values, list) or len(values) != len(returns):
-                raise BenchBridgeError(f"{name} must align one-to-one with returns")
+        confidences = record.get("confidences")
+        outcomes = record.get("outcomes")
+        if not isinstance(confidences, list) or not isinstance(outcomes, list):
+            raise BenchBridgeError("confidences and outcomes must be arrays")
+        if len(confidences) != len(outcomes) or len(confidences) > len(returns):
+            raise BenchBridgeError(
+                "reported confidences and outcomes must align with each other and cannot "
+                "outnumber returns"
+            )
         if record.get("returns_sha256") != _digest(returns):
             raise BenchBridgeError("returns_sha256 does not match returns")
     if seen_ordinals != set(range(expected_total)):
@@ -263,7 +285,9 @@ def compile_benchmark_evidence(
                     "agent_id": agent_id,
                     "runs": runs,
                     "in_sample_trials": int(next(iter(trials))),
-                    "candidates": [],
+                    "candidates": representative["model_config"].get(
+                        "selection_candidates", []
+                    ),
                 }
             )
             model_entries.append(
@@ -284,7 +308,10 @@ def compile_benchmark_evidence(
                 "submissions_path": str(submissions_path.resolve()),
                 "submissions_sha256": submissions_sha256,
                 "periods_per_year": periods_per_year,
-                "execution_seeds_per_window": int(shape["repetitions"]),
+                # Repetitions vary the model sampling seed on one market path;
+                # they are reliability runs, not execution-noise replicates to
+                # be averaged by SharpeBench.
+                "execution_seeds_per_window": 1,
                 "runs_per_agent": len(shape["seeds"]) * int(shape["repetitions"]),
                 "models": model_entries,
                 "score_command": [
@@ -294,7 +321,7 @@ def compile_benchmark_evidence(
                     "--periods-per-year",
                     format(periods_per_year, ".12g"),
                     "--execution-seeds-per-window",
-                    str(shape["repetitions"]),
+                    "1",
                     "--json",
                 ],
             }

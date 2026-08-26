@@ -11,10 +11,12 @@ from __future__ import annotations
 import json
 import math
 import os
+import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field, fields
 from hashlib import sha256
+from importlib.metadata import PackageNotFoundError, version as package_version
 from pathlib import Path
 from typing import Any, Optional, Protocol, Sequence
 from urllib.error import HTTPError, URLError
@@ -34,6 +36,26 @@ LOCAL_EVIDENCE_CLASS = "retrospective_local_model"
 
 class LocalAgentError(RuntimeError):
     """A local model request, response, or experiment cell failed."""
+
+
+class ModelHttpError(LocalAgentError):
+    """The local model server returned a non-success HTTP response."""
+
+
+class ModelTransportError(LocalAgentError):
+    """The loopback model transport timed out or could not connect."""
+
+
+class ModelResponseError(LocalAgentError):
+    """The model-server response was absent or structurally undecodable."""
+
+
+class DecisionResponseError(LocalAgentError):
+    """A received completion violated the canonical Decision contract."""
+
+    def __init__(self, message: str, raw_response_sha256: str):
+        super().__init__(message)
+        self.raw_response_sha256 = raw_response_sha256
 
 
 class _NoRedirectHandler(HTTPRedirectHandler):
@@ -61,7 +83,9 @@ class SamplingConfig:
     top_p: float = 1.0
     seed: int = 0
     max_tokens: int = 512
+    context_tokens: int = 8192
     thinking: bool = False
+    thinking_budget_tokens: Optional[int] = None
 
     def __post_init__(self) -> None:
         if not math.isfinite(self.temperature) or not 0.0 <= self.temperature <= 2.0:
@@ -76,6 +100,16 @@ class SamplingConfig:
             raise ValueError("seed must be a nonnegative signed 64-bit integer")
         if isinstance(self.max_tokens, bool) or self.max_tokens <= 0:
             raise ValueError("max_tokens must be positive")
+        if isinstance(self.context_tokens, bool) or self.context_tokens <= 0:
+            raise ValueError("context_tokens must be positive")
+        if self.thinking_budget_tokens is not None:
+            if (
+                isinstance(self.thinking_budget_tokens, bool)
+                or self.thinking_budget_tokens <= 0
+            ):
+                raise ValueError("thinking_budget_tokens must be positive when supplied")
+            if not self.thinking:
+                raise ValueError("thinking_budget_tokens requires thinking=true")
 
 
 @dataclass(frozen=True)
@@ -87,8 +121,10 @@ class ModelRunConfig:
     scaffold: str = "minimal-stateless-v1"
     decision_cadence: int = 1
     precommitted_n_trials: int = 1
+    selection_candidates: tuple[tuple[float, ...], ...] = ()
     entry_class: str = "unverified-local"
     source_url: Optional[str] = None
+    source_revision: Optional[str] = None
     license_id: Optional[str] = None
 
     def __post_init__(self) -> None:
@@ -98,16 +134,37 @@ class ModelRunConfig:
             raise ValueError("decision_cadence must be positive")
         if self.precommitted_n_trials <= 0:
             raise ValueError("precommitted_n_trials must be positive")
+        normalized_candidates: list[tuple[float, ...]] = []
+        for index, series in enumerate(self.selection_candidates):
+            values = tuple(float(value) for value in series)
+            if len(values) < 2 or any(not math.isfinite(value) for value in values):
+                raise ValueError(
+                    f"selection_candidates[{index}] must contain at least two finite returns"
+                )
+            normalized_candidates.append(values)
+        if len(normalized_candidates) > self.precommitted_n_trials:
+            raise ValueError(
+                "selection_candidates cannot exceed precommitted_n_trials"
+            )
+        object.__setattr__(self, "selection_candidates", tuple(normalized_candidates))
         if self.entry_class not in {"field", "host", "unverified-local"}:
             raise ValueError("entry_class must be field, host, or unverified-local")
-        if self.entry_class == "field" and (not self.source_url or not self.license_id):
+        if self.entry_class == "field" and (
+            not self.source_url or not self.source_revision or not self.license_id
+        ):
             raise ValueError(
-                "field entries require source_url and license_id provenance"
+                "field entries require source_url, source_revision, and license_id provenance"
             )
         if self.source_url is not None:
             parsed = urlsplit(self.source_url)
             if parsed.scheme != "https" or not parsed.netloc:
                 raise ValueError("source_url must be an absolute HTTPS URL")
+        if self.source_revision is not None:
+            revision = self.source_revision.strip()
+            if not revision:
+                raise ValueError("source_revision must be non-empty when supplied")
+            if revision.lower() in {"main", "master", "latest", "head"}:
+                raise ValueError("source_revision must name an immutable revision")
         if self.license_id is not None and not self.license_id.strip():
             raise ValueError("license_id must be non-empty when supplied")
 
@@ -132,6 +189,74 @@ class ModelIdentity:
     modelfile_sha256: Optional[str] = None
     template_sha256: Optional[str] = None
     parameters_sha256: Optional[str] = None
+    quantizer: str = "unresolved"
+    converter_version: str = "unresolved"
+    quantization_calibration: str = "unresolved"
+    server_commit: str = "unresolved"
+    wrapper: str = "sharpearena"
+    wrapper_version: str = "unresolved"
+    chat_template: str = "unresolved"
+    reasoning_parser: str = "none"
+    tool_parser: str = "canonical-decision-json"
+    constrained_decoding_backend: str = "unresolved"
+    kv_cache_dtype: str = "unresolved"
+    tensor_parallelism: int = 1
+    batch_size: int = 1
+    parallel_slots: int = 1
+    prefix_cache: str = "unresolved"
+    speculative_decoding: str = "unresolved"
+    gpu_name: str = "unresolved"
+    gpu_memory_mib: Optional[int] = None
+    gpu_driver_version: str = "unresolved"
+    gpu_compute_capability: str = "unresolved"
+    cuda_version: str = "unresolved"
+
+
+def _local_gpu_identity() -> dict[str, Any]:
+    """Capture the local NVIDIA runtime without making GPU presence a requirement."""
+
+    command = [
+        "nvidia-smi",
+        "--query-gpu=name,memory.total,driver_version,compute_cap",
+        "--format=csv,noheader,nounits",
+    ]
+    try:
+        completed = subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        first = next(line for line in completed.stdout.splitlines() if line.strip())
+        name, memory, driver, capability = [part.strip() for part in first.split(",", 3)]
+        banner = subprocess.run(
+            ["nvidia-smi"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout
+        cuda_version = "unresolved"
+        marker = "CUDA Version:"
+        if marker in banner:
+            cuda_version = banner.split(marker, 1)[1].split()[0]
+        return {
+            "gpu_name": name,
+            "gpu_memory_mib": int(memory),
+            "gpu_driver_version": driver,
+            "gpu_compute_capability": capability,
+            "cuda_version": cuda_version,
+        }
+    except (OSError, ValueError, StopIteration, subprocess.SubprocessError):
+        return {}
+
+
+def _wrapper_version() -> str:
+    try:
+        return package_version("sharpearena")
+    except PackageNotFoundError:
+        return "unresolved"
 
 
 def load_identity_manifest(path: os.PathLike[str] | str) -> tuple[ModelIdentity, ...]:
@@ -326,6 +451,9 @@ class InferenceResult:
     output_tokens: int
     reasoning_tokens: int
     total_duration_ns: int
+    reasoning_tokens_available: bool = False
+    raw_response: Optional[str] = None
+    retry_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -333,6 +461,7 @@ class InferenceOutcome:
     result: Optional[InferenceResult] = None
     error_type: Optional[str] = None
     error: Optional[str] = None
+    raw_response_sha256: Optional[str] = None
 
     @property
     def ok(self) -> bool:
@@ -431,11 +560,15 @@ class OllamaClient:
                 return json.loads(response.read().decode("utf-8"))
         except HTTPError as error:
             detail = error.read().decode("utf-8", errors="replace")[:1000]
-            raise LocalAgentError(
+            raise ModelHttpError(
                 f"Ollama {path} returned HTTP {error.code}: {detail}"
             ) from error
-        except (URLError, TimeoutError, json.JSONDecodeError) as error:
-            raise LocalAgentError(f"Ollama {path} failed: {error}") from error
+        except (URLError, TimeoutError) as error:
+            raise ModelTransportError(f"Ollama {path} failed: {error}") from error
+        except json.JSONDecodeError as error:
+            raise ModelResponseError(
+                f"Ollama {path} returned invalid JSON: {error}"
+            ) from error
 
     def identity(self, model: ModelRunConfig) -> ModelIdentity:
         cached = self._identities.get(model.model)
@@ -514,6 +647,14 @@ class OllamaClient:
                 if shown.get("parameters") is not None
                 else None
             ),
+            wrapper_version=_wrapper_version(),
+            chat_template=(
+                f"sha256:{sha256(str(shown['template']).encode('utf-8')).hexdigest()}"
+                if shown.get("template") is not None
+                else "unresolved"
+            ),
+            constrained_decoding_backend="ollama-json-schema",
+            **_local_gpu_identity(),
         )
         self._identities[model.model] = identity
         return identity
@@ -540,28 +681,33 @@ class OllamaClient:
                 "top_p": model.sampling.top_p,
                 "seed": model.sampling.seed if sampling_seed is None else sampling_seed,
                 "num_predict": model.sampling.max_tokens,
+                "num_ctx": model.sampling.context_tokens,
             },
         }
+        if model.sampling.thinking_budget_tokens is not None:
+            raise LocalAgentError(
+                "Ollama exposes a thinking toggle but no portable numeric thinking budget; "
+                "use an OpenAI-compatible backend that declares budget support"
+            )
         response = self._request("POST", "/api/chat", payload)
         message = response.get("message")
         if not isinstance(message, dict) or not isinstance(message.get("content"), str):
-            raise LocalAgentError("Ollama response has no message.content")
+            raise ModelResponseError("Ollama response has no message.content")
         raw = message["content"]
         try:
             decision = parse_decision_payload(raw)
-            decision_to_weights(decision, symbols)
+            decision_to_weights(
+                decision, symbols, current_weights=[0.0] * len(symbols)
+            )
         except DecisionParseError as error:
-            raise LocalAgentError(
-                f"model emitted an invalid Decision: {error}"
+            raise DecisionResponseError(
+                f"model emitted an invalid Decision: {error}",
+                sha256(raw.encode("utf-8")).hexdigest(),
             ) from error
         prompt_tokens = int(response.get("prompt_eval_count", 0) or 0)
         output_tokens = int(response.get("eval_count", 0) or 0)
-        thinking = message.get("thinking", "")
+        reasoning_tokens_available = "reasoning_count" in response
         reasoning_tokens = int(response.get("reasoning_count", 0) or 0)
-        if reasoning_tokens == 0 and isinstance(thinking, str) and thinking:
-            # Ollama does not consistently expose a thinking-token count. Keep the
-            # estimate labeled by recording zero here rather than inventing a tokenizer.
-            reasoning_tokens = 0
         decision["cost"] = {
             "cost_usd": 0.0,
             "tokens_in": prompt_tokens,
@@ -575,6 +721,8 @@ class OllamaClient:
             output_tokens=output_tokens,
             reasoning_tokens=reasoning_tokens,
             total_duration_ns=int(response.get("total_duration", 0) or 0),
+            reasoning_tokens_available=reasoning_tokens_available,
+            raw_response=raw,
         )
 
     def decide_many(
@@ -610,7 +758,11 @@ class OllamaClient:
                     outcomes[index] = InferenceOutcome(result=future.result())
                 except Exception as error:  # noqa: BLE001 - cell failure is evidence
                     outcomes[index] = InferenceOutcome(
-                        error_type=type(error).__name__, error=str(error)
+                        error_type=type(error).__name__,
+                        error=str(error),
+                        raw_response_sha256=getattr(
+                            error, "raw_response_sha256", None
+                        ),
                     )
         return [outcome for outcome in outcomes if outcome is not None]
 
@@ -630,6 +782,7 @@ class OpenAICompatibleClient:
         base_url: str = "http://127.0.0.1:8000",
         timeout_seconds: float = 120.0,
         supports_thinking: bool = False,
+        supports_thinking_budget: bool = False,
     ) -> None:
         parsed = urlsplit(base_url)
         if parsed.scheme not in {"http", "https"}:
@@ -680,6 +833,7 @@ class OpenAICompatibleClient:
                 )
             self._identities[identity.model] = identity
         self.supports_thinking = bool(supports_thinking)
+        self.supports_thinking_budget = bool(supports_thinking_budget)
         self._opener = build_opener(_NoRedirectHandler())
         self._schema = json.loads(decision_schema_json())
         self._discovered_models: Optional[set[str]] = None
@@ -699,12 +853,16 @@ class OpenAICompatibleClient:
                 return json.loads(response.read().decode("utf-8"))
         except HTTPError as error:
             detail = error.read().decode("utf-8", errors="replace")[:1000]
-            raise LocalAgentError(
+            raise ModelHttpError(
                 f"OpenAI-compatible {path} returned HTTP {error.code}: {detail}"
             ) from error
-        except (URLError, TimeoutError, json.JSONDecodeError) as error:
-            raise LocalAgentError(
+        except (URLError, TimeoutError) as error:
+            raise ModelTransportError(
                 f"OpenAI-compatible {path} failed: {error}"
+            ) from error
+        except json.JSONDecodeError as error:
+            raise ModelResponseError(
+                f"OpenAI-compatible {path} returned invalid JSON: {error}"
             ) from error
 
     def identity(self, model: ModelRunConfig) -> ModelIdentity:
@@ -746,6 +904,14 @@ class OpenAICompatibleClient:
             raise LocalAgentError(
                 "thinking was requested but this backend was not declared thinking-capable"
             )
+        if (
+            model.sampling.thinking_budget_tokens is not None
+            and not self.supports_thinking_budget
+        ):
+            raise LocalAgentError(
+                "a numeric thinking budget was requested but this backend was not "
+                "declared budget-capable"
+            )
         payload: dict[str, Any] = {
             "model": model.model,
             "messages": renderer.messages(observation, cadence=model.decision_cadence),
@@ -765,24 +931,31 @@ class OpenAICompatibleClient:
         }
         if model.sampling.thinking:
             payload["chat_template_kwargs"] = {"enable_thinking": True}
+            if model.sampling.thinking_budget_tokens is not None:
+                payload["chat_template_kwargs"]["thinking_budget"] = (
+                    model.sampling.thinking_budget_tokens
+                )
         started = time.perf_counter_ns()
         response = self._request("POST", "/chat/completions", payload)
         elapsed = time.perf_counter_ns() - started
         choices = response.get("choices")
         if not isinstance(choices, list) or not choices:
-            raise LocalAgentError("OpenAI-compatible response has no choices")
+            raise ModelResponseError("OpenAI-compatible response has no choices")
         message = choices[0].get("message") if isinstance(choices[0], dict) else None
         if not isinstance(message, dict) or not isinstance(message.get("content"), str):
-            raise LocalAgentError(
+            raise ModelResponseError(
                 "OpenAI-compatible response has no choices[0].message.content"
             )
         raw = message["content"]
         try:
             decision = parse_decision_payload(raw)
-            decision_to_weights(decision, symbols)
+            decision_to_weights(
+                decision, symbols, current_weights=[0.0] * len(symbols)
+            )
         except DecisionParseError as error:
-            raise LocalAgentError(
-                f"model emitted an invalid Decision: {error}"
+            raise DecisionResponseError(
+                f"model emitted an invalid Decision: {error}",
+                sha256(raw.encode("utf-8")).hexdigest(),
             ) from error
         usage = response.get("usage")
         if not isinstance(usage, dict):
@@ -790,6 +963,9 @@ class OpenAICompatibleClient:
         prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
         output_tokens = int(usage.get("completion_tokens", 0) or 0)
         details = usage.get("completion_tokens_details")
+        reasoning_tokens_available = isinstance(details, dict) and (
+            "reasoning_tokens" in details
+        )
         reasoning_tokens = (
             int(details.get("reasoning_tokens", 0) or 0)
             if isinstance(details, dict)
@@ -808,6 +984,8 @@ class OpenAICompatibleClient:
             output_tokens=output_tokens,
             reasoning_tokens=reasoning_tokens,
             total_duration_ns=elapsed,
+            reasoning_tokens_available=reasoning_tokens_available,
+            raw_response=raw,
         )
 
     def decide_many(
@@ -843,7 +1021,11 @@ class OpenAICompatibleClient:
                     outcomes[index] = InferenceOutcome(result=future.result())
                 except Exception as error:  # noqa: BLE001 - cell failure is evidence
                     outcomes[index] = InferenceOutcome(
-                        error_type=type(error).__name__, error=str(error)
+                        error_type=type(error).__name__,
+                        error=str(error),
+                        raw_response_sha256=getattr(
+                            error, "raw_response_sha256", None
+                        ),
                     )
         return [outcome for outcome in outcomes if outcome is not None]
 
@@ -970,6 +1152,14 @@ class LocalFieldRunner:
         cells = self.cells(plan)
         for model_index, model in enumerate(plan.models):
             identity = self.model_client.identity(model)
+            if (
+                identity.context_length is not None
+                and model.sampling.context_tokens > identity.context_length
+            ):
+                raise LocalAgentError(
+                    f"configured context cap {model.sampling.context_tokens} exceeds "
+                    f"{model.model!r} context length {identity.context_length}"
+                )
             for dataset_index, dataset in enumerate(plan.datasets):
                 group = [
                     cell
@@ -1002,15 +1192,21 @@ class LocalFieldRunner:
         active = [True] * len(cells)
         failed: list[Optional[dict[str, str]]] = [None] * len(cells)
         returns: list[list[float]] = [[] for _ in cells]
+        raw_responses: list[list[str]] = [[] for _ in cells]
         response_hashes: list[list[str]] = [[] for _ in cells]
         observation_hashes: list[list[str]] = [[] for _ in cells]
         decisions_history: list[list[dict[str, Any]]] = [[] for _ in cells]
         trace_events: list[list[dict[str, Any]]] = [[] for _ in cells]
         confidences: list[list[float]] = [[] for _ in cells]
         realized_outcomes: list[list[bool]] = [[] for _ in cells]
+        step_confidences: list[Optional[float]] = [None] * len(cells)
         tokens_in = [0] * len(cells)
         tokens_out = [0] * len(cells)
         reasoning_tokens = [0] * len(cells)
+        reasoning_token_observations: list[list[Optional[int]]] = [
+            [] for _ in cells
+        ]
+        retry_counts = [0] * len(cells)
         inference_ns = [0] * len(cells)
         termination: list[Optional[str]] = [None] * len(cells)
         last_decisions: list[dict[str, Any]] = [
@@ -1046,16 +1242,29 @@ class LocalFieldRunner:
                         failed[lane] = {
                             "type": outcome.error_type or "InferenceError",
                             "detail": outcome.error or "unknown inference failure",
+                            **(
+                                {"raw_response_sha256": outcome.raw_response_sha256}
+                                if outcome.raw_response_sha256 is not None
+                                else {}
+                            ),
                         }
                         active[lane] = False
                         continue
                     result = outcome.result
                     assert result is not None
                     last_decisions[lane] = result.decision
+                    if result.raw_response is not None:
+                        raw_responses[lane].append(result.raw_response)
                     response_hashes[lane].append(result.raw_response_sha256)
                     tokens_in[lane] += result.prompt_tokens
                     tokens_out[lane] += result.output_tokens
                     reasoning_tokens[lane] += result.reasoning_tokens
+                    reasoning_token_observations[lane].append(
+                        result.reasoning_tokens
+                        if result.reasoning_tokens_available
+                        else None
+                    )
+                    retry_counts[lane] += result.retry_count
                     inference_ns[lane] += result.total_duration_ns
 
             decisions = []
@@ -1081,14 +1290,14 @@ class LocalFieldRunner:
                 orders = applied.get("orders", [])
                 lane_confidences = []
                 for order in orders:
-                    if not isinstance(order, dict):
+                    if not isinstance(order, dict) or "confidence" not in order:
                         continue
-                    confidence = float(order.get("confidence", 0.5))
+                    confidence = float(order["confidence"])
                     lane_confidences.append(confidence)
-                confidences[index].append(
+                step_confidences[index] = (
                     sum(lane_confidences) / len(lane_confidences)
                     if lane_confidences
-                    else 0.5
+                    else None
                 )
             stepped = json.loads(env.step_batch(json.dumps(decisions)))
             for index in range(len(cells)):
@@ -1116,7 +1325,9 @@ class LocalFieldRunner:
                     active[index] = False
                     continue
                 returns[index].append(reward)
-                realized_outcomes[index].append(reward > 0.0)
+                if step_confidences[index] is not None:
+                    confidences[index].append(step_confidences[index])
+                    realized_outcomes[index].append(reward > 0.0)
                 if stepped["terminated"][index] or stepped["truncated"][index]:
                     termination[index] = "environment"
                     active[index] = False
@@ -1156,6 +1367,13 @@ class LocalFieldRunner:
                 },
                 "model": asdict(identity),
                 "model_config": asdict(model),
+                "inference_runtime": {
+                    "context_tokens": model.sampling.context_tokens,
+                    "parallel_requests": plan.parallel_requests,
+                    "batch_size_per_request": 1,
+                    "thinking_enabled": model.sampling.thinking,
+                    "thinking_budget_tokens": model.sampling.thinking_budget_tokens,
+                },
                 "dataset": dataset.public_record(),
                 "seed": cell.seed,
                 "repetition": cell.repetition,
@@ -1164,7 +1382,24 @@ class LocalFieldRunner:
                 "tokens_in": tokens_in[index],
                 "tokens_out": tokens_out[index],
                 "reasoning_tokens": reasoning_tokens[index],
+                "reasoning_token_observations": reasoning_token_observations[index],
+                "reasoning_tokens_source": (
+                    "provider-reported"
+                    if reasoning_token_observations[index]
+                    and all(
+                        value is not None
+                        for value in reasoning_token_observations[index]
+                    )
+                    else "unavailable"
+                    if not any(
+                        value is not None
+                        for value in reasoning_token_observations[index]
+                    )
+                    else "mixed"
+                ),
+                "retry_count": retry_counts[index],
                 "inference_duration_ns": inference_ns[index],
+                "raw_responses": raw_responses[index],
                 "response_sha256": response_hashes[index],
                 "observation_sha256": observation_hashes[index],
                 "decisions": decisions_history[index],
@@ -1228,6 +1463,7 @@ class LocalFieldRunner:
 
 __all__ = [
     "DatasetSpec",
+    "DecisionResponseError",
     "DecisionModel",
     "EvidenceJournal",
     "FieldCell",
@@ -1236,9 +1472,14 @@ __all__ = [
     "InferenceResult",
     "LocalAgentError",
     "LocalFieldRunner",
+    "ModelHttpError",
     "ModelIdentity",
+    "ModelResponseError",
     "ModelRunConfig",
+    "ModelTransportError",
     "OllamaClient",
+    "OpenAICompatibleClient",
     "PromptRenderer",
     "SamplingConfig",
+    "load_identity_manifest",
 ]

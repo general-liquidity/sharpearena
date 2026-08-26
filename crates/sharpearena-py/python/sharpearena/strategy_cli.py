@@ -33,9 +33,18 @@ _MODEL_FIELDS = {
     "precommitted_n_trials",
     "entry_class",
     "source_url",
+    "source_revision",
     "license_id",
 }
-_SAMPLING_FIELDS = {"temperature", "top_p", "seed", "max_tokens", "thinking"}
+_SAMPLING_FIELDS = {
+    "temperature",
+    "top_p",
+    "seed",
+    "max_tokens",
+    "context_tokens",
+    "thinking",
+    "thinking_budget_tokens",
+}
 _DATASET_FIELDS = {
     "dataset_id",
     "tier",

@@ -48,7 +48,7 @@ import os
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Optional, Union
+from typing import Any, Callable, Iterable, Mapping, Optional, Union
 
 EDGE_MANIFEST_SCHEMA_VERSION = 1
 EDGE_MANIFEST_EVIDENCE_CLASS = "edge_manifest_candidate_pool"
@@ -697,7 +697,22 @@ class EdgeManifestLedger:
     def selectable(self) -> tuple[ManifestedCandidate, ...]:
         return tuple(record for record in self._records if record.is_selectable)
 
-    def record(self, raw_candidate: Any) -> ManifestedCandidate:
+    def record(
+        self,
+        raw_candidate: Any,
+        *,
+        candidate_validator: Optional[Callable[[Mapping[str, Any]], str]] = None,
+    ) -> ManifestedCandidate:
+        """Record one proposal before deciding whether it can be selected.
+
+        ``candidate_validator`` validates the strategy half after the manifest
+        has parsed and returns its semantic fingerprint.  Keeping that callback
+        inside ``record`` preserves the load-bearing ordering: the ordinal is
+        assigned first, manifest validation runs second, strategy validation
+        third, and deduplication last.  A generated-strategy caller therefore
+        cannot accidentally count only the candidates that survived its DSL.
+        """
+
         ordinal = len(self._records)
         normalized = (
             json.loads(_canonical_bytes(raw_candidate))
@@ -719,11 +734,22 @@ class EdgeManifestLedger:
                 manifest_sha = manifest.manifest_sha256
             except EdgeManifestError as error:
                 invalid = str(error)
-        if manifest is not None:
+        strategy_fingerprint: Optional[str] = None
+        if manifest is not None and candidate_validator is not None:
+            try:
+                strategy_fingerprint = candidate_validator(normalized)
+                if not strategy_fingerprint:
+                    raise EdgeManifestError(
+                        "candidate validator returned an empty fingerprint"
+                    )
+            except (EdgeManifestError, ValueError) as error:
+                invalid = str(error)
+        if manifest is not None and invalid is None:
             fingerprint = _digest(
                 {
                     "manifest": manifest.as_record(),
-                    "strategy": {
+                    "strategy": strategy_fingerprint
+                    or {
                         key: value
                         for key, value in normalized.items()
                         if key not in {"edge_manifest", "id"}
@@ -750,8 +776,16 @@ class EdgeManifestLedger:
         self._append(entry)
         return entry
 
-    def record_pool(self, raw_candidates: Iterable[Any]) -> tuple[ManifestedCandidate, ...]:
-        return tuple(self.record(candidate) for candidate in raw_candidates)
+    def record_pool(
+        self,
+        raw_candidates: Iterable[Any],
+        *,
+        candidate_validator: Optional[Callable[[Mapping[str, Any]], str]] = None,
+    ) -> tuple[ManifestedCandidate, ...]:
+        return tuple(
+            self.record(candidate, candidate_validator=candidate_validator)
+            for candidate in raw_candidates
+        )
 
     def summary(self) -> dict[str, Any]:
         return {

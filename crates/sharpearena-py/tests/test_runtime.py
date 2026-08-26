@@ -7,6 +7,7 @@ contract (``import sharpearena.mcp_server`` works; ``build_server`` raises clean
 
 import json
 
+import numpy as np
 import pytest
 
 from sharpearena.lookahead_guard import (
@@ -116,8 +117,15 @@ def test_decision_to_weights_helper():
     decision = json.dumps(
         {"orders": [{"symbol": "BBB", "action": "buy", "target_weight": 0.5}]}
     )
-    weights = ms._decision_to_weights(decision, ["AAA", "BBB", "CCC"])
-    assert weights.tolist() == [0.0, 0.5, 0.0]
+    observation = {
+        "positions": np.array([0.001, 0.0, -0.001]),
+        "closes": np.array([100.0, 100.0, 100.0]),
+        "cash": np.array([1.0]),
+    }
+    weights = ms._decision_to_weights(
+        decision, ["AAA", "BBB", "CCC"], observation
+    )
+    assert weights.tolist() == [0.1, 0.5, -0.1]
 
 
 # -- mcp server (skipped when mcp is absent) ---------------------------------

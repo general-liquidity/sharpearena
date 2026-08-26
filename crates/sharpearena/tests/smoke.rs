@@ -2,10 +2,20 @@
 //! outside the crate: the engine runs an agent in a market, and the language-agnostic wire
 //! contract round-trips through the public types.
 
+use serde::Deserialize;
 use sharpearena::{
     run_backtest, Action, BuyAndHold, CostModel, Dataset, Decision, MarketObservation, Order,
     TradingEnv, Window,
 };
+
+#[derive(Deserialize)]
+struct ForwardCommitmentFixture {
+    agent_id: String,
+    target_window: String,
+    artifact_digest: String,
+    salt: String,
+    commit_hash: String,
+}
 
 /// The engine surface: run a baseline agent over a synthetic point-in-time dataset and get
 /// per-period returns + a decision trace back.
@@ -82,4 +92,21 @@ fn signed_target_opens_a_short_through_the_public_environment() {
         position.shares < 0.0,
         "a negative target must create negative shares, not a flat hold"
     );
+}
+
+/// Python and Rust both consume this fixture. Calling the published attestation crate
+/// here makes a delimiter or field-order change fail in SharpeArena before release.
+#[test]
+fn forward_commitment_matches_the_published_attestation_primitive() {
+    let fixture: ForwardCommitmentFixture = serde_json::from_str(include_str!(
+        "../contract/attestation/forward-commitment.json"
+    ))
+    .expect("shared commitment fixture parses");
+    let commitment = sharpebench_attest::make_commitment(
+        &fixture.agent_id,
+        &fixture.target_window,
+        &fixture.artifact_digest,
+        &fixture.salt,
+    );
+    assert_eq!(commitment.commit_hash, fixture.commit_hash);
 }

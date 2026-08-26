@@ -236,19 +236,28 @@ class BinancePublicData:
         )
         if not isinstance(rows, list):
             raise PaperTradingError("Binance returned a non-array kline response")
-        return [
-            MarketBar(
-                symbol=symbol,
-                timestamp=str(int(row[0])),
-                open=float(row[1]),
-                high=float(row[2]),
-                low=float(row[3]),
-                close=float(row[4]),
-                volume=float(row[5]),
-                source="binance-public-spot",
-            )
-            for row in rows
-        ]
+        bars = []
+        for index, row in enumerate(rows):
+            try:
+                if not isinstance(row, list) or len(row) < 6:
+                    raise ValueError("kline must contain at least six fields")
+                bars.append(
+                    MarketBar(
+                        symbol=symbol,
+                        timestamp=str(int(row[0])),
+                        open=float(row[1]),
+                        high=float(row[2]),
+                        low=float(row[3]),
+                        close=float(row[4]),
+                        volume=float(row[5]),
+                        source="binance-public-spot",
+                    )
+                )
+            except (TypeError, ValueError, IndexError) as error:
+                raise PaperTradingError(
+                    f"Binance returned a malformed kline at index {index}: {error}"
+                ) from error
+        return bars
 
 
 class AlpacaMarketData:
@@ -285,20 +294,30 @@ class AlpacaMarketData:
             f"{ALPACA_DATA_ORIGIN}/v2/stocks/{symbol}/bars?{query}",
             headers=self.headers,
         )
-        rows = payload.get("bars", []) if isinstance(payload, dict) else []
-        return [
-            MarketBar(
-                symbol=symbol,
-                timestamp=str(row["t"]),
-                open=float(row["o"]),
-                high=float(row["h"]),
-                low=float(row["l"]),
-                close=float(row["c"]),
-                volume=float(row["v"]),
-                source="alpaca-market-data",
-            )
-            for row in rows
-        ]
+        if not isinstance(payload, dict) or not isinstance(payload.get("bars"), list):
+            raise PaperTradingError("Alpaca returned no bars array")
+        bars = []
+        for index, row in enumerate(payload["bars"]):
+            try:
+                if not isinstance(row, dict):
+                    raise ValueError("bar must be an object")
+                bars.append(
+                    MarketBar(
+                        symbol=symbol,
+                        timestamp=str(row["t"]),
+                        open=float(row["o"]),
+                        high=float(row["h"]),
+                        low=float(row["l"]),
+                        close=float(row["c"]),
+                        volume=float(row["v"]),
+                        source="alpaca-market-data",
+                    )
+                )
+            except (KeyError, TypeError, ValueError) as error:
+                raise PaperTradingError(
+                    f"Alpaca returned a malformed bar at index {index}: {error}"
+                ) from error
+        return bars
 
 
 @dataclass(frozen=True)
@@ -415,8 +434,6 @@ class PaperRiskGuard:
             refusal = "missing-or-invalid-price"
         elif not all_prices_valid:
             refusal = "missing-existing-position-price"
-        elif account.equity <= 0.0:
-            refusal = "nonpositive-equity"
         elif (
             1.0 - account.equity / account.session_start_equity
             > self.config.max_daily_loss
@@ -1136,9 +1153,14 @@ def target_weights_to_orders(
         if isinstance(decision_payload, str)
         else parse_decision_payload(json.dumps(decision_payload))
     )
-    weights = decision_to_weights(decision, symbols)
+    weights = decision_to_weights(
+        decision, symbols, current_weights=[0.0] * len(symbols)
+    )
+    ordered_symbols = {str(order["symbol"]) for order in decision["orders"]}
     orders = []
     for symbol, target_weight in zip(symbols, weights):
+        if symbol not in ordered_symbols:
+            continue
         if symbol not in prices:
             raise PaperTradingError(f"missing price for {symbol}")
         price = float(prices[symbol])
@@ -1242,6 +1264,48 @@ def prepare_forward_window_commitment(
                 pass
         temporary.replace(path)
     return {"commitment": commitment, "artifact_digest": artifact_digest}
+
+
+def prepare_forward_window_reveal(
+    submission: Mapping[str, Any],
+    public_commitment: Mapping[str, Any],
+    private_preimage: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Build one ``sharpebench arena score`` reveal after checking its preimage."""
+
+    required_commitment = {"agent_id", "target_window", "commit_hash"}
+    if set(public_commitment) != required_commitment:
+        raise ValueError("public commitment has an unsupported schema")
+    required_preimage = {
+        "agent_id",
+        "target_window",
+        "artifact_digest",
+        "salt",
+        "artifact_manifest",
+    }
+    if set(private_preimage) != required_preimage:
+        raise ValueError("private preimage has an unsupported schema")
+    if not isinstance(submission, Mapping):
+        raise ValueError("submission must be a JSON object")
+    agent_id = submission.get("agent_id")
+    if agent_id != private_preimage["agent_id"]:
+        raise ValueError("submission agent_id does not match the committed agent")
+    artifact_digest = _digest(private_preimage["artifact_manifest"])
+    if artifact_digest != private_preimage["artifact_digest"]:
+        raise ValueError("private artifact manifest does not match artifact_digest")
+    expected = make_forward_commitment(
+        str(private_preimage["agent_id"]),
+        str(private_preimage["target_window"]),
+        str(private_preimage["artifact_digest"]),
+        str(private_preimage["salt"]),
+    )
+    if dict(public_commitment) != expected:
+        raise ValueError("private preimage does not open the public commitment")
+    return {
+        "submission": dict(submission),
+        "artifact_digest": artifact_digest,
+        "salt": str(private_preimage["salt"]),
+    }
 
 
 class PaperTradingSession:
@@ -1543,6 +1607,7 @@ __all__ = [
     "forward_window_from_preimage",
     "make_forward_commitment",
     "prepare_forward_window_commitment",
+    "prepare_forward_window_reveal",
     "reconcile_account",
     "target_weights_to_orders",
     "verify_forward_evidence_window",

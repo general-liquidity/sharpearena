@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from sharpearena.paper_cli import load_execution_plan
@@ -23,6 +24,7 @@ from sharpearena.paper_trading import (
     PaperTradingSession,
     make_forward_commitment,
     prepare_forward_window_commitment,
+    prepare_forward_window_reveal,
     target_weights_to_orders,
 )
 
@@ -67,10 +69,17 @@ def test_market_data_adapters_are_read_only_and_parse_bars():
         "BTC/USDT", limit=1
     )
     assert bars[0].close == 105.0
+    assert bars[0].open == 100.0
+    assert bars[0].high == 110.0
+    assert bars[0].low == 90.0
+    assert bars[0].volume == 123.4
     assert binance_transport.calls[0][0] == "GET"
     assert binance_transport.calls[0][1].startswith(
         "https://api.binance.com/api/v3/klines?"
     )
+    assert "symbol=BTCUSDT" in binance_transport.calls[0][1]
+    assert "interval=1h" in binance_transport.calls[0][1]
+    assert "limit=1" in binance_transport.calls[0][1]
     assert binance_transport.calls[0][3] is None
 
     alpaca_transport = FixtureTransport(
@@ -91,9 +100,23 @@ def test_market_data_adapters_are_read_only_and_parse_bars():
         "AAA", limit=1
     )
     assert bars[0].source == "alpaca-market-data"
+    assert (bars[0].open, bars[0].high, bars[0].low, bars[0].close, bars[0].volume) == (
+        10.0,
+        12.0,
+        9.0,
+        11.0,
+        500.0,
+    )
     method, url, headers, payload = alpaca_transport.calls[0]
     assert method == "GET" and url.startswith("https://data.alpaca.markets/")
     assert headers["APCA-API-KEY-ID"] == "key" and payload is None
+
+
+@pytest.mark.parametrize("payload", [{}, {"bars": "wrong"}, {"bars": [{}]}])
+def test_alpaca_market_data_refuses_malformed_provider_payloads(payload):
+    source = AlpacaMarketData("key", "secret", transport=FixtureTransport(payload))
+    with pytest.raises(PaperTradingError, match="bars array|malformed bar"):
+        source.recent_bars("AAA", limit=1)
 
 
 def test_alpaca_adapter_cannot_be_pointed_at_a_live_broker():
@@ -199,6 +222,25 @@ def test_target_weights_and_session_write_nonreplayable_forward_evidence(tmp_pat
     assert evidence[0]["market_snapshot"]["AAA"]["close"] == 100.0
 
 
+def test_paper_translation_preserves_sparse_hold_semantics():
+    account = _account(positions={"AAA": 10.0, "BBB": 5.0})
+    prices = {"AAA": 100.0, "BBB": 200.0}
+    assert target_weights_to_orders(
+        {"orders": []}, ["AAA", "BBB"], account, prices
+    ) == []
+    orders = target_weights_to_orders(
+        {
+            "orders": [
+                {"symbol": "AAA", "action": "buy", "target_weight": 0.2}
+            ]
+        },
+        ["AAA", "BBB"],
+        account,
+        prices,
+    )
+    assert [order.symbol for order in orders] == ["AAA"]
+
+
 def test_refused_order_never_reaches_transport():
     transport = FixtureTransport({"id": "should-not-exist"})
     broker = AlpacaPaperBroker("key", "secret", _guard(), transport=transport)
@@ -262,11 +304,24 @@ def test_risk_refuses_unpriced_existing_positions_and_invalid_target_prices():
 
 
 def test_forward_commitment_matches_the_rust_wire_primitive():
-    commitment = make_forward_commitment("gordon", "2025-Q4", "deadbeef", "secret-salt")
+    fixture_path = (
+        Path(__file__).parents[2]
+        / "sharpearena"
+        / "contract"
+        / "attestation"
+        / "forward-commitment.json"
+    )
+    fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+    commitment = make_forward_commitment(
+        fixture["agent_id"],
+        fixture["target_window"],
+        fixture["artifact_digest"],
+        fixture["salt"],
+    )
     assert commitment == {
-        "agent_id": "gordon",
-        "target_window": "2025-Q4",
-        "commit_hash": "0f8b5b145a6450e3c320a531541555508fd352300ebeeec1fe43e1d938b766a4",
+        "agent_id": fixture["agent_id"],
+        "target_window": fixture["target_window"],
+        "commit_hash": fixture["commit_hash"],
     }
     with pytest.raises(ValueError, match="delimiter"):
         make_forward_commitment("gor|don", "2025-Q4", "deadbeef", "salt")
@@ -317,6 +372,68 @@ def test_forward_commitment_refuses_to_overwrite_the_private_preimage(tmp_path):
             commitment_path=same,
             private_preimage_path=same,
         )
+
+
+def test_forward_reveal_verifies_the_preimage_and_emits_sharpebench_shape(tmp_path):
+    public = tmp_path / "commitment.json"
+    private = tmp_path / "preimage.json"
+    prepare_forward_window_commitment(
+        "agent",
+        "window",
+        {"model_digest": "sha256:model"},
+        "salt",
+        commitment_path=public,
+        private_preimage_path=private,
+    )
+    submission = {"agent_id": "agent", "runs": []}
+    entry = prepare_forward_window_reveal(
+        submission,
+        json.loads(public.read_text(encoding="utf-8")),
+        json.loads(private.read_text(encoding="utf-8")),
+    )
+    assert entry["submission"] == submission
+    assert entry["salt"] == "salt"
+    assert len(entry["artifact_digest"]) == 64
+
+    tampered = json.loads(private.read_text(encoding="utf-8"))
+    tampered["salt"] = "other"
+    with pytest.raises(ValueError, match="does not open"):
+        prepare_forward_window_reveal(submission, json.loads(public.read_text()), tampered)
+
+
+def test_paper_cli_reveal_writes_the_array_consumed_by_arena_score(tmp_path, capsys):
+    public = tmp_path / "commitment.json"
+    private = tmp_path / "preimage.json"
+    submission_path = tmp_path / "submission.json"
+    output = tmp_path / "entries.json"
+    prepare_forward_window_commitment(
+        "agent",
+        "window",
+        {"model_digest": "sha256:model"},
+        "salt",
+        commitment_path=public,
+        private_preimage_path=private,
+    )
+    submission_path.write_text(
+        json.dumps({"agent_id": "agent", "runs": []}), encoding="utf-8"
+    )
+    assert paper_cli_main(
+        [
+            "reveal",
+            "--submission",
+            str(submission_path),
+            "--commitment",
+            str(public),
+            "--private-preimage",
+            str(private),
+            "--output",
+            str(output),
+        ]
+    ) == 0
+    entries = json.loads(output.read_text(encoding="utf-8"))
+    assert len(entries) == 1
+    assert entries[0]["submission"]["agent_id"] == "agent"
+    assert json.loads(capsys.readouterr().out)["entries"] == 1
 
 
 def test_paper_cli_plan_is_closed_and_inspection_never_uses_network(tmp_path, capsys):

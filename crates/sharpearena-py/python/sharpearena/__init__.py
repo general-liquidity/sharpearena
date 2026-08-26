@@ -118,14 +118,25 @@ from .indicators import DEFAULT_INDICATORS, INDICATORS, CausalIndicatorObservati
 from .lob_env import LOBMarketEnv, noise_trader_policy, symmetric_quote_policy
 from .local_agents import (
     DatasetSpec,
+    DecisionResponseError,
+    DecisionModel,
     EvidenceJournal,
+    FieldCell,
     FieldPlan,
+    InferenceOutcome,
+    InferenceResult,
+    LocalAgentError,
     LocalFieldRunner,
+    ModelHttpError,
     ModelIdentity,
+    ModelResponseError,
     ModelRunConfig,
+    ModelTransportError,
     OllamaClient,
+    OpenAICompatibleClient,
     PromptRenderer,
     SamplingConfig,
+    load_identity_manifest,
 )
 from .lookahead_guard import LookaheadGuard, LookaheadViolation, guarded, wrap_policy
 from .mandate import (
@@ -197,8 +208,11 @@ from .paper_trading import (
     SubmissionUnknown,
     bind_forward_window,
     forward_window_from_preimage,
+    make_forward_commitment,
     prepare_forward_window_commitment,
+    prepare_forward_window_reveal,
     reconcile_account,
+    target_weights_to_orders,
     verify_forward_evidence_window,
 )
 from .pettingzoo_env import MultiAgentSharpeArenaEnv, make_aec_env
@@ -248,10 +262,17 @@ from .sharpearena_py import (
 )
 from .spaces import FlattenObservation, flat_dim, flatten_obs, unflatten_obs
 from .strategy_generation import (
+    CandidateRejection,
+    GenerationResult,
     OllamaStrategyGenerator,
     StrategyCandidate,
+    StrategyGenerator,
+    StrategyProtocolError,
     StrategySearchPlan,
     StrategySearchRunner,
+    evaluate_condition,
+    parse_generated_pool,
+    strategy_decision,
 )
 from .trace import SCHEMA_VERSION, RolloutTraceWriter, load_trace, trace_to_returns
 from .vector import SharpeArenaVectorEnv
@@ -285,18 +306,36 @@ __all__ = [
     "BenchBridgeError",
     "compile_benchmark_evidence",
     "DatasetSpec",
+    "DecisionModel",
+    "DecisionResponseError",
     "EvidenceJournal",
+    "FieldCell",
     "FieldPlan",
+    "InferenceOutcome",
+    "InferenceResult",
+    "LocalAgentError",
     "LocalFieldRunner",
+    "ModelHttpError",
     "ModelIdentity",
+    "ModelResponseError",
     "ModelRunConfig",
+    "ModelTransportError",
     "OllamaClient",
+    "OpenAICompatibleClient",
     "PromptRenderer",
     "SamplingConfig",
+    "load_identity_manifest",
+    "CandidateRejection",
+    "GenerationResult",
     "OllamaStrategyGenerator",
     "StrategyCandidate",
+    "StrategyGenerator",
+    "StrategyProtocolError",
     "StrategySearchPlan",
     "StrategySearchRunner",
+    "evaluate_condition",
+    "parse_generated_pool",
+    "strategy_decision",
     "AlpacaMarketData",
     "AlpacaPaperBroker",
     "BinancePublicData",
@@ -308,6 +347,7 @@ __all__ = [
     "PaperRiskGuard",
     "PaperTradingSession",
     "prepare_forward_window_commitment",
+    "prepare_forward_window_reveal",
     "LIFECYCLE_STATES",
     "STATE_FILLED",
     "STATE_PREPARED",
@@ -322,7 +362,9 @@ __all__ = [
     "SubmissionUnknown",
     "bind_forward_window",
     "forward_window_from_preimage",
+    "make_forward_commitment",
     "reconcile_account",
+    "target_weights_to_orders",
     "verify_forward_evidence_window",
     "SharpeArenaEnv",
     "SharpeArenaVectorEnv",
@@ -522,4 +564,4 @@ __all__ = [
     "score_claim",
     "summarize",
 ]
-__version__ = "0.16.0"
+__version__ = "0.18.0"

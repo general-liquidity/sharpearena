@@ -13,23 +13,28 @@
     "precommitted_n_trials": 1,
     "entry_class": "field",
     "source_url": "https://huggingface.co/Qwen/Qwen3.8-27B",
+    "source_revision": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
     "license_id": "Apache-2.0"
   },
   "prompt": "Generate eight interpretable strategies spanning trend, reversal, volatility, and mixed signals. Each condition must use only trailing prices. Vary the candidate family; do not duplicate a rule under another name.",
   "requested_candidates": 8,
   "validation_dataset": {
-    "dataset_id": "us-indices-validation",
-    "csv_path": "../../../sharpebench/data/us-indices-1d.csv",
+    "dataset_id": "synthetic-calm-validation",
+    "tier": "calm",
+    "n_symbols": 3,
+    "n_days": 64,
     "periods_per_year": 252,
-    "window_start": 0,
-    "window_end": 1256
+    "window_start": 20,
+    "window_end": 64
   },
   "test_dataset": {
-    "dataset_id": "us-indices-test",
-    "csv_path": "../../../sharpebench/data/us-indices-1d.csv",
+    "dataset_id": "synthetic-hard-test",
+    "tier": "hard",
+    "n_symbols": 3,
+    "n_days": 64,
     "periods_per_year": 252,
-    "window_start": 1256,
-    "window_end": 2512
+    "window_start": 20,
+    "window_end": 64
   },
   "validation_seeds": [9100001, 9100002, 9100003, 9100004],
   "test_seeds": [9200001, 9200002, 9200003, 9200004]

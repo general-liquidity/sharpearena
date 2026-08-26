@@ -14,6 +14,7 @@
       "precommitted_n_trials": 1,
       "entry_class": "field",
       "source_url": "https://huggingface.co/Qwen/Qwen3.8-27B",
+      "source_revision": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
       "license_id": "Apache-2.0"
     }
   ],
