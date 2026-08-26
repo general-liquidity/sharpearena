@@ -4,5 +4,6 @@ mcp==1.28.1
 minari==0.5.3
 numpy==2.5.1
 pettingzoo==1.26.1
+pillow==12.1.1
 pytest==8.4.2
 verifiers==0.1.14
