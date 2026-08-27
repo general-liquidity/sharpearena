@@ -30,3 +30,18 @@ pre-release-commit-message = "release: v{{version}}"
 publish = false # CI publishes via OIDC; never publish from a dev machine
 push = true
 allow-branch = ["main"]
+
+# The version bump rewrites Cargo.toml, Cargo.lock, both sharpearena-py
+# manifests, __init__.py and the wasm crate manifest, and all six are inside the
+# provenance source scope. Binding the manifest before the release therefore
+# leaves it stale the moment cargo-release commits, and the tamper-evidence job
+# fails on the release commit and on every commit after it. This hook runs after
+# the version bump and the replacements and before the commit, so the manifest
+# that ships with a tag describes the tree that tag points at.
+# cargo-release runs the hook from the crate directory, not the workspace root,
+# so the path is resolved from the repository root git reports.
+pre-release-hook = [
+  "bash",
+  "-c",
+  "python \"$(git rev-parse --show-toplevel)/paper/src/make-provenance.py\"",
+]
