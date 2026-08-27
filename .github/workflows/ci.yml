@@ -94,6 +94,21 @@ jobs:
         working-directory: crates/sharpearena-py
         run: cargo deny check --config ../../deny.toml
 
+  provenance:
+    name: evidence provenance (tamper-evidence gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # The manifest is what carries the recompute-from-decisions story into the
+      # build. Until this job existed a manifest that had fallen behind its tree was
+      # detectable only by a human who remembered to run the script by hand.
+      - name: check-provenance (manifest matches the tree)
+        run: python paper/src/check-provenance.py
+
   npm:
     name: npm (wasm wrapper)
     runs-on: ubuntu-latest
