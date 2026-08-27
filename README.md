@@ -39,7 +39,7 @@ The strategic bet is **interface ownership**: if every trading agent in the open
 
 ## Status: published, active (pre-1.0)
 
-Published to **crates.io**, **npm**, and **PyPI** (the badges above show the live versions), depending on the **published** sharpebench engine (not a vendored copy). CI is green across five surfaces: Rust (`fmt`, `clippy -D warnings`, tests, a WASM target build, and the scenario goldens executed on `wasm32`), `cargo-deny`, the npm package, the Python wheel (`maturin` + `pytest`), and the evidence-provenance manifest.
+Published to **crates.io**, **npm**, and **PyPI** (the badges above show the live versions), depending on the **published** sharpebench engine (not a vendored copy). CI is green across five surfaces: Rust (`fmt`, `clippy -D warnings`, tests, a WASM target build, and the scenario goldens executed on `wasm32`), `cargo-deny`, the npm package, the Python wheel (`maturin` + `pytest`), and the evidence-provenance manifest, whose gate binds the commit CI runs on and not the commits behind it.
 
 **What the evidence shows.** The paper, *SharpeArena: The Point-in-Time (PIT) RL Environment for Trading Agents* ([`paper/`](paper/)), commits ten experiments (every number from a script, JSON evidence, and fixed seeds) and frames them as calibrations of the suite's instruments, not market findings. Among them:
 
