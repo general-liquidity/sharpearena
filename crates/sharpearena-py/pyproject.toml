@@ -35,7 +35,10 @@ sharpearena-paper = "sharpearena.paper_cli:main"
 
 [project.optional-dependencies]
 verifiers = ["verifiers"]
-minari = ["minari"]
+# minari keeps h5py behind its own `hdf5` extra and jax behind `create`, and its HDF5
+# storage imports PIL without declaring pillow at all, so a bare `minari` reproduces
+# the environment CI had while every Minari test silently skipped.
+minari = ["minari[create,hdf5]", "pillow"]
 pettingzoo = ["pettingzoo"]
 mcp = ["mcp"]
 
