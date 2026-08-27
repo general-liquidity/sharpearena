@@ -1,0 +1,44 @@
+{
+  "note": "Cross-runtime scenario goldens. Each entry is the exact JSON input the scenario kernel takes and the FNV-1a/64 fingerprint of the bytes it must return. Native Rust, the wasm32 export layer and the published npm package all read this one file, so a generator change that is not carried into the committed .wasm fails a gate instead of shipping.",
+  "fingerprint": "fnv1a-64",
+  "scenarios": [
+    {
+      "name": "calm_4x120_seed7",
+      "fnv1a64": "b7cf976c71219c52",
+      "input": {
+        "spec": {
+          "start_level": 0,
+          "num_levels": 0,
+          "n_symbols": 4,
+          "n_days": 120,
+          "distribution_mode": "calm",
+          "obs_richness": { "lookback": 20, "fundamentals": false, "news": false },
+          "vol_clustering": 0.0,
+          "jump_burst_probability": 0.0,
+          "jump_burst_persistence": 0.0,
+          "jump_burst_size": 0.0
+        },
+        "seed": 7
+      }
+    },
+    {
+      "name": "hard_clustered_4x120_seed7",
+      "fnv1a64": "a1d231f7e114a381",
+      "input": {
+        "spec": {
+          "start_level": 0,
+          "num_levels": 0,
+          "n_symbols": 4,
+          "n_days": 120,
+          "distribution_mode": "hard",
+          "obs_richness": { "lookback": 20, "fundamentals": false, "news": false },
+          "vol_clustering": 0.5,
+          "jump_burst_probability": 0.0,
+          "jump_burst_persistence": 0.0,
+          "jump_burst_size": 0.0
+        },
+        "seed": 7
+      }
+    }
+  ]
+}

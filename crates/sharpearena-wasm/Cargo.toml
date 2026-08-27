@@ -19,6 +19,11 @@ serde_json = { version = "1", features = ["float_roundtrip"] }
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
 
+# Executes the export layer inside a real WebAssembly module under Node
+# (`wasm-pack test --node crates/sharpearena-wasm`); host builds never see it.
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = "0.3"
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 

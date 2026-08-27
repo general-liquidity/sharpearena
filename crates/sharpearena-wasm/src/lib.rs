@@ -299,6 +299,55 @@ pub fn generate_scenario_json(input_json: &str) -> Result<String, String> {
     serde_json::to_string(&generate_scenario(&input.spec, input.seed)).map_err(|e| e.to_string())
 }
 
+// --- Cross-runtime scenario goldens -------------------------------------------------------
+
+/// The committed cross-runtime scenario goldens
+/// (`crates/sharpearena/contract/attestation/scenario-goldens.json`). Each entry holds the
+/// exact kernel input JSON and the FNV-1a/64 fingerprint of the bytes it must return. The
+/// native suite, the `wasm32` export layer and the published npm package all read this one
+/// file, so a generator change that is not carried into the committed `.wasm` turns a gate
+/// red instead of shipping.
+#[cfg(test)]
+mod goldens {
+    /// Dependency-free FNV-1a/64 over bytes, the fingerprint the goldens are recorded in.
+    pub fn fnv1a64(bytes: &[u8]) -> u64 {
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        for &b in bytes {
+            h ^= b as u64;
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        h
+    }
+
+    /// The committed goldens as `(name, kernel input JSON, expected fingerprint)`.
+    pub fn committed() -> Vec<(String, String, u64)> {
+        const SOURCE: &str =
+            include_str!("../../sharpearena/contract/attestation/scenario-goldens.json");
+        let doc: serde_json::Value =
+            serde_json::from_str(SOURCE).expect("scenario-goldens.json must be valid JSON");
+        let entries = doc["scenarios"]
+            .as_array()
+            .expect("scenario-goldens.json needs a `scenarios` array");
+        assert!(
+            !entries.is_empty(),
+            "scenario-goldens.json must pin at least one scenario"
+        );
+        entries
+            .iter()
+            .map(|entry| {
+                let name = entry["name"].as_str().expect("golden needs a name");
+                let input =
+                    serde_json::to_string(&entry["input"]).expect("golden needs an input object");
+                let hex = entry["fnv1a64"]
+                    .as_str()
+                    .expect("golden needs an fnv1a64 hex string");
+                let fingerprint = u64::from_str_radix(hex, 16).expect("fnv1a64 must be a hex u64");
+                (name.to_string(), input, fingerprint)
+            })
+            .collect()
+    }
+}
+
 /// The wasm-bindgen exports. Each returns the result JSON, or a `{"error":"..."}`
 /// JSON object on failure (never throws across the boundary).
 #[cfg(target_arch = "wasm32")]
@@ -490,79 +539,97 @@ mod tests {
         );
     }
 
-    /// The procedural-scenario JSON kernel (wrapped verbatim by the wasm-bindgen
-    /// export) must reproduce the native [`generate_scenario`] byte-for-byte, and its
-    /// FNV-1a fingerprint must equal the committed golden value — so a published
-    /// generalization number computed in the browser/Bun is reproducible in Rust.
+    /// Every committed cross-runtime golden must reproduce through the procedural-scenario
+    /// JSON kernel that the wasm-bindgen export wraps verbatim: byte-identical to the native
+    /// [`generate_scenario`] for the same spec, and equal to the recorded FNV-1a fingerprint.
+    /// The pins live in `crates/sharpearena/contract/attestation/scenario-goldens.json`, which
+    /// the wasm32 export tests and the published npm package read as well, so a generator
+    /// change has to move every runtime's gate at once.
     #[test]
-    fn generate_scenario_kernel_matches_native_and_golden() {
-        use sharpearena::{generate_scenario, DistributionMode, ScenarioSpec};
-
-        let spec = ScenarioSpec {
-            distribution_mode: DistributionMode::Calm,
-            n_symbols: 4,
-            n_days: 120,
-            ..ScenarioSpec::default()
-        };
-        let native = serde_json::to_string(&generate_scenario(&spec, 7)).unwrap();
-
-        let input = format!(
-            r#"{{"spec":{},"seed":7}}"#,
-            serde_json::to_string(&spec).unwrap()
-        );
-        let kernel = generate_scenario_json(&input).expect("kernel scenario");
-
-        assert_eq!(
-            native, kernel,
-            "wasm scenario kernel must reproduce the native generator byte-for-byte"
-        );
-
-        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-        for &b in kernel.as_bytes() {
-            h ^= b as u64;
-            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    fn scenario_goldens_keep_pinning_the_published_scenarios() {
+        let committed = goldens::committed();
+        let names: Vec<&str> = committed.iter().map(|(name, _, _)| name.as_str()).collect();
+        for required in ["calm_4x120_seed7", "hard_clustered_4x120_seed7"] {
+            assert!(
+                names.contains(&required),
+                "scenario-goldens.json must keep pinning {required}; found {names:?}"
+            );
         }
+    }
+
+    #[test]
+    fn scenario_kernel_matches_native_and_every_committed_golden() {
+        for (name, input, expected) in &goldens::committed() {
+            let parsed: serde_json::Value = serde_json::from_str(input).unwrap();
+            let spec: ScenarioSpec = serde_json::from_value(parsed["spec"].clone())
+                .unwrap_or_else(|e| panic!("{name}: golden spec does not deserialize: {e}"));
+            let seed = parsed["seed"].as_u64().expect("golden needs a seed");
+            let native = serde_json::to_string(&generate_scenario(&spec, seed)).unwrap();
+
+            let kernel = generate_scenario_json(input).expect("kernel scenario");
+            assert_eq!(
+                native, kernel,
+                "{name}: wasm scenario kernel must reproduce the native generator byte-for-byte"
+            );
+            assert_eq!(
+                goldens::fnv1a64(kernel.as_bytes()),
+                *expected,
+                "{name}: cross-runtime golden fingerprint drifted from the committed pin"
+            );
+        }
+    }
+}
+
+/// The wasm32 execution of the export layer. `wasm-pack test --node crates/sharpearena-wasm`
+/// compiles these to WebAssembly and runs them inside Node, so the `#[wasm_bindgen]` exports
+/// and the engine as compiled for wasm32 are actually executed. Without this the goldens are
+/// only ever asserted against a host-compiled kernel and the WebAssembly leg of the
+/// byte-identity claim rests on nothing.
+#[cfg(all(test, target_arch = "wasm32"))]
+mod wasm32_tests {
+    use wasm_bindgen_test::wasm_bindgen_test;
+
+    #[wasm_bindgen_test]
+    fn exported_generate_scenario_reproduces_every_committed_golden() {
+        for (name, input, expected) in super::goldens::committed() {
+            let out = crate::wasm::generate_scenario(&input);
+            assert!(
+                !out.starts_with("{\"error\""),
+                "{name}: the wasm32 export failed: {out}"
+            );
+            assert_eq!(
+                super::goldens::fnv1a64(out.as_bytes()),
+                expected,
+                "{name}: the wasm32 build's scenario bytes drifted from the committed golden"
+            );
+        }
+    }
+
+    #[wasm_bindgen_test]
+    fn exported_run_baseline_and_replay_agree_under_wasm32() {
+        let dataset = crate::wasm::dataset_synthetic(r#"{"n_symbols":4,"n_days":120,"seed":11}"#);
+        let cfg = r#"{"agent":"momentum","dataset":{"synthetic":{"n_symbols":4,"n_days":120,"seed":11}},"window":{"start":20,"end":120},"seed":3}"#;
+        let run = crate::wasm::run_baseline(cfg);
+        let value: serde_json::Value = serde_json::from_str(&run).unwrap();
+        assert_eq!(value["returns"].as_array().unwrap().len(), 100);
+
+        // The same call inside one wasm module must reproduce byte for byte.
+        let again = crate::wasm::run_baseline(cfg);
+        assert_eq!(run, again, "the wasm32 baseline run is not reproducible");
         assert_eq!(
-            h, 0xb7cf_976c_7121_9c52,
-            "cross-runtime golden fingerprint drifted from the sharpearena crate's pin"
+            crate::wasm::dataset_synthetic(r#"{"n_symbols":4,"n_days":120,"seed":11}"#),
+            dataset,
+            "the wasm32 synthetic dataset is not reproducible"
         );
     }
 
-    /// Same cross-runtime pin for the opt-in volatility-clustering pass: `Hard` 4×120,
-    /// seed 7, `vol_clustering = 0.5` through the JSON kernel must match the native
-    /// generator byte-for-byte and the committed golden fingerprint.
-    #[test]
-    fn generate_scenario_kernel_matches_clustered_golden() {
-        use sharpearena::{generate_scenario, DistributionMode, ScenarioSpec};
-
-        let spec = ScenarioSpec {
-            distribution_mode: DistributionMode::Hard,
-            n_symbols: 4,
-            n_days: 120,
-            vol_clustering: 0.5,
-            ..ScenarioSpec::default()
-        };
-        let native = serde_json::to_string(&generate_scenario(&spec, 7)).unwrap();
-
-        let input = format!(
-            r#"{{"spec":{},"seed":7}}"#,
-            serde_json::to_string(&spec).unwrap()
+    #[wasm_bindgen_test]
+    fn exported_errors_cross_the_boundary_as_json_not_panics() {
+        let out = crate::wasm::run_baseline(r#"{"agent":"nope"}"#);
+        assert!(
+            out.starts_with("{\"error\""),
+            "an unknown agent must come back as an error object, got {out}"
         );
-        let kernel = generate_scenario_json(&input).expect("kernel scenario");
-
-        assert_eq!(
-            native, kernel,
-            "wasm scenario kernel must reproduce the native clustered generator byte-for-byte"
-        );
-
-        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-        for &b in kernel.as_bytes() {
-            h ^= b as u64;
-            h = h.wrapping_mul(0x0000_0100_0000_01b3);
-        }
-        assert_eq!(
-            h, 0xa1d2_31f7_e114_a381,
-            "cross-runtime clustered golden fingerprint drifted from the sharpearena crate's pin"
-        );
+        assert!(out.contains("unknown baseline agent"), "got {out}");
     }
 }

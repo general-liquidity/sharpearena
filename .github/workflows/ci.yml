@@ -54,6 +54,19 @@ jobs:
       - name: WASM target builds
         if: matrix.os == 'ubuntu-latest'
         run: cargo build -p sharpearena-wasm --target wasm32-unknown-unknown --release
+      # Building wasm32 executes none of it. `cargo test` compiles the crate's JSON
+      # kernels for the host, so the `#[wasm_bindgen]` export layer and the engine as
+      # compiled to wasm32 never run. This step runs the committed cross-runtime
+      # goldens inside a real WebAssembly module under Node, which is what makes the
+      # WebAssembly leg of the byte-identity claim an enforced gate.
+      - name: Install wasm-pack
+        if: matrix.os == 'ubuntu-latest'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+      - name: WASM goldens execute on wasm32
+        if: matrix.os == 'ubuntu-latest'
+        run: wasm-pack test --node crates/sharpearena-wasm
 
   supply-chain:
     name: cargo-deny (licenses · advisories · bans · sources)
