@@ -122,7 +122,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "25bd29a352d60ed59ef5bb3129b3adbfdedb233e",
+  "generated_at_head": "5e2bd5060194fc89473c1d1ba4226a115d967ae7",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -138,6 +138,18 @@
   "reproduction_entrypoint": "commands in paper/sections/A-commands.tex",
   "schema_version": 5,
   "source_files": [
+    {
+      "path": ".gitattributes",
+      "sha256": "747df0de39863da3e908dc618f758633f668719765004538bcb95913c1440ac8"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "sha256": "1e39cc6bb7c86360296c8f692718b06cfa97c3a21410928c5e226664fdba0b09"
+    },
+    {
+      "path": ".github/workflows/release.yml",
+      "sha256": "52ae80ff444eee615243a46a65d9f2c19b2a58949ea1fc70c4465a0856d67c78"
+    },
     {
       "path": "Cargo.lock",
       "sha256": "e4a4fff8b0e17b821be554dbbd5afc4469daca6865c5df1d240290397a59a52f"
@@ -544,15 +556,15 @@
     },
     {
       "path": "paper/sections/10-reproducibility.tex",
-      "sha256": "16820b85a701d97b541df17615b97bf7c07b0765006055c4706ead0990d74ea6"
+      "sha256": "2dc593893584f32687dd7eedaf8fa9e3861488a6507fa1c6ec77a7131569c28e"
     },
     {
       "path": "paper/sections/A-commands.tex",
-      "sha256": "5481bed86a0877cbe96b86fd9d284a14f96e98644f27206556fb55bc2dfb53bf"
+      "sha256": "7c1ab90b554dbe7a534fede1a1a7316df9fde9b894fffe1983255f1c0644ea8a"
     },
     {
       "path": "paper/src/check-provenance.py",
-      "sha256": "2574bd1057e955502b68dd06019151e248507f654dd2576437e4a5adaf828367"
+      "sha256": "2132e458792dc838f3e2014e6e09d719c827e1c86d178434958d214d8715b99e"
     },
     {
       "path": "paper/src/make-f1-baselines.py",
@@ -596,7 +608,7 @@
     },
     {
       "path": "paper/src/make-provenance.py",
-      "sha256": "323c510f944a551da89d9345c8c4162adf9ef29d6e9a7f98d4ae135740129c1b"
+      "sha256": "9fb4f44588f610ef92d76a678be1023bb9139da148d03979e9489c07ec12f9d8"
     },
     {
       "path": "paper/src/make-sealed-seeds.py",
@@ -612,7 +624,15 @@
     },
     {
       "path": "paper/src/provenance_common.py",
-      "sha256": "483ad4785a81ccbdaa83d7346cd28705d3631a1d84ac9340a63cb686b857b563"
+      "sha256": "415fbb57a7eee90387491436d85b81abb63636f92b4fc65324dc5d98473ef7fe"
+    },
+    {
+      "path": "release.toml",
+      "sha256": "d3dbfeaad16745ce33bc518d7f22f32ace3ec3a6d83a407ae91a2bd9f9bdcf8a"
+    },
+    {
+      "path": "scripts/release.py",
+      "sha256": "cc1829eb550b8fff1104b1fcd3aebc51d277f0f485475b4ca28dd852aabdfba0"
     }
   ],
   "source_snapshot_excludes": [
@@ -623,17 +643,21 @@
     ".git"
   ],
   "source_snapshot_scope": [
+    ".gitattributes",
+    ".github/workflows/*.yml",
     "Cargo.toml",
     "Cargo.lock",
+    "release.toml",
     "crates/**/*.toml",
     "crates/**/*.rs",
     "crates/sharpearena-py/python/**/*.py",
+    "scripts/*.py",
     "paper/src/*.py",
     "paper/main.tex",
     "paper/sections/*.tex",
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "ba05dd0e4f9de0f95fb5e7e0081138d2858235fc0471ee624cb9e959df8d7de6",
+  "source_snapshot_sha256": "30651319cd00ad4108b7db84db665e652ef32f2baa47a59b6c3450ff45c66229",
   "validator": "paper/src/check-provenance.py"
 }
