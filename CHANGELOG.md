@@ -10,19 +10,40 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ## [Unreleased]
 
+### Added
+- test: the WebAssembly leg of the byte-identity guarantee is executed rather than assumed. The canonical and clustered scenario pins live in `crates/sharpearena/contract/attestation/scenario-goldens.json`, and three gates read that one file: the native suite, `wasm-pack test --node`, which runs the exported entry point inside a WebAssembly module, and the npm suite, which runs it against the committed `pkg/sharpearena_bg.wasm` the package publishes. Before this the goldens were plain `#[test]` compiled for the host, CI only built the wasm32 target, and `npm test` had no fingerprint assertion, so the shipped binary was published without any gate having recomputed it.
+- test: both provenance scripts have tests. They run end to end against a throwaway checkout and cover the unresolved-digest rejection, the line-ending case and the dirty-flag case; the model-artifact scope holds no data in this repository, so neither half had been exercised.
+- test: three `plan_sha256` digests are pinned by moving one bound field at a time, so dropping a field from a hashed payload fails instead of passing.
+- ci: the evidence-provenance check runs on every push and pull request, and the wasm32 scenario goldens run on the ubuntu leg.
+
+### Changed
+- npm: `pkg/package.json` carried version 0.0.6 against a 0.18.0 wrapper. It now carries the crate version, and a test pins both it and the wrapper to the workspace version, so the published wasm package cannot drift from the crate it was built from.
+- py: `pip install sharpearena[minari]` declared only `minari`, which reproduces the environment CI had while every Minari test skipped: h5py sits behind minari's `hdf5` extra, jax behind `create`, and its HDF5 storage imports PIL without declaring pillow at all. The extra is now `minari[create,hdf5]` plus pillow, and tests hold it and `ci-requirements.txt` in agreement.
+
+### Fixed
+- paper: provenance digests are taken with CRLF collapsed to LF for text files, so the manifest validates on a `core.autocrlf` checkout. Twenty files read as mismatches on Windows and none of them were real drift.
+- paper: `check-provenance.py` shares one rule module with `make-provenance.py`, so a model identity file whose checkpoint digest, quantization, server or server version reads as unresolved is now refused by the validator as well as the writer. It also re-derives `generated_at_head_dirty` instead of believing it, and fails a manifest claiming a clean generation against a tree with uncommitted work.
+- test: every strategy-DSL indicator is pinned to its exact value rather than to a one-sided inequality. The 0.18.0 pins had up to 4.7x slack, so a volatility returning a sample rather than population deviation, or an RSI returning 99 rather than 100, passed unchanged. Boolean operators now carry a false-side case.
+- test: the assertions that could not fail are gone. `generated_code_executed is False` asserted a literal written by the evidence builder itself and is now backed by an AST scan of the modules on the path from model output to decision plus a refused executable indicator name; the credential test asserted a secret was absent from a dict built out of eight named keys and now pins that key set with the secret genuinely on the wire; and four truthiness-only digest assertions are recomputed independently.
+
 ## [0.18.0] - 2026-08-26
 
 ### Added
-- py: the local-model record now binds an immutable publisher revision, model artifact and runtime identity, context and optional thinking budgets, accelerator details, raw responses and hashes, provider-token availability, retry count, and explicit unresolved values for backend facts that cannot be observed. The release provenance manifest has a separately validated model-artifact scope that exposes checkpoint digest, quantization, server and server version.
+- py: the local-model record now binds an immutable publisher revision, model artifact and runtime identity, context and optional thinking budgets, accelerator details, raw responses and hashes, provider-token availability, retry count, and explicit unresolved values for backend facts that cannot be observed. The release provenance manifest has a separately validated model-artifact scope that exposes checkpoint digest, quantization, server and server version. The scope is empty in this repository, so an empty list means no model result has entered the paper rather than that model provenance was omitted.
 - py: the forward paper arm now opens its public commitment into the exact SharpeBench `RevealedEntry` shape. A shared fixture is checked by both Python and the published Rust `sharpebench-attest` primitive, so delimiter or hashing drift fails cross-language CI.
-- test: real loopback transport tests cover invalid JSON, HTTP failure, redirect refusal, unreachable endpoints, concurrent lane ordering and per-lane faults. Field shards are executed and recombined, every strategy-DSL indicator and Boolean operator is numerically pinned, and all terminal field-failure branches are exercised.
+- test: real loopback transport tests cover invalid JSON, HTTP failure, redirect refusal, unreachable endpoints, concurrent lane ordering and per-lane faults. Field shards are executed and recombined, every strategy-DSL indicator and Boolean operator is exercised against a one-sided threshold, and all terminal field-failure branches are exercised. (The thresholds were not tight; see Unreleased, where they became equalities.)
 
 ### Changed
 - py: sparse `Decision.orders` now preserve the current weight of omitted symbols. Confidence is recorded only when the model supplied it; no synthetic 0.5 enters calibration evidence. Independent field evidence requires a public URL, immutable source revision and license, while host and unverified entries remain runnable but cannot cross the SharpeBench bridge.
 - py: generated-strategy evidence is append-only JSONL. Every raw trial first enters a manifest-bound ordinal ledger, selection candidates cross the benchmark boundary, and repetitions remain the explicit pass^k axis while execution noise stays one seed per recorded run.
 - ci: Python optional conformance dependencies are pinned and installed in CI, eliminating environment-dependent silent skips.
+- py: about twenty-five names became public API through `__all__`, among them `LocalAgentError` and the `ModelHttpError` / `ModelTransportError` / `ModelResponseError` / `DecisionResponseError` split, `DecisionModel`, `FieldCell`, `InferenceOutcome`, `InferenceResult`, `OpenAICompatibleClient`, `load_identity_manifest`, `CandidateRejection`, `GenerationResult`, `StrategyGenerator`, `StrategyProtocolError`, `evaluate_condition`, `parse_generated_pool`, `strategy_decision`, `make_forward_commitment`, `prepare_forward_window_reveal` and `target_weights_to_orders`.
+- mcp: `step` before `reset` is a named state. The tool returns `{"error": "episode_not_reset", "environment_advanced": false}` instead of acting on an absent observation, which is a new error contract on a shipped tool surface.
+- py: the `nonpositive-equity` refusal is removed from the paper-execution risk guard. It was unreachable: `AccountSnapshot.__post_init__` requires finite and strictly positive equity and `reconcile_account` is the only mutator, `_projected_gross` keeps its own `equity <= 0` guard, and the daily-loss branch fires at zero equity regardless. A removed deny-list branch belongs in a changelog even when it was dead.
+- cli: `sharpearena-ollama-shim` and the OpenAI-compatible shim take `--context-tokens`.
 
 ### Fixed
+- py: `sharpearena.__version__` reported `0.16.0`. The v0.17.0 release therefore shipped a package that identified itself as two versions older than its own metadata; it now reports the workspace version.
 - py: model-server failures retain typed HTTP, transport, response or Decision fault classes and the raw-response hash where bytes existed. Unsupported numeric thinking budgets fail before a request is sent.
 - py: Binance and Alpaca market-data adapters reject malformed payloads consistently, and their complete OHLCV mappings and exact request normalization are tested.
 - docs/paper: containment, host-side risk, target/action semantics, forward commitment, OpenAI-compatible serving and reproducibility claims now match the shipped boundaries.
