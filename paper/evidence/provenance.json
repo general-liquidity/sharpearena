@@ -122,7 +122,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "a1db0fae630dac51ac747930fccba36488ec8d37",
+  "generated_at_head": "25bd29a352d60ed59ef5bb3129b3adbfdedb233e",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -544,15 +544,15 @@
     },
     {
       "path": "paper/sections/10-reproducibility.tex",
-      "sha256": "7fcd1caa19f455a31a4913e6260a229ff7770bec212731b1928c97c6d879e6ac"
+      "sha256": "16820b85a701d97b541df17615b97bf7c07b0765006055c4706ead0990d74ea6"
     },
     {
       "path": "paper/sections/A-commands.tex",
-      "sha256": "dae509a0ca5d601a4869f9370bb06ade3a736fde09bb48b1717fa035f5449dd2"
+      "sha256": "5481bed86a0877cbe96b86fd9d284a14f96e98644f27206556fb55bc2dfb53bf"
     },
     {
       "path": "paper/src/check-provenance.py",
-      "sha256": "bbf73ab066585f5577deb3e29a8e465405c104c8636836f9461452afa791aab4"
+      "sha256": "2574bd1057e955502b68dd06019151e248507f654dd2576437e4a5adaf828367"
     },
     {
       "path": "paper/src/make-f1-baselines.py",
@@ -612,7 +612,7 @@
     },
     {
       "path": "paper/src/provenance_common.py",
-      "sha256": "1d2fe0056d754ed16c84ff559c1f5168f1916d061c695d5a6e233e5ed8108d17"
+      "sha256": "483ad4785a81ccbdaa83d7346cd28705d3631a1d84ac9340a63cb686b857b563"
     }
   ],
   "source_snapshot_excludes": [
@@ -634,6 +634,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "7e98eb79520d61c9f4fc61f9ccc0f28c948eba5d4b8f1126bc79ea58963aa4bd",
+  "source_snapshot_sha256": "ba05dd0e4f9de0f95fb5e7e0081138d2858235fc0471ee624cb9e959df8d7de6",
   "validator": "paper/src/check-provenance.py"
 }
