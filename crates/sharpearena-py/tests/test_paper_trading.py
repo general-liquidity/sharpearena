@@ -146,6 +146,11 @@ def test_native_risk_guard_denies_before_broker_submission():
 
 
 def test_remote_paper_order_uses_only_the_paper_origin_and_risk_verdict():
+    # A broker that echoes the caller's credentials back in its reply. Asserting that a
+    # secret is absent from a response built out of six named keys proves nothing on its
+    # own, so the fixture puts the secret on the wire and the assertion below is that the
+    # returned object's key set is exactly the closed one.
+    api_secret = "super-secret-key-material"
     transport = FixtureTransport(
         {
             "id": "paper-1",
@@ -153,9 +158,10 @@ def test_remote_paper_order_uses_only_the_paper_origin_and_risk_verdict():
             "symbol": "AAA",
             "side": "buy",
             "qty": "2",
+            "echoed_request": {"APCA-API-SECRET-KEY": api_secret},
         }
     )
-    broker = AlpacaPaperBroker("key", "secret", _guard(), transport=transport)
+    broker = AlpacaPaperBroker("key", api_secret, _guard(), transport=transport)
     response = broker.submit(
         PaperOrder("AAA", "buy", 2, client_order_id="fixed"),
         account=_account(),
@@ -165,7 +171,18 @@ def test_remote_paper_order_uses_only_the_paper_origin_and_risk_verdict():
     assert method == "POST" and url == f"{ALPACA_PAPER_ORIGIN}/v2/orders"
     assert payload["client_order_id"] == "fixed"
     assert response["risk"]["allowed"] is True
-    assert "secret" not in json.dumps(response)
+    assert api_secret in json.dumps(headers), "the secret must be on the wire"
+    assert set(response) == {
+        "id",
+        "status",
+        "symbol",
+        "side",
+        "submitted_qty",
+        "filled_qty",
+        "client_order_id",
+        "risk",
+    }
+    assert api_secret not in json.dumps(response)
 
 
 def test_target_weights_and_session_write_nonreplayable_forward_evidence(tmp_path):
@@ -464,7 +481,6 @@ def test_paper_cli_plan_is_closed_and_inspection_never_uses_network(tmp_path, ca
     plan_path.write_text(json.dumps(payload), encoding="utf-8")
     decision_path.write_text('{"orders":[]}', encoding="utf-8")
     plan = load_execution_plan(plan_path)
-    assert plan.plan_sha256
     assert (
         paper_cli_main(
             [

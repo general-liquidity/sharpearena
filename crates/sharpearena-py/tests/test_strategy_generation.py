@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import pathlib
+from dataclasses import replace
 
 import pytest
 import sharpearena.strategy_generation as strategy_generation
@@ -21,6 +24,19 @@ from sharpearena.strategy_generation import (
     parse_generated_pool,
     strategy_decision,
 )
+
+
+def _canonical_sha256(value) -> str:
+    """The canonical-JSON digest, reimplemented here rather than imported.
+
+    Importing the module's own helper would make every digest assertion below compare a
+    value against itself.
+    """
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode(
+            "utf-8"
+        )
+    ).hexdigest()
 
 
 def _condition(op="gt"):
@@ -267,10 +283,23 @@ def test_search_selects_on_validation_and_tests_only_the_winner(tmp_path):
     assert [row["trial_ordinal"] for row in ledger["records"]] == [0, 1, 2, 3]
     assert all(row["model_digest"] == "sha256:generator" for row in ledger["records"])
     assert all(row["split_plan_sha256"] == plan.plan_sha256 for row in ledger["records"])
-    assert all(item["binding_sha256"] for item in evidence["generation"]["accepted"])
+    ledger_rows = {row["trial_ordinal"]: row for row in ledger["records"]}
+    for item in evidence["generation"]["accepted"]:
+        row = ledger_rows[item["trial_ordinal"]]
+        assert item["binding_sha256"] == _canonical_sha256(
+            {
+                "raw_candidate_sha256": row["raw_candidate_sha256"],
+                "manifest_sha256": row["manifest_sha256"],
+                "model_digest": row["model_digest"],
+                "split_plan_sha256": row["split_plan_sha256"],
+                "trial_ordinal": row["trial_ordinal"],
+            }
+        )
     assert set(evidence["selection"]["scores"]) == {"trend", "contrarian"}
     assert len(evidence["test"]["scores"]) == 2
     assert evidence["test"]["selected_candidate_only"] is True
+    # The flag itself is a literal in the evidence writer; what makes it true is pinned
+    # by test_generated_text_is_never_executed_by_the_dsl_modules below.
     assert evidence["generated_code_executed"] is False
     assert evidence["generation"]["raw_response"] == _response()
     assert evidence["generation"]["prompt"] == plan.prompt
@@ -384,7 +413,12 @@ def test_search_refuses_overlapping_validation_and_test_splits():
         validation_seeds=(1,),
         test_seeds=(2,),
     )
-    assert disjoint.plan_sha256
+    # The digest binds the split, so moving the test window has to move it.
+    shifted = replace(
+        disjoint,
+        test_dataset=DatasetSpec("test", csv_text=csv_text, window_start=10, window_end=19),
+    )
+    assert disjoint.plan_sha256 != shifted.plan_sha256
 
 
 def test_search_caps_requested_trials_and_persists_protocol_failure(tmp_path):
@@ -417,7 +451,7 @@ def test_search_caps_requested_trials_and_persists_protocol_failure(tmp_path):
         StrategySearchRunner(BadGenerator()).run(plan, path)
     failure = json.loads(path.read_text())
     assert failure["status"] == "failed"
-    assert failure["generation"]["raw_response_sha256"]
+    assert failure["generation"]["raw_response_sha256"] == hashlib.sha256(b"not-json").hexdigest()
     assert failure["failure"]["type"] == "StrategyProtocolError"
 
 
@@ -490,3 +524,85 @@ def test_strategy_cli_resolves_paths_and_inspects_without_inference(tmp_path, ca
     plan_path.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(ValueError, match="unknown fields"):
         load_strategy_plan(plan_path)
+
+
+def test_generated_text_is_never_executed_by_the_dsl_modules():
+    """What ``generated_code_executed: False`` claims, checked instead of read.
+
+    The flag is written as a literal, so asserting it verifies a self-declaration. The
+    substantive claim is that nothing on the path from model output to a decision can run
+    generated text. Two halves: the modules on that path contain no execution primitive,
+    and an indicator name that is a Python expression is refused rather than resolved.
+    """
+
+    import ast
+
+    package = pathlib.Path(strategy_generation.__file__).parent
+    forbidden_names = {"eval", "exec", "compile", "__import__"}
+    forbidden_calls = {
+        ("os", "system"),
+        ("os", "popen"),
+        ("os", "execv"),
+        ("os", "execvp"),
+        ("subprocess", "run"),
+        ("subprocess", "Popen"),
+        ("subprocess", "call"),
+        ("subprocess", "check_output"),
+        ("pickle", "loads"),
+        ("marshal", "loads"),
+        ("importlib", "import_module"),
+        ("runpy", "run_path"),
+    }
+    forbidden_modules = {"subprocess", "pickle", "marshal", "runpy"}
+    for module in ("strategy_generation.py", "edge_manifest.py", "strategy_cli.py"):
+        tree = ast.parse((package / module).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                names = {alias.name.split(".")[0] for alias in node.names}
+                if isinstance(node, ast.ImportFrom) and node.module:
+                    names.add(node.module.split(".")[0])
+                assert not names & forbidden_modules, f"{module} imports {names}"
+                continue
+            if not isinstance(node, ast.Call):
+                continue
+            function = node.func
+            if isinstance(function, ast.Name):
+                assert function.id not in forbidden_names, f"{module} calls {function.id}"
+            if isinstance(function, ast.Attribute):
+                owner = getattr(function.value, "id", "")
+                # `re.compile` builds a regex; it runs nothing.
+                if owner != "re":
+                    assert (
+                        function.attr not in forbidden_names
+                    ), f"{module} calls {owner}.{function.attr}"
+                assert (
+                    owner,
+                    function.attr,
+                ) not in forbidden_calls, f"{module} calls {owner}.{function.attr}"
+
+    # An indicator name is a key into a closed table, never something evaluated.
+    observed, accepted, rejected = parse_generated_pool(
+        json.dumps(
+            {
+                "strategies": [
+                    {
+                        "id": "escape",
+                        "thesis": "resolve an indicator by executing it",
+                        "long_when": {
+                            "op": "gt",
+                            "left": {
+                                "indicator": "__import__('os').getcwd()",
+                                "window": 3,
+                            },
+                            "right": {"constant": 0.0},
+                        },
+                        "gross_target": 0.5,
+                        "edge_manifest": _edge_manifest(),
+                    }
+                ]
+            }
+        )
+    )
+    assert observed == 1
+    assert accepted == []
+    assert rejected[0].reason == "long_when.left.indicator is unsupported"
