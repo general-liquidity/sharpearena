@@ -6,9 +6,11 @@ version covers the Rust crates, the npm package and the PyPI package; each
 section is one `v*` tag and links the commits it was built from. The wire
 contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
-[Unreleased]: https://github.com/general-liquidity/sharpearena/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/general-liquidity/sharpearena/compare/v0.19.0...HEAD
 
 ## [Unreleased]
+
+## [0.19.0] - 2026-08-27
 
 ### Added
 - test: the WebAssembly leg of the byte-identity guarantee is executed rather than assumed. The canonical and clustered scenario pins live in `crates/sharpearena/contract/attestation/scenario-goldens.json`, and three gates read that one file: the native suite, `wasm-pack test --node`, which runs the exported entry point inside a WebAssembly module, and the npm suite, which runs it against the committed `pkg/sharpearena_bg.wasm` the package publishes. Before this the goldens were plain `#[test]` compiled for the host, CI only built the wasm32 target, and `npm test` had no fingerprint assertion, so the shipped binary was published without any gate having recomputed it.
@@ -268,6 +270,7 @@ First published release, as OpenOutcry.
 ### Fixed
 - ci: toolchain pinned to 1.96.0 for the wasm32 target; a virtualenv for maturin ([bb0ee4d](https://github.com/general-liquidity/sharpearena/commit/bb0ee4d)).
 
+[0.19.0]: https://github.com/general-liquidity/sharpearena/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/general-liquidity/sharpearena/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/general-liquidity/sharpearena/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/general-liquidity/sharpearena/compare/v0.15.0...v0.16.0
