@@ -121,7 +121,8 @@
       "sha256": "1b261a44ed779c208322c8dce4d35a385c5070d610b882aca6d456ca198389dc"
     }
   ],
-  "generated_at_head": "7adde439ea4c0cadfa6f3a142ec1227c4bf648e2",
+  "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
+  "generated_at_head": "586dd334623c50effb98d661b2ceebc4ff426feb",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -135,11 +136,11 @@
     "server_version"
   ],
   "reproduction_entrypoint": "commands in paper/sections/A-commands.tex",
-  "schema_version": 4,
+  "schema_version": 5,
   "source_files": [
     {
       "path": "Cargo.lock",
-      "sha256": "27ac5d0ccfe81b40c4c5907db0cafaa33b1cf0bbf8f9dd712845ee4f4f70cd94"
+      "sha256": "f45df5187410fb257c7da40e7f085c493524c84d05b6939bb74f640f36dc1cbd"
     },
     {
       "path": "Cargo.toml",
@@ -151,7 +152,7 @@
     },
     {
       "path": "crates/sharpearena-py/pyproject.toml",
-      "sha256": "ca448af225a6052d4e494fd66d8b70ce8945aeef01828a2ed3cad952ce2b5337"
+      "sha256": "9b83352033cfc0f620e2cf34122d316d24652641ed3a81847753c79685be1edf"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/__init__.py",
@@ -411,11 +412,11 @@
     },
     {
       "path": "crates/sharpearena-wasm/Cargo.toml",
-      "sha256": "00a35eb50a28e11e50543dbbe250c5db1ae1900b043432cf89ace60166a25ae7"
+      "sha256": "7d75ca7ce348edd35602e49a70b5f9ce8203a276faba690db5e85b1d29d941bb"
     },
     {
       "path": "crates/sharpearena-wasm/src/lib.rs",
-      "sha256": "f30f5395c35e4ac2fcd97c32712ab8b20d6695b1c3c7bee9c4fc6a355aee41d1"
+      "sha256": "6294d1cae56e69aeaf0ac95d2d4b8427058b9c963b37eaa24fdb227c3706c308"
     },
     {
       "path": "crates/sharpearena/Cargo.toml",
@@ -515,7 +516,7 @@
     },
     {
       "path": "paper/sections/04-contract.tex",
-      "sha256": "923dcde4b2172785d46f69b9d9bd01a9b0999732cf3a3d5e152566c99581e443"
+      "sha256": "1a9246f40a283c987a024ca54787afc84db9cf9c45e1f3e06667df90903b239b"
     },
     {
       "path": "paper/sections/05-agentic.tex",
@@ -531,7 +532,7 @@
     },
     {
       "path": "paper/sections/07-findings.tex",
-      "sha256": "d4d633dbe00aa8c9cd18ef7a64657bd6baec08250aadfd668ab18c50b0907e54"
+      "sha256": "e1e6ecf1f1ee48ce9b515dd00af07cd23d094f6635902224ba4424d4ed460823"
     },
     {
       "path": "paper/sections/08-related.tex",
@@ -543,15 +544,15 @@
     },
     {
       "path": "paper/sections/10-reproducibility.tex",
-      "sha256": "ee61c25aece548a5f271705e2b3a85b1fe81ad1089a90c4499e0d6846391056e"
+      "sha256": "7fcd1caa19f455a31a4913e6260a229ff7770bec212731b1928c97c6d879e6ac"
     },
     {
       "path": "paper/sections/A-commands.tex",
-      "sha256": "12d07bf401e10793197f9d60edb19effd833e43fe41585619763ceb4ca552beb"
+      "sha256": "dae509a0ca5d601a4869f9370bb06ade3a736fde09bb48b1717fa035f5449dd2"
     },
     {
       "path": "paper/src/check-provenance.py",
-      "sha256": "8f86e957341a677ea53b35c7923e5a320abe0221407af6144a6a3ea5e979ac60"
+      "sha256": "bbf73ab066585f5577deb3e29a8e465405c104c8636836f9461452afa791aab4"
     },
     {
       "path": "paper/src/make-f1-baselines.py",
@@ -595,7 +596,7 @@
     },
     {
       "path": "paper/src/make-provenance.py",
-      "sha256": "53693d5c9b3978f9622c3054d7d5e08090fbc58ebcbd228b269f751181be14d5"
+      "sha256": "323c510f944a551da89d9345c8c4162adf9ef29d6e9a7f98d4ae135740129c1b"
     },
     {
       "path": "paper/src/make-sealed-seeds.py",
@@ -608,6 +609,10 @@
     {
       "path": "paper/src/make-witness.py",
       "sha256": "09c0c78a77c83a72fc45f642fe6da884e142c97050a3f325b46054898b083ffc"
+    },
+    {
+      "path": "paper/src/provenance_common.py",
+      "sha256": "1d2fe0056d754ed16c84ff559c1f5168f1916d061c695d5a6e233e5ed8108d17"
     }
   ],
   "source_snapshot_excludes": [
@@ -629,6 +634,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "b87a383feeead3ee7563e57f8ecc93ce285a8a4ad4327b96064920196bfa808e",
+  "source_snapshot_sha256": "ed97bdbed8096cc0fdb67555abe152c8e8eb034f18e7c951288f903c2304db72",
   "validator": "paper/src/check-provenance.py"
 }
