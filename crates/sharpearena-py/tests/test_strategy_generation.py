@@ -218,6 +218,14 @@ def test_dsl_uses_trailing_values_and_normalizes_gross_exposure():
 
 
 def test_every_dsl_indicator_and_boolean_operator_has_numeric_semantics():
+    """Each indicator is pinned to its exact value through the public evaluator.
+
+    ``gte`` and ``lte`` both holding at one constant is equality, and ``gt`` failing at
+    the same constant is the false side. One-sided inequalities let a wrong
+    implementation through: a volatility returning variance, or a population figure where
+    a sample one was meant, clears a `> 0.01` threshold just as well as the right answer.
+    """
+
     def comparison(indicator, threshold, *, window=None, op="gt"):
         value = {"indicator": indicator}
         if window is not None:
@@ -228,23 +236,35 @@ def test_every_dsl_indicator_and_boolean_operator_has_numeric_semantics():
             "right": {"constant": threshold},
         }
 
-    assert evaluate_condition(comparison("price", 7.0), [1.0, 2.0, 4.0, 8.0])
-    assert evaluate_condition(
-        comparison("sma", 14.0 / 3.0, window=3, op="gte"),
-        [1.0, 2.0, 4.0, 8.0],
-    )
-    assert evaluate_condition(
-        comparison("ema", 5.49, window=3), [1.0, 2.0, 4.0, 8.0]
-    )
-    assert evaluate_condition(
-        comparison("momentum", 2.99, window=3), [1.0, 2.0, 4.0, 8.0]
-    )
-    assert evaluate_condition(
-        comparison("rsi", 99.0, window=4), [1.0, 2.0, 4.0, 8.0]
-    )
-    assert evaluate_condition(
-        comparison("volatility", 0.01, window=4), [100.0, 110.0, 110.0, 121.0]
-    )
+    def pin(indicator, expected, prices, *, window=None):
+        assert evaluate_condition(
+            comparison(indicator, expected, window=window, op="gte"), prices
+        ), f"{indicator} is below {expected!r}"
+        assert evaluate_condition(
+            comparison(indicator, expected, window=window, op="lte"), prices
+        ), f"{indicator} is above {expected!r}"
+        assert not evaluate_condition(
+            comparison(indicator, expected, window=window, op="gt"), prices
+        ), f"{indicator} is strictly above its own value"
+        assert not evaluate_condition(
+            comparison(indicator, expected, window=window, op="lt"), prices
+        ), f"{indicator} is strictly below its own value"
+
+    geometric = [1.0, 2.0, 4.0, 8.0]
+    pin("price", 8.0, geometric)
+    pin("sma", 14.0 / 3.0, geometric, window=3)
+    # alpha = 2/(3+1); seeded at the window's first value: 2 -> 3 -> 5.5.
+    pin("ema", 5.5, geometric, window=3)
+    pin("momentum", 3.0, geometric, window=3)
+    # Every change is a gain, so the loss average is zero and RSI saturates.
+    pin("rsi", 100.0, geometric, window=4)
+    pin("rsi", 0.0, [8.0, 4.0, 2.0, 1.0], window=4)
+    # Equal average gain and loss is the midpoint, not saturation.
+    pin("rsi", 50.0, [1.0, 2.0, 1.0], window=3)
+    # Population standard deviation of [0.1, 0.0, 0.1], not the variance (0.00222...),
+    # not the sample deviation (0.057735...), and not an annualized figure.
+    pin("volatility", 0.04714045207910321, [100.0, 110.0, 110.0, 121.0], window=4)
+
     rising = comparison("momentum", 0.0, window=3)
     falling = comparison("momentum", 0.0, window=3, op="lt")
     prices = [100.0, 101.0, 102.0]
@@ -252,8 +272,15 @@ def test_every_dsl_indicator_and_boolean_operator_has_numeric_semantics():
         {"op": "and", "conditions": [rising, {"op": "not", "condition": falling}]},
         prices,
     )
+    assert not evaluate_condition(
+        {"op": "and", "conditions": [rising, falling]}, prices
+    )
     assert evaluate_condition(
         {"op": "or", "conditions": [falling, rising]}, prices
+    )
+    assert not evaluate_condition(
+        {"op": "or", "conditions": [falling, {"op": "not", "condition": rising}]},
+        prices,
     )
 
 
