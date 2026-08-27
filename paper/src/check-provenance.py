@@ -15,9 +15,10 @@ manifest that claims a clean generation is held to what that claims: the recorde
 digests are compared against the bytes committed at `generated_at_head`, so flipping
 the flag by hand no longer looks like regenerating on a clean checkout.
 
-What none of this establishes is the state of a tree at generation time when the
-manifest records a dirty generation. That case is unobservable after the fact, and
-the manifest says so rather than being trusted about it.
+What none of this can establish is the state of a tree at generation time when the
+manifest records a dirty generation. The writer records that state honestly for
+inspection, but validation refuses it: a manifest accepted by CI must name a clean,
+committed generation that can be read back and checked.
 """
 
 from __future__ import annotations
@@ -28,31 +29,32 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from provenance_common import (  # noqa: E402
+from provenance_common import (
+    ARTIFACT_SCOPE,
     EXCLUDED_DIR_NAMES,
     MISSING_BLOB,
+    MODEL_ARTIFACT_SCOPE,
+    MODEL_IDENTITY_FIELDS,
+    SOURCE_SCOPE,
     blobs_at_commit,
     digest_bytes,
     expand,
     identity_summaries,
+    manifest_rule_problems,
     repo_root,
     sha256,
     snapshot_digest,
     working_tree_dirty,
 )
 
-
 ROOT = repo_root()
 MANIFEST = ROOT / "paper" / "evidence" / "provenance.json"
 
-# Fallback for a schema-2 manifest, which recorded no exclusion list.
-DEFAULT_EXCLUDES = EXCLUDED_DIR_NAMES
-DEFAULT_ARTIFACT_SCOPE = ("paper/evidence/*.json", "paper/figures/*.pdf")
-DEFAULT_MODEL_ARTIFACT_SCOPE = ("paper/evidence/model-artifacts/*.json",)
-
 
 def expand_relative(patterns: list[str], excludes: frozenset[str]) -> list[str]:
-    return [path.relative_to(ROOT).as_posix() for path in expand(patterns, ROOT, excludes)]
+    return [
+        path.relative_to(ROOT).as_posix() for path in expand(patterns, ROOT, excludes)
+    ]
 
 
 def check_group(name: str, records: list[dict]) -> list[str]:
@@ -81,15 +83,18 @@ def check_clean_generation(manifest: dict, records: list[dict]) -> list[str]:
     its bytes existed in no commit when it was written, which is why the flag is true.
     """
     commit = manifest.get("generated_at_head")
-    if manifest.get("generated_at_head_dirty") is not False or not isinstance(commit, str):
+    if manifest.get("generated_at_head_dirty") is not False or not isinstance(
+        commit, str
+    ):
         return []
     blobs = blobs_at_commit(ROOT, commit, [record["path"] for record in records])
     if blobs is None:
-        print(
-            f"note: {commit[:12]} is not in this checkout, so the clean-generation "
-            "claim was not checked against it"
-        )
-        return []
+        return [
+            (
+                f"generation: COMMIT {commit} is not present; "
+                "the clean-generation claim cannot be verified"
+            )
+        ]
     problems: list[str] = []
     for record in records:
         blob = blobs[record["path"]]
@@ -110,8 +115,10 @@ def check_clean_generation(manifest: dict, records: list[dict]) -> list[str]:
     return problems
 
 
-def model_summaries(path: Path, fields: list[str]) -> list[dict[str, str]]:
-    return identity_summaries(json.loads(path.read_text(encoding="utf-8")), fields)
+def model_summaries(path: Path) -> list[dict[str, str]]:
+    return identity_summaries(
+        json.loads(path.read_text(encoding="utf-8")), MODEL_IDENTITY_FIELDS
+    )
 
 
 def main() -> int:
@@ -120,45 +127,89 @@ def main() -> int:
         return 2
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
 
-    problems: list[str] = []
+    problems = manifest_rule_problems(manifest)
+    if problems:
+        for problem in problems:
+            print(problem)
+        print(f"\nFAIL: {len(problems)} manifest rule problem(s)")
+        return 1
+    if manifest.get("generated_at_head_dirty") is not False:
+        problems.append(
+            "generation: DIRTY generated_at_head_dirty must be false; "
+            "commit the candidate, regenerate on the clean tree, and commit only "
+            "the manifest"
+        )
     problems += check_group("source", manifest["source_files"])
     problems += check_group("artifact", manifest["artifacts"])
     problems += check_group("model artifact", manifest.get("model_artifacts", []))
 
-    excludes = frozenset(manifest.get("source_snapshot_excludes", DEFAULT_EXCLUDES))
+    excludes = frozenset(EXCLUDED_DIR_NAMES)
 
     recorded_sources = [item["path"] for item in manifest["source_files"]]
-    for path in expand_relative(manifest["source_snapshot_scope"], excludes):
-        if path not in recorded_sources:
-            problems.append(f"source: UNRECORDED {path}")
+    expected_sources = expand_relative(list(SOURCE_SCOPE), excludes)
+    if recorded_sources != expected_sources:
+        problems.append("source scope does not exactly match the working tree")
+        problems.extend(
+            f"source: UNRECORDED {path}"
+            for path in expected_sources
+            if path not in recorded_sources
+        )
+        problems.extend(
+            f"source: EXTRA {path}"
+            for path in recorded_sources
+            if path not in expected_sources
+        )
 
-    artifact_scope = list(manifest.get("artifact_scope", DEFAULT_ARTIFACT_SCOPE))
     recorded_artifacts = [item["path"] for item in manifest["artifacts"]]
     manifest_rel = MANIFEST.relative_to(ROOT).as_posix()
-    for path in expand_relative(artifact_scope, excludes):
-        if path != manifest_rel and path not in recorded_artifacts:
-            problems.append(f"artifact: UNRECORDED {path}")
+    expected_artifacts = [
+        path
+        for path in expand_relative(list(ARTIFACT_SCOPE), excludes)
+        if path != manifest_rel
+    ]
+    if recorded_artifacts != expected_artifacts:
+        problems.append("artifact scope does not exactly match the working tree")
+        problems.extend(
+            f"artifact: UNRECORDED {path}"
+            for path in expected_artifacts
+            if path not in recorded_artifacts
+        )
+        problems.extend(
+            f"artifact: EXTRA {path}"
+            for path in recorded_artifacts
+            if path not in expected_artifacts
+        )
 
-    model_artifact_scope = list(
-        manifest.get("model_artifact_scope", DEFAULT_MODEL_ARTIFACT_SCOPE)
-    )
-    recorded_model_artifacts = {
-        item["path"]: item for item in manifest.get("model_artifacts", [])
-    }
-    for path in expand_relative(model_artifact_scope, excludes):
-        if path not in recorded_model_artifacts:
-            problems.append(f"model artifact: UNRECORDED {path}")
-            continue
+    model_records = manifest.get("model_artifacts", [])
+    recorded_model_paths = [item["path"] for item in model_records]
+    expected_model_paths = expand_relative(list(MODEL_ARTIFACT_SCOPE), excludes)
+    if recorded_model_paths != expected_model_paths:
+        problems.append("model-artifact scope does not exactly match the working tree")
+        problems.extend(
+            f"model artifact: UNRECORDED {path}"
+            for path in expected_model_paths
+            if path not in recorded_model_paths
+        )
+        problems.extend(
+            f"model artifact: EXTRA {path}"
+            for path in recorded_model_paths
+            if path not in expected_model_paths
+        )
+    seen_models: set[str] = set()
+    for record in model_records:
+        path = record["path"]
         try:
-            actual = model_summaries(
-                ROOT / path,
-                list(manifest.get("model_identity_fields", [])),
-            )
+            actual = model_summaries(ROOT / path)
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
             problems.append(f"model artifact: INVALID {path}: {error}")
             continue
-        if actual != recorded_model_artifacts[path].get("identities"):
+        if actual != record["identities"]:
             problems.append(f"model artifact: IDENTITY SUMMARY {path}")
+        for identity in actual:
+            model = identity["model"]
+            if model in seen_models:
+                problems.append(f"model artifact: DUPLICATE MODEL {model}")
+            seen_models.add(model)
 
     snapshot = snapshot_digest(manifest["source_files"])
     if snapshot != manifest["source_snapshot_sha256"]:

@@ -18,9 +18,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from provenance_common import (  # noqa: E402
+from provenance_common import (
+    ARTIFACT_SCOPE,
+    DIGEST_CONVENTION,
     EXCLUDED_DIR_NAMES,
+    MODEL_ARTIFACT_SCOPE,
     MODEL_IDENTITY_FIELDS,
+    REPRODUCTION_ENTRYPOINT,
+    SCHEMA_VERSION,
+    SOURCE_SCOPE,
+    SOURCE_SCOPE_NOTE,
+    VALIDATOR,
     expand,
     head_commit,
     identity_summaries,
@@ -30,24 +38,8 @@ from provenance_common import (  # noqa: E402
     working_tree_dirty,
 )
 
-
 ROOT = repo_root()
 OUT = ROOT / "paper" / "evidence" / "provenance.json"
-
-SOURCE_SCOPE = (
-    "Cargo.toml",
-    "Cargo.lock",
-    "crates/**/*.toml",
-    "crates/**/*.rs",
-    "crates/sharpearena-py/python/**/*.py",
-    "paper/src/*.py",
-    "paper/main.tex",
-    "paper/sections/*.tex",
-    "paper/refs.bib",
-)
-
-ARTIFACT_SCOPE = ("paper/evidence/*.json", "paper/figures/*.pdf")
-MODEL_ARTIFACT_SCOPE = ("paper/evidence/model-artifacts/*.json",)
 
 EXCLUDES = frozenset(EXCLUDED_DIR_NAMES)
 
@@ -83,7 +75,9 @@ def model_artifact_records(paths: list[Path]) -> list[dict]:
         for summary in summaries:
             model = summary["model"]
             if model in seen_models:
-                raise ValueError(f"duplicate model identity across provenance files: {model}")
+                raise ValueError(
+                    f"duplicate model identity across provenance files: {model}"
+                )
             seen_models.add(model)
         output.append(
             {
@@ -104,10 +98,12 @@ model_artifacts = model_artifact_records(files(MODEL_ARTIFACT_SCOPE))
 head = head_commit(ROOT)
 dirty = working_tree_dirty(ROOT)
 if dirty is None:
-    raise SystemExit("cannot determine whether the working tree is dirty; is this a git checkout?")
+    raise SystemExit(
+        "cannot determine whether the working tree is dirty; is this a git checkout?"
+    )
 
 manifest = {
-    "schema_version": 5,
+    "schema_version": SCHEMA_VERSION,
     # A manifest cannot contain the hash of the commit that will contain the
     # manifest without becoming self-referential.  Record the commit this
     # generation ran at honestly, together with whether the tree was dirty;
@@ -115,20 +111,16 @@ manifest = {
     # not-yet-committed) source bytes.
     "generated_at_head": head,
     "generated_at_head_dirty": dirty,
-    "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
+    "digest_convention": DIGEST_CONVENTION,
     "source_snapshot_sha256": snapshot,
     "source_snapshot_scope": list(SOURCE_SCOPE),
     "source_snapshot_excludes": list(EXCLUDED_DIR_NAMES),
-    "source_snapshot_scope_note": (
-        "Globs are expanded from the repository root; any path with a component "
-        "in source_snapshot_excludes is skipped, so build outputs and virtual "
-        "environments are not part of the source snapshot."
-    ),
+    "source_snapshot_scope_note": SOURCE_SCOPE_NOTE,
     "artifact_scope": list(ARTIFACT_SCOPE),
     "model_artifact_scope": list(MODEL_ARTIFACT_SCOPE),
     "model_identity_fields": list(MODEL_IDENTITY_FIELDS),
-    "reproduction_entrypoint": "commands in paper/sections/A-commands.tex",
-    "validator": "paper/src/check-provenance.py",
+    "reproduction_entrypoint": REPRODUCTION_ENTRYPOINT,
+    "validator": VALIDATOR,
     "source_files": source_records,
     "artifacts": artifacts,
     "model_artifacts": model_artifacts,

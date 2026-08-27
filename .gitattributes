@@ -1,0 +1,35 @@
+# The repository is built and provenance-checked on Linux, macOS and Windows.
+# Store source and documentation as LF so switching between Windows Git and WSL
+# cannot manufacture a full-file diff. Native Windows launcher scripts remain CRLF.
+* text=auto eol=lf
+
+*.rs       text eol=lf
+*.toml     text eol=lf
+*.lock     text eol=lf
+*.py       text eol=lf
+*.tex      text eol=lf
+*.bib      text eol=lf
+*.json     text eol=lf
+*.jsonl    text eol=lf
+*.md       text eol=lf
+*.yml      text eol=lf
+*.yaml     text eol=lf
+*.sh       text eol=lf
+*.js       text eol=lf
+*.mjs      text eol=lf
+*.cjs      text eol=lf
+*.ts       text eol=lf
+*.svg      text eol=lf
+
+*.bat      text eol=crlf
+*.cmd      text eol=crlf
+
+*.wasm     binary
+*.pdf      binary
+*.png      binary
+*.jpg      binary
+*.jpeg     binary
+*.gif      binary
+*.ico      binary
+*.zip      binary
+*.gz       binary

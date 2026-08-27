@@ -27,17 +27,41 @@ concurrency:
   group: release-${{ github.ref }}
 
 jobs:
+  validate_tag:
+    name: provenance-safe release tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      validated_commit: ${{ steps.verify.outputs.validated_commit }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.release_tag || github.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12.14"
+      # No registry job may start until the tag is proven to be the
+      # provenance-only child of the clean generation it names. This is the
+      # same validator the release driver runs before its atomic push.
+      - name: Verify the exact tagged tree and every package version
+        id: verify
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: python scripts/release.py verify-tag "$RELEASE_TAG" --github-output "$GITHUB_OUTPUT"
+
   crates:
     name: crates.io (sharpearena + sharpearena-wasm)
     if: ${{ vars.PUBLISH_CRATES == 'true' }}
+    needs: [validate_tag]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: crates
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: ${{ inputs.release_tag || github.ref }}
-      - uses: dtolnay/rust-toolchain@master
+          ref: ${{ needs.validate_tag.outputs.validated_commit }}
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # 2026-08-27
         with:
           toolchain: "1.96.0"
 
@@ -47,8 +71,10 @@ jobs:
       # shipped nothing.
       - name: Assert the workspace manifest matches the release tag
         if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
-          TAG="${{ inputs.release_tag || github.ref_name }}"
+          TAG="$RELEASE_TAG"
           TAG="${TAG#v}"
           V="$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')"
           if [ "$V" != "$TAG" ]; then
@@ -57,7 +83,7 @@ jobs:
           fi
           echo "ok   workspace manifest is at $V"
       # Exchanges the GitHub OIDC identity for a short-lived crates.io token.
-      - uses: rust-lang/crates-io-auth-action@v1
+      - uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1 2026-08-27
         id: auth
       # Publish in dependency order: `sharpearena` first (it depends only on the already
       # published sharpebench-* crates), then `sharpearena-wasm` (depends on sharpearena).
@@ -81,34 +107,37 @@ jobs:
   npm:
     name: npm (@general-liquidity/sharpearena)
     if: ${{ vars.PUBLISH_NPM == 'true' }}
+    needs: [validate_tag]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: npm
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: ${{ inputs.release_tag || github.ref }}
+          ref: ${{ needs.validate_tag.outputs.validated_commit }}
 
       # The npm package ships the compiled WASM kernel, so build it fresh first.
       - name: Install Rust (pinned) + wasm target
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # 2026-08-27
         with:
           toolchain: "1.96.0"
           targets: wasm32-unknown-unknown
       - name: Install wasm-pack
-        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+        uses: taiki-e/install-action@37f7c5781271959fb65b6b35224e28652ff2b63d # v2
+        with:
+          tool: wasm-pack@0.15.0
       - name: Build the WASM kernel (nodejs target)
         run: |
           rm -rf npm/sharpearena/pkg
           wasm-pack build crates/sharpearena-wasm --target nodejs --out-dir ../../npm/sharpearena/pkg --out-name sharpearena
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: 24
+          node-version: 24.18.0
           registry-url: https://registry.npmjs.org
       # npm trusted publishing (OIDC) needs npm >= 11.5; provenance is automatic.
       # No attest-build-provenance step here: OIDC trusted publishing already attaches it.
-      - run: npm install -g npm@latest
+      - run: npm install -g npm@12.0.2
 
       # cargo-release rewrites this manifest from the workspace version (the rules live in
       # crates/sharpearena/release.toml), so it must already equal the tag. If it does not,
@@ -118,8 +147,10 @@ jobs:
       - name: Assert the npm manifest matches the release tag
         if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
         working-directory: npm/sharpearena
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
-          TAG="${{ inputs.release_tag || github.ref_name }}"
+          TAG="$RELEASE_TAG"
           TAG="${TAG#v}"
           V=$(node -p "require('./package.json').version")
           if [ "$V" != "$TAG" ]; then
@@ -131,7 +162,7 @@ jobs:
       - name: Publish (skip if version exists)
         working-directory: npm/sharpearena
         run: |
-          npm install
+          npm ci
           npm run build
           V=$(node -p "require('./package.json').version")
           if npm view "@general-liquidity/sharpearena@$V" version >/dev/null 2>&1; then
@@ -143,6 +174,7 @@ jobs:
   pypi:
     name: PyPI (sharpearena wheel)
     if: ${{ vars.PUBLISH_PYPI == 'true' }}
+    needs: [validate_tag]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: pypi
@@ -153,9 +185,9 @@ jobs:
       id-token: write # OIDC for PyPI trusted publishing + the provenance attestation
       attestations: write # store the attestation on the repo
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: ${{ inputs.release_tag || github.ref }}
+          ref: ${{ needs.validate_tag.outputs.validated_commit }}
 
       # Same stale-manifest trap as the npm job: `skip-existing: true` below turns an
       # already-published version into a silent no-op, so a pyproject.toml left behind by
@@ -163,8 +195,10 @@ jobs:
       # is excluded from the Cargo workspace, so only pre-release-replacements move it.
       - name: Assert the Python manifest matches the release tag
         if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
-          TAG="${{ inputs.release_tag || github.ref_name }}"
+          TAG="$RELEASE_TAG"
           TAG="${TAG#v}"
           fail=0
           for f in crates/sharpearena-py/pyproject.toml crates/sharpearena-py/Cargo.toml; do
@@ -177,16 +211,19 @@ jobs:
           exit $fail
 
       - name: Build manylinux wheels + sdist
-        uses: PyO3/maturin-action@v1
+        uses: PyO3/maturin-action@f0a989e78b427215a87ce3021f5a90507cae75fb # 2026-08-27
         with:
           command: build
           args: --release --out dist --interpreter 3.10 3.11 3.12 3.13 --manifest-path crates/sharpearena-py/Cargo.toml
-          manylinux: auto
+          manylinux: "2014"
+          container: quay.io/pypa/manylinux2014_x86_64@sha256:edb6edbd84c2fa9d40ee83abb160e302ebce82eb93570d43343942a1fb10b962
+          maturin-version: v1.15.0
       - name: Build sdist
-        uses: PyO3/maturin-action@v1
+        uses: PyO3/maturin-action@f0a989e78b427215a87ce3021f5a90507cae75fb # 2026-08-27
         with:
           command: sdist
           args: --out dist --manifest-path crates/sharpearena-py/Cargo.toml
+          maturin-version: v1.15.0
       # SLSA build provenance for the wheels + sdist via GitHub's native attestation:
       # keyless, no keypair or secret to manage, verifiable with the GitHub CLI alone
       # (gh attestation verify <wheel> --repo general-liquidity/sharpearena).
@@ -197,7 +234,7 @@ jobs:
       # Trusted publishing — configure the PyPI publisher for repo `sharpearena`,
       # workflow `release.yml`, environment `pypi`. No token needed.
       - name: Publish to PyPI (OIDC)
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1 2026-08-27
         with:
           packages-dir: dist
           # Idempotent re-runs: a version already on PyPI is skipped, not an error
@@ -209,7 +246,7 @@ jobs:
   # registries directly, so an incomplete release fails the run instead of passing quietly.
   verify:
     name: verify every registry serves the release
-    needs: [crates, npm, pypi]
+    needs: [validate_tag, crates, npm, pypi]
     # Recovery runs dispatched with release_tag must prove registry state too.
     if: always() && (startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != '')
     runs-on: ubuntu-latest
@@ -219,13 +256,19 @@ jobs:
       # probes still run, but the run as a whole must not go green when a publish job
       # itself failed. 'skipped' is fine: the jobs are var-gated by design.
       - name: Fail if any publish job failed
+        env:
+          VALIDATE_TAG_RESULT: ${{ needs.validate_tag.result }}
+          CRATES_RESULT: ${{ needs.crates.result }}
+          NPM_RESULT: ${{ needs.npm.result }}
+          PYPI_RESULT: ${{ needs.pypi.result }}
         run: |
           fail=0
-          for job in crates npm pypi; do
+          for job in validate_tag crates npm pypi; do
             case "$job" in
-              crates) result="${{ needs.crates.result }}" ;;
-              npm)    result="${{ needs.npm.result }}" ;;
-              pypi)   result="${{ needs.pypi.result }}" ;;
+              validate_tag) result="$VALIDATE_TAG_RESULT" ;;
+              crates) result="$CRATES_RESULT" ;;
+              npm)    result="$NPM_RESULT" ;;
+              pypi)   result="$PYPI_RESULT" ;;
             esac
             echo "$job: $result"
             if [ "$result" = "failure" ]; then
@@ -233,17 +276,22 @@ jobs:
             fi
           done
           exit $fail
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: 24
+          node-version: 24.18.0
       - name: Assert crates.io, npm and PyPI all serve the tag version
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+          PUBLISH_CRATES: ${{ vars.PUBLISH_CRATES }}
+          PUBLISH_NPM: ${{ vars.PUBLISH_NPM }}
+          PUBLISH_PYPI: ${{ vars.PUBLISH_PYPI }}
         run: |
-          TAG="${{ inputs.release_tag || github.ref_name }}"
+          TAG="$RELEASE_TAG"
           TAG="${TAG#v}"
           UA="sharpearena-release (general-liquidity)" # crates.io rejects requests without a User-Agent
           fail=0
 
-          if [ "${{ vars.PUBLISH_CRATES }}" = "true" ]; then
+          if [ "$PUBLISH_CRATES" = "true" ]; then
             for c in sharpearena sharpearena-wasm; do
               if curl -s -A "$UA" "https://crates.io/api/v1/crates/$c/$TAG" | grep -q "\"num\":\"$TAG\""; then
                 echo "ok   crates.io $c@$TAG"
@@ -253,7 +301,7 @@ jobs:
             done
           fi
 
-          if [ "${{ vars.PUBLISH_NPM }}" = "true" ]; then
+          if [ "$PUBLISH_NPM" = "true" ]; then
             ok=0
             # the registry read-path lags a few seconds behind a publish
             for i in $(seq 1 20); do
@@ -267,7 +315,7 @@ jobs:
             fi
           fi
 
-          if [ "${{ vars.PUBLISH_PYPI }}" = "true" ]; then
+          if [ "$PUBLISH_PYPI" = "true" ]; then
             ok=0
             for i in $(seq 1 20); do
               if curl -sf -A "$UA" "https://pypi.org/pypi/sharpearena/$TAG/json" >/dev/null; then ok=1; break; fi

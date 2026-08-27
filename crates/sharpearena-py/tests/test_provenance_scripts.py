@@ -21,10 +21,11 @@ import json
 import os
 import subprocess
 import sys
+from dataclasses import fields as dataclass_fields
 from pathlib import Path
 
 import pytest
-
+from sharpearena.local_agents import ModelIdentity
 
 REPO = Path(__file__).resolve().parents[3]
 PAPER_SRC = REPO / "paper" / "src"
@@ -57,6 +58,7 @@ def _run(script: str, root: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, str(PAPER_SRC / script)],
         capture_output=True,
+        check=False,
         text=True,
         env=env,
     )
@@ -88,9 +90,13 @@ def tree(tmp_path: Path) -> Path:
     # write_bytes throughout: write_text would translate newlines on Windows, and the
     # line-ending cases below need the on-disk bytes to be exactly what they say.
     (root / "Cargo.toml").write_bytes(b'[workspace]\nversion = "0.1.0"\n')
-    (root / "crates" / "demo" / "src" / "lib.rs").write_bytes(b"pub fn one() -> u8 { 1 }\n")
+    (root / "crates" / "demo" / "src" / "lib.rs").write_bytes(
+        b"pub fn one() -> u8 { 1 }\n"
+    )
     (root / "paper" / "evidence" / "f1.json").write_bytes(b'{"result": 1}\n')
-    (root / "paper" / "figures" / "f1.pdf").write_bytes(b"%PDF-1.4\x00binary\r\nbytes\n")
+    (root / "paper" / "figures" / "f1.pdf").write_bytes(
+        b"%PDF-1.4\x00binary\r\nbytes\n"
+    )
     _git(root, "init", "--quiet")
     # The checkout convention this repository is developed on, and the reason every
     # digest in the committed manifest read as a mismatch before they were normalized.
@@ -117,6 +123,30 @@ def test_identity_summaries_accepts_a_fully_resolved_identity() -> None:
     assert common.identity_summaries([COMPLETE_IDENTITY], FIELDS) == [COMPLETE_IDENTITY]
 
 
+def test_provenance_identity_keys_match_the_runtime_model_identity_schema() -> None:
+    runtime_fields = frozenset(field.name for field in dataclass_fields(ModelIdentity))
+
+    assert common.MODEL_IDENTITY_ALLOWED_FIELDS == runtime_fields
+
+
+def test_identity_summaries_accepts_optional_runtime_fields() -> None:
+    identity = dict(
+        COMPLETE_IDENTITY,
+        context_length=32_768,
+        capabilities=["chat", "tools"],
+        gpu_memory_mib=16_384,
+    )
+
+    assert common.identity_summaries(identity, FIELDS) == [COMPLETE_IDENTITY]
+
+
+def test_identity_summaries_rejects_an_unknown_source_field() -> None:
+    identity = dict(COMPLETE_IDENTITY, servre_version="typo")
+
+    with pytest.raises(ValueError, match=r"unknown fields: \['servre_version'\]"):
+        common.identity_summaries(identity, FIELDS)
+
+
 @pytest.mark.parametrize("value", ["unresolved", "UNRESOLVED", "unknown", " ", ""])
 def test_identity_summaries_rejects_a_placeholder_digest(value: str) -> None:
     identity = dict(COMPLETE_IDENTITY, digest=value)
@@ -127,7 +157,8 @@ def test_identity_summaries_rejects_a_placeholder_digest(value: str) -> None:
 def test_identity_summaries_rejects_a_missing_or_non_string_field() -> None:
     with pytest.raises(ValueError, match="server_version"):
         common.identity_summaries(
-            {k: v for k, v in COMPLETE_IDENTITY.items() if k != "server_version"}, FIELDS
+            {k: v for k, v in COMPLETE_IDENTITY.items() if k != "server_version"},
+            FIELDS,
         )
     with pytest.raises(ValueError, match="quantization"):
         common.identity_summaries(dict(COMPLETE_IDENTITY, quantization=4), FIELDS)
@@ -139,7 +170,9 @@ def test_identity_summaries_rejects_a_non_identity_payload() -> None:
             common.identity_summaries(payload, FIELDS)
 
 
-def test_text_digests_ignore_line_endings_but_binary_digests_do_not(tmp_path: Path) -> None:
+def test_text_digests_ignore_line_endings_but_binary_digests_do_not(
+    tmp_path: Path,
+) -> None:
     lf = tmp_path / "lf.rs"
     crlf = tmp_path / "crlf.rs"
     lf.write_bytes(b"fn main() {}\nfn other() {}\n")
@@ -165,6 +198,11 @@ def test_writer_output_validates_and_records_the_tree(tree: Path) -> None:
         "paper/evidence/f1.json",
         "paper/figures/f1.pdf",
     }
+    assert manifest["source_snapshot_scope"] == list(common.SOURCE_SCOPE)
+    assert manifest["source_snapshot_excludes"] == list(common.EXCLUDED_DIR_NAMES)
+    assert manifest["artifact_scope"] == list(common.ARTIFACT_SCOPE)
+    assert manifest["model_artifact_scope"] == list(common.MODEL_ARTIFACT_SCOPE)
+    assert manifest["model_identity_fields"] == list(common.MODEL_IDENTITY_FIELDS)
     assert manifest["generated_at_head_dirty"] is False
 
     checked = _run("check-provenance.py", tree)
@@ -174,12 +212,16 @@ def test_writer_output_validates_and_records_the_tree(tree: Path) -> None:
 def test_checker_catches_an_edited_source_and_an_unrecorded_one(tree: Path) -> None:
     _make_and_commit(tree)
 
-    (tree / "crates" / "demo" / "src" / "lib.rs").write_bytes(b"pub fn one() -> u8 { 2 }\n")
+    (tree / "crates" / "demo" / "src" / "lib.rs").write_bytes(
+        b"pub fn one() -> u8 { 2 }\n"
+    )
     edited = _run("check-provenance.py", tree)
     assert edited.returncode == 1
     assert "source: DIGEST crates/demo/src/lib.rs" in edited.stdout
 
-    (tree / "crates" / "demo" / "src" / "lib.rs").write_bytes(b"pub fn one() -> u8 { 1 }\n")
+    (tree / "crates" / "demo" / "src" / "lib.rs").write_bytes(
+        b"pub fn one() -> u8 { 1 }\n"
+    )
     (tree / "crates" / "demo" / "src" / "extra.rs").write_bytes(b"pub fn two() {}\n")
     added = _run("check-provenance.py", tree)
     assert added.returncode == 1
@@ -196,10 +238,24 @@ def test_checker_ignores_a_line_ending_only_change(tree: Path) -> None:
 
 def test_writer_refuses_an_unresolved_model_identity(tree: Path) -> None:
     artifact = tree / "paper" / "evidence" / "model-artifacts" / "runner.json"
-    artifact.write_text(json.dumps(dict(COMPLETE_IDENTITY, digest="unresolved")), encoding="utf-8")
+    artifact.write_text(
+        json.dumps(dict(COMPLETE_IDENTITY, digest="unresolved")), encoding="utf-8"
+    )
     made = _run("make-provenance.py", tree)
     assert made.returncode != 0
     assert "lacks explicit fields" in made.stderr
+
+
+def test_writer_refuses_an_unknown_model_identity_field(tree: Path) -> None:
+    artifact = tree / "paper" / "evidence" / "model-artifacts" / "runner.json"
+    artifact.write_text(
+        json.dumps(dict(COMPLETE_IDENTITY, servre_version="typo")), encoding="utf-8"
+    )
+
+    made = _run("make-provenance.py", tree)
+
+    assert made.returncode != 0
+    assert "unknown fields: ['servre_version']" in made.stderr
 
 
 def test_checker_rejects_an_unresolved_digest_the_writer_refused(tree: Path) -> None:
@@ -210,6 +266,8 @@ def test_checker_rejects_an_unresolved_digest_the_writer_refused(tree: Path) -> 
     """
     artifact = tree / "paper" / "evidence" / "model-artifacts" / "runner.json"
     artifact.write_text(json.dumps(COMPLETE_IDENTITY), encoding="utf-8")
+    _git(tree, "add", artifact.relative_to(tree).as_posix())
+    _git(tree, "commit", "--quiet", "-m", "add model identity")
     _make_and_commit(tree)
     assert _run("check-provenance.py", tree).returncode == 0
 
@@ -220,7 +278,9 @@ def test_checker_rejects_an_unresolved_digest_the_writer_refused(tree: Path) -> 
     entry = manifest["model_artifacts"][0]
     entry["sha256"] = common.sha256(artifact)
     entry["identities"] = [unresolved]
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
 
     checked = _run("check-provenance.py", tree)
     assert checked.returncode == 1
@@ -228,7 +288,33 @@ def test_checker_rejects_an_unresolved_digest_the_writer_refused(tree: Path) -> 
     assert "digest" in checked.stdout
 
 
-def test_checker_rejects_a_manifest_claiming_a_clean_generation_on_a_dirty_tree(tree: Path) -> None:
+def test_checker_rejects_an_unknown_model_identity_field(tree: Path) -> None:
+    artifact = tree / "paper" / "evidence" / "model-artifacts" / "runner.json"
+    artifact.write_text(json.dumps(COMPLETE_IDENTITY), encoding="utf-8")
+    _git(tree, "add", artifact.relative_to(tree).as_posix())
+    _git(tree, "commit", "--quiet", "-m", "add model identity")
+    _make_and_commit(tree)
+
+    artifact.write_text(
+        json.dumps(dict(COMPLETE_IDENTITY, servre_version="typo")), encoding="utf-8"
+    )
+    manifest_path = tree / "paper" / "evidence" / "provenance.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["model_artifacts"][0]["sha256"] = common.sha256(artifact)
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+
+    checked = _run("check-provenance.py", tree)
+
+    assert checked.returncode == 1
+    assert "model artifact: INVALID" in checked.stdout
+    assert "unknown fields: ['servre_version']" in checked.stdout
+
+
+def test_checker_rejects_a_manifest_claiming_a_clean_generation_on_a_dirty_tree(
+    tree: Path,
+) -> None:
     _make_and_commit(tree)
     manifest_path = tree / "paper" / "evidence" / "provenance.json"
     assert json.loads(manifest_path.read_text())["generated_at_head_dirty"] is False
@@ -246,7 +332,9 @@ def _edit_manifest_and_commit(tree: Path, **fields: object) -> None:
     manifest_path = tree / "paper" / "evidence" / "provenance.json"
     manifest = json.loads(manifest_path.read_text())
     manifest.update(fields)
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     _git(tree, "add", "-A")
     _git(tree, "commit", "--quiet", "-m", "hand-edited manifest")
 
@@ -264,7 +352,8 @@ def test_checker_rejects_a_hand_flipped_clean_generation_flag(tree: Path) -> Non
     _git(tree, "add", "-A")
     _git(tree, "commit", "--quiet", "-m", "edit and bind together")
     honest = _run("check-provenance.py", tree)
-    assert honest.returncode == 0, honest.stdout
+    assert honest.returncode == 1
+    assert "generation: DIRTY" in honest.stdout
 
     _edit_manifest_and_commit(tree, generated_at_head_dirty=False)
     flipped = _run("check-provenance.py", tree)
@@ -272,12 +361,16 @@ def test_checker_rejects_a_hand_flipped_clean_generation_flag(tree: Path) -> Non
     assert "generation: DIGEST crates/demo/src/lib.rs" in flipped.stdout
 
 
-def test_checker_rejects_a_clean_generation_naming_a_commit_without_the_file(tree: Path) -> None:
+def test_checker_rejects_a_clean_generation_naming_a_commit_without_the_file(
+    tree: Path,
+) -> None:
     (tree / "crates" / "demo" / "src" / "extra.rs").write_bytes(b"pub fn two() {}\n")
     assert _run("make-provenance.py", tree).returncode == 0
     _git(tree, "add", "-A")
     _git(tree, "commit", "--quiet", "-m", "add and bind together")
-    assert _run("check-provenance.py", tree).returncode == 0
+    honest = _run("check-provenance.py", tree)
+    assert honest.returncode == 1
+    assert "generation: DIRTY" in honest.stdout
 
     _edit_manifest_and_commit(tree, generated_at_head_dirty=False)
     flipped = _run("check-provenance.py", tree)
@@ -285,19 +378,150 @@ def test_checker_rejects_a_clean_generation_naming_a_commit_without_the_file(tre
     assert "generation: ABSENT crates/demo/src/extra.rs" in flipped.stdout
 
 
-def test_checker_notes_rather_than_fails_when_the_generation_commit_is_absent(tree: Path) -> None:
-    """A shallow clone does not contain the parent, and that is not evidence of tampering."""
+def test_checker_rejects_a_clean_generation_when_its_commit_is_absent(
+    tree: Path,
+) -> None:
+    """Accepted provenance must name a commit CI can read and verify."""
     _make_and_commit(tree)
     _edit_manifest_and_commit(tree, generated_at_head="0" * 40)
 
     checked = _run("check-provenance.py", tree)
-    assert checked.returncode == 0, checked.stdout
-    assert "is not in this checkout" in checked.stdout
+    assert checked.returncode == 1
+    assert "generation: COMMIT" in checked.stdout
 
 
-def test_writer_records_a_dirty_generation_honestly(tree: Path) -> None:
+def _commit_manifest_edit(tree: Path, edit) -> subprocess.CompletedProcess[str]:
+    _make_and_commit(tree)
+    manifest_path = tree / "paper" / "evidence" / "provenance.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    edit(manifest)
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    _git(tree, "add", str(manifest_path.relative_to(tree)))
+    _git(tree, "commit", "--quiet", "-m", "tamper with manifest rules")
+    return _run("check-provenance.py", tree)
+
+
+@pytest.mark.parametrize(
+    ("edit", "field"),
+    [
+        (
+            lambda manifest: manifest["source_snapshot_scope"].pop(),
+            "source_snapshot_scope",
+        ),
+        (
+            lambda manifest: manifest["artifact_scope"].append("paper/other/*.json"),
+            "artifact_scope",
+        ),
+        (
+            lambda manifest: manifest["source_snapshot_excludes"].append("crates"),
+            "source_snapshot_excludes",
+        ),
+    ],
+)
+def test_checker_rejects_self_declared_coverage_rules(
+    tree: Path, edit, field: str
+) -> None:
+    checked = _commit_manifest_edit(tree, edit)
+
+    assert checked.returncode == 1
+    assert f"manifest rule: {field}" in checked.stdout
+
+
+def test_checker_rejects_reduced_model_identity_fields(tree: Path) -> None:
+    artifact = tree / "paper" / "evidence" / "model-artifacts" / "runner.json"
+    artifact.write_text(json.dumps(COMPLETE_IDENTITY), encoding="utf-8")
+    _git(tree, "add", str(artifact.relative_to(tree)))
+    _git(tree, "commit", "--quiet", "-m", "add model identity")
+
+    def reduce_fields(manifest: dict) -> None:
+        manifest["model_identity_fields"].remove("server_version")
+        manifest["model_artifacts"][0]["identities"][0].pop("server_version")
+
+    checked = _commit_manifest_edit(tree, reduce_fields)
+
+    assert checked.returncode == 1
+    assert "manifest rule: model_identity_fields" in checked.stdout
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("schema_version", 4),
+        ("digest_convention", "platform-dependent sha256"),
+        ("source_snapshot_scope_note", "exclude whatever the manifest asks"),
+        ("reproduction_entrypoint", "README.md"),
+        ("validator", "paper/src/make-provenance.py"),
+    ],
+)
+def test_checker_rejects_semantic_metadata_tampering(
+    tree: Path, field: str, value: object
+) -> None:
+    checked = _commit_manifest_edit(
+        tree, lambda manifest: manifest.__setitem__(field, value)
+    )
+
+    assert checked.returncode == 1
+    assert f"manifest rule: {field}" in checked.stdout
+
+
+def test_checker_rejects_an_extra_source_record_outside_canonical_scope(
+    tree: Path,
+) -> None:
+    extra = tree / "README.md"
+    extra.write_text("not provenance source scope\n", encoding="utf-8")
+    _git(tree, "add", "README.md")
+    _git(tree, "commit", "--quiet", "-m", "add out-of-scope file")
+
+    def append_extra(manifest: dict) -> None:
+        manifest["source_files"].append(
+            {"path": "README.md", "sha256": common.sha256(extra)}
+        )
+        manifest["source_files"].sort(key=lambda item: item["path"])
+        manifest["source_snapshot_sha256"] = common.snapshot_digest(
+            manifest["source_files"]
+        )
+
+    checked = _commit_manifest_edit(tree, append_extra)
+
+    assert checked.returncode == 1
+    assert "source scope does not exactly match" in checked.stdout
+
+
+def test_checker_rejects_extra_artifact_and_model_records_outside_canonical_scope(
+    tree: Path,
+) -> None:
+    extra = tree / "README.md"
+    extra.write_text(json.dumps(COMPLETE_IDENTITY), encoding="utf-8")
+    _git(tree, "add", "README.md")
+    _git(tree, "commit", "--quiet", "-m", "add out-of-scope identity")
+
+    def append_extra(manifest: dict) -> None:
+        digest = common.sha256(extra)
+        manifest["artifacts"].append({"path": "README.md", "sha256": digest})
+        manifest["model_artifacts"].append(
+            {
+                "path": "README.md",
+                "sha256": digest,
+                "identities": [COMPLETE_IDENTITY],
+            }
+        )
+
+    checked = _commit_manifest_edit(tree, append_extra)
+
+    assert checked.returncode == 1
+    assert "artifact scope does not exactly match" in checked.stdout
+    assert "model-artifact scope does not exactly match" in checked.stdout
+
+
+def test_writer_records_a_dirty_generation_honestly_but_checker_refuses_it(
+    tree: Path,
+) -> None:
     (tree / "notes.txt").write_text("uncommitted\n", encoding="utf-8")
     assert _run("make-provenance.py", tree).returncode == 0
     manifest = json.loads((tree / "paper" / "evidence" / "provenance.json").read_text())
     assert manifest["generated_at_head_dirty"] is True
-    assert _run("check-provenance.py", tree).returncode == 0
+    checked = _run("check-provenance.py", tree)
+    assert checked.returncode == 1
+    assert "generation: DIRTY" in checked.stdout

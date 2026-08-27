@@ -15,6 +15,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  release-rehearsal:
+    name: release rehearsal (no push)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # 2026-08-27
+        with:
+          toolchain: "1.96.0"
+      - uses: taiki-e/install-action@37f7c5781271959fb65b6b35224e28652ff2b63d # v2
+        with:
+          tool: cargo-release@0.25.18
+      # This performs a real patch bump, clean provenance rebind, annotated tag
+      # creation and tag validation in an isolated local clone. It never pushes.
+      # A stale-by-one release therefore fails on every PR, before a public tag
+      # can be the first execution of this path.
+      - name: Rehearse the complete checked release
+        run: python scripts/release.py rehearse patch
+
   rust:
     name: fmt · clippy · test (${{ matrix.os }})
     # The kernel's claim is byte-identical determinism, so the test suite runs on
@@ -101,19 +122,25 @@ jobs:
     steps:
       # Unshallow: the manifest's `generated_at_head_dirty: false` is checked by
       # reading the recorded paths back out of the commit it names, which a
-      # depth-1 checkout does not contain. Without this the job would print a
-      # note and skip that half of the check.
+      # depth-1 checkout may not contain. A missing generation commit is a hard
+      # failure, so this checkout deliberately provides the history required to
+      # verify the claim instead of weakening it.
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Tracked text is normalized by .gitattributes
+        run: |
+          git add --renormalize .
+          git diff --cached --exit-code
       # The manifest is what carries the recompute-from-decisions story into the
       # build. Until this job existed a manifest that had fallen behind its tree was
       # detectable only by a human who remembered to run the script by hand. What it
       # proves is a property of the commit it runs on: the tip of a pushed branch and
-      # the head of a pull request, not every commit in between.
+      # the head of a pull request, not every commit in between. This workflow runs
+      # on every push to main and every pull request.
       - name: check-provenance (manifest matches the tree)
         run: python paper/src/check-provenance.py
 

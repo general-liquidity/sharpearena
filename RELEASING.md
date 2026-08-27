@@ -8,44 +8,79 @@ SharpeArena ships from **one Rust engine** to three surfaces: the `sharpearena` 
 ## Cutting a version
 
 ```bash
-# green checks (cargo-release will not run these)
+# Green checks. CI runs the same release rehearsal before a tag can publish.
 cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings && cargo deny check
 
-cargo release patch            # DRY RUN
-cargo release patch --execute  # bump shared version + rewrite pins + commit + push
+# Exercise the exact bump -> clean rebind -> validation -> tag sequence in an
+# isolated local clone. It creates no tag and pushes nothing from this checkout.
+python scripts/release.py rehearse patch
 
-# rebind the evidence manifest on the committed release tree, then tag that commit
-python paper/src/make-provenance.py
-python paper/src/check-provenance.py
-git commit -m "chore(provenance): rebind on the vX.Y.Z release tree" paper/evidence/provenance.json
-git tag -a vX.Y.Z -m "SharpeArena vX.Y.Z" && git push --follow-tags
+# Cut the release. This is the only supported path: it atomically pushes main and
+# the annotated tag only after the prospective tag passes every provenance check.
+python scripts/release.py execute patch
 ```
 
 `release.toml` sets `publish = false`: the local machine never publishes. The `v*`
 tag triggers CI, which publishes via **OIDC Trusted Publishing** (no stored tokens).
 
-## Why the tag comes one commit after the bump
+## Why the checked driver owns the tag
 
-`release.toml` sets `tag = false`, so cargo-release does not tag; the two commands
-above do, and the order matters for the tamper-evidence manifest.
+`release.toml` sets both `tag = false` and `push = false`. Running cargo-release
+directly can create local version commits, but it cannot publish an unchecked tag.
+`scripts/release.py` owns the complete operation and the order matters for the
+tamper-evidence manifest.
 
 The version bump rewrites six files inside the provenance source scope, so a manifest
-bound before the release is stale the moment cargo-release commits. The
-`pre-release-hook` closes that: it regenerates the manifest after the bump and the
-replacements and before the commit, so the release commit's digests bind the release
-commit's tree and the provenance job stays green on it.
+bound before the release is stale the moment cargo-release commits. The driver waits
+until that commit is clean, regenerates the manifest with
+`generated_at_head_dirty: false`, and commits only `paper/evidence/provenance.json`.
+The annotated tag points at that provenance-only child.
 
-What the hook cannot produce is a manifest that names a commit. It runs while the bump
-is uncommitted, so it records `generated_at_head_dirty: true` — honest, and weaker than
-what a tag should carry, because `check-provenance.py` only cross-checks a manifest
-against the commit it names when that manifest claims a clean generation. Regenerating
-on the committed release tree yields `generated_at_head` = the release commit and
-`dirty: false`, a claim the validator then verifies by reading those paths back out of
-that commit. `provenance.json` is in no scope of its own, so the rebind commit's tree is
-identical to the release commit's everywhere the manifest binds.
+Before pushing, `verify-tag` requires all of the following:
 
-Tag the rebind commit. A tag on the release commit itself ships a manifest whose
-generation head names a tree it does not describe.
+1. the tag commit has one parent and changes only the provenance manifest;
+2. the manifest names that parent as a clean generation;
+3. the source, artifact, model-artifact, exclusion and identity-field rules equal the
+   canonical rules in `provenance_common.py`;
+4. every recorded source and artifact digest and every model identity summary matches
+   the tagged tree;
+5. the snapshot digest recomputes;
+6. the Rust, Python and npm version surfaces all equal the tag; and
+7. a published tag commit is an ancestor of `origin/main`. The driver's private
+   pre-push check additionally accepts the prospective tag as a child of
+   `origin/main`; the public `verify-tag` command does not.
+
+The manifest cannot contain the hash of its own commit without becoming
+self-referential. This construction avoids that problem: `provenance.json` is outside
+its own scope, and the tag commit is byte-identical to its named parent everywhere the
+manifest binds. Main and the tag are pushed together with `git push --atomic`, so an
+interrupted client cannot expose only half of the release state.
+
+The release workflow passes the selected tag through the `RELEASE_TAG` environment
+variable and quotes every shell use. GitHub expressions never enter a `run:` body;
+this is checked structurally because a manually dispatched tag is operator input, not
+shell syntax. Validation emits the exact commit object it checked, and every publishing
+job checks out that immutable SHA rather than resolving the tag again. The workflow's
+actions and downloaded publishing tools are pinned to immutable revisions or exact
+versions, including the manylinux container digest.
+
+## Correcting the v0.19.0 provenance gap
+
+Do not move or replace `v0.19.0`. Its packages are already public, and its tag points
+at the version-bump commit rather than a clean provenance-only rebind. The tag's
+manifest names an older commit and six in-scope version files have different digests;
+`python scripts/release.py verify-tag v0.19.0` therefore fails, intentionally.
+
+The honest correction is a patch release containing the disclosure and the checked
+release machinery:
+
+```bash
+python scripts/release.py rehearse patch   # exercises prospective v0.19.1 locally
+python scripts/release.py execute patch    # creates and publishes v0.19.1
+```
+
+Do not tag or publish while reviewing this change. The command above is the operator
+path once main is green and a patch release is desired.
 
 Never hand-edit a version. `Cargo.toml` is the only place one is authored: the npm
 `package.json` and the two `crates/sharpearena-py` manifests (that crate is excluded from
