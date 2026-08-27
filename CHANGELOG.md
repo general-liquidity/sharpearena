@@ -10,6 +10,9 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ## [Unreleased]
 
+### Changed
+- release: `cargo release` no longer applies the tag. The pre-release hook necessarily runs while the version bump is uncommitted, so the manifest it writes into the release commit binds that commit's tree but can only record a dirty generation. The tag now goes on the rebind commit that follows, whose manifest names the release commit and is checked against it. `RELEASING.md` carries the two commands and the reason.
+
 ### Fixed
 - paper: `check-provenance.py` holds a manifest that records `generated_at_head_dirty: false` to what that claims. Every recorded digest is compared against the bytes committed at `generated_at_head`, read back out of the repository. Flipping the flag by hand previously produced a file indistinguishable from one regenerated on a clean checkout, which was the one field in the manifest that nothing could contradict.
 

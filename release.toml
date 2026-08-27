@@ -31,13 +31,27 @@ publish = false # CI publishes via OIDC; never publish from a dev machine
 push = true
 allow-branch = ["main"]
 
+# The tag is applied by hand, one commit later. See the hook note below: the manifest
+# that ships inside the release commit is generated while the version bump is still
+# uncommitted, so it records `generated_at_head_dirty: true` and cannot claim to
+# describe any commit. Rebinding on the committed release tree produces a manifest
+# that names it and is checked against it, and the tag belongs on that commit rather
+# than on the one whose manifest can only assert its digests. RELEASING.md carries the
+# two commands.
+tag = false
+
 # The version bump rewrites Cargo.toml, Cargo.lock, both sharpearena-py
 # manifests, __init__.py and the wasm crate manifest, and all six are inside the
 # provenance source scope. Binding the manifest before the release therefore
 # leaves it stale the moment cargo-release commits, and the tamper-evidence job
 # fails on the release commit and on every commit after it. This hook runs after
-# the version bump and the replacements and before the commit, so the manifest
-# that ships with a tag describes the tree that tag points at.
+# the version bump and the replacements and before the commit, so the release
+# commit's manifest binds the release commit's tree.
+#
+# The hook necessarily runs while the bump is uncommitted, so what it writes is
+# honestly marked `generated_at_head_dirty: true`: its digests are right and its
+# generation head names a commit whose tree they do not describe. That is why the
+# tag goes on the rebind commit instead, and why the hook is not the whole fix.
 # cargo-release runs the hook from the crate directory, not the workspace root,
 # so the path is resolved from the repository root git reports.
 pre-release-hook = [

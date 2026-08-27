@@ -12,11 +12,40 @@ SharpeArena ships from **one Rust engine** to three surfaces: the `sharpearena` 
 cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings && cargo deny check
 
 cargo release patch            # DRY RUN
-cargo release patch --execute  # bump shared version + rewrite pins + tag vX.Y.Z + push
+cargo release patch --execute  # bump shared version + rewrite pins + commit + push
+
+# rebind the evidence manifest on the committed release tree, then tag that commit
+python paper/src/make-provenance.py
+python paper/src/check-provenance.py
+git commit -m "chore(provenance): rebind on the vX.Y.Z release tree" paper/evidence/provenance.json
+git tag -a vX.Y.Z -m "SharpeArena vX.Y.Z" && git push --follow-tags
 ```
 
 `release.toml` sets `publish = false`: the local machine never publishes. The `v*`
 tag triggers CI, which publishes via **OIDC Trusted Publishing** (no stored tokens).
+
+## Why the tag comes one commit after the bump
+
+`release.toml` sets `tag = false`, so cargo-release does not tag; the two commands
+above do, and the order matters for the tamper-evidence manifest.
+
+The version bump rewrites six files inside the provenance source scope, so a manifest
+bound before the release is stale the moment cargo-release commits. The
+`pre-release-hook` closes that: it regenerates the manifest after the bump and the
+replacements and before the commit, so the release commit's digests bind the release
+commit's tree and the provenance job stays green on it.
+
+What the hook cannot produce is a manifest that names a commit. It runs while the bump
+is uncommitted, so it records `generated_at_head_dirty: true` — honest, and weaker than
+what a tag should carry, because `check-provenance.py` only cross-checks a manifest
+against the commit it names when that manifest claims a clean generation. Regenerating
+on the committed release tree yields `generated_at_head` = the release commit and
+`dirty: false`, a claim the validator then verifies by reading those paths back out of
+that commit. `provenance.json` is in no scope of its own, so the rebind commit's tree is
+identical to the release commit's everywhere the manifest binds.
+
+Tag the rebind commit. A tag on the release commit itself ships a manifest whose
+generation head names a tree it does not describe.
 
 Never hand-edit a version. `Cargo.toml` is the only place one is authored: the npm
 `package.json` and the two `crates/sharpearena-py` manifests (that crate is excluded from
