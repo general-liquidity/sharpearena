@@ -5,10 +5,13 @@ data in this repository, so the code was unexercised in both directions. These t
 run the real scripts against a throwaway git checkout via
 ``SHARPEARENA_PROVENANCE_ROOT``.
 
-The load-bearing case is ``test_checker_rejects_an_unresolved_digest_the_writer_refused``:
+Two cases are load-bearing. ``test_checker_rejects_an_unresolved_digest_the_writer_refused``:
 the validator used to accept a model identity whose checkpoint digest read
 ``"unresolved"`` while the writer raised on it, which is backwards for a
-tamper-evidence artifact.
+tamper-evidence artifact. And
+``test_checker_rejects_a_hand_flipped_clean_generation_flag``: a manifest's claim to have
+been generated on a clean tree used to be the one field nothing could contradict, so
+editing it by hand and regenerating on a clean checkout produced identical files.
 """
 
 from __future__ import annotations
@@ -235,6 +238,61 @@ def test_checker_rejects_a_manifest_claiming_a_clean_generation_on_a_dirty_tree(
     checked = _run("check-provenance.py", tree)
     assert checked.returncode == 1
     assert "dirty: generated_at_head_dirty records a clean generation" in checked.stdout
+
+
+def _edit_manifest_and_commit(tree: Path, **fields: object) -> None:
+    """Hand-edit the manifest's own provenance fields and commit, so the recomputed
+    dirty flag stays satisfied and only the new check can object."""
+    manifest_path = tree / "paper" / "evidence" / "provenance.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest.update(fields)
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _git(tree, "add", "-A")
+    _git(tree, "commit", "--quiet", "-m", "hand-edited manifest")
+
+
+def test_checker_rejects_a_hand_flipped_clean_generation_flag(tree: Path) -> None:
+    """A clean generation is a claim about a commit, so it is checked against that commit.
+
+    The manifest here was generated over an uncommitted edit and says so. Committing it
+    and flipping the flag is the one edit that leaves every recorded digest matching the
+    working tree, so only reading `generated_at_head` back out of git catches it.
+    """
+    source = tree / "crates" / "demo" / "src" / "lib.rs"
+    source.write_bytes(b"pub fn one() -> u8 { 2 }\n")
+    assert _run("make-provenance.py", tree).returncode == 0
+    _git(tree, "add", "-A")
+    _git(tree, "commit", "--quiet", "-m", "edit and bind together")
+    honest = _run("check-provenance.py", tree)
+    assert honest.returncode == 0, honest.stdout
+
+    _edit_manifest_and_commit(tree, generated_at_head_dirty=False)
+    flipped = _run("check-provenance.py", tree)
+    assert flipped.returncode == 1
+    assert "generation: DIGEST crates/demo/src/lib.rs" in flipped.stdout
+
+
+def test_checker_rejects_a_clean_generation_naming_a_commit_without_the_file(tree: Path) -> None:
+    (tree / "crates" / "demo" / "src" / "extra.rs").write_bytes(b"pub fn two() {}\n")
+    assert _run("make-provenance.py", tree).returncode == 0
+    _git(tree, "add", "-A")
+    _git(tree, "commit", "--quiet", "-m", "add and bind together")
+    assert _run("check-provenance.py", tree).returncode == 0
+
+    _edit_manifest_and_commit(tree, generated_at_head_dirty=False)
+    flipped = _run("check-provenance.py", tree)
+    assert flipped.returncode == 1
+    assert "generation: ABSENT crates/demo/src/extra.rs" in flipped.stdout
+
+
+def test_checker_notes_rather_than_fails_when_the_generation_commit_is_absent(tree: Path) -> None:
+    """A shallow clone does not contain the parent, and that is not evidence of tampering."""
+    _make_and_commit(tree)
+    _edit_manifest_and_commit(tree, generated_at_head="0" * 40)
+
+    checked = _run("check-provenance.py", tree)
+    assert checked.returncode == 0, checked.stdout
+    assert "is not in this checkout" in checked.stdout
 
 
 def test_writer_records_a_dirty_generation_honestly(tree: Path) -> None:

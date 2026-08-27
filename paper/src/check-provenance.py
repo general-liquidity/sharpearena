@@ -6,11 +6,18 @@ scope to catch files that entered or left the tree since the manifest was
 written.  Exits nonzero on any mismatch, so a stale manifest is a detectable
 failure rather than a silent one.
 
-Two properties matter beyond recomputing digests. The validator shares
+Three properties matter beyond recomputing digests. The validator shares
 `provenance_common.py` with the writer, so a model identity file the writer would
-have refused to record cannot pass here. And `generated_at_head_dirty` is a claim
+have refused to record cannot pass here. `generated_at_head_dirty` is a claim
 the manifest makes about itself, so it is recomputed rather than believed: a
-manifest asserting a clean generation against a dirty tree is a failure.
+manifest asserting a clean generation against a dirty tree is a failure. And a
+manifest that claims a clean generation is held to what that claims: the recorded
+digests are compared against the bytes committed at `generated_at_head`, so flipping
+the flag by hand no longer looks like regenerating on a clean checkout.
+
+What none of this establishes is the state of a tree at generation time when the
+manifest records a dirty generation. That case is unobservable after the fact, and
+the manifest says so rather than being trusted about it.
 """
 
 from __future__ import annotations
@@ -23,6 +30,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from provenance_common import (  # noqa: E402
     EXCLUDED_DIR_NAMES,
+    MISSING_BLOB,
+    blobs_at_commit,
+    digest_bytes,
     expand,
     identity_summaries,
     repo_root,
@@ -58,6 +68,44 @@ def check_group(name: str, records: list[dict]) -> list[str]:
                 f"{name}: DIGEST {record['path']}\n"
                 f"    recorded {record['sha256']}\n"
                 f"    actual   {actual}"
+            )
+    return problems
+
+
+def check_clean_generation(manifest: dict, records: list[dict]) -> list[str]:
+    """Hold a `generated_at_head_dirty: false` manifest to what that claim means.
+
+    A clean generation says the recorded bytes were the committed bytes of
+    ``generated_at_head``, so they are readable out of that commit and must match. A
+    manifest that records a dirty generation makes no such claim and is not checked here:
+    its bytes existed in no commit when it was written, which is why the flag is true.
+    """
+    commit = manifest.get("generated_at_head")
+    if manifest.get("generated_at_head_dirty") is not False or not isinstance(commit, str):
+        return []
+    blobs = blobs_at_commit(ROOT, commit, [record["path"] for record in records])
+    if blobs is None:
+        print(
+            f"note: {commit[:12]} is not in this checkout, so the clean-generation "
+            "claim was not checked against it"
+        )
+        return []
+    problems: list[str] = []
+    for record in records:
+        blob = blobs[record["path"]]
+        if blob is MISSING_BLOB:
+            problems.append(
+                f"generation: ABSENT {record['path']} is not in {commit[:12]}, "
+                "which the manifest names as a clean generation"
+            )
+            continue
+        assert isinstance(blob, bytes)
+        committed = digest_bytes(blob)
+        if committed != record["sha256"]:
+            problems.append(
+                f"generation: DIGEST {record['path']} does not match {commit[:12]}\n"
+                f"    recorded  {record['sha256']}\n"
+                f"    committed {committed}"
             )
     return problems
 
@@ -119,6 +167,13 @@ def main() -> int:
             f"    recorded {manifest['source_snapshot_sha256']}\n"
             f"    actual   {snapshot}"
         )
+
+    problems += check_clean_generation(
+        manifest,
+        manifest["source_files"]
+        + manifest["artifacts"]
+        + manifest.get("model_artifacts", []),
+    )
 
     dirty = working_tree_dirty(ROOT)
     if dirty is None:

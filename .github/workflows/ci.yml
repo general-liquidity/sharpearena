@@ -99,13 +99,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # Unshallow: the manifest's `generated_at_head_dirty: false` is checked by
+      # reading the recorded paths back out of the commit it names, which a
+      # depth-1 checkout does not contain. Without this the job would print a
+      # note and skip that half of the check.
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       # The manifest is what carries the recompute-from-decisions story into the
       # build. Until this job existed a manifest that had fallen behind its tree was
-      # detectable only by a human who remembered to run the script by hand.
+      # detectable only by a human who remembered to run the script by hand. What it
+      # proves is a property of the commit it runs on: the tip of a pushed branch and
+      # the head of a pull request, not every commit in between.
       - name: check-provenance (manifest matches the tree)
         run: python paper/src/check-provenance.py
 

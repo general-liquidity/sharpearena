@@ -10,6 +10,9 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ## [Unreleased]
 
+### Fixed
+- paper: `check-provenance.py` holds a manifest that records `generated_at_head_dirty: false` to what that claims. Every recorded digest is compared against the bytes committed at `generated_at_head`, read back out of the repository. Flipping the flag by hand previously produced a file indistinguishable from one regenerated on a clean checkout, which was the one field in the manifest that nothing could contradict.
+
 ## [0.19.0] - 2026-08-27
 
 ### Added

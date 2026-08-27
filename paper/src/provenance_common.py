@@ -5,7 +5,7 @@ two halves of one tamper-evidence artifact, so anything either of them decides a
 a file lives here and is used by both. When the two drifted apart the validator was
 the laxer half, which is the wrong direction: the validator is the trusted one.
 
-Two rules are worth stating explicitly.
+Three rules are worth stating explicitly.
 
 *Digests are line-ending normalized.* A digest is taken over the file's content with
 CRLF collapsed to LF, so the manifest records the same value for a checkout made on
@@ -16,6 +16,12 @@ are treated as binary and hashed verbatim; that is git's own text/binary heurist
 *Dirtiness is recomputed, not read.* ``generated_at_head_dirty`` is a claim the
 manifest makes about itself, so the validator recomputes it against the tree it is
 checking rather than believing the recorded value.
+
+*A clean generation is a falsifiable claim.* ``generated_at_head_dirty: false`` says the
+recorded bytes were the committed bytes of ``generated_at_head``, which
+:func:`blobs_at_commit` lets the validator check against that commit rather than take on
+trust. Before that check, flipping the flag by hand was indistinguishable from
+regenerating on a clean checkout.
 """
 
 from __future__ import annotations
@@ -54,12 +60,16 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def sha256(path: Path) -> str:
-    """SHA-256 over the file, with CRLF collapsed to LF for text files."""
-    data = path.read_bytes()
+def digest_bytes(data: bytes) -> str:
+    """SHA-256 over `data`, with CRLF collapsed to LF unless it carries a NUL byte."""
     if b"\x00" not in data:
         data = data.replace(b"\r\n", b"\n")
     return hashlib.sha256(data).hexdigest()
+
+
+def sha256(path: Path) -> str:
+    """SHA-256 over the file, with CRLF collapsed to LF for text files."""
+    return digest_bytes(path.read_bytes())
 
 
 def is_excluded(path: Path, root: Path, excludes: frozenset[str]) -> bool:
@@ -131,6 +141,57 @@ def working_tree_dirty(root: Path) -> bool | None:
     except (OSError, subprocess.CalledProcessError):
         return None
     return tracked.returncode == 1 or bool(untracked.strip())
+
+
+MISSING_BLOB = object()
+
+
+def blobs_at_commit(
+    root: Path, commit: str, paths: list[str]
+) -> dict[str, bytes | object] | None:
+    """The committed bytes of `paths` at `commit`, or ``None`` if that commit is not here.
+
+    A path absent from that commit maps to :data:`MISSING_BLOB`. ``None`` is returned when
+    the object cannot be read at all, which is what a shallow clone that does not contain
+    the commit looks like; the caller reports that rather than treating it as a mismatch.
+    """
+    try:
+        present = subprocess.run(
+            ["git", "cat-file", "-e", f"{commit}^{{commit}}"], cwd=root, capture_output=True
+        )
+    except OSError:
+        return None
+    if present.returncode != 0:
+        return None
+    if not paths:
+        return {}
+    request = "".join(f"{commit}:{path}\n" for path in paths).encode()
+    try:
+        process = subprocess.run(
+            ["git", "cat-file", "--batch"], cwd=root, input=request, capture_output=True
+        )
+    except OSError:
+        return None
+    if process.returncode != 0:
+        return None
+    out = process.stdout
+    blobs: dict[str, bytes | object] = {}
+    offset = 0
+    for path in paths:
+        end = out.find(b"\n", offset)
+        if end == -1:
+            return None
+        header = out[offset:end].split(b" ")
+        if header[-1] in (b"missing", b"ambiguous"):
+            blobs[path] = MISSING_BLOB
+            offset = end + 1
+            continue
+        if len(header) != 3:
+            return None
+        size = int(header[2])
+        blobs[path] = out[end + 1 : end + 1 + size]
+        offset = end + 1 + size + 1
+    return blobs
 
 
 def head_commit(root: Path) -> str:
