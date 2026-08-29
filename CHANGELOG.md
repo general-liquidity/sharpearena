@@ -6,9 +6,11 @@ version covers the Rust crates, the npm package and the PyPI package; each
 section is one `v*` tag and links the commits it was built from. The wire
 contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
-[Unreleased]: https://github.com/general-liquidity/sharpearena/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/general-liquidity/sharpearena/compare/v0.20.0...HEAD
 
 ## [Unreleased]
+
+## [0.20.0] - 2026-08-29
 
 ### Changed
 - release: one checked driver now owns changelog promotion, the cargo-release version bump, clean provenance rebind, annotated tag validation and an atomic branch-plus-tag push. Its rehearsal mode exercises that exact sequence in an isolated clone without publishing. Direct cargo-release has both tagging and pushing disabled, so it cannot expose an unchecked release by itself.
@@ -282,6 +284,7 @@ First published release, as OpenOutcry.
 ### Fixed
 - ci: toolchain pinned to 1.96.0 for the wasm32 target; a virtualenv for maturin ([bb0ee4d](https://github.com/general-liquidity/sharpearena/commit/bb0ee4d)).
 
+[0.20.0]: https://github.com/general-liquidity/sharpearena/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/general-liquidity/sharpearena/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/general-liquidity/sharpearena/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/general-liquidity/sharpearena/compare/v0.16.0...v0.17.0
