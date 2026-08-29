@@ -86,6 +86,14 @@ from .ecology import (
     run_ecology,
     steady_shocks,
 )
+from .effective_config import (
+    EffectiveConfigError,
+    check_env_effective_config,
+    env_effective_config,
+    merge_effective_configs,
+    resolved_scenario_seed,
+    scenario_fingerprint,
+)
 from .eval_seeds import (
     EVAL_SEEDS,
     EVAL_SET_VERSION,
@@ -432,6 +440,12 @@ __all__ = [
     "CANONICAL_PREPROCESSING",
     "make_preprocessed_env",
     "describe_preprocessing",
+    "EffectiveConfigError",
+    "check_env_effective_config",
+    "env_effective_config",
+    "merge_effective_configs",
+    "resolved_scenario_seed",
+    "scenario_fingerprint",
     "EVAL_SEEDS",
     "evaluate_eval_set",
     "assert_no_regression",

@@ -26,8 +26,10 @@ import numpy as np
 
 from sharpearena import (
     SharpeArenaEnv,
+    check_env_effective_config,
     cross_regime_transfer,
     generalization_gap,
+    merge_effective_configs,
     score_run,
 )
 
@@ -48,10 +50,28 @@ BOOT_SEED = 0
 ALPHA = 0.05
 
 
+# Every environment in this experiment is built here, so this is where the
+# configuration each arm actually ran is read back out of it and checked against what
+# was asked for. A mismatch raises and the arm never reaches the evidence file: a
+# silently inverted tier survives fixed seeds, goldens and provenance digests intact,
+# so nothing else in the pipeline would notice.
+_READBACK: dict[str, dict[int, dict]] = {tier: {} for tier in TIERS}
+
+
 def _make_env(seed: int, mode: str) -> SharpeArenaEnv:
-    return SharpeArenaEnv(
+    env = SharpeArenaEnv(
         n_symbols=N_SYMBOLS, n_days=N_DAYS, seed=seed, distribution_mode=mode
     )
+    seen = _READBACK.setdefault(mode, {})
+    if seed not in seen:
+        seen[seed] = check_env_effective_config(
+            env,
+            seed=seed,
+            n_symbols=N_SYMBOLS,
+            n_days=N_DAYS,
+            distribution_mode=mode,
+        )
+    return env
 
 
 def _equal_weight(obs: dict) -> np.ndarray:
@@ -199,6 +219,9 @@ def main() -> None:
                     "stream per CI job, seeded (resample_seed, job id)"
                 ),
             },
+        },
+        "effective_config": {
+            tier: merge_effective_configs(_READBACK[tier]) for tier in TIERS
         },
         "generalization_gap": gaps,
         "cross_regime_transfer": matrix,

@@ -32,9 +32,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 try:
-    from sharpearena import SharpeArenaEnv, certify_realism
+    from sharpearena import (
+        SharpeArenaEnv,
+        certify_realism,
+        check_env_effective_config,
+        merge_effective_configs,
+    )
 except ImportError:  # --figures-only reads the committed JSON and needs no bindings
     SharpeArenaEnv = certify_realism = None
+    check_env_effective_config = merge_effective_configs = None
 
 PAPER = Path(__file__).resolve().parents[1]
 EVIDENCE = PAPER / "evidence"
@@ -75,6 +81,13 @@ CALM_RULE = {
 }
 
 
+# Effective-config readbacks for the two certified arms, keyed by the arm's label. The
+# check itself runs on every panel this script collects, calibration sweep included: an
+# arm that ran a different tape than its label claims stays seed-reproducible and
+# byte-identical, so nothing downstream of it would ever notice.
+_READBACK: dict[str, dict[str, dict[int, dict]]] = {}
+
+
 def _collect_panel(
     tier: str,
     seed: int,
@@ -82,6 +95,7 @@ def _collect_panel(
     jump_burst_probability: float = 0.0,
     jump_burst_persistence: float = 0.0,
     jump_burst_size: float = 0.0,
+    arm: str | None = None,
 ) -> np.ndarray:
     env = SharpeArenaEnv(
         n_symbols=N_SYMBOLS,
@@ -94,6 +108,19 @@ def _collect_panel(
         jump_burst_size=jump_burst_size,
     )
     obs, _ = env.reset(seed=seed)
+    # After the reset, not before: `reset(seed=...)` rebuilds the native environment, so
+    # the one verified has to be the one that gets stepped.
+    effective = check_env_effective_config(
+        env,
+        seed=seed,
+        n_symbols=N_SYMBOLS,
+        n_days=N_DAYS,
+        distribution_mode=tier,
+        vol_clustering=vol_clustering,
+        jump_burst_probability=jump_burst_probability,
+        jump_burst_persistence=jump_burst_persistence,
+        jump_burst_size=jump_burst_size,
+    )
     closes = [np.asarray(obs["closes"], dtype=np.float64).reshape(-1)]
     flat = np.zeros(N_SYMBOLS, dtype=np.float32)
     for _ in range(MAX_STEPS):
@@ -101,7 +128,14 @@ def _collect_panel(
         closes.append(np.asarray(obs["closes"], dtype=np.float64).reshape(-1))
         if terminated or truncated:
             break
-    return np.stack(closes, axis=0)
+    panel = np.stack(closes, axis=0)
+    if arm is not None:
+        # `max_steps` is a driver-side loop bound, so the honest readback of it is the
+        # number of steps the loop actually took. It is not binding here: the episode
+        # ends at the window, well short of MAX_STEPS.
+        effective["steps_observed"] = int(panel.shape[0]) - 1
+        _READBACK.setdefault(arm, {}).setdefault(tier, {})[seed] = effective
+    return panel
 
 
 def _simple_returns(panel: np.ndarray) -> np.ndarray:
@@ -326,12 +360,12 @@ def main() -> None:
     EVIDENCE.mkdir(parents=True, exist_ok=True)
     FIGURES.mkdir(parents=True, exist_ok=True)
 
-    def certify_tiers(vol_clustering: float) -> dict[str, dict]:
+    def certify_tiers(vol_clustering: float, arm: str) -> dict[str, dict]:
         tiers: dict[str, dict] = {}
         for tier in TIERS:
             per_seed = []
             for seed in SEEDS:
-                panel = _collect_panel(tier, seed, vol_clustering)
+                panel = _collect_panel(tier, seed, vol_clustering, arm=arm)
                 report = certify_realism(panel, kind="price")
                 per_seed.append(
                     {
@@ -355,8 +389,8 @@ def main() -> None:
             }
         return tiers
 
-    tiers = certify_tiers(0.0)
-    clustered_tiers = certify_tiers(VOL_CLUSTERING)
+    tiers = certify_tiers(0.0, arm="tiers")
+    clustered_tiers = certify_tiers(VOL_CLUSTERING, arm="clustered_tiers")
     calib = calm_calibration()
 
     out = {
@@ -368,6 +402,13 @@ def main() -> None:
             "max_steps": MAX_STEPS,
             "tiers": list(TIERS),
             "vol_clustering": VOL_CLUSTERING,
+        },
+        "effective_config": {
+            arm: {
+                tier: merge_effective_configs(_READBACK[arm][tier])
+                for tier in _READBACK[arm]
+            }
+            for arm in _READBACK
         },
         "tiers": tiers,
         "clustered_tiers": clustered_tiers,

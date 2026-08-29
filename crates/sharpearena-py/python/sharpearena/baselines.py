@@ -33,6 +33,7 @@ from .confidence import (
     DEFAULT_RESAMPLE_SEED,
     deflated_sharpe_ci,
 )
+from .effective_config import check_env_effective_config
 from .gym import SharpeArenaEnv
 from .sharpearena_py import score_run
 
@@ -479,6 +480,7 @@ def run_baselines(
     n_boot: int = DEFAULT_N_BOOT,
     resample_seed: int = DEFAULT_RESAMPLE_SEED,
     alpha: float = DEFAULT_ALPHA,
+    readback: Optional[dict] = None,
 ) -> list[dict]:
     """Roll every reference policy over ``seeds`` and score it with SharpeBench.
 
@@ -495,6 +497,13 @@ def run_baselines(
     ``deflated_sharpe`` because the deflation footprint is matched. ``n_boot`` /
     ``resample_seed`` / ``alpha`` tune the bootstrap and are deterministic in the seed.
 
+    Pass a dict as ``readback`` to collect the per-seed effective configuration read back
+    out of each environment this function builds (see
+    :mod:`sharpearena.effective_config`). Each environment is verified against the
+    arguments given here as it is constructed, so a mismatch raises
+    :class:`~sharpearena.effective_config.EffectiveConfigError` before any number is
+    scored rather than after it is published.
+
     Returns one row per policy: ``{policy, deflated_sharpe, passed_k_rate, mean_return}``
     plus, when ``confidence`` is set, ``{deflated_sharpe_ci, per_seed_returns}``.
     """
@@ -508,6 +517,14 @@ def run_baselines(
         for s in seeds:
             policy = factory()
             env = _make_env(n_symbols, n_days, s, distribution_mode)
+            if readback is not None and s not in readback:
+                readback[s] = check_env_effective_config(
+                    env,
+                    seed=s,
+                    n_symbols=n_symbols,
+                    n_days=n_days,
+                    distribution_mode=distribution_mode,
+                )
             returns = _rollout_returns(env, policy, max_steps)
             per_seed.append(returns)
             pooled.extend(returns)
