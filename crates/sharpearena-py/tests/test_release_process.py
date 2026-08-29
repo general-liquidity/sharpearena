@@ -211,11 +211,20 @@ def _release_commit(root: Path) -> str:
     return _git(root, "rev-parse", "HEAD")
 
 
-def _bind_and_tag(root: Path, release_commit: str, *, dirty: bool = False) -> None:
+def _bind_and_tag(
+    root: Path,
+    release_commit: str,
+    *,
+    dirty: bool = False,
+    annotated: bool = True,
+) -> None:
     _write_manifest(root, release_commit, dirty=dirty)
     _git(root, "add", str(MANIFEST))
     _git(root, "commit", "--quiet", "-m", "bind release provenance")
-    _git(root, "tag", "-a", "v0.20.0", "-m", "SharpeArena v0.20.0")
+    if annotated:
+        _git(root, "tag", "-a", "v0.20.0", "-m", "SharpeArena v0.20.0")
+    else:
+        _git(root, "tag", "v0.20.0")
 
 
 def test_verify_tag_accepts_a_clean_provenance_only_rebind(release_tree: Path) -> None:
@@ -311,6 +320,51 @@ def test_verify_tag_rejects_a_stale_by_one_release_tag(release_tree: Path) -> No
 
     assert checked.returncode == 1
     assert "provenance-only rebind" in checked.stdout
+
+
+def test_verify_tag_rejects_a_manifest_naming_a_commit_other_than_its_parent(
+    release_tree: Path,
+) -> None:
+    """The rebind is well formed and the tree matches, so only rule two can object.
+
+    The tag commit changes nothing but the manifest, and every in-scope byte it records
+    is present in the tagged tree, because the commit in between touches only a path no
+    scope covers. What is wrong is the binding itself: the manifest names an earlier
+    commit rather than the tag commit's parent, which is exactly what a rebind carried
+    forward across an unrelated commit looks like.
+    """
+    release_commit = _release_commit(release_tree)
+    notes = release_tree / "docs/notes.md"
+    notes.parent.mkdir(parents=True, exist_ok=True)
+    notes.write_text("out of every recorded scope\n", encoding="utf-8")
+    _git(release_tree, "add", notes.relative_to(release_tree).as_posix())
+    _git(release_tree, "commit", "--quiet", "-m", "note an out-of-scope change")
+    parent = _git(release_tree, "rev-parse", "HEAD")
+    _write_manifest(release_tree, release_commit)
+    _git(release_tree, "add", str(MANIFEST))
+    _git(release_tree, "commit", "--quiet", "-m", "bind release provenance")
+    _git(release_tree, "tag", "-a", "v0.20.0", "-m", "SharpeArena v0.20.0")
+    _git(release_tree, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+    checked = _run(release_tree, "verify-tag", "v0.20.0")
+
+    assert checked.returncode == 1
+    assert "must name the tag commit's parent" in checked.stdout
+    assert parent in checked.stdout
+    assert release_commit in checked.stdout
+    assert "provenance-only rebind" not in checked.stdout
+
+
+def test_verify_tag_rejects_a_lightweight_release_tag(release_tree: Path) -> None:
+    """A lightweight tag carries no tagger, message or signature to audit."""
+    release_commit = _release_commit(release_tree)
+    _bind_and_tag(release_tree, release_commit, annotated=False)
+    _git(release_tree, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+    checked = _run(release_tree, "verify-tag", "v0.20.0")
+
+    assert checked.returncode == 1
+    assert "release tag v0.20.0 must be annotated" in checked.stdout
 
 
 def test_verify_tag_rejects_a_dirty_generation_manifest(release_tree: Path) -> None:
