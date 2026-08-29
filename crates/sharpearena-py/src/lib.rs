@@ -90,6 +90,44 @@ fn build_dataset(
     }
 }
 
+/// Dependency-free FNV-1a/64 over bytes — the fingerprint the crate's cross-runtime
+/// scenario goldens already use, reused here so a readback and a golden pin name the
+/// same number for the same panel.
+fn fnv1a64(bytes: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for &b in bytes {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    h
+}
+
+/// The configuration an environment is **actually** running, read out of what the
+/// constructor arguments produced rather than echoed from those arguments: the panel
+/// dimensions come from the built [`Dataset`], the window from the clamped [`Window`],
+/// the execution seed from the value handed to the engine after default resolution, and
+/// `dataset_fnv1a64` fingerprints the generated tape itself.
+///
+/// The scenario-generation knobs (seed, tier, clustering, jump bursts) are deliberately
+/// not repeated here: echoing them back would prove nothing. They are *bound* by the
+/// fingerprint instead. A caller regenerates the panel from the configuration it wrote
+/// into its own results and compares the two numbers, which is what catches a harness
+/// bug that pointed the environment at a different tape than the label claims — an
+/// inversion every other guarantee (fixed seeds, goldens, provenance digests) survives,
+/// because the wrong tape is still produced reproducibly.
+fn effective_config_json(data: &Dataset, window: &Window, exec_seed: u64) -> PyResult<String> {
+    let bytes = serde_json::to_string(data).map_err(|e| PyValueError::new_err(e.to_string()))?;
+    Ok(serde_json::json!({
+        "n_symbols": data.symbols().len(),
+        "n_bars": data.len(),
+        "window_start": window.start,
+        "window_end": window.end,
+        "exec_seed": exec_seed,
+        "dataset_fnv1a64": format!("{:016x}", fnv1a64(bytes.as_bytes())),
+    })
+    .to_string())
+}
+
 /// Parse the wire `autoreset_mode` label, rejecting unknown modes with a `ValueError`.
 fn parse_autoreset_mode(mode: &str) -> PyResult<AutoresetMode> {
     AutoresetMode::from_label(mode).ok_or_else(|| {
@@ -109,6 +147,7 @@ fn parse_autoreset_mode(mode: &str) -> PyResult<AutoresetMode> {
 pub struct PyTradingEnv {
     inner: CoreEnv,
     seed: u64,
+    effective: String,
 }
 
 fn build_window(start: Option<usize>, end: Option<usize>, len: usize) -> Window {
@@ -207,9 +246,12 @@ impl PyTradingEnv {
             financing_bps,
             max_participation,
         );
+        let resolved_exec_seed = exec_seed.unwrap_or(seed);
+        let effective = effective_config_json(&data, &window, resolved_exec_seed)?;
         Ok(PyTradingEnv {
-            inner: CoreEnv::new(data, window, costs, exec_seed.unwrap_or(seed)),
+            inner: CoreEnv::new(data, window, costs, resolved_exec_seed),
             seed,
+            effective,
         })
     }
 
@@ -258,9 +300,12 @@ impl PyTradingEnv {
             financing_bps,
             max_participation,
         );
+        let resolved_exec_seed = exec_seed.unwrap_or(seed);
+        let effective = effective_config_json(&data, &window, resolved_exec_seed)?;
         Ok(PyTradingEnv {
-            inner: CoreEnv::new(data, window, costs, exec_seed.unwrap_or(seed)),
+            inner: CoreEnv::new(data, window, costs, resolved_exec_seed),
             seed,
+            effective,
         })
     }
 
@@ -270,6 +315,14 @@ impl PyTradingEnv {
     #[getter]
     fn scenario_seed(&self) -> u64 {
         self.seed
+    }
+
+    /// The effective configuration as JSON, read back from what the constructor actually
+    /// built (see [`effective_config_json`]). A runner compares this against what it
+    /// requested and fails the arm when the two disagree.
+    #[getter]
+    fn effective_config(&self) -> &str {
+        &self.effective
     }
 
     /// Reset to the start of the window; return the first point-in-time
@@ -1187,4 +1240,51 @@ fn sharpearena_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
         "Native pyo3 bindings for the SharpeArena trading-agent environment.",
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn calm(seed: u64) -> Dataset {
+        build_dataset(4, 120, seed, DistributionMode::Calm, 0.0, 0.0, 0.0, 0.0)
+    }
+
+    /// The readback reports the built panel's own dimensions and the clamped window,
+    /// not the numbers a caller asked for.
+    #[test]
+    fn effective_config_reports_the_built_panel() {
+        let data = calm(7);
+        let window = Window { start: 0, end: 40 };
+        let v: serde_json::Value =
+            serde_json::from_str(&effective_config_json(&data, &window, 11).unwrap()).unwrap();
+        assert_eq!(v["n_symbols"], 4);
+        assert_eq!(v["n_bars"], 120);
+        assert_eq!(v["window_end"], 40);
+        assert_eq!(v["exec_seed"], 11);
+    }
+
+    /// The fingerprint is the crate's committed cross-runtime golden for the Calm
+    /// 4x120 panel at seed 7, so a readback and a golden name the same number.
+    #[test]
+    fn dataset_fingerprint_matches_the_committed_scenario_golden() {
+        let data = calm(7);
+        let window = Window { start: 0, end: 120 };
+        let v: serde_json::Value =
+            serde_json::from_str(&effective_config_json(&data, &window, 0).unwrap()).unwrap();
+        assert_eq!(v["dataset_fnv1a64"], "b7cf976c71219c52");
+    }
+
+    /// An inverted arm is exactly what the fingerprint has to catch: the same seed and
+    /// dimensions under a different tier must not fingerprint alike.
+    #[test]
+    fn dataset_fingerprint_separates_tiers_at_one_seed() {
+        let window = Window { start: 0, end: 120 };
+        let hard = build_dataset(4, 120, 7, DistributionMode::Hard, 0.0, 0.0, 0.0, 0.0);
+        let a: serde_json::Value =
+            serde_json::from_str(&effective_config_json(&calm(7), &window, 0).unwrap()).unwrap();
+        let b: serde_json::Value =
+            serde_json::from_str(&effective_config_json(&hard, &window, 0).unwrap()).unwrap();
+        assert_ne!(a["dataset_fnv1a64"], b["dataset_fnv1a64"]);
+    }
 }

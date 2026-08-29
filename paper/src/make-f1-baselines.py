@@ -50,6 +50,11 @@ def main() -> None:
 
     tiers: dict[str, dict] = {}
     for tier in TIERS:
+        # `readback` collects the configuration each environment actually ran, read out
+        # of the environment rather than echoed from the variables above. The runner
+        # verifies every environment as it is built and raises before a number is
+        # scored, so a mis-labelled arm cannot reach this file.
+        readback: dict = {}
         rows = sharpearena.run_baselines(
             n_symbols=N_SYMBOLS,
             n_days=N_DAYS,
@@ -58,10 +63,12 @@ def main() -> None:
             confidence=True,
             n_boot=N_BOOT,
             resample_seed=RESAMPLE_SEED,
+            readback=readback,
         )
         tiers[tier] = {
             "rows": rows,
             "leaderboard_markdown": sharpearena.leaderboard_markdown(rows, show_ci=True),
+            "effective_config": sharpearena.merge_effective_configs(readback),
         }
 
     out = {
