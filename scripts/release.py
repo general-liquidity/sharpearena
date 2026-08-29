@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
@@ -483,14 +484,48 @@ def resolve_base(root: Path, base_ref: str) -> str:
     return resolved.stdout.strip()
 
 
-def remove_release_worktree(root: Path, parent: Path, tree: Path) -> None:
-    if tree.exists():
-        shutil.rmtree(tree, ignore_errors=True)
-    if tree.exists():
-        return
-    run(root, "git", "worktree", "prune", check=False)
+def cleanup_worktree(
+    *,
+    is_present: Callable[[], bool],
+    remove: Callable[[], None],
+    deregister: Callable[[], None],
+) -> tuple[str, ...]:
+    """Order one worktree teardown and report the steps that ran.
+
+    The ordering is the whole content of this function, so it is expressed without a
+    process, a filesystem or a daemon: the three effects arrive as closures.
+
+    Deregistration is last and conditional. Dropping the git metadata while the
+    checkout is still on disk orphans the directory, because nothing lists it any more
+    and no later sweep can find it. Leaving it registered after a failed or partial
+    removal is the recoverable half-state instead: ``git worktree prune`` and the next
+    release both still see it. A checkout that is already gone is the one case where
+    deregistration runs on its own, so a crashed earlier attempt cannot leak its
+    registration forever.
+    """
+
+    if not is_present():
+        deregister()
+        return ("deregister",)
+    try:
+        remove()
+    except OSError:
+        return ("remove-failed",)
+    if is_present():
+        return ("remove-failed",)
+    deregister()
+    return ("remove", "deregister")
+
+
+def remove_release_worktree(root: Path, parent: Path, tree: Path) -> tuple[str, ...]:
+    steps = cleanup_worktree(
+        is_present=tree.exists,
+        remove=lambda: shutil.rmtree(tree),
+        deregister=lambda: run(root, "git", "worktree", "prune", check=False),
+    )
     if parent.exists() and not any(parent.iterdir()):
         parent.rmdir()
+    return steps
 
 
 def execute_release(

@@ -816,3 +816,90 @@ def test_rehearsal_drives_execute_off_the_reviewed_commit_without_fetching(
     (invoked,) = invocations
     assert "--no-fetch" in invoked
     assert invoked[invoked.index("--base-ref") + 1] == "refs/heads/main"
+
+
+class _Teardown:
+    """Records the teardown effects as calls instead of performing them.
+
+    No process, no filesystem, no daemon: the ordering is the only thing under test,
+    so the three effects the real teardown injects are replaced by recorders.
+    """
+
+    def __init__(self, *, present: bool, removes: bool = True, raises: bool = False):
+        self.present = present
+        self.removes = removes
+        self.raises = raises
+        self.calls: list[str] = []
+
+    def is_present(self) -> bool:
+        return self.present
+
+    def remove(self) -> None:
+        self.calls.append("remove")
+        if self.raises:
+            raise OSError(32, "the checkout is locked by another process")
+        if self.removes:
+            self.present = False
+
+    def deregister(self) -> None:
+        self.calls.append("deregister")
+
+
+def _cleanup(teardown: _Teardown) -> tuple[str, ...]:
+    module = _release_module("release_driver_cleanup")
+    return module.cleanup_worktree(
+        is_present=teardown.is_present,
+        remove=teardown.remove,
+        deregister=teardown.deregister,
+    )
+
+
+def test_cleanup_removes_the_checkout_before_dropping_its_registration() -> None:
+    """The weaker assertion deliberately not written is "both effects ran".
+
+    Both effects run in the failure orderings too, and it is the order that decides
+    whether a crash between them leaves a sweepable worktree or an orphaned directory.
+    So the call sequence is asserted, not the call set.
+    """
+    teardown = _Teardown(present=True)
+
+    steps = _cleanup(teardown)
+
+    assert teardown.calls == ["remove", "deregister"]
+    assert steps == ("remove", "deregister")
+
+
+def test_cleanup_deregisters_a_checkout_that_is_already_gone() -> None:
+    """A crashed earlier attempt must not leak its registration forever."""
+    teardown = _Teardown(present=False)
+
+    steps = _cleanup(teardown)
+
+    assert teardown.calls == ["deregister"]
+    assert steps == ("deregister",)
+
+
+def test_cleanup_leaves_the_registration_when_removal_raises() -> None:
+    teardown = _Teardown(present=True, raises=True)
+
+    steps = _cleanup(teardown)
+
+    assert teardown.calls == ["remove"]
+    assert "deregister" not in teardown.calls
+    assert steps == ("remove-failed",)
+    assert teardown.present
+
+
+def test_cleanup_leaves_the_registration_when_removal_only_half_succeeds() -> None:
+    """Removal that returns without raising still has to be checked.
+
+    A partially deleted checkout that is no longer registered is unreachable: nothing
+    lists it, so no later sweep finds it. Registered and partial is recoverable.
+    """
+    teardown = _Teardown(present=True, removes=False)
+
+    steps = _cleanup(teardown)
+
+    assert teardown.calls == ["remove"]
+    assert steps == ("remove-failed",)
+    assert teardown.present
