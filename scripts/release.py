@@ -14,6 +14,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -469,12 +470,50 @@ def prepare_changelog(root: Path, current: str, target: str) -> None:
     require_clean(root)
 
 
-def execute_release(root: Path, bump: str, *, push: bool) -> str:
-    require_clean(root)
-    branch = git(root, "branch", "--show-current")
-    if branch != "main":
-        raise ReleaseError(f"release must start on main, current branch is {branch!r}")
-    current = workspace_version(root)
+BASE_REF = "refs/remotes/origin/main"
+WORKTREE_PREFIX = "sharpearena-release-"
+
+
+def resolve_base(root: Path, base_ref: str) -> str:
+    resolved = run(
+        root, "git", "rev-parse", "--verify", f"{base_ref}^{{commit}}", check=False
+    )
+    if resolved.returncode != 0:
+        raise ReleaseError(f"release base {base_ref} does not resolve to a commit")
+    return resolved.stdout.strip()
+
+
+def remove_release_worktree(root: Path, parent: Path, tree: Path) -> None:
+    if tree.exists():
+        shutil.rmtree(tree, ignore_errors=True)
+    if tree.exists():
+        return
+    run(root, "git", "worktree", "prune", check=False)
+    if parent.exists() and not any(parent.iterdir()):
+        parent.rmdir()
+
+
+def execute_release(
+    root: Path,
+    bump: str,
+    *,
+    push: bool,
+    base_ref: str = BASE_REF,
+    fetch: bool = True,
+) -> str:
+    """Cut the release in a throwaway worktree checked out from ``base_ref``.
+
+    The working checkout is never the release tree. A stale local ``main`` and a dirty
+    or partially staged working tree therefore cannot reach the release at all, rather
+    than being caught by an assertion that has to be remembered. The tag and the pushed
+    commits come from the freshly fetched base, and the caller's checkout is left
+    exactly as it was found, local ``main`` included.
+    """
+
+    if fetch:
+        run(root, "git", "fetch", "--quiet", "origin", "main", "--tags")
+    base = resolve_base(root, base_ref)
+    current = parse_toml_version(git_bytes(root, f"{base}:Cargo.toml"), "Cargo.toml")
     target = next_version(current, bump)
     target_tag = f"v{target}"
     if (
@@ -482,8 +521,56 @@ def execute_release(root: Path, bump: str, *, push: bool) -> str:
         == 0
     ):
         raise ReleaseError(f"tag {target_tag} already exists")
+    release_branch = f"release-{target_tag}"
+    if (
+        run(
+            root,
+            "git",
+            "rev-parse",
+            "--verify",
+            f"refs/heads/{release_branch}",
+            check=False,
+        ).returncode
+        == 0
+    ):
+        raise ReleaseError(f"release branch {release_branch} already exists")
+    parent = Path(tempfile.mkdtemp(prefix=WORKTREE_PREFIX))
+    tree = parent / target_tag
+    run(
+        root,
+        "git",
+        "worktree",
+        "add",
+        "--quiet",
+        "-b",
+        release_branch,
+        str(tree),
+        base,
+    )
+    try:
+        return cut_release(tree, bump, current, target, release_branch, push=push)
+    finally:
+        remove_release_worktree(root, parent, tree)
+        run(root, "git", "branch", "-D", release_branch, check=False)
+
+
+def cut_release(
+    root: Path,
+    bump: str,
+    current: str,
+    target: str,
+    release_branch: str,
+    *,
+    push: bool,
+) -> str:
+    require_clean(root)
+    branch = git(root, "branch", "--show-current")
+    if branch != release_branch:
+        raise ReleaseError(
+            f"release worktree must be on {release_branch}, found {branch!r}"
+        )
     run(root, "cargo", "release", "--version")
-    run(root, "cargo", "release", bump)
+    run(root, "cargo", "release", bump, "--allow-branch", release_branch)
     prepare_changelog(root, current, target)
     run(
         root,
@@ -493,6 +580,8 @@ def execute_release(root: Path, bump: str, *, push: bool) -> str:
         "--execute",
         "--no-confirm",
         "--no-push",
+        "--allow-branch",
+        release_branch,
     )
     require_clean(root)
     release_commit = git(root, "rev-parse", "HEAD")
@@ -588,6 +677,9 @@ def rehearse(root: Path, bump: str) -> str:
             "execute",
             bump,
             "--no-push",
+            "--no-fetch",
+            "--base-ref",
+            "refs/heads/main",
             "--repo",
             str(clone),
             env=identity,
@@ -620,6 +712,8 @@ def parser() -> argparse.ArgumentParser:
     )
     execute.add_argument("bump", help="patch, minor, major, or an exact version")
     execute.add_argument("--no-push", action="store_true", help=argparse.SUPPRESS)
+    execute.add_argument("--no-fetch", action="store_true", help=argparse.SUPPRESS)
+    execute.add_argument("--base-ref", default=BASE_REF, help=argparse.SUPPRESS)
     execute.add_argument("--repo", type=Path, default=Path.cwd())
     return cli
 
@@ -647,7 +741,13 @@ def main() -> int:
             tag = rehearse(root, args.bump)
             print(f"OK: rehearsed {tag} without pushing")
             return 0
-        tag = execute_release(root, args.bump, push=not args.no_push)
+        tag = execute_release(
+            root,
+            args.bump,
+            push=not args.no_push,
+            base_ref=args.base_ref,
+            fetch=not args.no_fetch,
+        )
         suffix = " without pushing" if args.no_push else " and pushed atomically"
         print(f"OK: created {tag}{suffix}")
         return 0

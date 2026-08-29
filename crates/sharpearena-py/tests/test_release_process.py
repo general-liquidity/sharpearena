@@ -648,3 +648,171 @@ def test_publish_jobs_checkout_only_the_validated_commit() -> None:
             job_text = job_text[: next_job.start()]
         assert "ref: ${{ needs.validate_tag.outputs.validated_commit }}" in job_text
         assert "ref: ${{ inputs.release_tag || github.ref }}" not in job_text
+
+
+def _release_module(name: str):
+    spec = importlib.util.spec_from_file_location(name, RELEASE)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_execute_cuts_the_release_in_a_worktree_off_the_base_commit(
+    release_tree: Path,
+) -> None:
+    """The cut must read the base commit, not whatever the checkout happens to hold.
+
+    The checkout is put in the two states that used to be caught by an assertion at the
+    top of ``execute_release``: local ``main`` is ahead of ``origin/main`` with a bogus
+    version, and the working tree is dirty. Neither can reach the release now, because
+    the release never runs in this checkout.
+
+    The weaker assertion deliberately not written is "execute_release returned v0.20.0".
+    It passes just as well when the cut runs in the caller's own checkout off the stale
+    local ``main``, which is the entire failure mode this closes. What is asserted is
+    where the cut ran and which version it read.
+    """
+    _write_versions(release_tree, "9.9.9")
+    _git(release_tree, "add", "-A")
+    _git(release_tree, "commit", "--quiet", "-m", "local main runs ahead")
+    (release_tree / "crates/demo/src/lib.rs").write_text(
+        "pub fn value() -> u8 { 99 }\n", encoding="utf-8"
+    )
+    module = _release_module("release_driver_worktree")
+    seen: dict[str, object] = {}
+
+    def _record(root, bump, current, target, release_branch, *, push):
+        seen.update(
+            root=root,
+            bump=bump,
+            current=current,
+            target=target,
+            release_branch=release_branch,
+            push=push,
+            cargo_toml=(root / "Cargo.toml").read_text(encoding="utf-8"),
+            status=_git(root, "status", "--porcelain"),
+        )
+        return f"v{target}"
+
+    module.cut_release = _record
+
+    tag = module.execute_release(release_tree, "minor", push=False, fetch=False)
+
+    assert tag == "v0.20.0"
+    assert seen["current"] == "0.19.0"
+    assert seen["target"] == "0.20.0"
+    assert seen["release_branch"] == "release-v0.20.0"
+    assert 'version = "0.19.0"' in seen["cargo_toml"]
+    assert seen["status"] == ""
+    cut_root = seen["root"]
+    assert isinstance(cut_root, Path)
+    assert cut_root != release_tree
+    assert release_tree not in cut_root.parents
+    assert cut_root.name == "v0.20.0"
+    assert not cut_root.exists()
+    assert str(cut_root) not in _git(release_tree, "worktree", "list")
+    assert "release-v0.20.0" not in _git(release_tree, "branch", "--list")
+    assert 'version = "9.9.9"' in (release_tree / "Cargo.toml").read_text(
+        encoding="utf-8"
+    )
+    assert "crates/demo/src/lib.rs" in _git(release_tree, "status", "--porcelain")
+
+
+def test_execute_removes_the_worktree_and_branch_when_the_cut_fails(
+    release_tree: Path,
+) -> None:
+    module = _release_module("release_driver_worktree_failure")
+    seen: dict[str, Path] = {}
+
+    def _explode(root, bump, current, target, release_branch, *, push):
+        seen["root"] = root
+        raise module.ReleaseError("the cut failed part way")
+
+    module.cut_release = _explode
+
+    with pytest.raises(module.ReleaseError):
+        module.execute_release(release_tree, "patch", push=False, fetch=False)
+
+    assert not seen["root"].exists()
+    assert str(seen["root"]) not in _git(release_tree, "worktree", "list")
+    assert "release-v0.19.1" not in _git(release_tree, "branch", "--list")
+
+
+def test_execute_refuses_a_base_ref_that_does_not_resolve(release_tree: Path) -> None:
+    _git(release_tree, "update-ref", "-d", "refs/remotes/origin/main")
+    module = _release_module("release_driver_missing_base")
+
+    with pytest.raises(module.ReleaseError, match="does not resolve to a commit"):
+        module.execute_release(release_tree, "patch", push=False, fetch=False)
+
+
+def test_execute_refuses_an_existing_tag_before_creating_any_worktree(
+    release_tree: Path,
+) -> None:
+    _git(release_tree, "tag", "-a", "v0.20.0", "-m", "SharpeArena v0.20.0")
+    module = _release_module("release_driver_existing_tag")
+    module.cut_release = lambda *args, **kwargs: pytest.fail("the cut must not start")
+
+    with pytest.raises(module.ReleaseError, match="tag v0.20.0 already exists"):
+        module.execute_release(release_tree, "minor", push=False, fetch=False)
+
+    assert _git(release_tree, "worktree", "list").count("\n") == 0
+
+
+def test_execute_fetches_the_base_before_resolving_it(release_tree: Path) -> None:
+    """Freshness is the point: the fetch must precede the read of origin/main."""
+    module = _release_module("release_driver_fetch_order")
+    calls: list[tuple[str, ...]] = []
+    real_run = module.run
+
+    def _spy(root, *args, **kwargs):
+        calls.append(args)
+        if args[:2] == ("git", "fetch"):
+            return subprocess.CompletedProcess(list(args), 0, "", "")
+        return real_run(root, *args, **kwargs)
+
+    module.run = _spy
+    module.cut_release = lambda *args, **kwargs: "v0.20.0"
+
+    module.execute_release(release_tree, "minor", push=False)
+
+    fetched = next(
+        index for index, args in enumerate(calls) if args[:2] == ("git", "fetch")
+    )
+    resolved = next(
+        index
+        for index, args in enumerate(calls)
+        if args[:2] == ("git", "rev-parse")
+        and "refs/remotes/origin/main^{commit}" in args
+    )
+    assert calls[fetched] == ("git", "fetch", "--quiet", "origin", "main", "--tags")
+    assert fetched < resolved
+
+
+def test_rehearsal_drives_execute_off_the_reviewed_commit_without_fetching(
+    release_tree: Path,
+) -> None:
+    """The rehearsal's base is the clone's own main, which is the reviewed commit.
+
+    A fetch inside the rehearsal would replace the commit under review with whatever
+    the source repository's ``main`` points at, which is exactly the substitution
+    ``clone_rehearsal_tree`` exists to prevent.
+    """
+    module = _release_module("release_driver_rehearsal_args")
+    invocations: list[tuple[str, ...]] = []
+    real_run = module.run
+
+    def _spy(root, *args, **kwargs):
+        if args[:1] == (sys.executable,):
+            invocations.append(args)
+            return subprocess.CompletedProcess(list(args), 0, "created v0.20.0\n", "")
+        return real_run(root, *args, **kwargs)
+
+    module.run = _spy
+
+    assert module.rehearse(release_tree, "minor") == "v0.20.0"
+
+    (invoked,) = invocations
+    assert "--no-fetch" in invoked
+    assert invoked[invoked.index("--base-ref") + 1] == "refs/heads/main"
