@@ -362,7 +362,9 @@ def blobs_at_commit(
 
     A path absent from that commit maps to :data:`MISSING_BLOB`. ``None`` is returned when
     the object cannot be read at all, which is what a shallow clone that does not contain
-    the commit looks like; the caller reports that rather than treating it as a mismatch.
+    the commit looks like. That is a failure, not a skip: the caller turns ``None`` into a
+    problem saying the clean-generation claim cannot be verified, because a manifest whose
+    named generation nobody can read back is exactly what an unverifiable claim looks like.
     """
     try:
         present = subprocess.run(

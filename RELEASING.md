@@ -50,6 +50,12 @@ Before pushing, `verify-tag` requires all of the following:
    pre-push check additionally accepts the prospective tag as a child of
    `origin/main`; the public `verify-tag` command does not.
 
+`verify-tag` checks a tag against the canonical rules as they stand in
+`provenance_common.py` today, so it is a gate on releases being cut now rather than a
+durable audit of any past tag: a tag made before a scope or schema change fails on rule
+3 because the rules moved, not because that release was bad. `verify-tag v0.18.0` fails
+on `schema_version`, `digest_convention` and `source_snapshot_scope` for that reason.
+
 The manifest cannot contain the hash of its own commit without becoming
 self-referential. This construction avoids that problem: `provenance.json` is outside
 its own scope, and the tag commit is byte-identical to its named parent everywhere the
