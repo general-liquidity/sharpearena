@@ -466,6 +466,28 @@ def test_checker_rejects_semantic_metadata_tampering(
     assert f"manifest rule: {field}" in checked.stdout
 
 
+def test_checker_recomputes_the_source_snapshot_digest(tree: Path) -> None:
+    """The snapshot digest is recomputed from the records, not just shape-checked.
+
+    Every per-file digest still matches the tree and the replacement is a well-formed
+    sha256, so the manifest rules pass and only recomputing the digest over the source
+    records can object. The snapshot hash is the single value the paper quotes for
+    "the same tree yields the same snapshot hash", so a hand-edited one that nothing
+    recomputes would let a manifest advertise a tree it does not describe.
+    """
+    forged = "f" * 64
+
+    def forge_snapshot(manifest: dict) -> None:
+        assert manifest["source_snapshot_sha256"] != forged
+        manifest["source_snapshot_sha256"] = forged
+
+    checked = _commit_manifest_edit(tree, forge_snapshot)
+
+    assert checked.returncode == 1
+    assert "snapshot: DIGEST source_snapshot_sha256" in checked.stdout
+    assert forged in checked.stdout
+
+
 def test_checker_rejects_an_extra_source_record_outside_canonical_scope(
     tree: Path,
 ) -> None:
