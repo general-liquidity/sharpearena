@@ -484,6 +484,22 @@ def resolve_base(root: Path, base_ref: str) -> str:
     return resolved.stdout.strip()
 
 
+def safe_to_delete(path: Path, root: Path) -> bool:
+    """Whether ``path`` may be deleted: non-empty, strictly inside ``root``, not
+    ``root`` itself, and not a symlink that would redirect the removal elsewhere.
+
+    Containment is lexical, so this does not defend against a symlinked ancestor; it
+    defends against the delete arguments themselves being empty, the root, an escape,
+    or a link.
+    """
+
+    if str(path) in ("", "."):
+        return False
+    if path == root or path.is_symlink():
+        return False
+    return root in path.parents
+
+
 def cleanup_worktree(
     *,
     is_present: Callable[[], bool],
@@ -518,6 +534,8 @@ def cleanup_worktree(
 
 
 def remove_release_worktree(root: Path, parent: Path, tree: Path) -> tuple[str, ...]:
+    if not safe_to_delete(tree, parent):
+        raise ReleaseError(f"refusing to delete {tree}, which is not inside {parent}")
     steps = cleanup_worktree(
         is_present=tree.exists,
         remove=lambda: shutil.rmtree(tree),

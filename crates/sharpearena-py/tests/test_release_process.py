@@ -903,3 +903,64 @@ def test_cleanup_leaves_the_registration_when_removal_only_half_succeeds() -> No
     assert teardown.calls == ["remove"]
     assert steps == ("remove-failed",)
     assert teardown.present
+
+
+def _safe_to_delete(path: Path, root: Path) -> bool:
+    return _release_module("release_driver_delete_guard").safe_to_delete(path, root)
+
+
+def test_delete_guard_accepts_a_path_strictly_inside_the_root(tmp_path: Path) -> None:
+    """Paired with the rejections below: a guard that refuses everything is not correct.
+
+    The weaker assertion deliberately not written is "the guard rejects `..`". On its
+    own that passes for a predicate hardcoded to False, which would make every delete
+    in the release driver unreachable and every teardown a leak.
+    """
+    assert _safe_to_delete(tmp_path / "v0.20.0", tmp_path)
+    assert _safe_to_delete(tmp_path / "v0.20.0" / "crates", tmp_path)
+
+
+def test_delete_guard_rejects_an_empty_path(tmp_path: Path) -> None:
+    """Pinned, but not independently observable: ``Path("")`` normalizes to ``.``, which
+    the containment leg already refuses. Deleting the explicit empty-path leg from the
+    predicate does not fail this test. It is pinned as behaviour, not as coverage of
+    that leg."""
+    assert not _safe_to_delete(Path(""), tmp_path)
+    assert not _safe_to_delete(Path("."), tmp_path)
+
+
+def test_delete_guard_rejects_the_root_itself(tmp_path: Path) -> None:
+    assert not _safe_to_delete(tmp_path, tmp_path)
+
+
+def test_delete_guard_rejects_a_path_that_escapes_the_root(tmp_path: Path) -> None:
+    root = tmp_path / "release"
+    root.mkdir()
+
+    assert not _safe_to_delete(tmp_path, root)
+    assert not _safe_to_delete((root / ".." / "elsewhere").resolve(), root)
+    assert not _safe_to_delete(Path(tmp_path.anchor), root)
+
+
+def test_delete_guard_rejects_a_symlink_inside_the_root(tmp_path: Path) -> None:
+    """A link is inside the root; what it names is not, and rmtree follows the name."""
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    root = tmp_path / "release"
+    root.mkdir()
+    link = root / "v0.20.0"
+    try:
+        link.symlink_to(outside, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("this platform does not allow creating symlinks unprivileged")
+
+    assert not _safe_to_delete(link, root)
+
+
+def test_worktree_teardown_refuses_to_delete_its_own_parent(tmp_path: Path) -> None:
+    module = _release_module("release_driver_delete_guard_wiring")
+
+    with pytest.raises(module.ReleaseError, match="refusing to delete"):
+        module.remove_release_worktree(tmp_path, tmp_path, tmp_path)
+
+    assert tmp_path.exists()
