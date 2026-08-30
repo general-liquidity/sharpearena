@@ -82,17 +82,43 @@ def _git(root: Path, *args: str) -> None:
 
 @pytest.fixture()
 def tree(tmp_path: Path) -> Path:
-    """A minimal checkout with one source file, one artifact and one figure."""
+    """A checkout carrying at least one file for every canonical scope pattern.
+
+    Every pattern is populated on purpose: ``expand`` refuses a scope glob that matches
+    nothing, so a fixture covering only part of the scope would exercise the scripts
+    against a tree the real gate would reject.
+    """
+
     root = tmp_path / "repo"
-    (root / "crates" / "demo" / "src").mkdir(parents=True)
-    (root / "paper" / "evidence" / "model-artifacts").mkdir(parents=True)
-    (root / "paper" / "figures").mkdir(parents=True)
+    for directory in (
+        root / ".github" / "workflows",
+        root / "crates" / "demo" / "src",
+        root / "crates" / "sharpearena-py" / "python" / "sharpearena",
+        root / "scripts",
+        root / "paper" / "src",
+        root / "paper" / "sections",
+        root / "paper" / "evidence" / "model-artifacts",
+        root / "paper" / "figures",
+    ):
+        directory.mkdir(parents=True, exist_ok=True)
     # write_bytes throughout: write_text would translate newlines on Windows, and the
     # line-ending cases below need the on-disk bytes to be exactly what they say.
-    (root / "Cargo.toml").write_bytes(b'[workspace]\nversion = "0.1.0"\n')
-    (root / "crates" / "demo" / "src" / "lib.rs").write_bytes(
-        b"pub fn one() -> u8 { 1 }\n"
-    )
+    for relative, content in {
+        ".gitattributes": b"* text=auto eol=lf\n",
+        ".github/workflows/ci.yml": b"name: ci\n",
+        "Cargo.toml": b'[workspace]\nversion = "0.1.0"\n',
+        "Cargo.lock": b"version = 3\n",
+        "release.toml": b"sign-tag = true\n",
+        "crates/demo/Cargo.toml": b'[package]\nname = "demo"\n',
+        "crates/demo/src/lib.rs": b"pub fn one() -> u8 { 1 }\n",
+        "crates/sharpearena-py/python/sharpearena/__init__.py": b"VERSION = 1\n",
+        "scripts/release.py": b"print(1)\n",
+        "paper/src/make-demo.py": b"print(2)\n",
+        "paper/main.tex": b"\\documentclass{article}\n",
+        "paper/sections/intro.tex": b"intro\n",
+        "paper/refs.bib": b"@misc{a}\n",
+    }.items():
+        (root / relative).write_bytes(content)
     (root / "paper" / "evidence" / "f1.json").write_bytes(b'{"result": 1}\n')
     (root / "paper" / "figures" / "f1.pdf").write_bytes(
         b"%PDF-1.4\x00binary\r\nbytes\n"
@@ -193,7 +219,23 @@ def test_writer_output_validates_and_records_the_tree(tree: Path) -> None:
     _make_and_commit(tree)
     manifest = json.loads((tree / "paper" / "evidence" / "provenance.json").read_text())
     recorded = {item["path"] for item in manifest["source_files"]}
-    assert recorded == {"Cargo.toml", "crates/demo/src/lib.rs"}
+    # Every canonical source pattern contributes, which is also what makes the fixture
+    # a tree the real gate would accept.
+    assert recorded == {
+        ".gitattributes",
+        ".github/workflows/ci.yml",
+        "Cargo.lock",
+        "Cargo.toml",
+        "crates/demo/Cargo.toml",
+        "crates/demo/src/lib.rs",
+        "crates/sharpearena-py/python/sharpearena/__init__.py",
+        "paper/main.tex",
+        "paper/refs.bib",
+        "paper/sections/intro.tex",
+        "paper/src/make-demo.py",
+        "release.toml",
+        "scripts/release.py",
+    }
     assert {item["path"] for item in manifest["artifacts"]} == {
         "paper/evidence/f1.json",
         "paper/figures/f1.pdf",
@@ -624,3 +666,78 @@ def test_write_atomic_does_not_collide_with_an_existing_temp_file(
 
     assert target.read_bytes() == b'{"new": true}\n'
     assert squatter.read_bytes() == b"another writer's half-manifest"
+
+# --- the empty-scope floor ----------------------------------------------------------------
+
+
+def test_expand_refuses_a_pattern_that_matches_nothing(tmp_path: Path) -> None:
+    """A scope glob that stops matching is the silent failure this exists to catch: both
+    scripts share ``expand``, so they would agree on the smaller set and the gate would
+    keep printing OK over a scope that no longer covers what it claims to."""
+
+    (tmp_path / "kept.rs").write_bytes(b"fn main() {}\n")
+    excludes = frozenset(common.EXCLUDED_DIR_NAMES)
+
+    assert common.expand(("*.rs",), tmp_path, excludes) == [tmp_path / "kept.rs"]
+    with pytest.raises(common.EmptyScopePattern) as excinfo:
+        common.expand(("*.rs", "renamed/**/*.rs"), tmp_path, excludes)
+    assert "renamed/**/*.rs" in str(excinfo.value)
+
+
+def test_expand_refuses_a_pattern_whose_only_matches_are_excluded(
+    tmp_path: Path,
+) -> None:
+    """Matching only build output is the same vacuity with a file on disk to point at."""
+
+    (tmp_path / "target").mkdir()
+    (tmp_path / "target" / "generated.rs").write_bytes(b"fn generated() {}\n")
+    excludes = frozenset(common.EXCLUDED_DIR_NAMES)
+
+    with pytest.raises(common.EmptyScopePattern):
+        common.expand(("**/*.rs",), tmp_path, excludes)
+
+
+def test_model_artifact_scope_is_the_only_pattern_allowed_to_be_empty(
+    tmp_path: Path,
+) -> None:
+    """This repository genuinely ships no model identity files. The exemption is named,
+    not inferred from a scope happening to be empty on the day it is run."""
+
+    assert common.OPTIONALLY_EMPTY_SCOPE == frozenset(common.MODEL_ARTIFACT_SCOPE)
+    assert not set(common.SOURCE_SCOPE) & common.OPTIONALLY_EMPTY_SCOPE
+    assert not set(common.ARTIFACT_SCOPE) & common.OPTIONALLY_EMPTY_SCOPE
+    assert (
+        common.expand(
+            common.MODEL_ARTIFACT_SCOPE, tmp_path, frozenset(common.EXCLUDED_DIR_NAMES)
+        )
+        == []
+    )
+
+
+def test_checker_refuses_a_manifest_that_binds_no_sources() -> None:
+    """A manifest with an empty scope must not validate: it records that nothing was
+    checked, which is the shape a vacuous gate takes once the writer has been fixed."""
+
+    manifest = {
+        "schema_version": common.SCHEMA_VERSION,
+        "generated_at_head": "0" * 40,
+        "generated_at_head_dirty": False,
+        "digest_convention": common.DIGEST_CONVENTION,
+        "source_snapshot_sha256": "0" * 64,
+        "source_snapshot_scope": list(common.SOURCE_SCOPE),
+        "source_snapshot_excludes": list(common.EXCLUDED_DIR_NAMES),
+        "source_snapshot_scope_note": common.SOURCE_SCOPE_NOTE,
+        "artifact_scope": list(common.ARTIFACT_SCOPE),
+        "model_artifact_scope": list(common.MODEL_ARTIFACT_SCOPE),
+        "model_identity_fields": list(common.MODEL_IDENTITY_FIELDS),
+        "reproduction_entrypoint": common.REPRODUCTION_ENTRYPOINT,
+        "validator": common.VALIDATOR,
+        "source_files": [],
+        "artifacts": [],
+        "model_artifacts": [],
+    }
+
+    problems = common.manifest_rule_problems(manifest)
+
+    assert any("source_files is empty" in problem for problem in problems), problems
+    assert any("artifacts is empty" in problem for problem in problems), problems

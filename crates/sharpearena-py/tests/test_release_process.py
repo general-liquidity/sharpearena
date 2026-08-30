@@ -119,6 +119,33 @@ def _write_versions(root: Path, version: str) -> None:
         path.write_text(content, encoding="utf-8")
 
 
+def _write_remaining_source_scope(root: Path) -> None:
+    """One file for every canonical source pattern ``_write_versions`` does not cover.
+
+    ``expand`` refuses a scope glob that matches nothing, so a release rehearsal over a
+    tree missing most of the scope would exercise a tree the real gate rejects.
+    """
+
+    files = {
+        ".gitattributes": "* text=auto eol=lf\n",
+        ".github/workflows/ci.yml": "name: ci\n",
+        "Cargo.lock": "version = 3\n",
+        "release.toml": "sign-tag = true\n",
+        "scripts/release.py": "print(1)\n",
+        "paper/src/make-demo.py": "print(2)\n",
+        "paper/main.tex": "\\documentclass{article}\n",
+        "paper/sections/intro.tex": "intro\n",
+        "paper/refs.bib": "@misc{a}\n",
+    }
+    for relative, content in files.items():
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    figure = root / "paper/figures/f1.pdf"
+    figure.parent.mkdir(parents=True, exist_ok=True)
+    figure.write_bytes(b"%PDF-1.4\x00binary\n")
+
+
 def _write_manifest(root: Path, generation: str, *, dirty: bool = False) -> None:
     excludes = frozenset(common.EXCLUDED_DIR_NAMES)
     source_paths = [
@@ -183,6 +210,7 @@ def release_tree(tmp_path: Path) -> Path:
     root = tmp_path / "repo"
     root.mkdir()
     _write_versions(root, "0.19.0")
+    _write_remaining_source_scope(root)
     source = root / "crates/demo/src/lib.rs"
     source.parent.mkdir(parents=True)
     source.write_text("pub fn value() -> u8 { 19 }\n", encoding="utf-8")

@@ -244,6 +244,11 @@ def manifest_rule_problems(manifest: dict) -> list[str]:
         problems.append("manifest rule: source_snapshot_sha256 is not a sha256")
     problems += _record_problems("source_files", manifest.get("source_files"))
     problems += _record_problems("artifacts", manifest.get("artifacts"))
+    # A manifest binding nothing is not a passing manifest, it is an unexercised one.
+    for field in ("source_files", "artifacts"):
+        entries = manifest.get(field)
+        if isinstance(entries, list) and not entries:
+            problems.append(f"manifest rule: {field} is empty; the scope bound nothing")
     problems += _record_problems(
         "model_artifacts", manifest.get("model_artifacts"), model=True
     )
@@ -341,17 +346,44 @@ def is_excluded(path: Path, root: Path, excludes: frozenset[str]) -> bool:
     return any(part in excludes for part in path.relative_to(root).parts)
 
 
+# The one scope that may legitimately expand to nothing: this repository ships no local
+# model identity files, which is why `model_artifacts` is empty in the manifest today.
+# Everything else in every scope describes files that exist, so a pattern of theirs that
+# matches nothing is a bug in the pattern, not an empty repository.
+OPTIONALLY_EMPTY_SCOPE = frozenset(MODEL_ARTIFACT_SCOPE)
+
+
+class EmptyScopePattern(ValueError):
+    """A scope glob matched no files, so whatever it was supposed to bind is unbound."""
+
+
 def expand(
     patterns: tuple[str, ...] | list[str], root: Path, excludes: frozenset[str]
 ) -> list[Path]:
-    """Every file matching any glob, excluding build and environment directories."""
+    """Every file matching any glob, excluding build and environment directories.
+
+    A pattern that matches nothing raises :class:`EmptyScopePattern` rather than
+    contributing nothing. A manifest derived from a source of truth is only evidence if
+    it actually read that source: a renamed directory or a glob that stops matching
+    silently shrinks the bound set, both scripts agree on the smaller set because they
+    share this function, and the gate keeps printing OK over a scope that no longer
+    covers what it claims to. ``MODEL_ARTIFACT_SCOPE`` is the sole exemption, and it is
+    named rather than inferred from emptiness.
+    """
+
     found: set[Path] = set()
     for pattern in patterns:
-        found.update(
+        matched = [
             path
             for path in root.glob(pattern)
             if path.is_file() and not is_excluded(path, root, excludes)
-        )
+        ]
+        if not matched and pattern not in OPTIONALLY_EMPTY_SCOPE:
+            raise EmptyScopePattern(
+                f"scope pattern {pattern!r} matched no files under {root}; "
+                "a scope that binds nothing cannot be evidence"
+            )
+        found.update(matched)
     return sorted(found, key=lambda path: path.as_posix())
 
 
