@@ -3,11 +3,98 @@
 //! (observations and decisions are JSON strings), which keeps the surface robust
 //! and identical to the language-agnostic protocol any external agent speaks.
 
+use pyo3::create_exception;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyType;
 use pyo3::wrap_pyfunction;
 use sharpearena::exec_noise::{perturb as core_perturb_action, ExecNoise};
+
+// --- Typed errors across the FFI boundary --------------------------------------------------
+
+create_exception!(
+    sharpearena_py,
+    SharpeArenaError,
+    PyValueError,
+    "Base class for every error the native engine raises. Subclasses ValueError, which is what the boundary raised before the taxonomy existed, so a consumer catching ValueError keeps working. Raised directly when the engine reports a code this wrapper does not know."
+);
+create_exception!(
+    sharpearena_py,
+    InvalidArgument,
+    SharpeArenaError,
+    "A caller argument the engine cannot use: an unknown enum label, an out-of-range window, a wrong-length vector, a non-finite parameter."
+);
+create_exception!(
+    sharpearena_py,
+    InvalidJson,
+    SharpeArenaError,
+    "A JSON payload that failed to deserialize into a wire-contract type (a decision, an env state, a mandate, an order batch). The agent's output is malformed, not the engine's."
+);
+create_exception!(
+    sharpearena_py,
+    InvalidSalt,
+    SharpeArenaError,
+    "A sealed-seed salt the derivation refuses, e.g. shorter than MIN_SEALED_SALT_BYTES."
+);
+create_exception!(
+    sharpearena_py,
+    DataUnavailable,
+    SharpeArenaError,
+    "The engine could not load the data it was pointed at (an unparseable or empty CSV)."
+);
+create_exception!(
+    sharpearena_py,
+    EngineFailure,
+    SharpeArenaError,
+    "The engine failed while producing a result the caller asked for, rather than rejecting the caller's input. Serializing an engine value is the current source."
+);
+
+/// A caller argument the engine cannot use.
+const CODE_INVALID_ARGUMENT: &str = "INVALID_ARGUMENT";
+/// A wire-contract payload that failed to deserialize.
+const CODE_INVALID_JSON: &str = "INVALID_JSON";
+/// A sealed-seed salt the derivation refuses.
+const CODE_INVALID_SALT: &str = "INVALID_SALT";
+/// The engine could not load the data it was pointed at.
+const CODE_DATA_UNAVAILABLE: &str = "DATA_UNAVAILABLE";
+/// The engine failed while producing a result.
+const CODE_ENGINE_FAILURE: &str = "ENGINE_FAILURE";
+
+/// Raise `message` as the Python exception this `code` maps to, with the code kept as a
+/// `[CODE] ` prefix on the message.
+///
+/// The codes are a **compatibility surface**: a consumer may branch on the exception type
+/// or on the prefix, and a wheel and a wrapper can be different versions. So an unknown
+/// code degrades to [`SharpeArenaError`] *carrying the code* rather than being relabelled
+/// as something this build happens to know. A stale wrapper then relays what the engine
+/// actually said instead of lying about it.
+fn engine_err(code: &str, message: impl std::fmt::Display) -> PyErr {
+    let text = format!("[{code}] {message}");
+    match code {
+        CODE_INVALID_ARGUMENT => InvalidArgument::new_err(text),
+        CODE_INVALID_JSON => InvalidJson::new_err(text),
+        CODE_INVALID_SALT => InvalidSalt::new_err(text),
+        CODE_DATA_UNAVAILABLE => DataUnavailable::new_err(text),
+        CODE_ENGINE_FAILURE => EngineFailure::new_err(text),
+        _ => SharpeArenaError::new_err(text),
+    }
+}
+
+/// Raise an error whose text may *already* carry a `[CODE] ` prefix stamped by the Rust
+/// core (`SealedSaltError` is the first such type). The embedded code wins so the core
+/// crate stays the authority on what went wrong; `fallback` covers a message with no
+/// prefix.
+fn relay_err(fallback: &str, message: impl std::fmt::Display) -> PyErr {
+    let text = message.to_string();
+    match text
+        .strip_prefix('[')
+        .and_then(|rest| rest.split_once("] "))
+    {
+        Some((code, body)) if !code.is_empty() && !code.contains(' ') => engine_err(code, body),
+        _ => engine_err(fallback, text),
+    }
+}
+
 use sharpearena::leaderboard_ci::{
     bootstrap_dsr_ci as core_bootstrap_dsr_ci, paired_dsr_diff as core_paired_dsr_diff,
     KERNEL_BASE_TRIALS, TRIALS_SR_STD_DEFAULT,
@@ -29,10 +116,13 @@ fn parse_distribution_mode(mode: &str) -> PyResult<DistributionMode> {
         "extreme" => Ok(DistributionMode::Extreme),
         "cointegrated_pairs" => Ok(DistributionMode::CointegratedPairs),
         "regime_shift" => Ok(DistributionMode::RegimeShift),
-        other => Err(PyValueError::new_err(format!(
-            "unknown distribution_mode {other:?} (expected calm | hard | extreme | \
+        other => Err(engine_err(
+            CODE_INVALID_ARGUMENT,
+            format!(
+                "unknown distribution_mode {other:?} (expected calm | hard | extreme | \
              cointegrated_pairs | regime_shift)"
-        ))),
+            ),
+        )),
     }
 }
 
@@ -44,9 +134,10 @@ fn parse_richness_tier(richness: &str) -> PyResult<RichnessTier> {
         "data_poor" => Ok(RichnessTier::DataPoor),
         "standard" => Ok(RichnessTier::Standard),
         "data_rich" => Ok(RichnessTier::DataRich),
-        other => Err(PyValueError::new_err(format!(
-            "unknown richness {other:?} (expected data_poor | standard | data_rich)"
-        ))),
+        other => Err(engine_err(
+            CODE_INVALID_ARGUMENT,
+            format!("unknown richness {other:?} (expected data_poor | standard | data_rich)"),
+        )),
     }
 }
 
@@ -116,7 +207,7 @@ fn fnv1a64(bytes: &[u8]) -> u64 {
 /// inversion every other guarantee (fixed seeds, goldens, provenance digests) survives,
 /// because the wrong tape is still produced reproducibly.
 fn effective_config_json(data: &Dataset, window: &Window, exec_seed: u64) -> PyResult<String> {
-    let bytes = serde_json::to_string(data).map_err(|e| PyValueError::new_err(e.to_string()))?;
+    let bytes = serde_json::to_string(data).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))?;
     Ok(serde_json::json!({
         "n_symbols": data.symbols().len(),
         "n_bars": data.len(),
@@ -131,9 +222,10 @@ fn effective_config_json(data: &Dataset, window: &Window, exec_seed: u64) -> PyR
 /// Parse the wire `autoreset_mode` label, rejecting unknown modes with a `ValueError`.
 fn parse_autoreset_mode(mode: &str) -> PyResult<AutoresetMode> {
     AutoresetMode::from_label(mode).ok_or_else(|| {
-        PyValueError::new_err(format!(
-            "unknown autoreset_mode {mode:?} (expected next_step | same_step | disabled)"
-        ))
+        engine_err(
+            CODE_INVALID_ARGUMENT,
+            format!("unknown autoreset_mode {mode:?} (expected next_step | same_step | disabled)"),
+        )
     })
 }
 
@@ -232,12 +324,15 @@ impl PyTradingEnv {
         );
         let window = build_window(window_start, window_end, data.len());
         if window.start >= window.end || window.end > data.len() {
-            return Err(PyValueError::new_err(format!(
-                "invalid window [{}, {}) over {} bars",
-                window.start,
-                window.end,
-                data.len()
-            )));
+            return Err(engine_err(
+                CODE_INVALID_ARGUMENT,
+                format!(
+                    "invalid window [{}, {}) over {} bars",
+                    window.start,
+                    window.end,
+                    data.len()
+                ),
+            ));
         }
         let costs = build_costs(
             fee_bps,
@@ -283,15 +378,18 @@ impl PyTradingEnv {
         max_participation: Option<f64>,
         exec_seed: Option<u64>,
     ) -> PyResult<Self> {
-        let data = Dataset::from_csv(csv_text).map_err(PyValueError::new_err)?;
+        let data = Dataset::from_csv(csv_text).map_err(|e| engine_err(CODE_DATA_UNAVAILABLE, e))?;
         let window = build_window(window_start, window_end, data.len());
         if window.start >= window.end || window.end > data.len() {
-            return Err(PyValueError::new_err(format!(
-                "invalid window [{}, {}) over {} bars",
-                window.start,
-                window.end,
-                data.len()
-            )));
+            return Err(engine_err(
+                CODE_INVALID_ARGUMENT,
+                format!(
+                    "invalid window [{}, {}) over {} bars",
+                    window.start,
+                    window.end,
+                    data.len()
+                ),
+            ));
         }
         let costs = build_costs(
             fee_bps,
@@ -329,7 +427,7 @@ impl PyTradingEnv {
     /// observation as a wire-format JSON string.
     fn reset(&mut self) -> PyResult<String> {
         let obs = self.inner.reset();
-        serde_json::to_string(&obs).map_err(|e| PyValueError::new_err(e.to_string()))
+        serde_json::to_string(&obs).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))
     }
 
     /// Apply `decision_json` (a wire-format `Decision`) at the current bar and
@@ -337,10 +435,10 @@ impl PyTradingEnv {
     /// where `info_json` carries the post-step NAV and this step's process events.
     fn step(&mut self, decision_json: &str) -> PyResult<(String, f64, bool, String)> {
         let decision: Decision = serde_json::from_str(decision_json)
-            .map_err(|e| PyValueError::new_err(format!("invalid decision JSON: {e}")))?;
+            .map_err(|e| engine_err(CODE_INVALID_JSON, format!("invalid decision JSON: {e}")))?;
         let res = self.inner.step(decision);
         let observation = serde_json::to_string(&res.observation)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+            .map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))?;
         let info = serde_json::json!({
             "nav": res.info.nav,
             "events": res.info.events,
@@ -352,13 +450,13 @@ impl PyTradingEnv {
     /// checkpoint that replaces replay-from-decisions. Pair with [`restore_state`].
     fn clone_state(&self) -> PyResult<String> {
         let state = self.inner.clone_state();
-        serde_json::to_string(&state).map_err(|e| PyValueError::new_err(e.to_string()))
+        serde_json::to_string(&state).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))
     }
 
     /// Restore the env to a snapshot produced by [`clone_state`] in O(1) (no replay).
     fn restore_state(&mut self, state_json: &str) -> PyResult<()> {
         let state: sharpearena::EnvState = serde_json::from_str(state_json)
-            .map_err(|e| PyValueError::new_err(format!("invalid env state: {e}")))?;
+            .map_err(|e| engine_err(CODE_INVALID_JSON, format!("invalid env state: {e}")))?;
         self.inner.restore_state(state);
         Ok(())
     }
@@ -380,7 +478,7 @@ fn observations_to_json(
 ) -> PyResult<Vec<serde_json::Value>> {
     observations
         .iter()
-        .map(|o| serde_json::to_value(o).map_err(|e| PyValueError::new_err(e.to_string())))
+        .map(|o| serde_json::to_value(o).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e)))
         .collect()
 }
 
@@ -430,7 +528,7 @@ impl PyVecTradingEnv {
         jump_burst_size: f64,
     ) -> PyResult<Self> {
         if seeds.is_empty() {
-            return Err(PyValueError::new_err("seeds must be non-empty"));
+            return Err(engine_err(CODE_INVALID_ARGUMENT, "seeds must be non-empty"));
         }
         let mode = parse_distribution_mode(distribution_mode)?;
         let reset_mode = parse_autoreset_mode(autoreset_mode)?;
@@ -442,10 +540,13 @@ impl PyVecTradingEnv {
                     end: window_end.unwrap_or(n_days),
                 };
                 if w.start >= w.end || w.end > n_days {
-                    return Err(PyValueError::new_err(format!(
-                        "invalid window [{}, {}) over {} bars",
-                        w.start, w.end, n_days
-                    )));
+                    return Err(engine_err(
+                        CODE_INVALID_ARGUMENT,
+                        format!(
+                            "invalid window [{}, {}) over {} bars",
+                            w.start, w.end, n_days
+                        ),
+                    ));
                 }
                 Some(w)
             }
@@ -509,17 +610,20 @@ impl PyVecTradingEnv {
         autoreset_mode: &str,
     ) -> PyResult<Self> {
         if seeds.is_empty() {
-            return Err(PyValueError::new_err("seeds must be non-empty"));
+            return Err(engine_err(CODE_INVALID_ARGUMENT, "seeds must be non-empty"));
         }
-        let data = Dataset::from_csv(csv_text).map_err(PyValueError::new_err)?;
+        let data = Dataset::from_csv(csv_text).map_err(|e| engine_err(CODE_DATA_UNAVAILABLE, e))?;
         let window = build_window(window_start, window_end, data.len());
         if window.start >= window.end || window.end > data.len() {
-            return Err(PyValueError::new_err(format!(
-                "invalid window [{}, {}) over {} bars",
-                window.start,
-                window.end,
-                data.len()
-            )));
+            return Err(engine_err(
+                CODE_INVALID_ARGUMENT,
+                format!(
+                    "invalid window [{}, {}) over {} bars",
+                    window.start,
+                    window.end,
+                    data.len()
+                ),
+            ));
         }
         let costs = build_costs(
             fee_bps,
@@ -574,13 +678,16 @@ impl PyVecTradingEnv {
     /// are `null`).
     fn step_batch(&mut self, decisions_json: &str) -> PyResult<String> {
         let decisions: Vec<Decision> = serde_json::from_str(decisions_json)
-            .map_err(|e| PyValueError::new_err(format!("invalid decisions JSON: {e}")))?;
+            .map_err(|e| engine_err(CODE_INVALID_JSON, format!("invalid decisions JSON: {e}")))?;
         if decisions.len() != self.inner.len() {
-            return Err(PyValueError::new_err(format!(
-                "expected {} decisions, got {}",
-                self.inner.len(),
-                decisions.len()
-            )));
+            return Err(engine_err(
+                CODE_INVALID_ARGUMENT,
+                format!(
+                    "expected {} decisions, got {}",
+                    self.inner.len(),
+                    decisions.len()
+                ),
+            ));
         }
         let step = self.inner.step_batch(&decisions);
         let observations = observations_to_json(&step.observations)?;
@@ -593,7 +700,7 @@ impl PyVecTradingEnv {
         for o in &step.final_obs {
             final_obs.push(match o {
                 Some(obs) => {
-                    serde_json::to_value(obs).map_err(|e| PyValueError::new_err(e.to_string()))?
+                    serde_json::to_value(obs).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))?
                 }
                 None => serde_json::Value::Null,
             });
@@ -632,7 +739,8 @@ impl PyVecTradingEnv {
 #[pyo3(signature = (returns, n_trials = 0, periods_per_year = 252.0))]
 fn score_run(returns: Vec<f64>, n_trials: u32, periods_per_year: f64) -> PyResult<String> {
     if !periods_per_year.is_finite() || periods_per_year <= 0.0 {
-        return Err(PyValueError::new_err(
+        return Err(engine_err(
+            CODE_INVALID_ARGUMENT,
             "periods_per_year must be finite and positive",
         ));
     }
@@ -655,7 +763,7 @@ fn score_run(returns: Vec<f64>, n_trials: u32, periods_per_year: f64) -> PyResul
         &submission,
         &ScoreConfig::for_periods_per_year(periods_per_year),
     );
-    serde_json::to_string(&score).map_err(|e| PyValueError::new_err(e.to_string()))
+    serde_json::to_string(&score).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))
 }
 
 /// Seed-paired bootstrap confidence interval on the **deflated Sharpe** the leaderboard
@@ -683,7 +791,7 @@ fn bootstrap_dsr_ci(
         resample_seed,
         alpha,
     );
-    serde_json::to_string(&ci).map_err(|e| PyValueError::new_err(e.to_string()))
+    serde_json::to_string(&ci).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))
 }
 
 /// Paired-difference significance test between two leaderboard entries scored on the **same**
@@ -712,7 +820,7 @@ fn paired_dsr_diff(
         resample_seed,
         alpha,
     );
-    serde_json::to_string(&diff).map_err(|e| PyValueError::new_err(e.to_string()))
+    serde_json::to_string(&diff).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))
 }
 
 /// Whether `decision_json` deserializes to the wire-contract [`Decision`] type — the
@@ -737,7 +845,7 @@ fn decision_schema_json() -> &'static str {
 #[pyo3(signature = (seed, n_symbols = 4, allow_short = true))]
 fn sample_mandate_json(seed: u64, n_symbols: usize, allow_short: bool) -> PyResult<String> {
     let m = sharpearena::mandate::sample_mandate(seed, n_symbols, allow_short);
-    serde_json::to_string(&m).map_err(|e| PyValueError::new_err(e.to_string()))
+    serde_json::to_string(&m).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))
 }
 
 /// The bounded breach penalty in `[0, 1]` for a mandate (wire JSON) over the recorded
@@ -745,8 +853,18 @@ fn sample_mandate_json(seed: u64, n_symbols: usize, allow_short: bool) -> PyResu
 #[pyfunction]
 fn mandate_breach(mandate_json: &str, returns: Vec<f64>, weights: Vec<Vec<f64>>) -> PyResult<f64> {
     let m: Mandate = serde_json::from_str(mandate_json)
-        .map_err(|e| PyValueError::new_err(format!("invalid mandate JSON: {e}")))?;
+        .map_err(|e| engine_err(CODE_INVALID_JSON, format!("invalid mandate JSON: {e}")))?;
     Ok(sharpearena::mandate::mandate_breach(&m, &returns, &weights))
+}
+
+/// Test hook for the error taxonomy: raise `message` through the same mapper every other
+/// binding uses, under an arbitrary `code`. It exists because the unknown-code degradation
+/// path cannot otherwise be reached from Python (no shipped code is unknown to the build
+/// that defines them), and that path is the one a stale wrapper depends on. Underscored
+/// and excluded from the package re-exports: not public API.
+#[pyfunction]
+fn _raise_coded(code: &str, message: &str) -> PyResult<()> {
+    Err(relay_err(code, message))
 }
 
 /// Derive the held-out seed for eval slot `slot` under a secret `salt` (see
@@ -755,8 +873,7 @@ fn mandate_breach(mandate_json: &str, returns: Vec<f64>, weights: Vec<Vec<f64>>)
 /// `MIN_SEALED_SALT_BYTES`: the derivation is only as unguessable as the salt.
 #[pyfunction]
 fn sealed_seed(salt: &[u8], slot: u64) -> PyResult<u64> {
-    let salt = sharpearena::SealedSalt::new(salt)
-        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    let salt = sharpearena::SealedSalt::new(salt).map_err(|e| relay_err(CODE_INVALID_SALT, e))?;
     Ok(sharpearena::sealed_seed(&salt, slot))
 }
 
@@ -799,7 +916,7 @@ fn generate_scenario_json(
         ..ScenarioSpec::default()
     };
     serde_json::to_string(&generate_scenario(&spec, seed))
-        .map_err(|e| PyValueError::new_err(e.to_string()))
+        .map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))
 }
 
 /// The `ScenarioSpec::calm_calibration_candidate` preset generated at `seed`, as the
@@ -812,7 +929,7 @@ fn calm_calibration_candidate_scenario_json(seed: u64) -> PyResult<String> {
         &ScenarioSpec::calm_calibration_candidate(),
         seed,
     ))
-    .map_err(|e| PyValueError::new_err(e.to_string()))
+    .map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))
 }
 
 /// Perturb a `requested` action vector into a realized one via the deterministic Rust
@@ -864,7 +981,8 @@ pub struct PyMarketClearing {
 /// instead of the Rust panic inside `clear_bar_concave`.
 fn validate_impact_exponent(impact_exponent: f64) -> PyResult<f64> {
     if !(impact_exponent > 0.0 && impact_exponent.is_finite()) {
-        return Err(PyValueError::new_err(
+        return Err(engine_err(
+            CODE_INVALID_ARGUMENT,
             "impact_exponent must be a positive finite number (1.0 = linear)",
         ));
     }
@@ -886,12 +1004,14 @@ fn build_uncertainty(
     let a = lambda_radius.unwrap_or(0.0);
     let b = eta_radius.unwrap_or(0.0);
     if a < 0.0 || b < 0.0 {
-        return Err(PyValueError::new_err(
+        return Err(engine_err(
+            CODE_INVALID_ARGUMENT,
             "uncertainty radii must be non-negative",
         ));
     }
     if !(-1.0..=1.0).contains(&correlation) {
-        return Err(PyValueError::new_err(
+        return Err(engine_err(
+            CODE_INVALID_ARGUMENT,
             "uncertainty_correlation must lie in [-1, 1]",
         ));
     }
@@ -943,7 +1063,7 @@ impl PyMarketClearing {
         impact_exponent: f64,
     ) -> PyResult<Self> {
         if n_agents < 1 {
-            return Err(PyValueError::new_err("n_agents must be >= 1"));
+            return Err(engine_err(CODE_INVALID_ARGUMENT, "n_agents must be >= 1"));
         }
         let mode = parse_distribution_mode(distribution_mode)?;
         let tier = parse_richness_tier(richness)?;
@@ -1060,20 +1180,26 @@ impl PyMarketClearing {
     /// vectors, each length `n_symbols` (canonical agent order, sorted symbol order).
     fn step_market(&mut self, orders_json: &str) -> PyResult<String> {
         let agent_orders: Vec<Vec<f64>> = serde_json::from_str(orders_json)
-            .map_err(|e| PyValueError::new_err(format!("invalid orders JSON: {e}")))?;
+            .map_err(|e| engine_err(CODE_INVALID_JSON, format!("invalid orders JSON: {e}")))?;
         if agent_orders.len() != self.inner.n_agents() {
-            return Err(PyValueError::new_err(format!(
-                "expected {} agent order vectors, got {}",
-                self.inner.n_agents(),
-                agent_orders.len()
-            )));
+            return Err(engine_err(
+                CODE_INVALID_ARGUMENT,
+                format!(
+                    "expected {} agent order vectors, got {}",
+                    self.inner.n_agents(),
+                    agent_orders.len()
+                ),
+            ));
         }
         let n_sym = self.inner.symbols().len();
         if let Some(bad) = agent_orders.iter().position(|o| o.len() != n_sym) {
-            return Err(PyValueError::new_err(format!(
-                "agent {bad} order vector has {} weights, expected {n_sym}",
-                agent_orders[bad].len()
-            )));
+            return Err(engine_err(
+                CODE_INVALID_ARGUMENT,
+                format!(
+                    "agent {bad} order vector has {} weights, expected {n_sym}",
+                    agent_orders[bad].len()
+                ),
+            ));
         }
         // `step_concave(.., None, 1.0)` runs the identical arithmetic as `step` (the
         // exponent at 1.0 returns the flow term unchanged, no `powf` evaluated), so the
@@ -1086,7 +1212,7 @@ impl PyMarketClearing {
             self.impact_exponent,
         );
         let mut value =
-            serde_json::to_value(&result).map_err(|e| PyValueError::new_err(e.to_string()))?;
+            serde_json::to_value(&result).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))?;
         if let serde_json::Value::Object(ref mut map) = value {
             map.insert("cursor".to_string(), serde_json::json!(self.inner.cursor()));
         }
@@ -1098,16 +1224,17 @@ fn parse_side(s: &str) -> PyResult<Side> {
     match s {
         "buy" => Ok(Side::Buy),
         "sell" => Ok(Side::Sell),
-        other => Err(PyValueError::new_err(format!(
-            "unknown side {other:?} (expected buy | sell)"
-        ))),
+        other => Err(engine_err(
+            CODE_INVALID_ARGUMENT,
+            format!("unknown side {other:?} (expected buy | sell)"),
+        )),
     }
 }
 
 /// Parse one flat order JSON object into an `(agent, OrderKind)` tuple. Shape:
 /// `{agent, kind: "limit"|"market"|"cancel"|"modify", side?, price_tick?, qty?, id?, new_qty?}`.
 fn parse_order(v: &serde_json::Value) -> PyResult<(usize, OrderKind)> {
-    let bad = |m: &str| PyValueError::new_err(format!("invalid order: {m}"));
+    let bad = |m: &str| engine_err(CODE_INVALID_ARGUMENT, format!("invalid order: {m}"));
     let agent = v["agent"].as_u64().ok_or_else(|| bad("agent"))? as usize;
     let kind = v["kind"].as_str().ok_or_else(|| bad("kind"))?;
     let order = match kind {
@@ -1168,12 +1295,12 @@ impl PyOrderBook {
     /// return `{ "fills": [Fill, ...], "ladder": LadderSnapshot }` as JSON.
     fn step_book(&mut self, orders_json: &str) -> PyResult<String> {
         let arr: Vec<serde_json::Value> = serde_json::from_str(orders_json)
-            .map_err(|e| PyValueError::new_err(format!("invalid orders JSON: {e}")))?;
+            .map_err(|e| engine_err(CODE_INVALID_JSON, format!("invalid orders JSON: {e}")))?;
         let orders: Vec<(usize, OrderKind)> =
             arr.iter().map(parse_order).collect::<PyResult<Vec<_>>>()?;
         let fills = self.inner.step(&orders);
         let out = serde_json::json!({
-            "fills": serde_json::to_value(&fills).map_err(|e| PyValueError::new_err(e.to_string()))?,
+            "fills": serde_json::to_value(&fills).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))?,
             "ladder": ladder_json(&self.inner, self.levels),
         });
         Ok(out.to_string())
@@ -1203,7 +1330,7 @@ impl PyOrderBook {
     /// (`{ "avg_px_tick", "slippage_ticks", "filled_qty" }`) without mutating the book.
     fn sweep_cost(&self, side: &str, qty: u64) -> PyResult<String> {
         let cost = self.inner.sweep_cost(parse_side(side)?, qty);
-        serde_json::to_string(&cost).map_err(|e| PyValueError::new_err(e.to_string()))
+        serde_json::to_string(&cost).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))
     }
 }
 
@@ -1223,11 +1350,20 @@ fn sharpearena_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(mandate_breach, m)?)?;
     m.add_function(wrap_pyfunction!(perturb_action, m)?)?;
     m.add_function(wrap_pyfunction!(sealed_seed, m)?)?;
+    m.add_function(wrap_pyfunction!(_raise_coded, m)?)?;
     m.add_function(wrap_pyfunction!(generate_scenario_json, m)?)?;
     m.add_function(wrap_pyfunction!(
         calm_calibration_candidate_scenario_json,
         m
     )?)?;
+    // The typed-error taxonomy. Every class subclasses `ValueError` through
+    // `SharpeArenaError`, so catching `ValueError` still catches all of them.
+    m.add("SharpeArenaError", m.py().get_type::<SharpeArenaError>())?;
+    m.add("InvalidArgument", m.py().get_type::<InvalidArgument>())?;
+    m.add("InvalidJson", m.py().get_type::<InvalidJson>())?;
+    m.add("InvalidSalt", m.py().get_type::<InvalidSalt>())?;
+    m.add("DataUnavailable", m.py().get_type::<DataUnavailable>())?;
+    m.add("EngineFailure", m.py().get_type::<EngineFailure>())?;
     m.add("EVAL_SEED_BASE", sharpearena::EVAL_SEED_BASE)?;
     m.add("MIN_SEALED_SALT_BYTES", sharpearena::MIN_SEALED_SALT_BYTES)?;
     m.add(

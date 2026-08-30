@@ -528,7 +528,7 @@ impl std::fmt::Display for SealedSaltError {
         match self {
             SealedSaltError::TooShort { got, min } => write!(
                 f,
-                "[SALT_TOO_SHORT] sealed-seed salt must be at least {min} bytes (got {got})"
+                "[INVALID_SALT] sealed-seed salt must be at least {min} bytes (got {got})"
             ),
         }
     }

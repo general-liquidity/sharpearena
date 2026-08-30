@@ -262,6 +262,12 @@ from .rewards import (
 )
 from .risk import CrossSectionalDeleverage, DrawdownStopper, TurbulenceHalt
 from .sharpearena_py import (
+    DataUnavailable,
+    EngineFailure,
+    InvalidArgument,
+    InvalidJson,
+    InvalidSalt,
+    SharpeArenaError,
     TradingEnv,
     VecTradingEnv,
     decision_schema_json,
@@ -308,6 +314,12 @@ register_envs()
 __all__ = [
     "TradingEnv",
     "VecTradingEnv",
+    "DataUnavailable",
+    "EngineFailure",
+    "InvalidArgument",
+    "InvalidJson",
+    "InvalidSalt",
+    "SharpeArenaError",
     "score_run",
     "decision_schema_json",
     "validate_decision_json",
