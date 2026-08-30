@@ -200,3 +200,107 @@ jobs:
           pip install --requirement ci-requirements.txt
           maturin develop
           python -m pytest -q
+
+  # --- usability, not identity ------------------------------------------------------
+  # Every other packaging guard here checks that the right version, commit and registry
+  # are involved. Neither checks that the artifact a consumer downloads actually loads.
+  # These two do, on every pull request rather than only at a tag, so a package that
+  # cannot be installed is caught before it is published rather than after.
+
+  npm-pack-install:
+    name: npm pack, offline install, require
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: npm/sharpearena/package-lock.json
+      - name: Pack the tarball
+        working-directory: npm/sharpearena
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          npm pack --pack-destination "$RUNNER_TEMP"
+          tarballs=("$RUNNER_TEMP"/*.tgz)
+          # A pack that produced nothing, or more than one thing, fails the job rather
+          # than letting the install step succeed against whatever it happens to find.
+          test "${#tarballs[@]}" -eq 1
+          test -s "${tarballs[0]}"
+          echo "TARBALL=${tarballs[0]}" >> "$GITHUB_ENV"
+      - name: Install it offline into a fresh project and require one real export
+        run: |
+          set -euo pipefail
+          consumer="$RUNNER_TEMP/npm-consumer"
+          mkdir -p "$consumer"
+          cd "$consumer"
+          npm init --yes > /dev/null
+          # --offline against an isolated cache: if the tarball is short a file, the
+          # install cannot quietly heal itself from the registry and pass anyway.
+          npm install --offline --no-audit --no-fund --cache "$RUNNER_TEMP/npm-cache" "$TARBALL"
+          cat > smoke.cjs <<'JS'
+          const arena = require("@general-liquidity/sharpearena");
+          if (typeof arena.runBaseline !== "function") {
+            throw new Error("runBaseline is missing from the packed tarball");
+          }
+          const run = arena.runBaseline({ agent: "buy_and_hold", seed: 1 });
+          if (!Array.isArray(run.returns) || run.returns.length === 0) {
+            throw new Error("runBaseline returned no series from the packed wasm");
+          }
+          console.log("required the tarball and ran " + run.returns.length + " bars");
+          JS
+          node smoke.cjs
+
+  wheel-install-import:
+    name: maturin build, pip install the wheel, import
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Rust 1.96.0
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.96.0"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/sharpearena-py
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build the wheel
+        working-directory: crates/sharpearena-py
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip maturin
+          maturin build --out "$RUNNER_TEMP/dist"
+          wheels=("$RUNNER_TEMP"/dist/*.whl)
+          test "${#wheels[@]}" -eq 1
+          test -s "${wheels[0]}"
+          echo "WHEEL=${wheels[0]}" >> "$GITHUB_ENV"
+      - name: Install it into a fresh venv and step one bar
+        # Run from outside the checkout so the import resolves to the installed wheel
+        # and not to the source tree, and install only the wheel's declared
+        # dependencies: the pytest job installs the full ci-requirements set, which
+        # would hide a missing runtime dependency.
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          python -m venv consumer
+          ./consumer/bin/pip install --quiet "$WHEEL"
+          cat > smoke.py <<'PY'
+          from importlib.resources import files
+
+          import sharpearena
+
+          env = sharpearena.TradingEnv()
+          env.reset()
+          observation, reward, done, info = env.step('{"orders": []}')
+          assert isinstance(reward, float), reward
+          assert not done
+          assert files("sharpearena").joinpath("py.typed").is_file(), "py.typed did not ship"
+          print("imported the wheel and stepped one bar")
+          PY
+          ./consumer/bin/python smoke.py
