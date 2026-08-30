@@ -11,6 +11,7 @@ actually imports.
 from __future__ import annotations
 
 import importlib.metadata as metadata
+import importlib.resources as resources
 import re
 import tomllib
 from pathlib import Path
@@ -91,3 +92,15 @@ def test_the_installed_environment_can_import_them() -> None:
     pytest.importorskip("minari", reason="the Minari path is not installed at all")
     for module in sorted(MINARI_RUNTIME_IMPORTS.values()):
         __import__(module)
+
+
+def test_py_typed_marker_is_installed_with_the_package() -> None:
+    """PEP 561 makes a library's types opt-in. Without the marker a consumer's type
+    checker skips the package entirely, however well annotated it is, so every
+    annotation in here was invisible."""
+
+    marker = resources.files("sharpearena").joinpath("py.typed")
+    assert marker.is_file(), (
+        "py.typed is missing from the installed package, so PEP 561 consumers see "
+        "sharpearena as untyped"
+    )
