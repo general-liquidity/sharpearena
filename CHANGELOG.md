@@ -6,9 +6,11 @@ version covers the Rust crates, the npm package and the PyPI package; each
 section is one `v*` tag and links the commits it was built from. The wire
 contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
-[Unreleased]: https://github.com/general-liquidity/sharpearena/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/general-liquidity/sharpearena/compare/v0.21.0...HEAD
 
 ## [Unreleased]
+
+## [0.21.0] - 2026-08-30
 
 ### Changed
 - **BREAKING** (`sharpearena` crate only): `sealed_seed` takes a `SealedSalt` instead of a `&[u8]`. The 16-byte floor the sealed derivation's unguessability rests on was documented as something "callers should enforce at the operator boundary", and only the Python binding did: the Rust entry point accepted any slice. The floor now lives in the one constructor every surface goes through. `SealedSalt` also carries no `Serialize`, `Display` or `Deref`, redacts its own `Debug`, and scrubs on drop, so a salt cannot reach a golden fingerprint, a trace line or the provenance manifest by accident. The scrub is best-effort: the crate forbids unsafe code and takes no crypto dependency, so it is a fill plus a black-box hint rather than a volatile write. Migrate with `let salt = SealedSalt::new(bytes)?;` then `sealed_seed(&salt, slot)`. Derived seeds are unchanged and a sealed evaluation replays identically; the pinned golden still holds. A salt under 16 bytes that the Rust path previously accepted is now refused, which is the point.
@@ -297,6 +299,7 @@ First published release, as OpenOutcry.
 ### Fixed
 - ci: toolchain pinned to 1.96.0 for the wasm32 target; a virtualenv for maturin ([bb0ee4d](https://github.com/general-liquidity/sharpearena/commit/bb0ee4d)).
 
+[0.21.0]: https://github.com/general-liquidity/sharpearena/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/general-liquidity/sharpearena/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/general-liquidity/sharpearena/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/general-liquidity/sharpearena/compare/v0.17.0...v0.18.0
