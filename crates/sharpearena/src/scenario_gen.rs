@@ -505,11 +505,89 @@ pub fn cross_regime_split(
 /// train band by construction. Mirrors `sharpearena.dataset.EVAL_SEED_BASE`.
 pub const EVAL_SEED_BASE: u64 = 1_000_000;
 
-/// Minimum salt length [`sealed_seed`]'s callers should enforce at the operator
-/// boundary. The derivation is only as unguessable as the salt: 16 random bytes put the
-/// salt itself outside any enumeration budget, whereas a short passphrase re-creates the
-/// bounded-band table-scan the predictability probe measured.
+/// Minimum salt length, enforced by [`SealedSalt::new`] and therefore by every surface
+/// that can reach [`sealed_seed`]. The derivation is only as unguessable as the salt: 16
+/// random bytes put the salt itself outside any enumeration budget, whereas a short
+/// passphrase re-creates the bounded-band table-scan the predictability probe measured.
 pub const MIN_SEALED_SALT_BYTES: usize = 16;
+
+/// Why [`SealedSalt::new`] refused the bytes it was handed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SealedSaltError {
+    /// Fewer than [`MIN_SEALED_SALT_BYTES`] bytes of salt.
+    TooShort {
+        /// The length that was offered.
+        got: usize,
+        /// The length the derivation requires.
+        min: usize,
+    },
+}
+
+impl std::fmt::Display for SealedSaltError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SealedSaltError::TooShort { got, min } => write!(
+                f,
+                "[SALT_TOO_SHORT] sealed-seed salt must be at least {min} bytes (got {got})"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for SealedSaltError {}
+
+/// A validated sealed-seed salt: at least [`MIN_SEALED_SALT_BYTES`] bytes, and structurally
+/// prevented from escaping into anything an entrant can read.
+///
+/// The sealed-seed argument rests on two properties of the salt, entropy and secrecy, and
+/// before this type both were conventions a caller could quietly break. The length floor
+/// lived only in the pyo3 binding, so the Rust and WASM surfaces derived from a passphrase
+/// without complaint; and a bare `&[u8]` reachable from a [`ScenarioSpec`]-adjacent call
+/// site could be printed, serialized, or folded into a golden fingerprint by accident.
+///
+/// So: deliberately no `Serialize`, no `Display`, no `Deref`, no `Clone`, and a redacting
+/// [`Debug`](std::fmt::Debug) that prints the length and nothing else. The bytes leave only
+/// through [`expose`](Self::expose), which is the single greppable place where the salt
+/// crosses a trust boundary. The buffer is scrubbed on drop.
+pub struct SealedSalt(Vec<u8>);
+
+impl SealedSalt {
+    /// Validate `bytes` as a salt, rejecting anything shorter than
+    /// [`MIN_SEALED_SALT_BYTES`]. This is the one constructor, so every surface that
+    /// reaches [`sealed_seed`] inherits the floor from here.
+    pub fn new(bytes: &[u8]) -> Result<Self, SealedSaltError> {
+        if bytes.len() < MIN_SEALED_SALT_BYTES {
+            return Err(SealedSaltError::TooShort {
+                got: bytes.len(),
+                min: MIN_SEALED_SALT_BYTES,
+            });
+        }
+        Ok(Self(bytes.to_vec()))
+    }
+
+    /// Borrow the salt bytes. The only accessor; each call site is a reviewable point
+    /// where the secret leaves the type's protection.
+    pub fn expose(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for SealedSalt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "SealedSalt(<redacted, {} bytes>)", self.0.len())
+    }
+}
+
+impl Drop for SealedSalt {
+    fn drop(&mut self) {
+        self.0.fill(0);
+        // Best-effort scrub. The crate is `forbid(unsafe_code)` and carries no crypto
+        // dependency, so the volatile write a zeroize crate would use is unavailable;
+        // `black_box` makes the buffer opaque to the optimizer instead, which is what
+        // keeps the fill from being treated as dead.
+        std::hint::black_box(&self.0);
+    }
+}
 
 /// SplitMix64's output finalizer (the `next_unit` mixing step without the state
 /// increment): an invertible 64-bit bijection with full avalanche.
@@ -547,7 +625,8 @@ fn mix64(mut z: u64) -> u64 {
 /// after the evaluation so the run replays, and never reused. Operators who need
 /// resistance to salt recovery from disclosed seeds should derive the salt per evaluation
 /// from a real KDF and treat this function as the final band-mapping step only.
-pub fn sealed_seed(salt: &[u8], slot: u64) -> u64 {
+pub fn sealed_seed(salt: &SealedSalt, slot: u64) -> u64 {
+    let salt = salt.expose();
     const DOMAIN: u64 = 0x5365_616C_6564_4576; // "SealedEv"
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for &b in salt {
@@ -1147,31 +1226,76 @@ mod tests {
     const SALT_A: &[u8] = b"operator-secret-salt-A-0123456789";
     const SALT_B: &[u8] = b"operator-secret-salt-B-0123456789";
 
+    fn salt(bytes: &[u8]) -> SealedSalt {
+        SealedSalt::new(bytes).expect("test salt must clear the length floor")
+    }
+
     #[test]
     fn sealed_seed_lands_in_held_out_band() {
         for slot in 0..256u64 {
-            for salt in [SALT_A, SALT_B, b"x".as_slice(), b"".as_slice()] {
-                assert!(sealed_seed(salt, slot) >= EVAL_SEED_BASE);
+            for bytes in [SALT_A, SALT_B, &[0u8; MIN_SEALED_SALT_BYTES][..]] {
+                assert!(sealed_seed(&salt(bytes), slot) >= EVAL_SEED_BASE);
             }
         }
     }
 
     #[test]
+    fn sealed_salt_rejects_short_salts() {
+        for len in 0..MIN_SEALED_SALT_BYTES {
+            let short = vec![7u8; len];
+            let err = SealedSalt::new(&short)
+                .err()
+                .unwrap_or_else(|| panic!("a {len}-byte salt must be refused"));
+            assert_eq!(
+                err,
+                SealedSaltError::TooShort {
+                    got: len,
+                    min: MIN_SEALED_SALT_BYTES,
+                }
+            );
+        }
+        assert!(SealedSalt::new(&[7u8; MIN_SEALED_SALT_BYTES]).is_ok());
+    }
+
+    #[test]
+    fn sealed_salt_debug_does_not_leak_the_salt() {
+        // A distinctive salt so any pass-through of the bytes, in any textual encoding
+        // Debug might reach for, shows up as a substring.
+        let bytes = b"SECRETSALTMATERIAL-abcdef".as_slice();
+        let rendered = format!("{:?}", salt(bytes));
+        assert!(
+            !rendered.contains("SECRETSALTMATERIAL"),
+            "Debug leaked the salt: {rendered}"
+        );
+        assert!(
+            !rendered.contains(&format!("{bytes:?}")),
+            "Debug leaked the byte slice: {rendered}"
+        );
+        assert_eq!(
+            rendered,
+            format!("SealedSalt(<redacted, {} bytes>)", bytes.len())
+        );
+    }
+
+    #[test]
     fn sealed_seed_is_deterministic() {
         for slot in 0..64u64 {
-            assert_eq!(sealed_seed(SALT_A, slot), sealed_seed(SALT_A, slot));
+            assert_eq!(
+                sealed_seed(&salt(SALT_A), slot),
+                sealed_seed(&salt(SALT_A), slot)
+            );
         }
         // Pinned value: the Python tests assert the same number, so a change to the
         // derivation is a contract change (a sealed evaluation would stop replaying).
-        assert_eq!(sealed_seed(SALT_A, 0), 0x040a_380d_f918_05c2);
+        assert_eq!(sealed_seed(&salt(SALT_A), 0), 0x040a_380d_f918_05c2);
     }
 
     #[test]
     fn sealed_seed_is_salt_and_slot_sensitive() {
         let mut seen = std::collections::HashSet::new();
         for slot in 0..64u64 {
-            let a = sealed_seed(SALT_A, slot);
-            let b = sealed_seed(SALT_B, slot);
+            let a = sealed_seed(&salt(SALT_A), slot);
+            let b = sealed_seed(&salt(SALT_B), slot);
             assert_ne!(a, b, "salts must not collide at slot {slot}");
             assert!(seen.insert(a), "slot collision under salt A at {slot}");
             assert!(seen.insert(b), "slot collision under salt B at {slot}");
@@ -1180,12 +1304,18 @@ mod tests {
         let mut flipped = SALT_A.to_vec();
         flipped[0] ^= 1;
         for slot in 0..16u64 {
-            assert_ne!(sealed_seed(SALT_A, slot), sealed_seed(&flipped, slot));
+            assert_ne!(
+                sealed_seed(&salt(SALT_A), slot),
+                sealed_seed(&salt(&flipped), slot)
+            );
         }
         // The length fold distinguishes a salt from its zero-extended form.
         let mut extended = SALT_A.to_vec();
         extended.push(0);
-        assert_ne!(sealed_seed(SALT_A, 0), sealed_seed(&extended, 0));
+        assert_ne!(
+            sealed_seed(&salt(SALT_A), 0),
+            sealed_seed(&salt(&extended), 0)
+        );
     }
 
     #[test]
@@ -1196,7 +1326,7 @@ mod tests {
             ..ScenarioSpec::default()
         };
         for slot in 0..64u64 {
-            let s = sealed_seed(SALT_A, slot);
+            let s = sealed_seed(&salt(SALT_A), slot);
             assert!(s >= train.start_level + train.num_levels);
         }
     }
@@ -1207,7 +1337,7 @@ mod tests {
         // whole 2^64 band, so none of these should fall inside any such window at the
         // base (probability 2^-48 per seed).
         for slot in 0..64u64 {
-            let s = sealed_seed(SALT_A, slot);
+            let s = sealed_seed(&salt(SALT_A), slot);
             assert!(s - EVAL_SEED_BASE >= 1 << 16);
         }
     }
@@ -1215,7 +1345,7 @@ mod tests {
     #[test]
     fn sealed_seed_generates_a_valid_scenario() {
         let spec = ScenarioSpec::default();
-        let seed = sealed_seed(SALT_A, 3);
+        let seed = sealed_seed(&salt(SALT_A), 3);
         let a = serde_json::to_string(&generate_scenario(&spec, seed)).unwrap();
         let b = serde_json::to_string(&generate_scenario(&spec, seed)).unwrap();
         assert_eq!(a, b);

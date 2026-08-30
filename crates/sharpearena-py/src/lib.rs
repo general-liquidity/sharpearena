@@ -755,14 +755,9 @@ fn mandate_breach(mandate_json: &str, returns: Vec<f64>, weights: Vec<Vec<f64>>)
 /// `MIN_SEALED_SALT_BYTES`: the derivation is only as unguessable as the salt.
 #[pyfunction]
 fn sealed_seed(salt: &[u8], slot: u64) -> PyResult<u64> {
-    if salt.len() < sharpearena::MIN_SEALED_SALT_BYTES {
-        return Err(PyValueError::new_err(format!(
-            "sealed-seed salt must be at least {} bytes (got {})",
-            sharpearena::MIN_SEALED_SALT_BYTES,
-            salt.len()
-        )));
-    }
-    Ok(sharpearena::sealed_seed(salt, slot))
+    let salt = sharpearena::SealedSalt::new(salt)
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    Ok(sharpearena::sealed_seed(&salt, slot))
 }
 
 /// Generate a procedural scenario and return the native engine's own serde-JSON
