@@ -133,6 +133,7 @@ const VOL_FACTOR_CAP: f64 = 3.0;
 /// dimensionless (for the declared `beta`) and comparable when the share/notional unit is
 /// rescaled.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MarketParams {
     /// Kyle's permanent price-impact coefficient (per unit normalized net flow).
     pub lambda: f64,
@@ -216,6 +217,7 @@ pub struct ImpactCoefficients {
 /// resolved coefficients are floored at zero, since a negative impact coefficient would
 /// turn execution into a rebate, which is not a market this model describes.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct EllipticUncertaintySet {
     /// Half-width `a` of the plausible range of Kyle's `lambda`, in `lambda`'s own units.
     pub lambda_radius: f64,

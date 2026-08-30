@@ -40,6 +40,7 @@ fn parse_or_default<T: serde::de::DeserializeOwned + Default>(json: &str) -> Res
 /// JSON view of [`CostModel`]; every field is optional and falls back to the engine
 /// default, so `{}` (or a blank string) is the realistic default cost model.
 #[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 struct CostsInput {
     fee_bps: Option<f64>,
     slippage_bps: Option<f64>,
@@ -72,6 +73,7 @@ fn parse_costs(json: &str) -> Result<CostModel, String> {
 /// Synthetic-dataset parameters. Defaults give a 4-symbol × 120-day mildly
 /// momentum-autocorrelated panel (`seed = 0`).
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct SyntheticParams {
     #[serde(default = "d_symbols")]
     n_symbols: usize,
@@ -108,6 +110,7 @@ impl SyntheticParams {
 /// text (`date,symbol,close[,dividend]`). If both are absent, a default synthetic
 /// panel is used; `csv` takes precedence when present.
 #[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 struct DatasetSource {
     #[serde(default)]
     synthetic: Option<SyntheticParams>,
@@ -126,6 +129,7 @@ impl DatasetSource {
 
 /// JSON view of [`Window`] (half-open `[start, end)`).
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct WindowInput {
     start: usize,
     end: usize,
@@ -144,6 +148,7 @@ impl From<WindowInput> for Window {
 
 /// Config for [`run_baseline_json`].
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct BaselineConfig {
     /// `"buy_and_hold" | "hold" | "momentum" | "random"`.
     agent: String,
@@ -235,6 +240,7 @@ pub fn dataset_synthetic_json(params_json: &str) -> Result<String, String> {
 /// (blank → seed 0).
 pub fn stress_suite_json(params_json: &str) -> Result<String, String> {
     #[derive(Deserialize, Default)]
+    #[serde(deny_unknown_fields)]
     struct SeedInput {
         #[serde(default)]
         seed: u64,
@@ -251,6 +257,7 @@ pub fn stress_suite_json(params_json: &str) -> Result<String, String> {
 /// `{ "start": usize, "end": usize }`. Input `{ n_days, warmup, test, step }`.
 pub fn walk_forward_json(params_json: &str) -> Result<String, String> {
     #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
     struct WfParams {
         n_days: usize,
         warmup: usize,
@@ -269,6 +276,7 @@ pub fn walk_forward_json(params_json: &str) -> Result<String, String> {
 /// Input `{ "dataset": Dataset, "window": { start, end } }`.
 pub fn tag_regime_json(input_json: &str) -> Result<String, String> {
     #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
     struct TagInput {
         dataset: Dataset,
         window: WindowInput,
@@ -289,6 +297,7 @@ pub fn tag_regime_json(input_json: &str) -> Result<String, String> {
 /// across every runtime (the cross-runtime generalization-reproducibility guarantee).
 pub fn generate_scenario_json(input_json: &str) -> Result<String, String> {
     #[derive(Deserialize, Default)]
+    #[serde(deny_unknown_fields)]
     struct GenInput {
         #[serde(default)]
         spec: ScenarioSpec,
@@ -407,6 +416,36 @@ mod wasm {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The wasm config blobs are the operator's whole interface to this crate, and every
+    /// field has a default, so before `deny_unknown_fields` a misspelled knob ran the
+    /// default configuration and reported a clean result for a run nobody requested.
+    #[test]
+    fn baseline_config_refuses_unknown_fields() {
+        let good = r#"{"agent":"momentum","seed":3,"momentum_lookback":5}"#;
+        assert!(run_baseline_json(good).is_ok());
+
+        // A misspelled live field.
+        let typo = r#"{"agent":"momentum","seed":3,"momentum_lookbak":5}"#;
+        assert!(
+            run_baseline_json(typo).is_err(),
+            "a misspelled field silently defaulted"
+        );
+
+        // A field this crate never had.
+        let extra = r#"{"agent":"momentum","seed":3,"retired_knob":1}"#;
+        assert!(
+            run_baseline_json(extra).is_err(),
+            "an unknown field silently deserialized"
+        );
+
+        // Nested config blobs are closed too.
+        let nested = r#"{"agent":"momentum","costs":{"fee_bp":2.0}}"#;
+        assert!(
+            run_baseline_json(nested).is_err(),
+            "a misspelled nested field silently defaulted"
+        );
+    }
 
     #[test]
     fn run_baseline_buy_and_hold_produces_a_run() {

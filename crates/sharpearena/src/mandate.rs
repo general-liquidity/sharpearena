@@ -62,6 +62,7 @@ impl MandateStyle {
 /// rendering shown to the model. The plain-JSON form round-trips through a trace/replay;
 /// `max_inventory` is `#[serde(default)]` so older traces (without the key) still parse.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Mandate {
     pub style: MandateStyle,
     #[serde(default)]

@@ -54,6 +54,7 @@ pub enum DistributionMode {
 /// the latter how much of it the agent is shown. Together they span a `(regime × richness)`
 /// grid (see [`ObservationRichness`]).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ScenarioSpec {
     pub start_level: u64,
     /// Size of the legal seed interval; `0` means unbounded.
@@ -1219,6 +1220,36 @@ mod tests {
             let b = serde_json::to_string(&generate_scenario(&out_dist, seed)).unwrap();
             assert_ne!(a, b, "cross-regime panels must differ at seed {seed}");
         }
+    }
+
+    // -- closed deserialization ----------------------------------------------------------
+
+    /// A `ScenarioSpec` field the caller misspells (or a field the crate has since retired)
+    /// must be a hard error, not a silent fall-back to the default. Every knob on this
+    /// struct moves the generated tape, so a typo that deserializes is a published number
+    /// computed from a configuration nobody asked for.
+    #[test]
+    fn scenario_spec_refuses_unknown_fields() {
+        let canonical = serde_json::to_string(&ScenarioSpec::default()).unwrap();
+        assert!(serde_json::from_str::<ScenarioSpec>(&canonical).is_ok());
+
+        // A misspelling of a live field.
+        let typo = canonical.replace("\"vol_clustering\"", "\"vol_clusering\"");
+        assert_ne!(
+            typo, canonical,
+            "the fixture must actually contain the field"
+        );
+        assert!(
+            serde_json::from_str::<ScenarioSpec>(&typo).is_err(),
+            "a misspelled field silently defaulted"
+        );
+
+        // A field this crate never had (a retired knob, or a newer writer's).
+        let extra = format!("{{\"retired_knob\": 1.0, {}", &canonical[1..]);
+        assert!(
+            serde_json::from_str::<ScenarioSpec>(&extra).is_err(),
+            "an unknown field silently deserialized"
+        );
     }
 
     // -- sealed evaluation seeds ---------------------------------------------------------

@@ -54,6 +54,7 @@ pub struct RestingOrder {
 /// One agent order. `Limit`/`Market` carry their own side; `Cancel`/`Modify` reference a
 /// resting order by id (side and price are recovered from the book).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub enum OrderKind {
     Limit {
         side: Side,

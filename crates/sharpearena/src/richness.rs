@@ -30,6 +30,7 @@ pub const DEFAULT_LOOKBACK: usize = 20;
 /// the pre-existing disclosure (a [`DEFAULT_LOOKBACK`]-bar history with no optional fields),
 /// so the default path is byte-identical.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ObservationRichness {
     /// Trailing closes surfaced per symbol (overrides the historical fixed lookback). Fewer
     /// bars is a data-poorer, harder observation; more bars a richer, easier one.
