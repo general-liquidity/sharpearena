@@ -547,3 +547,80 @@ def test_writer_records_a_dirty_generation_honestly_but_checker_refuses_it(
     checked = _run("check-provenance.py", tree)
     assert checked.returncode == 1
     assert "generation: DIRTY" in checked.stdout
+
+
+# --- the atomic manifest write ------------------------------------------------------------
+
+
+def test_write_atomic_writes_lf_only_bytes(tmp_path: Path) -> None:
+    target = tmp_path / "manifest.json"
+    common.write_atomic(target, '{\n  "a": 1\n}\n')
+    raw = target.read_bytes()
+    assert b"\r\n" not in raw
+    assert raw == b'{\n  "a": 1\n}\n'
+
+
+def test_write_atomic_fsyncs_the_file_before_the_rename(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Durability is the entire point: a manifest whose bytes are still in the page cache
+    when the machine dies is exactly the truncated-manifest case this replaced."""
+
+    order: list[str] = []
+    real_fsync = os.fsync
+    real_replace = os.replace
+
+    def recording_fsync(fd):
+        order.append("fsync")
+        return real_fsync(fd)
+
+    def recording_replace(src, dst):
+        order.append("replace")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(os, "fsync", recording_fsync)
+    monkeypatch.setattr(os, "replace", recording_replace)
+    common.write_atomic(tmp_path / "manifest.json", "{}\n")
+
+    assert "replace" in order, "nothing was renamed into place"
+    assert order.index("fsync") < order.index("replace"), (
+        f"the file was renamed into place before it was fsynced: {order}"
+    )
+
+
+def test_write_atomic_keeps_the_old_file_and_no_debris_when_the_write_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "manifest.json"
+    target.write_bytes(b'{"old": true}\n')
+
+    def exploding_replace(src, dst):
+        raise OSError("disk went away")
+
+    monkeypatch.setattr(os, "replace", exploding_replace)
+    with pytest.raises(OSError):
+        common.write_atomic(target, '{"new": true}\n')
+
+    # The reader still sees a whole old manifest, not a truncated new one.
+    assert target.read_bytes() == b'{"old": true}\n'
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["manifest.json"], (
+        "the temp file was left behind"
+    )
+
+
+def test_write_atomic_does_not_collide_with_an_existing_temp_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two writers in one directory share a pid namespace at most by accident, but a
+    stale temp from a killed run is ordinary. O_EXCL plus the sequence number means the
+    writer steps past it instead of truncating whatever is there."""
+
+    target = tmp_path / "manifest.json"
+    monkeypatch.setattr(os, "getpid", lambda: 4242)
+    squatter = tmp_path / ".manifest.json.tmp.4242.0"
+    squatter.write_bytes(b"another writer's half-manifest")
+
+    common.write_atomic(target, '{"new": true}\n')
+
+    assert target.read_bytes() == b'{"new": true}\n'
+    assert squatter.read_bytes() == b"another writer's half-manifest"

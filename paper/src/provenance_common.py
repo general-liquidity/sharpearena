@@ -259,6 +259,72 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+def _fsync_directory(directory: Path) -> None:
+    """Persist the directory entry ``os.replace`` just rewrote.
+
+    Without it the rename can still be lost on a crash even though the file's own
+    contents were fsynced. Windows cannot open a directory handle for fsync at all
+    (there is no ``O_DIRECTORY``), so this is a POSIX-only durability step; the rename
+    itself is atomic on both.
+    """
+
+    if not hasattr(os, "O_DIRECTORY"):
+        return
+    handle = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(handle)
+    finally:
+        os.close(handle)
+
+
+def write_atomic(path: Path, text: str) -> None:
+    """Replace ``path`` with ``text`` so a reader sees the old file or the new one.
+
+    The manifest is the artifact the whole tamper-evidence argument rests on, and it was
+    written with a plain truncate-and-write: a crash, a full disk or a killed process
+    mid-write left a half-manifest where the validator expects one of two whole files,
+    and the failure looks like tampering rather than an interrupted write.
+
+    Written to an ``O_EXCL`` temp file in the destination directory (so the rename stays
+    on one filesystem), fsynced, then ``os.replace``d over the target and the parent
+    directory fsynced. The temp name carries the pid and a sequence number, so two
+    writers in the same directory cannot collide on it. Bytes are written in binary with
+    LF line endings on every platform, which is what ``.gitattributes`` pins for the
+    repository anyway. The temp file is removed on every failure path.
+    """
+
+    payload = text.encode("utf-8")
+    directory = path.parent
+    handle = None
+    for sequence in range(1024):
+        temporary = directory / f".{path.name}.tmp.{os.getpid()}.{sequence}"
+        try:
+            handle = os.open(
+                temporary,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
+                0o600,
+            )
+        except FileExistsError:
+            continue
+        break
+    if handle is None:
+        raise OSError(f"could not create a temp file next to {path}")
+
+    try:
+        with os.fdopen(handle, "wb") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    except BaseException:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
+    _fsync_directory(directory)
+
+
 def digest_bytes(data: bytes) -> str:
     """SHA-256 over `data`, with CRLF collapsed to LF unless it carries a NUL byte."""
     if b"\x00" not in data:

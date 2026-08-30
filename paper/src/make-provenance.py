@@ -36,6 +36,7 @@ from provenance_common import (
     sha256,
     snapshot_digest,
     working_tree_dirty,
+    write_atomic,
 )
 
 ROOT = repo_root()
@@ -125,7 +126,7 @@ manifest = {
     "artifacts": artifacts,
     "model_artifacts": model_artifacts,
 }
-OUT.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+write_atomic(OUT, json.dumps(manifest, indent=2, sort_keys=True) + "\n")
 print(
     f"wrote {OUT.relative_to(ROOT)}: {len(source_records)} sources, "
     f"{len(artifacts)} artifacts, {len(model_artifacts)} model artifact manifests"
