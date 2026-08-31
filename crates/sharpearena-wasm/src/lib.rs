@@ -328,6 +328,21 @@ mod goldens {
         h
     }
 
+    /// The committed pre-hash canonical JSON per golden name, so a mismatch is diagnosed
+    /// with a readable string diff *before* the fingerprint comparison. Every golden in
+    /// `scenario-goldens.json` must have one; a missing fixture is a hard failure.
+    pub fn pre_hash_fixture(name: &str) -> &'static str {
+        match name {
+            "calm_4x120_seed7" => include_str!(
+                "../../sharpearena/contract/attestation/pre-hash/scenario-calm-4x120-seed7.json"
+            ),
+            "hard_clustered_4x120_seed7" => include_str!(
+                "../../sharpearena/contract/attestation/pre-hash/scenario-hard-clustered-4x120-seed7.json"
+            ),
+            other => panic!("golden {other:?} has no committed pre-hash fixture"),
+        }
+    }
+
     /// The committed goldens as `(name, kernel input JSON, expected fingerprint)`.
     pub fn committed() -> Vec<(String, String, u64)> {
         const SOURCE: &str =
@@ -611,6 +626,11 @@ mod tests {
                 "{name}: wasm scenario kernel must reproduce the native generator byte-for-byte"
             );
             assert_eq!(
+                kernel,
+                goldens::pre_hash_fixture(name),
+                "{name}: kernel bytes drifted from the committed pre-hash fixture"
+            );
+            assert_eq!(
                 goldens::fnv1a64(kernel.as_bytes()),
                 *expected,
                 "{name}: cross-runtime golden fingerprint drifted from the committed pin"
@@ -635,6 +655,11 @@ mod wasm32_tests {
             assert!(
                 !out.starts_with("{\"error\""),
                 "{name}: the wasm32 export failed: {out}"
+            );
+            assert_eq!(
+                out,
+                super::goldens::pre_hash_fixture(&name),
+                "{name}: the wasm32 build's bytes drifted from the committed pre-hash fixture"
             );
             assert_eq!(
                 super::goldens::fnv1a64(out.as_bytes()),

@@ -14,6 +14,8 @@ tests must be updated together.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from sharpearena.sharpearena_py import (
@@ -31,6 +33,31 @@ GOLDEN_COINTEGRATED_4X120_SEED7_FNV1A = 0xA3D2_2742_4EF0_5868
 GOLDEN_REGIME_4X120_SEED7_FNV1A = 0x8B82_2CF3_C9D3_038F
 GOLDEN_HARD_CLUSTERED_4X120_SEED7_FNV1A = 0xA1D2_31F7_E114_A381
 GOLDEN_CALM_CALIBRATION_CANDIDATE_4X120_SEED7_FNV1A = 0x32A6_3F8E_5743_EC93
+
+
+# Committed pre-hash canonical JSON per golden (crates/sharpearena/contract/attestation/
+# pre-hash/). Compared BEFORE each fingerprint so a canonicalization regression fails
+# with a readable diff instead of two hex numbers.
+_PRE_HASH_DIR = (
+    Path(__file__).resolve().parents[2]
+    / "sharpearena"
+    / "contract"
+    / "attestation"
+    / "pre-hash"
+)
+
+
+def pre_hash_fixture(name: str) -> str:
+    return (_PRE_HASH_DIR / f"{name}.json").read_text(encoding="utf-8")
+
+
+_MODE_FIXTURES = {
+    "calm": "scenario-calm-4x120-seed7",
+    "hard": "scenario-hard-4x120-seed7",
+    "extreme": "scenario-extreme-4x120-seed7",
+    "cointegrated_pairs": "scenario-cointegrated-4x120-seed7",
+    "regime_shift": "scenario-regime-4x120-seed7",
+}
 
 
 def fnv1a(data: bytes) -> int:
@@ -55,10 +82,11 @@ def fnv1a(data: bytes) -> int:
 def test_scenario_fingerprint_matches_committed_golden(mode: str, golden: int) -> None:
     """The Calm/Hard/Extreme/structured 4x120 seed-7 scenarios generated through the
     Python binding must fingerprint to the goldens committed in the Rust crate."""
-    json_bytes = generate_scenario_json(
-        7, n_symbols=4, n_days=120, distribution_mode=mode
-    ).encode()
-    assert fnv1a(json_bytes) == golden, (
+    json_text = generate_scenario_json(7, n_symbols=4, n_days=120, distribution_mode=mode)
+    assert json_text == pre_hash_fixture(_MODE_FIXTURES[mode]), (
+        f"Python-surface bytes for {mode} drifted from the committed pre-hash fixture"
+    )
+    assert fnv1a(json_text.encode()) == golden, (
         f"Python-surface fingerprint for {mode} drifted from the committed "
         "scenario_gen.rs golden"
     )
@@ -67,17 +95,19 @@ def test_scenario_fingerprint_matches_committed_golden(mode: str, golden: int) -
 def test_clustered_scenario_fingerprint_matches_committed_golden() -> None:
     """The opt-in vol_clustering=0.5 Hard scenario must match its committed golden,
     the same value the wasm kernel asserts."""
-    json_bytes = generate_scenario_json(
+    json_text = generate_scenario_json(
         7, n_symbols=4, n_days=120, distribution_mode="hard", vol_clustering=0.5
-    ).encode()
-    assert fnv1a(json_bytes) == GOLDEN_HARD_CLUSTERED_4X120_SEED7_FNV1A
+    )
+    assert json_text == pre_hash_fixture("scenario-hard-clustered-4x120-seed7")
+    assert fnv1a(json_text.encode()) == GOLDEN_HARD_CLUSTERED_4X120_SEED7_FNV1A
 
 
 def test_calm_calibration_candidate_fingerprint_matches_committed_golden() -> None:
     """The pinned calm-calibration candidate preset (a reproducible negative-result
     configuration, not a certified preset) must match its committed golden."""
-    json_bytes = calm_calibration_candidate_scenario_json(7).encode()
-    assert fnv1a(json_bytes) == GOLDEN_CALM_CALIBRATION_CANDIDATE_4X120_SEED7_FNV1A
+    json_text = calm_calibration_candidate_scenario_json(7)
+    assert json_text == pre_hash_fixture("scenario-calm-calibration-candidate-4x120-seed7")
+    assert fnv1a(json_text.encode()) == GOLDEN_CALM_CALIBRATION_CANDIDATE_4X120_SEED7_FNV1A
 
 
 def test_scenario_json_is_deterministic_across_calls() -> None:

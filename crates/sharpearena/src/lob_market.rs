@@ -727,10 +727,24 @@ mod tests {
         tape
     }
 
+    /// The committed pre-hash canonical JSON of [`scripted_tape`]. Asserted *before* the
+    /// FNV fingerprint, so a canonicalization regression fails with a readable string
+    /// diff instead of two bare hex numbers.
+    const GOLDEN_TAPE_JSON: &str =
+        include_str!("../contract/attestation/pre-hash/lob-golden-tape.json");
+
     #[test]
     fn golden_tape_hash_is_stable() {
         let json = serde_json::to_string(&scripted_tape()).unwrap();
+        assert_eq!(json, GOLDEN_TAPE_JSON);
         assert_eq!(fnv1a(json.as_bytes()), GOLDEN_TAPE_FNV1A);
+    }
+
+    /// The committed fixture must itself hash to the committed fingerprint, so the two
+    /// pins cannot drift apart (editing one without the other turns this red).
+    #[test]
+    fn golden_tape_fixture_matches_its_fingerprint() {
+        assert_eq!(fnv1a(GOLDEN_TAPE_JSON.as_bytes()), GOLDEN_TAPE_FNV1A);
     }
 
     #[test]

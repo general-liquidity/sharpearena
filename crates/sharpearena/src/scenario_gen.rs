@@ -784,9 +784,68 @@ mod tests {
         assert_eq!(test.num_levels, 200);
     }
 
+    /// Committed pre-hash canonical JSON per pinned golden. Each golden test asserts
+    /// string equality against its fixture *before* the FNV fingerprint, so a
+    /// canonicalization regression fails with a readable diff instead of two hex numbers.
+    /// A companion test pins each fixture's own bytes to the committed fingerprint, so
+    /// the two representations cannot drift apart.
+    const PRE_HASH_FIXTURES: [(&str, u64); 7] = [
+        (
+            include_str!("../contract/attestation/pre-hash/scenario-calm-4x120-seed7.json"),
+            GOLDEN_CALM_4X120_SEED7_FNV1A,
+        ),
+        (
+            include_str!("../contract/attestation/pre-hash/scenario-hard-4x120-seed7.json"),
+            GOLDEN_HARD_4X120_SEED7_FNV1A,
+        ),
+        (
+            include_str!("../contract/attestation/pre-hash/scenario-extreme-4x120-seed7.json"),
+            GOLDEN_EXTREME_4X120_SEED7_FNV1A,
+        ),
+        (
+            include_str!(
+                "../contract/attestation/pre-hash/scenario-cointegrated-4x120-seed7.json"
+            ),
+            GOLDEN_COINTEGRATED_4X120_SEED7_FNV1A,
+        ),
+        (
+            include_str!("../contract/attestation/pre-hash/scenario-regime-4x120-seed7.json"),
+            GOLDEN_REGIME_4X120_SEED7_FNV1A,
+        ),
+        (
+            include_str!(
+                "../contract/attestation/pre-hash/scenario-hard-clustered-4x120-seed7.json"
+            ),
+            GOLDEN_HARD_CLUSTERED_4X120_SEED7_FNV1A,
+        ),
+        (
+            include_str!(
+                "../contract/attestation/pre-hash/scenario-calm-calibration-candidate-4x120-seed7.json"
+            ),
+            GOLDEN_CALM_CALIBRATION_CANDIDATE_4X120_SEED7_FNV1A,
+        ),
+    ];
+
+    /// Look up the committed pre-hash fixture by its pinned fingerprint.
+    fn pre_hash_fixture(fingerprint: u64) -> &'static str {
+        PRE_HASH_FIXTURES
+            .iter()
+            .find(|(_, fp)| *fp == fingerprint)
+            .map(|(json, _)| *json)
+            .expect("every pinned golden must have a committed pre-hash fixture")
+    }
+
+    #[test]
+    fn every_pre_hash_fixture_matches_its_fingerprint() {
+        for (json, fingerprint) in PRE_HASH_FIXTURES {
+            assert_eq!(fnv1a(json.as_bytes()), fingerprint);
+        }
+    }
+
     #[test]
     fn golden_hash_is_stable() {
         let json = serde_json::to_string(&generate_scenario(&golden_spec(), 7)).unwrap();
+        assert_eq!(json, pre_hash_fixture(GOLDEN_CALM_4X120_SEED7_FNV1A));
         assert_eq!(fnv1a(json.as_bytes()), GOLDEN_CALM_4X120_SEED7_FNV1A);
     }
 
@@ -802,6 +861,8 @@ mod tests {
         };
         let hj = serde_json::to_string(&generate_scenario(&hard, 7)).unwrap();
         let ej = serde_json::to_string(&generate_scenario(&extreme, 7)).unwrap();
+        assert_eq!(hj, pre_hash_fixture(GOLDEN_HARD_4X120_SEED7_FNV1A));
+        assert_eq!(ej, pre_hash_fixture(GOLDEN_EXTREME_4X120_SEED7_FNV1A));
         assert_eq!(fnv1a(hj.as_bytes()), GOLDEN_HARD_4X120_SEED7_FNV1A);
         assert_eq!(fnv1a(ej.as_bytes()), GOLDEN_EXTREME_4X120_SEED7_FNV1A);
     }
@@ -855,6 +916,8 @@ mod tests {
     fn golden_hash_structured_modes_stable() {
         let pj = serde_json::to_string(&generate_scenario(&coint_spec(), 7)).unwrap();
         let rj = serde_json::to_string(&generate_scenario(&regime_spec(), 7)).unwrap();
+        assert_eq!(pj, pre_hash_fixture(GOLDEN_COINTEGRATED_4X120_SEED7_FNV1A));
+        assert_eq!(rj, pre_hash_fixture(GOLDEN_REGIME_4X120_SEED7_FNV1A));
         assert_eq!(fnv1a(pj.as_bytes()), GOLDEN_COINTEGRATED_4X120_SEED7_FNV1A);
         assert_eq!(fnv1a(rj.as_bytes()), GOLDEN_REGIME_4X120_SEED7_FNV1A);
     }
@@ -995,6 +1058,10 @@ mod tests {
     fn golden_hash_clustered_hard_stable() {
         let json = serde_json::to_string(&generate_scenario(&clustered_hard_spec(), 7)).unwrap();
         assert_eq!(
+            json,
+            pre_hash_fixture(GOLDEN_HARD_CLUSTERED_4X120_SEED7_FNV1A)
+        );
+        assert_eq!(
             fnv1a(json.as_bytes()),
             GOLDEN_HARD_CLUSTERED_4X120_SEED7_FNV1A
         );
@@ -1020,6 +1087,10 @@ mod tests {
             7,
         ))
         .unwrap();
+        assert_eq!(
+            json,
+            pre_hash_fixture(GOLDEN_CALM_CALIBRATION_CANDIDATE_4X120_SEED7_FNV1A)
+        );
         assert_eq!(
             fnv1a(json.as_bytes()),
             GOLDEN_CALM_CALIBRATION_CANDIDATE_4X120_SEED7_FNV1A

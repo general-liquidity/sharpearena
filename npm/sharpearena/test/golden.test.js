@@ -41,9 +41,27 @@ test("the committed .wasm reproduces every cross-runtime scenario golden", () =>
     assert.ok(names.includes(required), `scenario-goldens.json must keep pinning ${required}`);
   }
 
+  // Committed pre-hash canonical JSON per golden name: compared BEFORE the fingerprint,
+  // so a canonicalization regression fails with a readable diff, not two hex numbers.
+  const PRE_HASH_FIXTURES = {
+    calm_4x120_seed7: "scenario-calm-4x120-seed7.json",
+    hard_clustered_4x120_seed7: "scenario-hard-clustered-4x120-seed7.json",
+  };
+
   for (const scenario of GOLDENS.scenarios) {
     const out = kernel.generate_scenario(JSON.stringify(scenario.input));
     assert.ok(!out.startsWith('{"error"'), `${scenario.name}: the wasm export failed: ${out}`);
+    const fixture = PRE_HASH_FIXTURES[scenario.name];
+    assert.ok(fixture, `${scenario.name}: golden has no committed pre-hash fixture`);
+    const expected = fs.readFileSync(
+      path.join(REPO, "crates/sharpearena/contract/attestation/pre-hash", fixture),
+      "utf8",
+    );
+    assert.equal(
+      out,
+      expected,
+      `${scenario.name}: the committed .wasm's bytes drifted from the pre-hash fixture`,
+    );
     assert.equal(
       fnv1a64(Buffer.from(out, "utf8")).toString(16),
       scenario.fnv1a64,
