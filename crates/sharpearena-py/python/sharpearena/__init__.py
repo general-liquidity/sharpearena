@@ -10,6 +10,20 @@ The native binding exchanges the language-agnostic wire JSON at its boundary:
 takes a decision JSON string. The pure-Python layers parse/build that JSON.
 """
 
+# Refuse-on-mismatch spec-hash handshake, before anything touches the engine: the
+# compiled extension must report the tape-semantics hash this package was generated
+# against, or every number it would produce is suspect (a stale .pyd in a dev venv is
+# exactly the "wasm from commit A, spec from commit B" failure, on the Python surface).
+from . import sharpearena_py as _engine_module
+from ._spec_hash import (
+    EXPECTED_SPEC_HASH,
+    SpecHashMismatch,
+    check_spec_hash,
+    engine_spec_hash,
+)
+
+check_spec_hash(engine_spec_hash(_engine_module))
+
 from .adverse_selection import (
     AdverseSelectionParams,
     AdverseSelectionReport,
@@ -320,6 +334,9 @@ __all__ = [
     "InvalidJson",
     "InvalidSalt",
     "SharpeArenaError",
+    "SpecHashMismatch",
+    "EXPECTED_SPEC_HASH",
+    "check_spec_hash",
     "score_run",
     "decision_schema_json",
     "validate_decision_json",

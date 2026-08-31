@@ -144,6 +144,16 @@ impl From<WindowInput> for Window {
     }
 }
 
+// --- spec_hash ----------------------------------------------------------------------------
+
+/// The engine's tape-semantics fingerprint (`sharpearena::SPEC_HASH_HEX`), for the
+/// wrapper's refuse-on-mismatch handshake: the npm package pins the hash its committed
+/// wasm was generated against and compares it to this value at load, so a stale bundle
+/// driven by a newer spec fails by name instead of computing a wrong number.
+pub fn spec_hash_json() -> String {
+    sharpearena::SPEC_HASH_HEX.to_string()
+}
+
 // --- run_baseline -------------------------------------------------------------------------
 
 /// Config for [`run_baseline_json`].
@@ -389,6 +399,11 @@ mod wasm {
     }
 
     #[wasm_bindgen]
+    pub fn spec_hash() -> String {
+        super::spec_hash_json()
+    }
+
+    #[wasm_bindgen]
     pub fn run_baseline(config_json: &str) -> String {
         wrap(super::run_baseline_json(config_json))
     }
@@ -459,6 +474,21 @@ mod tests {
         assert!(
             run_baseline_json(nested).is_err(),
             "a misspelled nested field silently defaulted"
+        );
+    }
+
+    /// The kernel's spec hash must be the committed cross-surface record — the same
+    /// value the npm wrapper pins against the committed .wasm.
+    #[test]
+    fn spec_hash_matches_the_committed_record() {
+        let committed: serde_json::Value = serde_json::from_str(include_str!(
+            "../../sharpearena/contract/attestation/spec-hash.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            spec_hash_json(),
+            committed["spec_hash"].as_str().unwrap(),
+            "engine spec hash drifted from contract/attestation/spec-hash.json"
         );
     }
 
@@ -685,6 +715,11 @@ mod wasm32_tests {
             dataset,
             "the wasm32 synthetic dataset is not reproducible"
         );
+    }
+
+    #[wasm_bindgen_test]
+    fn exported_spec_hash_matches_the_engine() {
+        assert_eq!(crate::wasm::spec_hash(), sharpearena::SPEC_HASH_HEX);
     }
 
     #[wasm_bindgen_test]

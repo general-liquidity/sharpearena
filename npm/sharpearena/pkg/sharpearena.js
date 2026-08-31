@@ -87,6 +87,23 @@ function run_baseline(config_json) {
 exports.run_baseline = run_baseline;
 
 /**
+ * @returns {string}
+ */
+function spec_hash() {
+    let deferred1_0;
+    let deferred1_1;
+    try {
+        const ret = wasm.spec_hash();
+        deferred1_0 = ret[0];
+        deferred1_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+    }
+}
+exports.spec_hash = spec_hash;
+
+/**
  * @param {string} params_json
  * @returns {string}
  */

@@ -9,6 +9,8 @@ export function replay_run(dataset_json: string, trajectory_json: string, costs_
 
 export function run_baseline(config_json: string): string;
 
+export function spec_hash(): string;
+
 export function stress_suite(params_json: string): string;
 
 export function tag_regime(input_json: string): string;

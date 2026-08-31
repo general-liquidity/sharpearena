@@ -10,6 +10,8 @@
  */
 import * as kernel from "../pkg/sharpearena.js";
 
+import { checkSpecHash, SPEC_HASH } from "./specHash.js";
+
 import type {
   BaselineConfig,
   CostModel,
@@ -24,6 +26,18 @@ import type {
 } from "./types.js";
 
 export * from "./types.js";
+export { checkSpecHash, SPEC_HASH } from "./specHash.js";
+
+// Refuse-on-mismatch spec-hash handshake, at load: the committed wasm bundle must
+// report the tape-semantics hash this wrapper was generated against, or every number
+// it would produce is suspect. `spec_hash` is read leniently so an engine that
+// predates the handshake is diagnosed by name, not dropped as malformed.
+checkSpecHash(
+  typeof (kernel as { spec_hash?: () => string }).spec_hash === "function"
+    ? (kernel as { spec_hash: () => string }).spec_hash()
+    : undefined,
+  SPEC_HASH,
+);
 
 /** Parse a kernel JSON string, surfacing the kernel's `{error}` as a thrown Error. */
 function parse<T>(json: string): T {

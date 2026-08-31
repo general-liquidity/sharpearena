@@ -5,6 +5,7 @@ export const dataset_synthetic: (a: number, b: number) => [number, number];
 export const generate_scenario: (a: number, b: number) => [number, number];
 export const replay_run: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
 export const run_baseline: (a: number, b: number) => [number, number];
+export const spec_hash: () => [number, number];
 export const stress_suite: (a: number, b: number) => [number, number];
 export const tag_regime: (a: number, b: number) => [number, number];
 export const walk_forward: (a: number, b: number) => [number, number];

@@ -25,6 +25,11 @@
 pub mod contract;
 pub use contract::CONTRACT_VERSION;
 
+// --- Cross-surface tape-semantics fingerprint (refuse-on-mismatch handshake) ---------------
+
+pub mod spec_hash;
+pub use spec_hash::{SPEC_HASH, SPEC_HASH_HEX};
+
 // --- Seeded procedural scenario generation (Procgen-style seed intervals) ------------------
 
 pub mod scenario_gen;

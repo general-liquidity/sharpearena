@@ -1,0 +1,15 @@
+{
+  "note": "Cross-surface tape-semantics fingerprint. crates/sharpearena/build.rs computes FNV-1a/64 over the CRLF-normalized bytes of the spec files below, seeded with the epoch, and compiles it into sharpearena::SPEC_HASH. The npm/TS wrapper (npm/sharpearena/src/specHash.ts) and the pure-Python package (crates/sharpearena-py/python/sharpearena/_spec_hash.py) pin this value and refuse to construct against an engine reporting a different one, so a stale wasm bundle or pyo3 extension is diagnosed by name instead of computing a wrong number. FNV-1a (not a std hasher) so the value reproduces across toolchains and platforms.",
+  "algorithm": "fnv1a-64 over file bytes with every CR (0x0D) dropped, seeded with fnv1a-64(offset_basis, epoch)",
+  "epoch": "spec-epoch-1",
+  "files": [
+    "src/contract.rs",
+    "src/exec_noise.rs",
+    "src/lob_market.rs",
+    "src/mandate.rs",
+    "src/market.rs",
+    "src/richness.rs",
+    "src/scenario_gen.rs"
+  ],
+  "spec_hash": "2d912913eedd333e"
+}

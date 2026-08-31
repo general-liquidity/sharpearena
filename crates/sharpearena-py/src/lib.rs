@@ -867,6 +867,16 @@ fn _raise_coded(code: &str, message: &str) -> PyResult<()> {
     Err(relay_err(code, message))
 }
 
+/// The engine's tape-semantics fingerprint (`sharpearena::SPEC_HASH_HEX`, compiled in
+/// by the core crate's `build.rs` over the tape-defining sources). The pure-Python
+/// package pins the hash it was generated against and compares it to this value at
+/// import, so a stale compiled extension driven by newer Python sources (or vice
+/// versa) refuses by name instead of computing a wrong number.
+#[pyfunction]
+fn spec_hash() -> &'static str {
+    sharpearena::SPEC_HASH_HEX
+}
+
 /// Derive the held-out seed for eval slot `slot` under a secret `salt` (see
 /// `sharpearena::sealed_seed`). Always `>= EVAL_SEED_BASE`, so disjointness from the
 /// train band holds without knowing the salt. Rejects salts shorter than
@@ -1350,6 +1360,7 @@ fn sharpearena_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(mandate_breach, m)?)?;
     m.add_function(wrap_pyfunction!(perturb_action, m)?)?;
     m.add_function(wrap_pyfunction!(sealed_seed, m)?)?;
+    m.add_function(wrap_pyfunction!(spec_hash, m)?)?;
     m.add_function(wrap_pyfunction!(_raise_coded, m)?)?;
     m.add_function(wrap_pyfunction!(generate_scenario_json, m)?)?;
     m.add_function(wrap_pyfunction!(
