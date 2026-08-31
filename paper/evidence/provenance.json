@@ -122,7 +122,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "09eca119d1f652df5e06cfc8a3b6b2aec5b245ea",
+  "generated_at_head": "00d01ccb0db09f8580f73853755347713dbfd7f0",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -168,7 +168,11 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/__init__.py",
-      "sha256": "e93bacce5633c4b9b9a3a3ae6595115813323d2476511954fb1d0aee68ea6f05"
+      "sha256": "64a0bc3469888b2155ae995f0cca4246c78740fdb96e873956a6188968ee59f9"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/_spec_hash.py",
+      "sha256": "e692f7ea23a148bf99302fbb953de5bbc945de823a0049ac9024e57a47fc761f"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/adverse_selection.py",
@@ -284,7 +288,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/local_field_cli.py",
-      "sha256": "995a0d108e77b54407b1ad5a38928401632b79942779eb24b3df5c9c1a81c91e"
+      "sha256": "92df4df3a5f2ee515aedb00830db962aedc27d318100354916167dae0e1e3936"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/lookahead_guard.py",
@@ -392,7 +396,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/strategy_cli.py",
-      "sha256": "fa275cf1a284496eece933e391e0f8e86e9553baa512f3e3ce6f53fb6d84d9db"
+      "sha256": "43de9c6d013d872563dd81d97616e671b320073066858d7e3579ed97b98f57b9"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/strategy_generation.py",
@@ -424,7 +428,7 @@
     },
     {
       "path": "crates/sharpearena-py/src/lib.rs",
-      "sha256": "96b25453183bf317e0716769cee4fca1904e981768a6900d1bdab8a344c38103"
+      "sha256": "2860dafc52daf540f2621a48b5f0985f6956ad182c5370f534b9ffa5b0fd481e"
     },
     {
       "path": "crates/sharpearena-wasm/Cargo.toml",
@@ -432,11 +436,15 @@
     },
     {
       "path": "crates/sharpearena-wasm/src/lib.rs",
-      "sha256": "427e25875f095a51739ed395fde3a4d5ccdc3ef1e619b2363b40b53aced00e59"
+      "sha256": "374ce10866d31b4628664204848fe63f171f89645385c4c746653dd40bea9e45"
     },
     {
       "path": "crates/sharpearena/Cargo.toml",
       "sha256": "4ce28cbb5bc2ea7a72262bae78d75b3f56d912f1a218aa492b6cb0a77185dd1c"
+    },
+    {
+      "path": "crates/sharpearena/build.rs",
+      "sha256": "f207b9b5cbfd03dd9285d505365e09109922f2c587c6984d83d14fbe370acc58"
     },
     {
       "path": "crates/sharpearena/examples/bench-steps.rs",
@@ -468,11 +476,11 @@
     },
     {
       "path": "crates/sharpearena/src/lib.rs",
-      "sha256": "e6497e7120c334f0693e5cdde23ca35e7bb3811390cd354eaafa5d2efc78d542"
+      "sha256": "555a61daeb54af5462e79a8653f87ae1945ce540322f8fa73c89b588581fcf43"
     },
     {
       "path": "crates/sharpearena/src/lob_market.rs",
-      "sha256": "5585d2195ca886160707d6ff4e996639728c37fe2d897cccdf88114e19c39122"
+      "sha256": "69c8e87d92d7a01fbeee6a7476397bbf4751df91e3a8ed7c3c5af9b3df1926ef"
     },
     {
       "path": "crates/sharpearena/src/mandate.rs",
@@ -488,7 +496,11 @@
     },
     {
       "path": "crates/sharpearena/src/scenario_gen.rs",
-      "sha256": "050ae9f9e8a7859a9387460dec45d38be12b87f477a8b31fe2fe786756f4da48"
+      "sha256": "9f3d27b170aa59667bde3a4e4fce1f1cc8c8843e97127b028a58c6c94af091f2"
+    },
+    {
+      "path": "crates/sharpearena/src/spec_hash.rs",
+      "sha256": "a1b4410896646b27d2f1aa9d36658d076289561254629fcad4e4fc01014b4eb4"
     },
     {
       "path": "crates/sharpearena/src/transport_gate.rs",
@@ -501,6 +513,10 @@
     {
       "path": "crates/sharpearena/tests/conformance.rs",
       "sha256": "dd1e9493b69ffc51467ca42a327f818a8713ec2c3c1bc2e3088b0e5a9711a664"
+    },
+    {
+      "path": "crates/sharpearena/tests/error_style.rs",
+      "sha256": "83ab08992a7301673cb42f1e1c153c540179e14c46c3a8f73c78211b0e8121dd"
     },
     {
       "path": "crates/sharpearena/tests/smoke.rs",
@@ -662,6 +678,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "30104c89ed6ef8966648a27bcc505570983b23c8b3d93e271540dd3bcc88fe7b",
+  "source_snapshot_sha256": "b41f60fe7dbc25f4b49ca2feac3d92d8b5d1693598cb71cb7e690547292e68c3",
   "validator": "paper/src/check-provenance.py"
 }
