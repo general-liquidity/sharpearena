@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Optional, Sequence
 
 from .local_agents import DatasetSpec, ModelRunConfig, OllamaClient, SamplingConfig
+from .local_field_cli import _resolve_csv_path
 from .strategy_generation import (
     OllamaStrategyGenerator,
     StrategySearchPlan,
@@ -73,7 +74,7 @@ def _dataset(payload: dict[str, Any], base: Path) -> DatasetSpec:
     _reject_unknown(item, _DATASET_FIELDS, "dataset")
     csv_path = item.pop("csv_path", None)
     if csv_path is not None:
-        item["csv_text"] = (base / str(csv_path)).resolve().read_text(encoding="utf-8")
+        item["csv_text"] = _resolve_csv_path(base, csv_path).read_text(encoding="utf-8")
     return DatasetSpec(**item)
 
 

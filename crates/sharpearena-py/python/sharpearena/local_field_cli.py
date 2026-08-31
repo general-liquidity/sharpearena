@@ -79,6 +79,30 @@ def _reject_unknown(payload: dict, allowed: set[str], path: str) -> None:
         raise ValueError(f"{path} has unknown fields: {sorted(unknown)}")
 
 
+def _resolve_csv_path(plan_dir: Path, csv_path: object) -> Path:
+    """Resolve a plan-embedded ``csv_path`` strictly inside the plan's directory.
+
+    A field plan is a document that travels (shared, downloaded, committed), so a
+    path inside it is not the operator's own keyboard input: an absolute path or a
+    ``..`` escape would let a hostile plan read an arbitrary file into ``csv_text``
+    and from there into the evidence artifact. ``resolve()`` runs before the
+    containment check, so a symlink inside the plan directory pointing outside it
+    is refused too.
+    """
+    candidate = Path(str(csv_path))
+    if candidate.is_absolute():
+        raise ValueError(
+            f"csv_path must be relative to the plan directory (got absolute path {csv_path!r})"
+        )
+    root = plan_dir.resolve()
+    resolved = (root / candidate).resolve()
+    if not resolved.is_relative_to(root):
+        raise ValueError(
+            f"csv_path escapes the plan directory: {csv_path!r} resolves to {resolved}"
+        )
+    return resolved
+
+
 def load_plan(path: Path) -> FieldPlan:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
@@ -115,7 +139,7 @@ def load_plan(path: Path) -> FieldPlan:
         _reject_unknown(item, _DATASET_FIELDS, f"datasets[{index}]")
         csv_path = item.pop("csv_path", None)
         if csv_path is not None:
-            resolved = (path.parent / csv_path).resolve()
+            resolved = _resolve_csv_path(path.parent, csv_path)
             item["csv_text"] = resolved.read_text(encoding="utf-8")
         datasets.append(DatasetSpec(**item))
     return FieldPlan(
