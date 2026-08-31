@@ -73,8 +73,34 @@ mod tests {
         }
         assert_eq!(
             doc["files"].as_array().unwrap().len(),
-            7,
+            8,
             "spec-hash.json file count drifted from build.rs SPEC_FILES"
         );
+    }
+
+    #[test]
+    fn suite_dependencies_that_feed_tape_semantics_are_exact_pinned() {
+        let manifest = include_str!("../Cargo.toml");
+        for dependency in [
+            "sharpebench-sim",
+            "sharpebench-protocol",
+            "sharpebench-core",
+            "sharpebench-attest",
+        ] {
+            let line = manifest
+                .lines()
+                .find(|line| line.starts_with(&format!("{dependency} = ")))
+                .unwrap_or_else(|| panic!("{dependency} is missing from Cargo.toml"));
+            let requirement = line
+                .split_once('=')
+                .expect("a dependency line has an equals sign")
+                .1
+                .trim();
+            assert!(
+                requirement.starts_with("\"="),
+                "{dependency} must be exact-pinned because Cargo.toml, not the resolved registry \
+                 source, is the dependency input bound into SPEC_HASH; found {requirement}"
+            );
+        }
     }
 }

@@ -428,6 +428,66 @@ def next_version(current: str, bump: str) -> str:
     raise ReleaseError("bump must be patch, minor, major, or MAJOR.MINOR.PATCH")
 
 
+def unreleased_section(text: str) -> str:
+    """The complete body of the ``[Unreleased]`` section.
+
+    Keeping the subheadings here matters for the pushed-base check: two sections with
+    the same bullets under different categories are not the same release notes.
+    ``read_text`` and ``git show`` both reach this helper with normalized newlines, so
+    a byte-for-byte body comparison is stable across Windows and CI checkouts.
+    """
+    heading = "## [Unreleased]\n"
+    parts = text.split(heading, 1)
+    if len(parts) != 2:
+        return ""
+    section = parts[1]
+    for index, line in enumerate(section.splitlines()):
+        if line.startswith("## "):
+            section = "\n".join(section.splitlines()[:index])
+            break
+    return section.strip()
+
+
+def unreleased_entries(text: str) -> list[str]:
+    """The substantive entry lines of the ``[Unreleased]`` section.
+
+    A bare ``### Changed`` subheading with nothing under it is structure, not content,
+    so it does not satisfy the non-empty release guard.
+    """
+    section = unreleased_section(text)
+    return [
+        line
+        for line in section.splitlines()
+        if line.strip()
+        and not line.lstrip().startswith("#")
+        and re.match(r"^\[[^\]]+\]: \S", line) is None
+    ]
+
+
+def require_pushed_changelog(root: Path, base: str) -> None:
+    """Refuse a cut whose release notes exist only in the operator's checkout.
+
+    The cut runs in a throwaway worktree checked out from ``base``, so the section it
+    promotes is the one already on the base branch, not the one the operator has open
+    in the editor. Entries written locally and not yet pushed are invisible to it,
+    which is the mechanism by which v0.21.0 promoted an empty section.
+
+    Comparing is the fix rather than reading the working copy into the release: the
+    release tree stays exactly the fetched base commit, so a dirty or stale checkout
+    still cannot contribute bytes to a published version. What changes is that the
+    difference is now named instead of silently dropped.
+    """
+
+    local = (root / "CHANGELOG.md").read_text(encoding="utf-8")
+    based = git_bytes(root, f"{base}:CHANGELOG.md").decode("utf-8")
+    if unreleased_section(local) != unreleased_section(based):
+        raise ReleaseError(
+            "the working tree's CHANGELOG.md [Unreleased] entries differ from the "
+            f"ones at {base}, which is the section the release would promote; commit "
+            "and push the changelog before cutting the release"
+        )
+
+
 def prepare_changelog(root: Path, current: str, target: str) -> None:
     """Move the current Unreleased notes into a dated release section."""
     path = root / "CHANGELOG.md"
@@ -437,6 +497,17 @@ def prepare_changelog(root: Path, current: str, target: str) -> None:
     heading = "## [Unreleased]\n"
     if text.count(heading) != 1:
         raise ReleaseError("CHANGELOG.md must contain exactly one Unreleased heading")
+    # The same vacuous-pass class the provenance empty-scope refusal closed: a check
+    # (there, a scope glob; here, a heading promotion) that succeeds over nothing
+    # certifies nothing. v0.21.0 shipped a dated changelog section with no entries
+    # because this step verified the tag exhaustively and never read what it promoted.
+    if not unreleased_entries(text):
+        raise ReleaseError(
+            f"CHANGELOG.md [Unreleased] section is empty; expected at least one entry "
+            f"line to promote into the v{target} section (a subheading with no bullets "
+            "under it is not an entry). Record what this release changes under "
+            "## [Unreleased] before cutting it."
+        )
     compare = (
         f"[Unreleased]: https://github.com/general-liquidity/sharpearena/compare/"
         f"v{target}...HEAD"
@@ -541,6 +612,11 @@ def remove_release_worktree(root: Path, parent: Path, tree: Path) -> tuple[str, 
         remove=lambda: shutil.rmtree(tree),
         deregister=lambda: run(root, "git", "worktree", "prune", check=False),
     )
+    if steps == ("remove-failed",):
+        raise ReleaseError(
+            f"release worktree remains at {tree}; its Git registration was preserved "
+            "so the checkout is still discoverable and can be cleaned safely"
+        )
     if parent.exists() and not any(parent.iterdir()):
         parent.rmdir()
     return steps
@@ -566,6 +642,7 @@ def execute_release(
     if fetch:
         run(root, "git", "fetch", "--quiet", "origin", "main", "--tags")
     base = resolve_base(root, base_ref)
+    require_pushed_changelog(root, base)
     current = parse_toml_version(git_bytes(root, f"{base}:Cargo.toml"), "Cargo.toml")
     target = next_version(current, bump)
     target_tag = f"v{target}"
@@ -589,18 +666,20 @@ def execute_release(
         raise ReleaseError(f"release branch {release_branch} already exists")
     parent = Path(tempfile.mkdtemp(prefix=WORKTREE_PREFIX))
     tree = parent / target_tag
-    run(
-        root,
-        "git",
-        "worktree",
-        "add",
-        "--quiet",
-        "-b",
-        release_branch,
-        str(tree),
-        base,
-    )
     try:
+        # Include creation in the teardown boundary: checkout can fail after Git
+        # has created the branch, registration, or part of the directory.
+        run(
+            root,
+            "git",
+            "worktree",
+            "add",
+            "--quiet",
+            "-b",
+            release_branch,
+            str(tree),
+            base,
+        )
         return cut_release(tree, bump, current, target, release_branch, push=push)
     finally:
         remove_release_worktree(root, parent, tree)

@@ -10,21 +10,30 @@
 //!
 //! FNV-1a (not `DefaultHasher`) because the value must reproduce across toolchains
 //! and platforms: a wrapper pinned on Linux CI and an engine built on a Windows
-//! workstation must agree. For the same reason every hashed byte stream is normalized
-//! by dropping `\r` before hashing (this repo has CRLF churn history; `.gitattributes`
-//! pins LF, but an editor-saved CRLF working tree must still hash identically to the
-//! LF checkout the wrapper pins were computed from).
+//! workstation must agree. For the same reason CRLF source line endings are normalized
+//! to LF before hashing (this repo has CRLF churn history; `.gitattributes` pins LF,
+//! but an editor-saved Windows working tree must still agree with CI). A lone carriage
+//! return is retained because it is source content, not a line-ending encoding.
+//!
+//! Each file is framed as `name NUL canonical_length_le64 canonical_bytes`. Hashing
+//! names and lengths makes the file boundary part of the fingerprint: moving bytes
+//! between adjacent inputs cannot preserve the stream by accident.
+//!
+//! The crate manifest IS hashed because the Calm generator starts in the published
+//! `sharpebench-sim::Dataset::synthetic` implementation. Those suite dependencies are
+//! exact-pinned: a dependency upgrade edits the manifest and therefore moves the hash
+//! automatically instead of relying on someone to remember the manual epoch.
 //!
 //! What is deliberately NOT hashed: `curriculum.rs` (seed-selection policy, not tape
 //! bytes), `leaderboard_ci.rs` (post-hoc statistics), `vec_env.rs` (batching over the
 //! same per-step body), `transport_gate.rs` (fault classification), `lib.rs`
-//! (re-exports), and the `sharpebench-sim` engine dependency (out of tree). A
-//! semantics change arriving through a dependency bump or any other path this file
-//! set misses is what the manual `SPEC_EPOCH` escape hatch is for.
+//! (re-exports). A semantics change arriving through any path this file set and the
+//! exact dependency pins miss is what the manual `SPEC_EPOCH` escape hatch is for.
 
 /// The tape-semantics-defining sources. Keep alphabetical; adding a file here moves
 /// the spec hash, which is the point.
-const SPEC_FILES: [&str; 7] = [
+const SPEC_FILES: [&str; 8] = [
+    "Cargo.toml",
     "src/contract.rs",
     "src/exec_noise.rs",
     "src/lob_market.rs",
@@ -35,7 +44,8 @@ const SPEC_FILES: [&str; 7] = [
 ];
 
 /// Manual epoch: bump to force a new spec hash for a semantics change the file set
-/// cannot see (an engine-dependency bump, a data-layer change in `sharpebench-sim`).
+/// and the exact suite-dependency pins cannot see (for example, a toolchain codegen
+/// property that becomes part of the wire contract).
 const SPEC_EPOCH: &[u8] = b"spec-epoch-1";
 
 fn fnv1a(seed: u64, bytes: impl IntoIterator<Item = u8>) -> u64 {
@@ -47,14 +57,31 @@ fn fnv1a(seed: u64, bytes: impl IntoIterator<Item = u8>) -> u64 {
     h
 }
 
+fn canonical_source_bytes(bytes: &[u8]) -> Vec<u8> {
+    let mut canonical = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'\r' && bytes.get(index + 1) == Some(&b'\n') {
+            canonical.push(b'\n');
+            index += 2;
+        } else {
+            canonical.push(bytes[index]);
+            index += 1;
+        }
+    }
+    canonical
+}
+
 fn main() {
     let mut h = fnv1a(0xcbf2_9ce4_8422_2325, SPEC_EPOCH.iter().copied());
     for f in SPEC_FILES {
         println!("cargo:rerun-if-changed={f}");
         let bytes = std::fs::read(f)
             .unwrap_or_else(|e| panic!("spec-hash input {f} must exist and be readable: {e}"));
-        // CRLF -> LF normalization: drop every carriage return before hashing.
-        h = fnv1a(h, bytes.into_iter().filter(|&b| b != b'\r'));
+        let canonical = canonical_source_bytes(&bytes);
+        h = fnv1a(h, f.bytes().chain([0]));
+        h = fnv1a(h, (canonical.len() as u64).to_le_bytes());
+        h = fnv1a(h, canonical);
     }
     println!("cargo:rustc-env=SHARPEARENA_SPEC_HASH={h:016x}");
 }

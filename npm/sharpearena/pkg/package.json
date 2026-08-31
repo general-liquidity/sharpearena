@@ -5,11 +5,10 @@
   "license": "MIT OR Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/general-liquidity/sharpebench"
+    "url": "https://github.com/general-liquidity/sharpearena"
   },
   "files": [
     "sharpearena_bg.wasm",
-    "sharpearena_bg.js",
     "sharpearena.js",
     "sharpearena.d.ts"
   ],

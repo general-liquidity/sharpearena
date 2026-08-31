@@ -37,7 +37,7 @@ from pathlib import Path
 
 import numpy as np
 
-from sharpearena import TradingEnv
+from sharpearena import TradingEnv, check_env_effective_config, merge_effective_configs
 from sharpearena.dataset import EVAL_SEED_BASE
 from sharpearena.eval_seeds import EVAL_SEEDS, sealed_eval_seeds
 
@@ -55,11 +55,24 @@ BAND_WIDTH = 1 << 16
 MATCH_TOL = 1e-9
 FLAT = json.dumps({"orders": []})
 SLOTS = [f"held_out_{i:02d}" for i in range(N_SLOTS)]
+_OPENING_READBACK: dict[int, dict] = {}
+_TAPE_READBACK: dict[int, dict] = {}
 
 
-def first_closes(seed: int, n_days: int = 2) -> np.ndarray:
+def first_closes(
+    seed: int, n_days: int = 2, *, record_readback: bool = False
+) -> np.ndarray:
     """First-bar closes for a seed (tier-invariant: the post-passes never rewrite bar 0)."""
     env = TradingEnv(n_symbols=N_SYMBOLS, n_days=n_days, seed=seed, distribution_mode="calm")
+    if record_readback and seed not in _OPENING_READBACK:
+        _OPENING_READBACK[seed] = check_env_effective_config(
+            env,
+            seed=seed,
+            n_symbols=N_SYMBOLS,
+            n_days=n_days,
+            distribution_mode="calm",
+            scenario_seed=seed,
+        )
     obs = json.loads(env.reset())
     return np.asarray([s["close_history"][-1] for s in obs["symbols"]])
 
@@ -67,6 +80,15 @@ def first_closes(seed: int, n_days: int = 2) -> np.ndarray:
 def extract_closes(seed: int, mode: str) -> np.ndarray:
     """Replay the public environment with flat decisions and collect the tape."""
     env = TradingEnv(n_symbols=N_SYMBOLS, n_days=N_DAYS, seed=seed, distribution_mode=mode)
+    if seed not in _TAPE_READBACK:
+        _TAPE_READBACK[seed] = check_env_effective_config(
+            env,
+            seed=seed,
+            n_symbols=N_SYMBOLS,
+            n_days=N_DAYS,
+            distribution_mode=mode,
+            scenario_seed=seed,
+        )
     obs = json.loads(env.reset())
     rows = [[s["close_history"][-1] for s in obs["symbols"]]]
     done = False
@@ -94,7 +116,7 @@ def scan(observed_first: np.ndarray, band: range, table: np.ndarray) -> dict:
 def attack(seeds: dict[str, int], band: range, table: np.ndarray) -> dict:
     trials = []
     for name, seed in seeds.items():
-        res = scan(first_closes(seed), band, table)
+        res = scan(first_closes(seed, record_readback=True), band, table)
         res["slot"] = name
         res["recovered"] = res["matches"] == [seed]
         res["prefix_verified"] = False
@@ -116,6 +138,8 @@ def attack(seeds: dict[str, int], band: range, table: np.ndarray) -> dict:
 
 
 def main() -> None:
+    _OPENING_READBACK.clear()
+    _TAPE_READBACK.clear()
     EVIDENCE.mkdir(parents=True, exist_ok=True)
 
     # Public derivation: committed offsets for the first 8 slots, then 8 further
@@ -167,6 +191,10 @@ def main() -> None:
                 "prefix verification on the deployed tier"
             ),
             "public_extra_offsets_rng_seed": 0,
+        },
+        "effective_config": {
+            "opening_bar_probe": merge_effective_configs(_OPENING_READBACK),
+            "verification_tape": merge_effective_configs(_TAPE_READBACK),
         },
         "table_build_s": table_s,
         "public": {

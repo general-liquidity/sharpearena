@@ -23,7 +23,9 @@ from sharpearena import (
     DrawdownStopper,
     FailureMode,
     SharpeArenaEnv,
+    check_env_effective_config,
     classify_episode_failure,
+    merge_effective_configs,
     rollup_failure_modes,
     sample_mandate,
 )
@@ -41,15 +43,22 @@ MAX_STEPS = 512
 MAX_DRAWDOWN = 0.5
 
 FIELD = list(BASELINE_POLICIES) + list(BEHAVIORAL_POLICIES)
+_READBACK: dict[str, dict[int, dict]] = {tier: {} for tier in TIERS}
 
 
 def _episode(tier: str, seed: int, policy) -> tuple[list[float], list[dict]]:
-    env = DrawdownStopper(
-        SharpeArenaEnv(
-            n_symbols=N_SYMBOLS, n_days=N_DAYS, seed=seed, distribution_mode=tier
-        ),
-        max_drawdown=MAX_DRAWDOWN,
+    base = SharpeArenaEnv(
+        n_symbols=N_SYMBOLS, n_days=N_DAYS, seed=seed, distribution_mode=tier
     )
+    if seed not in _READBACK[tier]:
+        _READBACK[tier][seed] = check_env_effective_config(
+            base,
+            seed=seed,
+            n_symbols=N_SYMBOLS,
+            n_days=N_DAYS,
+            distribution_mode=tier,
+        )
+    env = DrawdownStopper(base, max_drawdown=MAX_DRAWDOWN)
     obs, _ = env.reset(seed=seed)
     returns: list[float] = []
     events: list[dict] = []
@@ -71,6 +80,8 @@ def _episode(tier: str, seed: int, policy) -> tuple[list[float], list[dict]]:
 
 
 def main() -> None:
+    for readbacks in _READBACK.values():
+        readbacks.clear()
     EVIDENCE.mkdir(parents=True, exist_ok=True)
     FIGURES.mkdir(parents=True, exist_ok=True)
 
@@ -112,6 +123,9 @@ def main() -> None:
             "max_drawdown": MAX_DRAWDOWN,
             "tiers": list(TIERS),
             "policies": [name for name, _ in FIELD],
+        },
+        "effective_config": {
+            tier: merge_effective_configs(_READBACK[tier]) for tier in TIERS
         },
         "episodes": episodes,
         "rollup_by_tier": rollups,

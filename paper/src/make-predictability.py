@@ -40,9 +40,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 try:
-    from sharpearena import TradingEnv, score_run
+    from sharpearena import (
+        TradingEnv,
+        check_env_effective_config,
+        merge_effective_configs,
+        score_run,
+    )
 except ImportError:  # --figures-only reads the committed JSON and needs no bindings
-    TradingEnv = score_run = None
+    TradingEnv = check_env_effective_config = merge_effective_configs = score_run = None
 
 PAPER = Path(__file__).resolve().parents[1]
 EVIDENCE = PAPER / "evidence"
@@ -63,6 +68,8 @@ RIDGE_LAMBDA = 1e-4
 SEARCH_HALF_WIDTH = 1 << 15
 MATCH_TOL = 1e-9
 FLAT = json.dumps({"orders": []})
+_TAPE_READBACK: dict[str, dict[int, dict]] = {tier: {} for tier in TIERS}
+_OPENING_READBACK: dict[int, dict] = {}
 
 
 def extract_closes(seed: int, mode: str) -> np.ndarray:
@@ -74,6 +81,15 @@ def extract_closes(seed: int, mode: str) -> np.ndarray:
     env = TradingEnv(
         n_symbols=N_SYMBOLS, n_days=N_DAYS, seed=seed, distribution_mode=mode
     )
+    if seed not in _TAPE_READBACK[mode]:
+        _TAPE_READBACK[mode][seed] = check_env_effective_config(
+            env,
+            seed=seed,
+            n_symbols=N_SYMBOLS,
+            n_days=N_DAYS,
+            distribution_mode=mode,
+            scenario_seed=seed,
+        )
     obs = json.loads(env.reset())
     rows = [[s["close_history"][-1] for s in obs["symbols"]]]
     done = False
@@ -84,12 +100,21 @@ def extract_closes(seed: int, mode: str) -> np.ndarray:
     return np.asarray(rows, dtype=np.float64)
 
 
-def first_closes(seed: int) -> np.ndarray:
+def first_closes(seed: int, *, record_readback: bool = False) -> np.ndarray:
     """First-bar closes for a candidate seed (tier-invariant: the volatility
     post-pass rewrites bars 1.. and never bar 0)."""
     env = TradingEnv(
         n_symbols=N_SYMBOLS, n_days=2, seed=seed, distribution_mode="calm"
     )
+    if record_readback and seed not in _OPENING_READBACK:
+        _OPENING_READBACK[seed] = check_env_effective_config(
+            env,
+            seed=seed,
+            n_symbols=N_SYMBOLS,
+            n_days=2,
+            distribution_mode="calm",
+            scenario_seed=seed,
+        )
     obs = json.loads(env.reset())
     return np.asarray([s["close_history"][-1] for s in obs["symbols"]])
 
@@ -159,6 +184,9 @@ def seed_search(observed_first: np.ndarray, band: range) -> dict:
 
 
 def main() -> None:
+    for readbacks in _TAPE_READBACK.values():
+        readbacks.clear()
+    _OPENING_READBACK.clear()
     EVIDENCE.mkdir(parents=True, exist_ok=True)
     FIGURES.mkdir(parents=True, exist_ok=True)
 
@@ -167,7 +195,7 @@ def main() -> None:
     band = range(SEED_START - SEARCH_HALF_WIDTH, SEED_START + SEARCH_HALF_WIDTH)
     search_results = []
     for seed in SEEDS:
-        obs_first = first_closes(seed)
+        obs_first = first_closes(seed, record_readback=True)
         res = seed_search(obs_first, band)
         res["true_seed"] = seed
         res["recovered"] = res["matches"] == [seed]
@@ -231,6 +259,12 @@ def main() -> None:
             "match_tolerance": MATCH_TOL,
             "policy": "frictionless unit-gross long/short sign following, "
             "equal weight across symbols, scored via score_run deflated_sharpe",
+        },
+        "effective_config": {
+            "opening_bar_probe": merge_effective_configs(_OPENING_READBACK),
+            "evaluation_tapes": {
+                tier: merge_effective_configs(_TAPE_READBACK[tier]) for tier in TIERS
+            },
         },
         "seed_search": {
             "recovered": recovered,

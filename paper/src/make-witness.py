@@ -68,7 +68,12 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from sharpearena import SharpeArenaEnv, score_run
+from sharpearena import (
+    SharpeArenaEnv,
+    check_env_effective_config,
+    merge_effective_configs,
+    score_run,
+)
 from sharpearena.baselines import BASELINE_POLICIES
 from sharpearena.confidence import deflated_sharpe_ci
 from sharpearena.generalization import train_test_seeds
@@ -119,6 +124,28 @@ def _make_env(seed: int, tier: str) -> SharpeArenaEnv:
     return SharpeArenaEnv(
         n_symbols=N_SYMBOLS, n_days=N_DAYS, seed=seed, distribution_mode=tier
     )
+
+
+def effective_config_preflight() -> dict:
+    """Read back every distinct tape used by the worker pool before it starts.
+
+    The workers call the same ``_make_env`` function, but the independent fingerprint
+    regeneration is kept outside the timed/scored cells so it cannot move a witness
+    boundary or become part of the throughput being reported.
+    """
+    seeds = sorted({seed for band in BANDS.values() for seed in band})
+    readback: dict[str, dict[int, dict]] = {tier: {} for tier in TIERS}
+    for tier in TIERS:
+        for seed in seeds:
+            env = _make_env(seed, tier)
+            readback[tier][seed] = check_env_effective_config(
+                env,
+                seed=seed,
+                n_symbols=N_SYMBOLS,
+                n_days=N_DAYS,
+                distribution_mode=tier,
+            )
+    return {tier: merge_effective_configs(readback[tier]) for tier in TIERS}
 
 
 def replay_tape(seed: int, tier: str) -> np.ndarray:
@@ -374,6 +401,7 @@ def summarize_replicates(cells: list[dict]) -> dict:
 def main() -> None:
     EVIDENCE.mkdir(parents=True, exist_ok=True)
     FIGURES.mkdir(parents=True, exist_ok=True)
+    effective_config = effective_config_preflight()
 
     all_noise_seeds = [
         _noise_seed(seed, variant, rep)
@@ -479,6 +507,7 @@ def main() -> None:
                 "convention": "seed-paired percentile bootstrap on the deflated Sharpe",
             },
         },
+        "effective_config": effective_config,
         "results": results,
         "boundaries": {
             variant: {

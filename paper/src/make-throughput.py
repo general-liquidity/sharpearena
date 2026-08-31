@@ -21,6 +21,10 @@ from pathlib import Path
 import numpy as np
 
 import sharpearena
+from sharpearena.effective_config import (
+    check_env_effective_config,
+    merge_effective_configs,
+)
 from sharpearena.gym import SharpeArenaEnv
 from sharpearena.sharpearena_py import generate_scenario_json
 
@@ -35,6 +39,54 @@ EVAL_TIERS = ("calm", "hard", "extreme")
 REPO = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
 EVIDENCE = HERE.parent / "evidence" / "throughput.json"
+
+
+def effective_config_preflight() -> dict:
+    """Verify the environment-backed timed arms without charging checks to them.
+
+    The step microbenchmark uses seeds ``0..EPISODES`` at the default Calm tier;
+    the canonical evaluation uses the held-out band on all three tiers. Boundary
+    seeds from each arm are read back separately so the artifact does not imply
+    that the held-out preflight also verified the microbenchmark's constructor.
+    The raw generation benchmark calls ``generate_scenario_json`` directly, which
+    is itself the independent regeneration path used by the check.
+    """
+    micro_readback: dict[int, dict] = {}
+    for seed in (0, EPISODES - 1):
+        env = SharpeArenaEnv(n_symbols=N_SYMBOLS, n_days=N_DAYS, seed=seed)
+        micro_readback[seed] = check_env_effective_config(
+            env,
+            seed=seed,
+            n_symbols=N_SYMBOLS,
+            n_days=N_DAYS,
+            distribution_mode="calm",
+        )
+
+    canonical_readback: dict[str, dict[int, dict]] = {
+        tier: {} for tier in EVAL_TIERS
+    }
+    for tier in EVAL_TIERS:
+        for seed in (EVAL_BAND.start, EVAL_BAND.stop - 1):
+            env = SharpeArenaEnv(
+                n_symbols=N_SYMBOLS,
+                n_days=N_DAYS,
+                seed=seed,
+                distribution_mode=tier,
+            )
+            canonical_readback[tier][seed] = check_env_effective_config(
+                env,
+                seed=seed,
+                n_symbols=N_SYMBOLS,
+                n_days=N_DAYS,
+                distribution_mode=tier,
+            )
+    return {
+        "step_microbenchmark": merge_effective_configs(micro_readback),
+        "canonical_evaluation": {
+            tier: merge_effective_configs(canonical_readback[tier])
+            for tier in EVAL_TIERS
+        },
+    }
 
 
 def bench_generation(episodes: int) -> tuple[float, float]:
@@ -127,6 +179,7 @@ def run_wasm() -> dict:
 
 
 def main() -> None:
+    effective_config = effective_config_preflight()
     # Warm the binding and the allocator before timing.
     bench_steps(4)
     bench_generation(4)
@@ -146,6 +199,7 @@ def main() -> None:
 
     payload = {
         "panel": {"n_symbols": N_SYMBOLS, "n_days": N_DAYS},
+        "effective_config": effective_config,
         "episodes_per_repeat": EPISODES,
         "repeats": REPEATS,
         "steps_per_repeat": steps_total,

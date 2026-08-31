@@ -104,3 +104,16 @@ def test_py_typed_marker_is_installed_with_the_package() -> None:
         "py.typed is missing from the installed package, so PEP 561 consumers see "
         "sharpearena as untyped"
     )
+
+
+def test_native_extension_stub_is_installed_with_the_package() -> None:
+    """The compiled extension carries no annotations of its own, so without the
+    stub every symbol it exposes is `Any` to a type checker even with `py.typed`
+    shipped. The mixed maturin layout must carry the `.pyi` exactly like the
+    marker."""
+
+    stub = resources.files("sharpearena").joinpath("sharpearena_py.pyi")
+    assert stub.is_file(), (
+        "sharpearena_py.pyi is missing from the installed package, so the "
+        "native module's symbols type-check as Any"
+    )

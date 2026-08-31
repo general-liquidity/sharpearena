@@ -1,8 +1,9 @@
 {
-  "note": "Cross-surface tape-semantics fingerprint. crates/sharpearena/build.rs computes FNV-1a/64 over the CRLF-normalized bytes of the spec files below, seeded with the epoch, and compiles it into sharpearena::SPEC_HASH. The npm/TS wrapper (npm/sharpearena/src/specHash.ts) and the pure-Python package (crates/sharpearena-py/python/sharpearena/_spec_hash.py) pin this value and refuse to construct against an engine reporting a different one, so a stale wasm bundle or pyo3 extension is diagnosed by name instead of computing a wrong number. FNV-1a (not a std hasher) so the value reproduces across toolchains and platforms.",
-  "algorithm": "fnv1a-64 over file bytes with every CR (0x0D) dropped, seeded with fnv1a-64(offset_basis, epoch)",
+  "note": "Cross-surface tape-semantics fingerprint. crates/sharpearena/build.rs computes FNV-1a/64 over the named, length-framed, CRLF-normalized spec inputs below, seeded with the epoch, and compiles it into sharpearena::SPEC_HASH. Cargo.toml is included and the SharpeBench suite dependencies are exact-pinned, so a dependency upgrade that changes the base synthetic tape moves the hash automatically. The npm/TS wrapper (npm/sharpearena/src/specHash.ts) and the pure-Python package (crates/sharpearena-py/python/sharpearena/_spec_hash.py) pin this value and refuse to construct against an engine reporting a different one, so a stale wasm bundle or pyo3 extension is diagnosed by name instead of computing a wrong number. FNV-1a (not a std hasher) so the value reproduces across toolchains and platforms.",
+  "algorithm": "fnv1a-64 seeded with fnv1a-64(offset_basis, epoch); each input contributes UTF-8 file name, NUL, canonical byte length as little-endian u64, then bytes with CRLF normalized to LF (lone CR retained)",
   "epoch": "spec-epoch-1",
   "files": [
+    "Cargo.toml",
     "src/contract.rs",
     "src/exec_noise.rs",
     "src/lob_market.rs",
@@ -11,5 +12,5 @@
     "src/richness.rs",
     "src/scenario_gen.rs"
   ],
-  "spec_hash": "2d912913eedd333e"
+  "spec_hash": "97250979151a4186"
 }

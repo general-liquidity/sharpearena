@@ -301,6 +301,9 @@ jobs:
           assert isinstance(reward, float), reward
           assert not done
           assert files("sharpearena").joinpath("py.typed").is_file(), "py.typed did not ship"
+          assert files("sharpearena").joinpath("sharpearena_py.pyi").is_file(), (
+              "the native-extension stub did not ship"
+          )
           print("imported the wheel and stepped one bar")
           PY
           ./consumer/bin/python smoke.py

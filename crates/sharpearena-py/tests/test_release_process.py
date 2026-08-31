@@ -217,6 +217,11 @@ def release_tree(tmp_path: Path) -> Path:
     artifact = root / "paper/evidence/f1.json"
     artifact.parent.mkdir(parents=True)
     artifact.write_text('{"value": 19}\n', encoding="utf-8")
+    (root / "CHANGELOG.md").write_text(
+        _CHANGELOG_PREAMBLE + _FIXTURE_UNRELEASED + _CHANGELOG_HISTORY,
+        encoding="utf-8",
+        newline="\n",
+    )
     _git(root, "init", "--quiet", "--initial-branch=main")
     _git(root, "add", "-A")
     _git(root, "commit", "--quiet", "-m", "initial sources")
@@ -599,6 +604,147 @@ def test_verify_tag_rejects_a_release_on_a_diverged_detached_line(
 
     assert checked.returncode == 1
     assert "origin/main" in checked.stdout
+
+
+_CHANGELOG_PREAMBLE = """# Changelog
+
+[Unreleased]: https://github.com/general-liquidity/sharpearena/compare/v0.19.0...HEAD
+
+## [Unreleased]
+"""
+
+_CHANGELOG_HISTORY = """
+## [0.19.0] - 2026-08-01
+
+### Added
+- the initial release entry
+
+[0.19.0]: https://github.com/general-liquidity/sharpearena/releases/tag/v0.19.0
+"""
+
+_FIXTURE_UNRELEASED = "\n### Added\n- an entry the base branch already carries\n"
+
+
+def _commit_changelog(root: Path, unreleased_body: str) -> None:
+    (root / "CHANGELOG.md").write_text(
+        _CHANGELOG_PREAMBLE + unreleased_body + _CHANGELOG_HISTORY,
+        encoding="utf-8",
+        newline="\n",
+    )
+    _git(root, "add", "--", "CHANGELOG.md")
+    _git(root, "commit", "--quiet", "-m", "add changelog")
+
+
+def _release_identity(monkeypatch: pytest.MonkeyPatch) -> None:
+    """prepare_changelog commits through the driver's own git, which inherits the
+    process environment rather than the identity `_git` injects."""
+    for name in ("GIT_AUTHOR", "GIT_COMMITTER"):
+        monkeypatch.setenv(f"{name}_NAME", "release test")
+        monkeypatch.setenv(f"{name}_EMAIL", "release@example.com")
+
+
+@pytest.mark.parametrize(
+    "unreleased_body",
+    ["", "\n### Changed\n"],
+    ids=["no-lines-at-all", "subheading-with-no-bullets"],
+)
+def test_changelog_promotion_refuses_an_empty_unreleased_section(
+    release_tree: Path, monkeypatch: pytest.MonkeyPatch, unreleased_body: str
+) -> None:
+    """The v0.21.0 failure: the driver verified the tag against provenance in detail and
+    promoted the Unreleased heading without reading what sat under it, so an empty
+    section shipped as a dated release section. Same vacuous-pass class as the
+    provenance empty-scope refusal."""
+    _release_identity(monkeypatch)
+    _commit_changelog(release_tree, unreleased_body)
+    before = (release_tree / "CHANGELOG.md").read_text(encoding="utf-8")
+    module = _release_module("release_driver_empty_changelog")
+
+    with pytest.raises(
+        module.ReleaseError, match=r"\[Unreleased\] section is empty"
+    ) as refusal:
+        module.prepare_changelog(release_tree, "0.19.0", "0.20.0")
+
+    message = str(refusal.value)
+    assert "expected at least one entry" in message
+    assert "v0.20.0" in message
+    assert "Record what this release changes" in message
+    assert (release_tree / "CHANGELOG.md").read_text(encoding="utf-8") == before
+
+
+def test_changelog_promotion_moves_real_entries_into_the_release_section(
+    release_tree: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _release_identity(monkeypatch)
+    _commit_changelog(release_tree, "\n### Added\n- a genuinely recorded change\n")
+    module = _release_module("release_driver_promote_changelog")
+
+    module.prepare_changelog(release_tree, "0.19.0", "0.20.0")
+
+    text = (release_tree / "CHANGELOG.md").read_text(encoding="utf-8")
+    promoted = text.split("## [0.20.0]", 1)[1].split("## [0.19.0]", 1)[0]
+    assert "- a genuinely recorded change" in promoted
+    assert "[0.20.0]: " in text
+    assert "compare/v0.20.0...HEAD" in text
+    assert "prepare v0.20.0" in _git(release_tree, "log", "-1", "--format=%s")
+
+
+def test_execute_refuses_changelog_entries_that_are_not_on_the_base(
+    release_tree: Path,
+) -> None:
+    """The other half of the v0.21.0 failure, and the reason the empty section existed.
+
+    The cut runs in a worktree checked out from the base, so the section it promotes is
+    the base branch's. Entries the operator has written and committed locally, but not
+    pushed, are invisible to it: the driver saw an empty ``[Unreleased]`` while the
+    operator was looking at a full one. The working tree here is clean and local ``main``
+    is one commit ahead of ``origin/main``, which is exactly that shape.
+    """
+    _commit_changelog(release_tree, "\n### Added\n- an entry committed but not pushed\n")
+    module = _release_module("release_driver_unpushed_changelog")
+    module.cut_release = lambda *args, **kwargs: pytest.fail("the cut must not start")
+
+    with pytest.raises(module.ReleaseError, match="differ from the ones at"):
+        module.execute_release(release_tree, "minor", push=False, fetch=False)
+
+    assert _git(release_tree, "worktree", "list").count("\n") == 0
+
+
+def test_execute_refuses_changelog_entries_that_are_only_in_the_working_tree(
+    release_tree: Path,
+) -> None:
+    """Uncommitted is the same invisibility as unpushed, so it is refused the same way."""
+    (release_tree / "CHANGELOG.md").write_text(
+        _CHANGELOG_PREAMBLE
+        + "\n### Added\n- an entry that was never committed\n"
+        + _CHANGELOG_HISTORY,
+        encoding="utf-8",
+        newline="\n",
+    )
+    module = _release_module("release_driver_uncommitted_changelog")
+    module.cut_release = lambda *args, **kwargs: pytest.fail("the cut must not start")
+
+    with pytest.raises(module.ReleaseError, match="differ from the ones at"):
+        module.execute_release(release_tree, "minor", push=False, fetch=False)
+
+
+def test_execute_refuses_a_local_release_category_that_differs_from_the_base(
+    release_tree: Path,
+) -> None:
+    """The pushed-base comparison covers the whole section, not just bullet text.
+
+    A note categorized as a breaking ``Changed`` item locally but as ``Added`` on the
+    release base is different documentation even when its bullet is byte-identical.
+    """
+    base = (release_tree / "CHANGELOG.md").read_text(encoding="utf-8")
+    (release_tree / "CHANGELOG.md").write_text(
+        base.replace("### Added", "### Changed", 1), encoding="utf-8", newline="\n"
+    )
+    module = _release_module("release_driver_changed_category")
+    module.cut_release = lambda *args, **kwargs: pytest.fail("the cut must not start")
+
+    with pytest.raises(module.ReleaseError, match="differ from the ones at"):
+        module.execute_release(release_tree, "minor", push=False, fetch=False)
 
 
 def _run_blocks(text: str) -> list[str]:
@@ -992,3 +1138,21 @@ def test_worktree_teardown_refuses_to_delete_its_own_parent(tmp_path: Path) -> N
         module.remove_release_worktree(tmp_path, tmp_path, tmp_path)
 
     assert tmp_path.exists()
+
+
+def test_worktree_teardown_reports_a_checkout_it_could_not_remove(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _release_module("release_driver_failed_delete")
+    parent = tmp_path / "release"
+    tree = parent / "v0.20.0"
+    tree.mkdir(parents=True)
+
+    def locked(_path: Path) -> None:
+        raise OSError(32, "checkout is locked")
+
+    monkeypatch.setattr(module.shutil, "rmtree", locked)
+    with pytest.raises(module.ReleaseError, match="registration was preserved"):
+        module.remove_release_worktree(tmp_path, parent, tree)
+
+    assert tree.exists(), "a failed removal must not be misreported as cleaned"
