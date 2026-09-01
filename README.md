@@ -210,11 +210,13 @@ bidirectional conformance tests guard the Rust types. See the
 ## Current evidence
 
 The committed paper reports deterministic reference policies plus calibration
-and falsification experiments generated with the historical 0.9.0 evidence tree,
-not local or frontier-model performance and not an empirical validation of the
-current 0.21.0 package. No model field has been run or admitted to the evidence
-manifest. The environment and field runners are ready; CI uses deterministic
-model doubles and downloads no weights.
+and falsification experiments from historical evidence artifacts, not local or
+frontier-model performance and not an empirical validation of the current 0.21.0
+package. F1 records package version 0.9.0; most other empirical artifacts predate
+runtime-version capture and therefore do not support a more specific attribution.
+No model field has been completed or admitted to the evidence manifest. The
+environment and field runners are ready; CI uses deterministic model doubles and
+downloads no weights.
 
 Results, non-results, and finite-grid limits are summarized in
 [Evidence and current status](docs/evidence.md). Exact commands, fixed seeds,

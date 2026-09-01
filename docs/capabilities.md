@@ -54,7 +54,7 @@ the root README can stay task-oriented.
 
 ## Known limits
 
-- No model field has been run or admitted as evidence. CI uses deterministic
+- No model field has been completed or admitted as evidence. CI uses deterministic
   model doubles and downloads no weights.
 - SharpeArena provides structural point-in-time leak freedom, not process or
   container containment. Use SharpeBench's digest-pinned `--image` path for an
