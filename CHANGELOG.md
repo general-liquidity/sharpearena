@@ -6,9 +6,11 @@ version covers the Rust crates, the npm package and the PyPI package; each
 section is one `v*` tag and links the commits it was built from. The wire
 contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
-[Unreleased]: https://github.com/general-liquidity/sharpearena/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/general-liquidity/sharpearena/compare/v0.22.0...HEAD
 
 ## [Unreleased]
+
+## [0.22.0] - 2026-09-01
 
 ### Added
 - python: ship a typed `sharpearena_py.pyi` surface for the compiled extension and fail CI when public runtime names, member kinds, or callable signatures drift from the stub. The wheel smoke test now proves both `py.typed` and the native stub survive packaging.
@@ -320,6 +322,7 @@ First published release, as OpenOutcry.
 ### Fixed
 - ci: toolchain pinned to 1.96.0 for the wasm32 target; a virtualenv for maturin ([bb0ee4d](https://github.com/general-liquidity/sharpearena/commit/bb0ee4d)).
 
+[0.22.0]: https://github.com/general-liquidity/sharpearena/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/general-liquidity/sharpearena/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/general-liquidity/sharpearena/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/general-liquidity/sharpearena/compare/v0.18.0...v0.19.0
