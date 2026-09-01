@@ -23,10 +23,21 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
+      - name: Detect an already released HEAD
+        id: release-head
+        shell: bash
+        run: |
+          if [ -n "$(git tag --points-at HEAD --list 'v*')" ]; then
+            echo "released=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "released=false" >> "$GITHUB_OUTPUT"
+          fi
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # 2026-08-27
+        if: steps.release-head.outputs.released != 'true'
         with:
           toolchain: "1.96.0"
       - uses: taiki-e/install-action@37f7c5781271959fb65b6b35224e28652ff2b63d # v2
+        if: steps.release-head.outputs.released != 'true'
         with:
           tool: cargo-release@0.25.18
       # This performs a real patch bump, clean provenance rebind, annotated tag
@@ -34,6 +45,7 @@ jobs:
       # A stale-by-one release therefore fails on every PR, before a public tag
       # can be the first execution of this path.
       - name: Rehearse the complete checked release
+        if: steps.release-head.outputs.released != 'true'
         run: python scripts/release.py rehearse patch
 
   rust:
