@@ -44,7 +44,7 @@ sharpebench-protocol + sharpebench-sim + sharpebench-core
 | `sharpearena-wasm` | JSON/wasm-bindgen entry points over the same native kernels. |
 | `@general-liquidity/sharpearena` | Typed TypeScript wrapper over the committed WASM package. |
 | `sharpearena` on PyPI | pyo3 engine plus Gymnasium, PettingZoo, `verifiers`, Minari, wrappers, local-field, strategy-search, paper-trading, and evidence adapters. |
-| observation/decision JSON | Language-neutral external-agent contract; reference programs in Rust, Python, and TypeScript serve as conformance fixtures. |
+| observation/decision JSON | Language-neutral external-agent contract; reference programs in Rust, Python, and TypeScript demonstrate the contract. |
 
 ## Identity and compatibility
 
