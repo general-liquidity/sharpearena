@@ -209,8 +209,8 @@ bidirectional conformance tests guard the Rust types. See the
 
 ## Current evidence
 
-The committed paper reports deterministic reference policies and calibration /
-falsification experiments generated with the historical 0.9.0 evidence tree,
+The committed paper reports deterministic reference policies plus calibration
+and falsification experiments generated with the historical 0.9.0 evidence tree,
 not local or frontier-model performance and not an empirical validation of the
 current 0.21.0 package. No model field has been run or admitted to the evidence
 manifest. The environment and field runners are ready; CI uses deterministic

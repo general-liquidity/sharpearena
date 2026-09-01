@@ -45,7 +45,8 @@ The agent returns one `Decision`:
 }
 ```
 
-`target_weight` is signed for shorts. `confidence` is optional and defaults to `0.5`.
+`target_weight` is signed for shorts and must lie in `[-1, 1]`. `confidence` lies
+in `[0, 1]`; it is optional and defaults to `0.5`.
 `rationale` and top-level `reasoning` are optional audit text. An empty `orders` array
 is a deliberate hold, not an error value.
 
