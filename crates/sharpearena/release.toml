@@ -22,13 +22,13 @@ exactly = 1
 [[pre-release-replacements]]
 file = "../../npm/sharpearena/package-lock.json"
 search = '"name": "@general-liquidity/sharpearena",\n  "version": "[0-9]+\.[0-9]+\.[0-9]+"'
-replace = '"name": "@general-liquidity/sharpearena",\n  "version": "{{version}}"'
+replace = "\"name\": \"@general-liquidity/sharpearena\",\n  \"version\": \"{{version}}\""
 exactly = 1
 
 [[pre-release-replacements]]
 file = "../../npm/sharpearena/package-lock.json"
 search = '"name": "@general-liquidity/sharpearena",\n      "version": "[0-9]+\.[0-9]+\.[0-9]+"'
-replace = '"name": "@general-liquidity/sharpearena",\n      "version": "{{version}}"'
+replace = "\"name\": \"@general-liquidity/sharpearena\",\n      \"version\": \"{{version}}\""
 exactly = 1
 
 # The wasm-pack output manifest, committed alongside the .wasm it describes.

@@ -9,6 +9,7 @@ import os
 import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -51,6 +52,27 @@ CANONICAL_METADATA = {
     "reproduction_entrypoint": "commands in paper/sections/A-commands.tex",
     "validator": "paper/src/check-provenance.py",
 }
+
+
+def test_npm_lock_release_replacements_preserve_json() -> None:
+    config = tomllib.loads(
+        (REPO / "crates/sharpearena/release.toml").read_text(encoding="utf-8")
+    )
+    lock_path = "../../npm/sharpearena/package-lock.json"
+    payload = (REPO / "npm/sharpearena/package-lock.json").read_text(
+        encoding="utf-8"
+    )
+
+    for rule in config["pre-release-replacements"]:
+        if rule["file"] != lock_path:
+            continue
+        replacement = rule["replace"].replace("{{version}}", "0.22.0")
+        payload, count = re.subn(rule["search"], replacement, payload)
+        assert count == rule["exactly"]
+
+    parsed = json.loads(payload)
+    assert parsed["version"] == "0.22.0"
+    assert parsed["packages"][""]["version"] == "0.22.0"
 
 
 def _run(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
