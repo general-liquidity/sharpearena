@@ -20,6 +20,9 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 - docs: reorganize the root README into a task-first product entry point shared in structure with SharpeBench; deep feature, evidence, security, and operational material now lives in linked topic documents.
 
 ### Fixed
+- examples: the Python and TypeScript reference agents now exit nonzero on a
+  malformed observation instead of converting an implementation or parse fault
+  into a valid hold decision.
 - release: the npm lockfile now carries the workspace version in both package
   identity fields, the bump rewrites both, and tag verification rejects drift.
   `npm ci` checks dependency resolution but had left those identities at 0.18.0
