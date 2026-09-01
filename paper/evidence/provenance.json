@@ -122,7 +122,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "dc1ef50973ed3d0239b8ec45701ab1dd2425a9f9",
+  "generated_at_head": "204231691dc45108a550ae0146161ad88a3ed8e9",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -172,7 +172,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/_spec_hash.py",
-      "sha256": "1a19a6285adbb33c700567d9fe3dc20a6a2cdbe4a45431d68eeeb63aa32f74bb"
+      "sha256": "53e004d406d88fcf383c4bc606a177b100d3416fbbfc90f7f79306ecf10b0d4d"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/adverse_selection.py",
@@ -496,7 +496,7 @@
     },
     {
       "path": "crates/sharpearena/src/scenario_gen.rs",
-      "sha256": "9f3d27b170aa59667bde3a4e4fce1f1cc8c8843e97127b028a58c6c94af091f2"
+      "sha256": "c724f1264c9e2729d47a526f1af20996d5037ccf7bf911776296bc642654f045"
     },
     {
       "path": "crates/sharpearena/src/spec_hash.rs",
@@ -532,31 +532,31 @@
     },
     {
       "path": "paper/sections/00-abstract.tex",
-      "sha256": "91ec182059f0014b9594b5e8a9bf1087b8c15faa36d468cb3acf0403ca476c90"
+      "sha256": "dbd7d1b23dd2c7fcbd15a314a3944ca72f3943b8d406b6b5e1018ceb357a540e"
     },
     {
       "path": "paper/sections/01-introduction.tex",
-      "sha256": "e9706596a18441d4d7004b0e94e7ff34cc487491085d7b984cf5050fe846ea26"
+      "sha256": "0a22b5ca307d0f8a0f8158f75e05610e8bb4f9c5a95534ed586b1fafcbf86ef9"
     },
     {
       "path": "paper/sections/02-principles.tex",
-      "sha256": "bd8606694451c1aa136c7948706f444635c7dfa2a72a000c8bf2e48326a8d75c"
+      "sha256": "8ebb64d31710868eb549199b46e629aba8e052d4297d711f2419508404212936"
     },
     {
       "path": "paper/sections/03-environment.tex",
-      "sha256": "6f4e3ef8d8a05395a728b6e5f6aa7f78c3217288464c21b67bb33e6d3f4c9023"
+      "sha256": "973cb76064bac45655ed3d6e665d79a64376da392af3b1d020c6e5cd30346e25"
     },
     {
       "path": "paper/sections/04-contract.tex",
-      "sha256": "1a9246f40a283c987a024ca54787afc84db9cf9c45e1f3e06667df90903b239b"
+      "sha256": "1662a9f120d37dffb706df0fe3a3e1e28033167f0c650c95e34eb7d5dc3eb401"
     },
     {
       "path": "paper/sections/05-agentic.tex",
-      "sha256": "b9601c2902fc43e8b0be68096185e6ae91241d930eecd6a4d6f4af1b4a0e8f3d"
+      "sha256": "f943ece81d471bd8af729fb8d2a74301d8a7fecc92ff37c3c24ef06df961cec8"
     },
     {
       "path": "paper/sections/05-protocol.tex",
-      "sha256": "ca509b6cbc641ecf9b06a628e7bd120d6323d3317d1cdf6be8d03ae5cb48521a"
+      "sha256": "830487f45a1fd8c3058bdadf8017913afdb58aa6b893eaf6ee735fab979a0467"
     },
     {
       "path": "paper/sections/06-validation.tex",
@@ -568,19 +568,19 @@
     },
     {
       "path": "paper/sections/08-related.tex",
-      "sha256": "2c5607edd31b874399382adfb1023928fd554a08c9b6140eaa655be62554dfed"
+      "sha256": "a0700d5a8aedd1e97c2f64de2a3e99e0cf35efeee1822d0876ae90577e62a3d7"
     },
     {
       "path": "paper/sections/09-limitations.tex",
-      "sha256": "a672544ae2f832098cb95a4ae4dae57699977818cd2d74638b2a4e79816974ba"
+      "sha256": "deddcd95762ccba7f1fd78967119e87162d005e5089d7fb5eeba4a66e1250fdb"
     },
     {
       "path": "paper/sections/10-reproducibility.tex",
-      "sha256": "2dc593893584f32687dd7eedaf8fa9e3861488a6507fa1c6ec77a7131569c28e"
+      "sha256": "47591b9e2c6d4e10020ba9fd00437e2cd5c997703a3218e171bf5979b7aa9dcb"
     },
     {
       "path": "paper/sections/A-commands.tex",
-      "sha256": "7c1ab90b554dbe7a534fede1a1a7316df9fde9b894fffe1983255f1c0644ea8a"
+      "sha256": "1a5d56e9ec969f69dedbdafd8721bb3548897072d1306da1cd9081e3e8c0b7ae"
     },
     {
       "path": "paper/src/check-provenance.py",
@@ -678,6 +678,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "4385478188eb8035a8e7fe2f1c72484993358cb936b7ab7c984aafd859deaba8",
+  "source_snapshot_sha256": "54f0cef377c9cc9ebf62952045a563d922a8d9bf0863b54a575b4feb030f5497",
   "validator": "paper/src/check-provenance.py"
 }
