@@ -151,6 +151,12 @@ def version_problems(root: Path, commit: str, expected: str) -> list[str]:
         payload = json.loads(git_bytes(root, f"{commit}:{path}").decode("utf-8"))
         compare(path, str(payload.get("version")))
 
+    lock_path = "npm/sharpearena/package-lock.json"
+    lock = json.loads(git_bytes(root, f"{commit}:{lock_path}").decode("utf-8"))
+    compare(lock_path, str(lock.get("version")))
+    root_package = lock.get("packages", {}).get("", {})
+    compare(f"{lock_path} root package", str(root_package.get("version")))
+
     for path in (
         "crates/sharpearena-py/pyproject.toml",
         "crates/sharpearena-py/Cargo.toml",

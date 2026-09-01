@@ -108,6 +108,21 @@ def _write_versions(root: Path, version: str) -> None:
             {"name": "@general-liquidity/sharpearena", "version": version}
         )
         + "\n",
+        "npm/sharpearena/package-lock.json": json.dumps(
+            {
+                "name": "@general-liquidity/sharpearena",
+                "version": version,
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {
+                        "name": "@general-liquidity/sharpearena",
+                        "version": version,
+                    }
+                },
+            },
+            indent=2,
+        )
+        + "\n",
         "npm/sharpearena/pkg/package.json": json.dumps(
             {"name": "sharpearena", "version": version}
         )
@@ -443,6 +458,26 @@ def test_verify_tag_rejects_a_surface_version_drift(release_tree: Path) -> None:
 
     assert checked.returncode == 1
     assert "npm/sharpearena/package.json reports 0.19.0" in checked.stdout
+
+
+def test_verify_tag_rejects_an_npm_lockfile_version_drift(release_tree: Path) -> None:
+    release_commit = _release_commit(release_tree)
+    _bind_and_tag(release_tree, release_commit)
+    lock_path = release_tree / "npm/sharpearena/package-lock.json"
+    payload = json.loads(lock_path.read_text(encoding="utf-8"))
+    payload["packages"][""]["version"] = "0.19.0"
+    lock_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    _git(release_tree, "add", lock_path.relative_to(release_tree).as_posix())
+    _git(release_tree, "commit", "--quiet", "-m", "drift npm lock version")
+    _git(release_tree, "tag", "-f", "-a", "v0.20.0", "-m", "SharpeArena v0.20.0")
+
+    checked = _run(release_tree, "verify-tag", "v0.20.0")
+
+    assert checked.returncode == 1
+    assert (
+        "npm/sharpearena/package-lock.json root package reports 0.19.0"
+        in checked.stdout
+    )
 
 
 def test_verify_tag_rejects_an_unrecorded_nested_source(release_tree: Path) -> None:

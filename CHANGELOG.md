@@ -18,6 +18,10 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 - contract: the cross-surface `SPEC_HASH` now frames every input as `name + NUL + canonical length + bytes`, preserves lone carriage returns while normalizing CRLF, and includes the engine manifest. The SharpeBench engine dependencies are exact-pinned at 0.15.0, so an upstream synthetic-tape change cannot enter through a compatible-version update without moving the handshake. The committed wasm bundle and Python/npm pins were rebuilt against the new hash.
 
 ### Fixed
+- release: the npm lockfile now carries the workspace version in both package
+  identity fields, the bump rewrites both, and tag verification rejects drift.
+  `npm ci` checks dependency resolution but had left those identities at 0.18.0
+  through the 0.21.0 release.
 - release: the changelog promotion step refuses an empty `[Unreleased]` section instead of shipping it. v0.21.0 was tagged with an empty dated changelog section because the driver verified the tag against provenance exhaustively and never read the content it promoted; the heading swap succeeded over nothing. Promotion now requires at least one entry line under `## [Unreleased]` (blank lines, subheadings with no bullets, and link definitions do not count) and the refusal names the fix. Same vacuous-pass class as the provenance empty-scope refusal.
 - release: a cut also refuses when the complete local `[Unreleased]` body differs from the fetched release base, including its category headings. This closes the mechanism behind v0.21.0: notes committed only in the operator checkout are invisible to the isolated worktree and can no longer be silently omitted.
 - npm: the committed wasm package metadata now points at the SharpeArena repository and lists only files wasm-pack actually emits.

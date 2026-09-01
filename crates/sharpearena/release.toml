@@ -16,6 +16,21 @@ search = '"version": "[0-9]+\.[0-9]+\.[0-9]+"'
 replace = '"version": "{{version}}"'
 exactly = 1
 
+# npm records the package identity at the lockfile root and again for the root
+# package. `npm ci` validates dependency resolution but does not repair these
+# fields, which is how the committed lock stayed at 0.18.0 through 0.21.0.
+[[pre-release-replacements]]
+file = "../../npm/sharpearena/package-lock.json"
+search = '"name": "@general-liquidity/sharpearena",\n  "version": "[0-9]+\.[0-9]+\.[0-9]+"'
+replace = '"name": "@general-liquidity/sharpearena",\n  "version": "{{version}}"'
+exactly = 1
+
+[[pre-release-replacements]]
+file = "../../npm/sharpearena/package-lock.json"
+search = '"name": "@general-liquidity/sharpearena",\n      "version": "[0-9]+\.[0-9]+\.[0-9]+"'
+replace = '"name": "@general-liquidity/sharpearena",\n      "version": "{{version}}"'
+exactly = 1
+
 # The wasm-pack output manifest, committed alongside the .wasm it describes.
 # npm/sharpearena/test/golden.test.js asserts this equals [workspace.package]
 # version, because the version is how a consumer tells which crate build the
