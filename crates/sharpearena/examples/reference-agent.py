@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Reference SharpeArena agent (Python) — the simplest thing that honors the contract.
+"""Reference SharpeArena agent (Python), the simplest thing that honors the contract.
 
 Transport: stdio. Reads one MarketObservation (JSON) per line on stdin and writes one
-Decision (JSON) per line on stdout. Strategy: equal-weight buy-and-hold — the baseline
+Decision (JSON) per line on stdout. Strategy: equal-weight buy-and-hold, the baseline
 every real agent must beat. Fork it, replace ``decide``.
 
     python examples/reference-agent.py   # then feed it MarketObservation JSON lines
@@ -30,12 +30,13 @@ def main():
             continue
         try:
             decision = decide(json.loads(line))
-        except Exception:
-            # Any bad input degrades to an empty-orders hold — never crashes the harness.
-            decision = {"orders": [], "reasoning": "parse error -> hold"}
+        except Exception as error:
+            print(f"invalid observation: {error}", file=sys.stderr)
+            return 1
         sys.stdout.write(json.dumps(decision) + "\n")
         sys.stdout.flush()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

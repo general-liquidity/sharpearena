@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Reference SharpeArena agent (TypeScript) — the simplest thing that honors the contract.
+// Reference SharpeArena agent (TypeScript), the simplest thing that honors the contract.
 //
 // Transport: stdio. Reads one MarketObservation (JSON) per line on stdin and writes
-// one Decision (JSON) per line on stdout. Strategy: equal-weight buy-and-hold — the
+// one Decision (JSON) per line on stdout. Strategy: equal-weight buy-and-hold, the
 // baseline every real agent must beat. Fork it, replace `decide`.
 //
 //   node examples/reference-agent.ts   # then feed it MarketObservation JSON lines
@@ -28,9 +28,11 @@ rl.on("line", (raw) => {
   let decision: Decision;
   try {
     decision = decide(JSON.parse(line));
-  } catch {
-    // Any bad input degrades to an empty-orders hold — never crashes the harness.
-    decision = { orders: [], reasoning: "parse error -> hold" };
+  } catch (error) {
+    console.error(`invalid observation: ${String(error)}`);
+    process.exitCode = 1;
+    rl.close();
+    return;
   }
   process.stdout.write(JSON.stringify(decision) + "\n");
 });
