@@ -5,7 +5,7 @@
 // one Decision (JSON) per line on stdout. Strategy: equal-weight buy-and-hold, the
 // baseline every real agent must beat. Fork it, replace `decide`.
 //
-//   node examples/reference-agent.ts   # then feed it MarketObservation JSON lines
+//   npx --yes tsx examples/reference-agent.ts   # then feed it MarketObservation JSON lines
 
 import { createInterface } from "node:readline";
 

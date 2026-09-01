@@ -1,32 +1,39 @@
 # @general-liquidity/sharpearena
 
-A typed TypeScript/JavaScript API over the SharpeArena engine: the leak-free, point-in-time market environment for trading agents. The identical Rust engine that powers the [SharpeBench](https://www.npmjs.com/package/@general-liquidity/sharpebench) harness, compiled to WebAssembly, so a number computed here is byte-identical to the one computed from Rust or Python.
+A typed Node and Bun API for deterministic SharpeArena baselines, replay, synthetic
+data, stress scenarios, walk-forward windows, and regime tags. The package loads the
+same Rust engine compiled to WebAssembly and refuses a wrapper/engine `SPEC_HASH`
+mismatch at startup.
+
+This package is built as CommonJS for Node 18 or newer. Browser execution is not a
+supported distribution target.
+
+> The API provides a point-in-time market model, not process containment. JavaScript
+> called by the host has the host's permissions.
 
 ## Install
 
 ```bash
-npm i @general-liquidity/sharpearena
+npm install @general-liquidity/sharpearena
 ```
 
-Node >= 18. No native build step: the engine ships as WASM.
-
-## Quickstart
+## Run a baseline
 
 ```ts
 import { runBaseline } from "@general-liquidity/sharpearena";
 
-// The identical Rust engine, in the browser or Bun: run a baseline over a seeded panel.
 const run = runBaseline({
   agent: "momentum",
   dataset: { synthetic: { n_symbols: 4, n_days: 120, seed: 1 } },
   seed: 7,
 });
-console.log(run.returns.length, run.cost);   // per-period returns + realized execution cost
+
+console.log(run.returns.length, run.cost);
 ```
 
-## Tamper-evident replay
+Named agents are `buy_and_hold`, `hold`, `momentum`, and `random`.
 
-A run records only the agent's raw decisions. `replayRun` replays them through the identical engine against the frozen dataset and recomputes the result:
+## Replay decisions
 
 ```ts
 import { replayRun } from "@general-liquidity/sharpearena";
@@ -34,14 +41,32 @@ import { replayRun } from "@general-liquidity/sharpearena";
 const replayed = replayRun(dataset, trajectory, costs);
 ```
 
-The replay is byte-identical to the originally captured run if and only if nothing was altered. A tampered trajectory recomputes to different returns, so an agent cannot lie about what it earned.
+`replayRun` recomputes returns from the trajectory's decisions, window, and seed using
+the supplied dataset and cost model. It does not use `DecisionStep.step` or
+`observation_id` as engine inputs. Bind those metadata fields and the expected run
+geometry separately when the trajectory is an evidence artifact.
 
-Also exported: `datasetSynthetic`, `stressSuite`, `walkForward`, `tagRegime`, and the full wire-contract types (`MarketObservation`, `Decision`, `Run`, `RunTrajectory`, ...).
+## API
+
+| Export | Purpose |
+|---|---|
+| `runBaseline(config)` | Run one named in-process baseline. |
+| `replayRun(dataset, trajectory, costs?)` | Recompute a captured decision trajectory. |
+| `datasetSynthetic(params?)` | Build a deterministic synthetic panel. |
+| `stressSuite(seed?)` | Return the named adversarial stress scenarios. |
+| `walkForward(params)` | Generate disjoint out-of-sample windows. |
+| `tagRegime(dataset, window)` | Classify a window as bull, bear, or chop. |
+| `SPEC_HASH`, `checkSpecHash(...)` | Inspect or verify wrapper/engine compatibility. |
+
+The package also exports the TypeScript wire and engine types, including
+`MarketObservation`, `Decision`, `Run`, `RunTrajectory`, `Dataset`, `Window`, and
+`CostModel`.
 
 ## Links
 
-- Repository: [general-liquidity/sharpearena](https://github.com/general-liquidity/sharpearena)
-- Scoring: [@general-liquidity/sharpebench](https://www.npmjs.com/package/@general-liquidity/sharpebench)
+- [SharpeArena repository](https://github.com/general-liquidity/sharpearena)
+- [Agent contract](https://github.com/general-liquidity/sharpearena/blob/main/docs/agent-contract.md)
+- [SharpeBench scoring package](https://www.npmjs.com/package/@general-liquidity/sharpebench)
 
 ## License
 

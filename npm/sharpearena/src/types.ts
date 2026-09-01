@@ -12,7 +12,7 @@ export type Action = "buy" | "sell" | "hold" | "close";
 export interface Order {
   symbol: string;
   action: Action;
-  /** Target portfolio weight in [0, 1] (signed for shorts). */
+  /** Signed target portfolio weight; negative values represent shorts. */
   target_weight: number;
   /** Stated conviction in [0, 1]; scored for calibration. Defaults to 0.5. */
   confidence?: number;

@@ -1,84 +1,96 @@
-# SharpeArena
+# SharpeArena for Rust
 
-**A leak-free, point-in-time environment for trading agents, and the language-agnostic contract they speak.**
+The deterministic, point-in-time engine and governed agent contract behind
+SharpeArena.
 
-SharpeArena is the open-outcry trading floor for agents: the harness hands the agent a point-in-time
-`Observation`, the agent returns a `Decision`, repeat. Look-ahead is *structurally impossible* (the
-environment owns the time cursor and never hands out a future bar), and trajectories are
-recompute-from-raw-decisions, so an agent cannot lie about its returns.
+SharpeArena owns the market cursor, exposes history only through each
+`MarketObservation`, validates each `Decision`, and advances one simulation step.
+It also provides procedural scenarios, vector environments, execution noise,
+market clearing, a limit-order book, capture and replay, and checked external-agent
+execution.
 
-The strategic bet is **interface ownership**: if every trading agent in the open ecosystem conforms to
-the SharpeArena `Observation`/`Decision` contract, then [SharpeBench](https://crates.io/crates/sharpebench-core)
-is the natural scorer and the whole funnel (env, trajectory, score, leaderboard) runs on one
-standard. The interface *is* the product; the simulator is the credibility behind it.
+> SharpeArena is an evaluation environment, not a process sandbox. Rust code linked
+> into the evaluator has the evaluator's filesystem, network, and process access. Use
+> SharpeBench's digest-pinned container path for an untrusted entrant.
 
-## The agent contract (the standard)
+## Install
 
-An agent is just a program that reads an `Observation` and writes a `Decision`, in any language, over
-stdio (newline-JSON) or HTTP (`POST /decide`):
-
-```jsonc
-// Observation (harness → agent)
-{ "date": "2025-01-02", "cash": 1.0,
-  "symbols": [{ "symbol": "AAPL", "close_history": [187.2, 188.0, 190.4] }],
-  "portfolio": [] }
-
-// Decision (agent → harness)
-{ "orders": [{ "symbol": "AAPL", "action": "buy", "target_weight": 0.5 }] }
+```bash
+cargo add sharpearena
 ```
 
-The wire shape is versioned (`CONTRACT_VERSION`), evolves **additively only** (new fields are optional
-with defaults), and is pinned by published JSON Schemas + a conformance kit. See
-[`GOVERNANCE.md`](./GOVERNANCE.md) and [`contract/`](./contract/).
-
-## The Gym lifecycle
-
-The same engine SharpeBench runs *closed* (`run_backtest`), SharpeArena exposes *open*: the caller drives it.
+## Step an environment
 
 ```rust
-use sharpearena::{TradingEnv, Dataset, CostModel, Window, BuyAndHold, Agent};
+use sharpearena::{Agent, BuyAndHold, CostModel, Dataset, TradingEnv, Window};
 
 let data = Dataset::synthetic(4, 120, 1);
-let mut env = TradingEnv::new(data, Window { start: 20, end: 120 }, CostModel::default(), 7);
+let mut env = TradingEnv::new(
+    data,
+    Window { start: 20, end: 120 },
+    CostModel::default(),
+    7,
+);
 let mut agent = BuyAndHold;
-let mut obs = env.reset();
+let mut observation = env.reset();
+
 loop {
-    let decision = agent.decide(&obs);
-    let step = env.step(decision);   // -> { observation, reward, done, info }
-    obs = step.observation;
-    if step.done { break; }
+    let step = env.step(agent.decide(&observation));
+    observation = step.observation;
+    if step.done {
+        break;
+    }
 }
 ```
 
-Both stepping surfaces call one shared `step_once` body, so a trajectory the env produces is
-**byte-identical** to the equivalent `run_backtest` (enforced by `env_step_matches_run_backtest`).
+`TradingEnv` and `run_backtest` share one step implementation. The
+`env_step_matches_run_backtest` test pins equivalent native runs to the same output.
 
-## env → SharpeBench score
+## Connect an external agent
 
-Run with capture, hand the trajectory to a *separate verifier* that recomputes the submission from the
-raw decisions + frozen data alone, then score:
+The wire contract is one newline-delimited JSON `MarketObservation` in and one
+`Decision` out. Rust exposes stdio and HTTP transports through `ExternalAgent` and
+`HttpAgent`.
 
-```
+For any wire transport, use `run_backtest_checked`. A transport or protocol fault is
+returned as `CellOutcome::Failed`, so it cannot be scored as an empty-order hold. The
+lower-level `run_backtest` API remains available for trusted in-process policies, but
+it does not provide that failure guarantee.
+
+The wire evolves additively under `CONTRACT_VERSION`. The authoritative schemas and
+fixtures live in [`contract/`](contract/); compatibility rules live in
+[`GOVERNANCE.md`](GOVERNANCE.md).
+
+## Capture and replay
+
+`run_backtest_capture` records decisions with the window and seed coordinates.
+`replay_run` and `replay_submission` recompute returns from those decisions, the
+provided dataset, and the provided cost model.
+
+Replay does not treat `DecisionStep.step` or `observation_id` as engine inputs. Those
+fields remain evidence metadata. Bind the trajectory, dataset, costs, engine identity,
+and expected geometry in a higher-level evidence contract when tamper detection is
+required. The end-to-end example shows the recompute-and-score path:
+
+```bash
 cargo run -p sharpearena --example score-a-trajectory
 ```
 
-(see [`examples/score-a-trajectory.rs`](./examples/score-a-trajectory.rs)). Tamper with the trajectory
-and the honest replay recomputes to different returns. This is the trust hinge of the whole ecosystem.
+## Public areas
 
-## Distribution
+| Area | Main types and functions |
+|---|---|
+| Environment | `TradingEnv`, `VecTradingEnv`, `Dataset`, `Window`, `CostModel` |
+| Scenarios | `ScenarioSpec`, `generate_scenario`, train/eval splits, `SealedSalt` |
+| Agent wire | `MarketObservation`, `Decision`, `Order`, `CONTRACT_VERSION` |
+| Checked transport | `run_backtest_checked`, `CellOutcome`, `TransportFault` |
+| Replay | `run_backtest_capture`, `replay_run`, `replay_submission` |
+| Markets | `OrderBook`, `clear_bar`, `MarketParams`, `Mandate`, `ExecNoise` |
+| Compatibility | `SPEC_HASH`, canonical golden fixtures, closed input schemas |
 
-SharpeArena ships from one Rust engine to every surface, with a language-agnostic wire contract on top so
-agents can be written in anything:
+Python/Gymnasium and npm/WASM are separate distributions over this engine. Start at
+the [repository README](../../README.md) for the product map.
 
-- **Rust**: `sharpearena` (this crate).
-- **TypeScript / npm**: `@general-liquidity/sharpearena` (the engine compiled to WASM).
-- **Python / PyPI**: `sharpearena`, with a `gymnasium.Env` adapter and a PrimeIntellect `verifiers`
-  environment so it plugs into the RL-training stacks directly.
+## License
 
-Reference agents in Rust, TypeScript, and Python double as the conformance smoke tests
-([`examples/`](./examples/)).
-
-## Status
-
-Published from its own repository, [general-liquidity/sharpearena](https://github.com/general-liquidity/sharpearena),
-consuming the published `sharpebench-sim` engine as a versioned crate (never a vendored copy).
+MIT OR Apache-2.0
