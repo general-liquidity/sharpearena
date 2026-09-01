@@ -13,9 +13,11 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 ### Added
 - python: ship a typed `sharpearena_py.pyi` surface for the compiled extension and fail CI when public runtime names, member kinds, or callable signatures drift from the stub. The wheel smoke test now proves both `py.typed` and the native stub survive packaging.
 - evidence: every paper producer that constructs the scenario environment records an `effective_config` read back from the environment that consumed the arm. Dimensions and windows come from the native instance; scenario knobs are verified by independently regenerating and fingerprinting the requested tape, so a reproducible but mislabelled arm fails instead of publishing the wrong condition.
+- docs: add an evidence-backed smolvm extraction ledger and focused architecture, capability, integrity, evidence, and navigation documents.
 
 ### Changed
 - contract: the cross-surface `SPEC_HASH` now frames every input as `name + NUL + canonical length + bytes`, preserves lone carriage returns while normalizing CRLF, and includes the engine manifest. The SharpeBench engine dependencies are exact-pinned at 0.15.0, so an upstream synthetic-tape change cannot enter through a compatible-version update without moving the handshake. The committed wasm bundle and Python/npm pins were rebuilt against the new hash.
+- docs: reorganize the root README into a task-first product entry point shared in structure with SharpeBench; deep feature, evidence, security, and operational material now lives in linked topic documents.
 
 ### Fixed
 - release: the npm lockfile now carries the workspace version in both package

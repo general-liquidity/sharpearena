@@ -7,15 +7,28 @@
 **Targets:** SharpeArena and SharpeBench
 **Scope:** architecture and portability only. This assessment does not port Gordon code.
 
+**Current-status note (2026-09-01):** this document began as a pre-implementation
+assessment. The four native candidates it identified have since shipped:
+
+| Candidate | Current disposition |
+|---|---|
+| `EdgeManifest` | Implemented as a closed, unit-typed strategy-evidence schema with host-counted raw trial ordinals and held-out kill-condition evaluation. |
+| Strict trace promotion | Implemented as immutable silver candidates, explicit operator promotion, deterministic fingerprints, and offline gold regressions. |
+| Paper reconciliation | Implemented with a crash-persistent `submission_unknown` state, deterministic client-order identity, query-before-retry, and no production endpoint. Partial-fill state remains the broker's cumulative last-write view rather than an independently accumulated fill ledger. |
+| Evidence coverage | Implemented in SharpeBench as a machine-readable covered/excluded-field inventory with a drift test and secret redaction. |
+
+The historical code observations and rejection reasoning below are retained; any
+sentence phrased as a proposed port should be read with this status table.
+
 ## Executive decision
 
 Gordon should not become the runtime underneath SharpeArena or SharpeBench. It is a large, stateful trading application whose orchestration, permissions, memory, broker integrations, and proactive services are deliberately coupled around an interactive operator. SharpeArena and SharpeBench need a much smaller and more stable experimental boundary: a fixed environment produces typed trajectories; a scorer evaluates them. Importing Gordon wholesale would make the scaffold part of the treatment, weaken reproducibility, introduce a circular package boundary, and bring in several fail-open or permissive paths that are unacceptable in a benchmark.
 
-The scan nevertheless found three Gordon ideas worth preserving as later native candidates. They are recommendations only: this work does not port them, and the current build explicitly excludes the Gordon-specific category.
+The scan nevertheless found three Gordon ideas worth preserving as native concepts. The assessment itself did not port them; later Sharpe-suite work implemented product-native versions without a Gordon dependency.
 
-1. **An edge manifest for generated strategies.** Gordon's `EdgeSpec` usefully binds a hypothesis to a mechanism, regimes, invariants, kill conditions, and a verification plan. A later SharpeArena workstream could adopt that *concept* as typed evidence attached to every generated candidate. It should not port Gordon's parser or monitor.
-2. **A production-trace-to-regression promotion queue.** Gordon has a sound silver-to-gold workflow for turning a flagged real trace into a frozen regression scenario. SharpeArena already records typed traces, but lacks the promotion workflow. A later workstream could add a strict, operator-approved native version.
-3. **An explicit uncertain-execution state for paper trading.** Gordon's termination/reconciliation work captures the important distinction between “not submitted,” “submission outcome unknown,” and “broker acknowledged.” This is a candidate for a later paper-arm state machine, not part of the current non-Gordon build.
+1. **An edge manifest for generated strategies.** Gordon's `EdgeSpec` usefully binds a hypothesis to a mechanism, regimes, invariants, kill conditions, and a verification plan. SharpeArena now carries that concept as typed evidence attached to every generated candidate without importing Gordon's parser or monitor.
+2. **A production-trace-to-regression promotion queue.** Gordon has a sound silver-to-gold workflow for turning a flagged real trace into a frozen regression scenario. SharpeArena now provides a strict, operator-approved native workflow over its typed traces.
+3. **An explicit uncertain-execution state for paper trading.** Gordon's termination/reconciliation work captures the important distinction between “not submitted,” “submission outcome unknown,” and “broker acknowledged.” The paper-only arm now models that state explicitly and persists it before reconciliation.
 
 A fourth group belongs only in a **later heavy-scaffold experimental arm**: multi-agent orchestration, tool loops, context compaction, offloaded tool results, rejection memory, and richer process checks. The same model must be evaluated under the minimal scaffold and the heavy scaffold on identical cells. Otherwise the benchmark would report Gordon-plus-model as model performance.
 
@@ -25,7 +38,7 @@ Everything else is either already present in a stronger form or should be reject
 
 | Decision | Meaning |
 |---|---|
-| **Candidate concept — not ported** | A possible later native invariant. Do not copy Gordon modules or create a Gordon dependency. None of these candidates is implemented by this assessment. |
+| **Implemented native concept** | The assessment supplied the invariant; a later change implemented it within the Sharpe product boundary without a Gordon dependency. |
 | **Later heavy-scaffold arm** | Useful only as an explicit treatment arm after the minimal local-model field is stable. It must be configurable, disclosed, and scored separately. |
 | **Already exists** | SharpeArena/SharpeBench already implement the capability, generally with a cleaner experimental boundary. Extend only if a concrete gap remains. |
 | **Reject** | The component is application-specific, duplicates stronger target code, weakens the guarantees, contains unsafe fallbacks, or has no valid trading-benchmark analogue. |
@@ -163,7 +176,7 @@ Gordon's `EdgeSpec` binds a strategy to a hypothesis, causal/mechanical story, i
 
 Do not port the Gordon parser or monitor. Its monitor degrades on a missing invariant but does not necessarily retire on a missing kill condition (`work/gordon-work/src/core/edge/monitor.ts:18-72`), which is too permissive for a benchmark contract.
 
-**Decision: port now — concept only.** Add a native, closed `EdgeManifest` schema to generated-strategy evidence with at least:
+**Decision: implemented natively — concept only.** The closed `EdgeManifest` schema records:
 
 - `hypothesis` and `mechanism`;
 - target assets, timeframe, and regime claims;
@@ -191,13 +204,13 @@ SharpeBench already has typed trading process events and gates, and the local-ag
 
 Gordon process checks inspect a coding/assistant-style sequence of named tool calls and often match tool names or substrings. That does not map directly to a trading environment whose canonical output is a typed `Decision`. The target analogue is a typed state machine over observation, decision, risk evaluation, submission, acknowledgment, fill, and reconciliation events. String-pattern checks would be brittle and would reward naming conventions rather than behavior.
 
-### Trace promotion is a genuine gap
+### Trace promotion was a genuine gap and is now implemented
 
 Gordon converts a real audit trace into normalized process/judge views, scores recent traces, appends flagged cases to a promotion queue, and requires operator silver-to-gold triage before freezing a regression scenario (`work/gordon-work/src/infra/domain/evals/harness/traces/traceAdapter.ts`; `traceScorer.ts`; `promotionQueue.ts`; `CLAUDE.md:104`).
 
-SharpeArena already has an append-only point-in-time trace writer and replay surface (`sharpearena/crates/sharpearena-py/python/sharpearena/trace.py:1-18,83-216`), but not this promotion workflow. Its permissive loader can skip malformed records and substitute a zero reward for missing reward data; that is convenient for exploratory reading but unacceptable for promotion.
+SharpeArena already had an append-only point-in-time trace writer and replay surface (`sharpearena/crates/sharpearena-py/python/sharpearena/trace.py:1-18,83-216`), but did not have this promotion workflow when assessed. Its permissive loader can skip malformed records and substitute a zero reward for missing reward data; that remains useful for exploratory reading but is not used for promotion.
 
-**Decision: port now — concept only.** Build a native promotion path that:
+**Decision: implemented natively — concept only.** The promotion path:
 
 1. reads in strict mode and rejects malformed/incomplete traces;
 2. fingerprints the environment, model, scaffold, contract, data, and process-event sequence;
@@ -338,15 +351,18 @@ This gives the user-facing composition they want—SharpeArena is the sandbox/en
 | Mock/fallback result to keep UX moving | A placeholder may be acceptable in an interactive coding draft | Any parse, generation, transport, or backtest failure is a typed failed cell, never a hold or synthetic success |
 | Tool-result cache | Source/tool results are often immutable enough for convenience caching | Only content-addressed frozen data or complete as-of market-data keys; never TTL reuse in a scored decision path |
 
-## 13. Recommended implementation backlog
+## 13. Implementation disposition
 
-This is an assessment backlog, not a code port plan. Every item is native to SharpeArena/SharpeBench.
+This began as an assessment backlog rather than a code port plan. Every item is
+native to SharpeArena/SharpeBench; the D1–D4 candidates are now implemented and
+the P1/P2 items remain conditional future treatments.
 
-### Deferred candidate set — not part of the current build
+### Implemented candidate set
 
-The priority labels below describe the assessment's ordering if a separate Gordon-derived workstream is authorized later. They are not current build requirements and none is implemented by this report.
+The assessment document itself implemented none of these. Subsequent work built
+all four with the scope and caveats recorded in the current-status table above.
 
-#### D1 EdgeManifest for generated strategies
+#### D1 EdgeManifest for generated strategies — implemented
 
 **Source idea:** Gordon `EdgeSpec`.
 
@@ -360,7 +376,7 @@ The priority labels below describe the assessment's ordering if a separate Gordo
 - kill conditions evaluated only out of selection sample;
 - no Gordon runtime or parser dependency.
 
-#### D2 Strict trace promotion
+#### D2 Strict trace promotion — implemented
 
 **Source idea:** Gordon silver-to-gold trace promotion.
 
@@ -374,7 +390,7 @@ The priority labels below describe the assessment's ordering if a separate Gordo
 - frozen minimal gold scenario runnable offline in CI;
 - regression scenario carries source trace and environment hashes.
 
-#### D3 Paper-execution reconciliation state machine
+#### D3 Paper-execution reconciliation state machine — implemented with a partial-fill caveat
 
 **Source idea:** Gordon termination layers.
 
@@ -388,7 +404,7 @@ The priority labels below describe the assessment's ordering if a separate Gordo
 - raw acknowledgment and transition hashes in forward evidence;
 - no production endpoint or real-capital authority.
 
-#### D4 Evidence coverage declaration
+#### D4 Evidence coverage declaration — implemented
 
 **Source idea:** lesson from Gordon's signed/unsigned audit fields.
 
@@ -457,7 +473,7 @@ Layer 1: entrant
 
 Layer 2: SharpeArena
   prompt/contract adapter -> deterministic environment -> typed trajectory
-  optional fail-closed Docker boundary for untrusted generated code
+  trusted local-model process selected by the operator
   separate nondeterministic forward paper arm
 
 Layer 3: shared evidence contract
@@ -466,8 +482,14 @@ Layer 3: shared evidence contract
 
 Layer 4: SharpeBench
   statistics, deflation, pass^k, process gates, audit, leaderboard/reporting
+  fail-closed digest-pinned Docker boundary for untrusted entrants
 ```
 
 Gordon contributes design hypotheses to layers 1 and 3 and may later define one layer-1 scaffold. It should not sit between SharpeArena and SharpeBench, own their evidence, or become a package dependency. This keeps the environment falsifiable, the scorer independent, and the effect of sophisticated agentic scaffolding measurable rather than silently baked into every result.
 
-The current build therefore keeps Gordon out of scope and runs the minimal local-model field without any Gordon-derived component. If a separate workstream is authorized later, the first candidates are `EdgeManifest`, strict trace promotion, paper-order reconciliation, and explicit evidence coverage. A Gordon-inspired heavy scaffold should be considered only after a minimal-field result exists, and then only as a paired experimental arm.
+The current build keeps Gordon out of the runtime and package graph. It has
+implemented `EdgeManifest`, strict trace promotion, paper-order reconciliation,
+and explicit evidence coverage as native Sharpe-suite concepts. No local-model
+field has been run or admitted as evidence. A Gordon-inspired heavy scaffold
+should be considered only after a minimal-field result exists, and then only as
+a paired experimental arm.

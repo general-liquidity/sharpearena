@@ -6,15 +6,13 @@
 //! out a future bar — and trajectories are recompute-from-raw-decisions, so an agent cannot
 //! lie about its returns.
 //!
-//! ## M0 — extraction scaffold
+//! ## One engine, several surfaces
 //!
-//! This crate currently *re-exports* the point-in-time simulator that already lives in
-//! `sharpebench-sim`, promoting it from "the benchmark's internal engine" to a standalone
-//! environment whose public reason to exist is "run an agent in a market." The Gym-style
-//! [`reset`]/[`step`] lifecycle, the frozen `CONTRACT_VERSION`, the WASM/npm + Python
-//! surfaces, and the ecosystem wiring land in later milestones (see
-//! `specs/SPEC-trading-agent-env.md`). v0.1 depends on `sharpebench-sim`; the `gl-sim-core`
-//! extraction is a follow-up refactor, not a blocker.
+//! The deterministic engine is shared with the published SharpeBench simulator rather than
+//! copied. This crate adds the Gym-style [`reset`]/[`step`] lifecycle, procedural scenarios,
+//! vector and multi-agent market primitives, the governed wire contract, sealed evaluation
+//! seeds, and a cross-surface [`SPEC_HASH`] handshake. The same engine is exposed through
+//! Rust, Python/Gymnasium, WASM/npm, and the language-neutral observation/decision protocol.
 //!
 //! [`reset`]: https://gymnasium.farama.org
 //! [`step`]: https://gymnasium.farama.org
@@ -107,7 +105,7 @@ pub use sharpebench_sim::{
     CostModel,
     CostProfile,
     Dataset,
-    // O(1) env state snapshot (clone_state / restore_state) — sharpebench-sim 0.0.8.
+    // O(1) environment snapshot (clone_state / restore_state).
     EnvState,
     // External transports — a conforming agent is just a program that reads observations
     // (stdin / `POST /decide`) and writes decisions. The diagnostics types travel with

@@ -1,4 +1,4 @@
-//! M0 smoke tests — prove the re-exported SharpeArena surface is usable end-to-end from
+//! Public-surface smoke tests — prove SharpeArena is usable end-to-end from
 //! outside the crate: the engine runs an agent in a market, and the language-agnostic wire
 //! contract round-trips through the public types.
 
