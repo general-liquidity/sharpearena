@@ -122,7 +122,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "f461d8ca1867faba3476689cb262851ac08e7859",
+  "generated_at_head": "1b7a45abb50be72cc56c0dd777b98cedf5484881",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -144,11 +144,11 @@
     },
     {
       "path": ".github/workflows/ci.yml",
-      "sha256": "36d096ea00df070422454ece9e2c3d5277d618f7d3b722a69705fefe451de9e4"
+      "sha256": "5416fab805e550dde8725e75a365e4d576ad8446d04470c9b81f11abb931036d"
     },
     {
       "path": ".github/workflows/release.yml",
-      "sha256": "52ae80ff444eee615243a46a65d9f2c19b2a58949ea1fc70c4465a0856d67c78"
+      "sha256": "f39474d7e16c27915f03e97ba4cca92e7651034e8a92728cf18d5d11de219040"
     },
     {
       "path": "Cargo.lock",
@@ -456,7 +456,7 @@
     },
     {
       "path": "crates/sharpearena/release.toml",
-      "sha256": "30a9bdeab268dac692532d48436129e98ed0900147631483088f551c07973dd5"
+      "sha256": "65e923214659fe857cb60904cd00ab268f28925c93f76880db930cb4c3bd6ef1"
     },
     {
       "path": "crates/sharpearena/src/contract.rs",
@@ -678,6 +678,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "192612756242ebd7f3fcb3a596a54a78d4d326d41cab479715a4aba3b3ff5690",
+  "source_snapshot_sha256": "efed9593f851c23cba4910785816c5c1c3c0705c4360bbf075fe806d89c1819e",
   "validator": "paper/src/check-provenance.py"
 }
