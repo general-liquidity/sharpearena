@@ -247,7 +247,6 @@ effective configuration, and release topology.
 | Train an agent | [Training guide](docs/training.md) |
 | Run local open-weight models | [Local-agent architecture](docs/LOCAL_AGENT_ARCHITECTURE.md) · [Model matrix](docs/LOCAL_MODEL_MATRIX_2026.md) |
 | Operate or publish a release | [`RELEASING.md`](RELEASING.md) |
-| See what was extracted from smolvm | [smolvm assessment](docs/SMOLVM_ASSESSMENT.md) |
 | Browse everything | [Documentation map](docs/README.md) |
 
 ---
