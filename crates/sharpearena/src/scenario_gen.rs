@@ -542,8 +542,9 @@ impl std::error::Error for SealedSaltError {}
 ///
 /// The sealed-seed argument rests on two properties of the salt, entropy and secrecy, and
 /// before this type both were conventions a caller could quietly break. The length floor
-/// lived only in the pyo3 binding, so the Rust and WASM surfaces derived from a passphrase
-/// without complaint; and a bare `&[u8]` reachable from a [`ScenarioSpec`]-adjacent call
+/// lived only in the pyo3 binding, so a direct Rust caller could derive from a passphrase
+/// without complaint; the WASM surface never exposed sealed seed derivation. A bare
+/// `&[u8]` reachable from a [`ScenarioSpec`]-adjacent call
 /// site could be printed, serialized, or folded into a golden fingerprint by accident.
 ///
 /// So: deliberately no `Serialize`, no `Display`, no `Deref`, no `Clone`, and a redacting
