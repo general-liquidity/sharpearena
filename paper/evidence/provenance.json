@@ -122,7 +122,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "cbf18ad6f46b948828a62380b88b111121d4cc7f",
+  "generated_at_head": "f461d8ca1867faba3476689cb262851ac08e7859",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -456,7 +456,7 @@
     },
     {
       "path": "crates/sharpearena/release.toml",
-      "sha256": "82017a012e1c75125aa7b5d114f3c873cc3d77f1360d92c5731679599b085461"
+      "sha256": "30a9bdeab268dac692532d48436129e98ed0900147631483088f551c07973dd5"
     },
     {
       "path": "crates/sharpearena/src/contract.rs",
@@ -652,7 +652,7 @@
     },
     {
       "path": "scripts/release.py",
-      "sha256": "b13cb88c37dd11cd6a614b847109e034b7abe6ceadcd7ff8db4f169a9210200d"
+      "sha256": "371cc9bc26b6e4b5406c47a2e69658aeb06f6ee2f0d51e6a0b2ca6a856d1bd2f"
     }
   ],
   "source_snapshot_excludes": [
@@ -678,6 +678,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "fd1a0a99c01c6565ccd3d3aec3f63bc032498a6f0a2d53fd34296ea2a4981b96",
+  "source_snapshot_sha256": "192612756242ebd7f3fcb3a596a54a78d4d326d41cab479715a4aba3b3ff5690",
   "validator": "paper/src/check-provenance.py"
 }
