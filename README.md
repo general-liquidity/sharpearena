@@ -3,7 +3,7 @@
 
 # SharpeArena
 
-### A point-in-time market environment and open contract for trading agents
+### The point-in-time trading-agent sandbox and reinforcement-learning environment
 
 Build, train, replay, and evaluate agents against one deterministic Rust engine
 from Rust, Python, JavaScript, or any process that speaks JSON.
