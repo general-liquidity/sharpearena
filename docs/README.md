@@ -24,7 +24,6 @@ for the deeper material.
 | Wire-governance rules | [`crates/sharpearena/GOVERNANCE.md`](../crates/sharpearena/GOVERNANCE.md) |
 | Release process | [`RELEASING.md`](../RELEASING.md) |
 | Gordon comparison | [Gordon port assessment](GORDON_PORT_ASSESSMENT.md) |
-| smolvm comparison | [smolvm extraction assessment](SMOLVM_ASSESSMENT.md) |
 | Methodology paper and committed evidence | [`paper/`](../paper/) |
 
 Package-specific READMEs live beside the Rust crate, Python distribution, npm

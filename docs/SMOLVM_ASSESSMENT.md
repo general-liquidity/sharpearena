@@ -1,26 +1,27 @@
 # smolvm assessment for SharpeArena
 
-This is the engineering ledger for the local smolvm snapshot reviewed while
+This is the engineering ledger for the source-bound smolvm snapshot reviewed while
 hardening SharpeArena. It records what was transferable, what was implemented,
 and what was deliberately rejected. It is not a claim that SharpeArena embeds or
 depends on smolvm.
 
 ## Scope of the review
 
-The local snapshot identifies itself as smolvm 1.13.1 and contains 492 files:
-222 Rust files (about 188,000 lines), 72 shell files (about 17,600 lines), 33
-Markdown files, plus TypeScript, Python, Nix, packaging, deployment, and release
-assets. The review covered all top-level product slices:
+The reviewed source is the official smol-machines/smolvm 1.13.1 tree. It
+contains 493 tracked entries, including three external submodules. The review
+covered the product architecture, runtime boundaries, tests, benchmark harness,
+packaging, SDKs, and documented claims across every top-level superproject
+slice:
 
-- 109 files in `src/`;
+- 108 files in `src/`;
 - 131 files across the 15 workspace crates;
 - 42 integration-test files and 23 benchmark files;
 - 45 SDK files; and
-- build, packaging, deployment, Nix, examples, demo, and repository metadata.
+- build, packaging, deployment, Nix, examples, and demo code.
 
-The snapshot is an exported tree without Git metadata. Coordinates below are
-therefore `path:line` references into that snapshot, not commit-stable upstream
-links.
+The three external submodules and Git-LFS native payloads are separate upstream
+products, not implementations contained in the reviewed superproject tree.
+Coordinates below identify the relevant local files and behavior.
 
 ## Why smolvm has so much at the repository root
 
@@ -52,7 +53,7 @@ architecture, security model, limitations—not its root folder count.
 
 | smolvm evidence | SharpeArena extraction | Correctness assessment |
 |---|---|---|
-| `bench/bench.sh:146-205` reads the daemon's effective share mode and rejects a mislabeled benchmark arm. | `effective_config.py`, native `TradingEnv.effective_config`, and every scenario-producing evidence script compare requested configuration with values read from the environment that consumed it. | Correct. Dimensions/window/seed come from the native instance; scenario knobs are independently regenerated and fingerprinted rather than echoed from the driver. The implementation documents what that independent path still cannot detect. |
+| `bench/bench.sh:146-205` reads the daemon's effective share mode and reports a mismatch, although the script does not fail the run. | `effective_config.py`, native `TradingEnv.effective_config`, and every scenario-producing evidence script compare requested configuration with values read from the environment that consumed it and refuse a mismatch. | Correct and stronger. Dimensions/window/seed come from the native instance; scenario knobs are independently regenerated and fingerprinted rather than echoed from the driver. The implementation documents what that independent path still cannot detect. |
 | `crates/smolvm-cuda/build.rs:8-37` computes a deterministic FNV-1a hash over the files defining its wire protocol. | `crates/sharpearena/build.rs`, `spec_hash.rs`, and pins in Python/npm/WASM expose and check `SPEC_HASH`. | Strengthened. Inputs are sorted and length-framed, CRLF is normalized without collapsing lone CR bytes, `Cargo.toml` and exact SharpeBench engine pins are included, and stale or pre-handshake wrappers refuse at construction. A committed record and cross-surface tests pin the value. |
 | `src/secrets.rs:502-544` wraps secret text, redacts `Debug`, and avoids casual serialization/display. | `SealedSalt` centralizes the 16-byte floor, exposes no `Serialize`, `Display`, or `Deref`, redacts `Debug`, and scrubs its buffer on drop. | Appropriate. The published Rust API can no longer bypass the entropy floor. The scrub is explicitly best-effort because the crate forbids unsafe code and did not add a crypto dependency merely to promise a volatile erase. Seed derivation and historical goldens are unchanged. |
 | `src/cli/cleanup_ephemeral.rs:52-128` separates cleanup ordering from effects and retains registration if deletion fails. | Release cleanup is a pure, injected sequence; path deletion is guarded by a non-empty, strictly-inside-root, non-root, non-symlink predicate. | Correct for the release worktree problem. Failure preserves recoverable state instead of forgetting a directory that still exists. |
@@ -83,7 +84,7 @@ architecture, security model, limitations—not its root folder count.
 | libkrun/libkrunfw, microVM launch, snapshots, forkpoints, and per-episode VMs | Rejected. SharpeArena is a deterministic market environment, not a containment runtime. Per-episode VM startup would dominate large seeded fields, and the product explicitly delegates untrusted entrant containment to SharpeBench. |
 | `.smolmachine` | Rejected as a research-evidence format. Its compatible footer remains CRC32-based; current smolvm adds a full-artifact SHA-256 marker for shared extraction, but that cache identity is not a source/provenance manifest. SharpeArena's exact source and artifact digests are the better fit. |
 | CUDA/NVML remoting, GPU shims, VNC/framebuffer, S3/FUSE, OCI registry/cache, Kubernetes/containerd, fleet admission, and cloud control-plane code | Not relevant to the environment or its published interfaces. Adding them would enlarge the trusted computing base without strengthening a stated SharpeArena property. |
-| smolvm binaries or distribution artifacts | Rejected. SharpeArena does not need them, and redistribution would inherit libkrunfw/LGPL and bundled GPL-kernel obligations described in smolvm's `Licenses.md`. |
+| smolvm binaries or distribution artifacts | Rejected. SharpeArena does not need them, the reviewed tree does not contain the LFS/submodule payload bytes, and upstream Nix, Debian, and source-offer metadata disagree about the bundled kernel. Any redistribution would require an independent license and corresponding-source review. |
 | Node/Python SDK implementation | Used only as interface-design prior art. The local Node build references a missing `crates/smolvm-napi`, and neither SDK is exercised in the main CI. SharpeArena's published wrappers and pack/install tests are stronger evidence. |
 | Artifact cache eviction, registry retry, and P2P distribution | Conditional only. Revisit if SharpeArena later owns a shared model/dataset blob cache; there is no such cache to harden today. |
 
