@@ -3,10 +3,10 @@
 
 # SharpeArena
 
-### The point-in-time trading-agent sandbox and reinforcement-learning environment
+### A deterministic trading-agent evaluation sandbox and reinforcement-learning environment
 
-Build, train, replay, and evaluate agents against one deterministic Rust engine
-from Rust, Python, JavaScript, or any process that speaks JSON.
+Build and train through Rust or Python, run baselines and replay trajectories in
+Node, or connect an agent in any language through the JSON contract.
 
 [![Crates.io](https://img.shields.io/crates/v/sharpearena?style=flat-square&logo=rust&color=DEA584&label=crates.io)](https://crates.io/crates/sharpearena)
 [![npm](https://img.shields.io/npm/v/@general-liquidity/sharpearena?style=flat-square&logo=npm&color=CB3837)](https://www.npmjs.com/package/@general-liquidity/sharpearena)
@@ -113,9 +113,9 @@ console.log(run.returns.length, run.cost);
 | Surface | Install | Best for |
 |:--|:--|:--|
 | Rust | `cargo add sharpearena` | The deterministic environment, scenario generation, vector stepping, execution, market clearing, and governed wire contract. |
-| Python | `pip install sharpearena` | Gymnasium, PettingZoo, `verifiers`, Minari, wrappers, local fields, strategy search, MCP, and the paper-only forward arm. |
-| npm | `npm i @general-liquidity/sharpearena` | A typed JS/TS API over the same engine compiled to WebAssembly. |
-| JSON contract | stdin/stdout or `POST /decide` | Agents written in any language. |
+| Python | `pip install sharpearena` | Gymnasium and the scalar/vector environment. Optional extras add PettingZoo, `verifiers`, Minari, MCP, and local-model tooling. |
+| npm | `npm i @general-liquidity/sharpearena` | Named baselines, synthetic data, replay, stress suites, walk-forward windows, and regime tags under Node or Bun. |
+| JSON contract | stdin/stdout or `POST /decide` | The observation/decision protocol for an external runner; not a standalone Arena CLI. |
 
 Package-specific usage lives beside each distribution: the
 [Rust crate](crates/sharpearena/), [Python package](crates/sharpearena-py/), and
@@ -146,10 +146,13 @@ ordinary SharpeBench submissions.
 
 - **Point-in-time access:** the environment owns the cursor and exposes no
   future-bar API. Causal wrappers and `LookaheadGuard` preserve that boundary.
-- **Failure is not a hold:** malformed output, transport loss, timeouts, and
-  invalid symbols become typed failed cells rather than empty decisions.
-- **Replay from decisions:** the frozen engine recomputes trajectories from the
-  recorded agent decisions; tampering changes the result.
+- **Failure is not a hold on checked field paths:** malformed output, transport
+  loss, timeouts, and invalid symbols become typed failed cells rather than
+  scoreable empty decisions. Low-level unchecked backtests remain available for
+  compatibility and do not make that guarantee.
+- **Replay from decisions:** returns and score inputs are recomputed from recorded
+  decisions and frozen inputs rather than trusted from an agent. Step labels and
+  observation IDs are evidence metadata, not replay inputs.
 - **Known arm identity:** evidence producers compare requested configuration
   with values read back from the environment that consumed it.
 - **Cross-surface compatibility:** canonical pre-hash JSON, native/WASM/npm/
@@ -198,18 +201,20 @@ An agent receives point-in-time market state and returns target-weight orders:
 }
 ```
 
-`CONTRACT_VERSION` governs additive wire evolution; JSON Schemas and bidirectional
-conformance tests guard the Rust types. See the
-[contract directory](crates/sharpearena/contract/) and
+`CONTRACT_VERSION` governs additive wire evolution; JSON Schemas and
+bidirectional conformance tests guard the Rust types. See the
+[agent contract guide](docs/agent-contract.md),
+[contract directory](crates/sharpearena/contract/), and
 [governance rules](crates/sharpearena/GOVERNANCE.md).
 
 ## Current evidence
 
 The committed paper reports deterministic reference policies and calibration /
-falsification experiments, not local or frontier-model performance. No model
-field has been run or admitted to the evidence manifest. The environment and
-field runners are ready; CI uses deterministic model doubles and downloads no
-weights.
+falsification experiments generated with the historical 0.9.0 evidence tree,
+not local or frontier-model performance and not an empirical validation of the
+current 0.21.0 package. No model field has been run or admitted to the evidence
+manifest. The environment and field runners are ready; CI uses deterministic
+model doubles and downloads no weights.
 
 Results, non-results, and finite-grid limits are summarized in
 [Evidence and current status](docs/evidence.md). Exact commands, fixed seeds,
@@ -244,7 +249,8 @@ effective configuration, and release topology.
 | Understand the package and trust boundaries | [Architecture](docs/architecture.md) · [Integrity and security](docs/integrity-and-security.md) |
 | See the full feature inventory | [Capability map](docs/capabilities.md) |
 | Interpret the current results honestly | [Evidence and current status](docs/evidence.md) · [`EVALUATION.md`](EVALUATION.md) |
-| Train an agent | [Training guide](docs/training.md) |
+| Train an agent | [Gymnasium guide](docs/gymnasium.md) · [Training guide](docs/training.md) |
+| Connect an external agent | [Agent contract](docs/agent-contract.md) |
 | Run local open-weight models | [Local-agent architecture](docs/LOCAL_AGENT_ARCHITECTURE.md) · [Model matrix](docs/LOCAL_MODEL_MATRIX_2026.md) |
 | Operate or publish a release | [`RELEASING.md`](RELEASING.md) |
 | Browse everything | [Documentation map](docs/README.md) |
