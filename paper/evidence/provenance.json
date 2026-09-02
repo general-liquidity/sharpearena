@@ -122,7 +122,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "5666c47e88d4d5d801874ae33386cc751ea71094",
+  "generated_at_head": "c8fec328cc7b468793a4dcac5c823220709b490f",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -168,7 +168,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/__init__.py",
-      "sha256": "88b5f73eb9c9ec6dc1e5f9423aae6fb76e4afe4f65c71a8a4a316ba159c2fa33"
+      "sha256": "eee2edc01b15fffe9f9c93c34e5683ad76187f483e3928be969f3da2dcbdb034"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/_spec_hash.py",
@@ -236,7 +236,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/edge_manifest.py",
-      "sha256": "58be91d348e88b94febcc9cc58d261fa132edb9d4cf31c7b290c0af651e9e113"
+      "sha256": "59fa30c2a37a33a3a080852ac0954cf54be3a9879dec1ac278dc2bd7299b4d49"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/effective_config.py",
@@ -396,11 +396,11 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/strategy_cli.py",
-      "sha256": "43de9c6d013d872563dd81d97616e671b320073066858d7e3579ed97b98f57b9"
+      "sha256": "9edbd0b89a3640b8a9a18e5e088d86fb84f346f6c9df0a6d257f40554c970506"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/strategy_generation.py",
-      "sha256": "3ee165545c05d96693b3941f564432b02b287d2268519a8a5db7e6f52a18b42c"
+      "sha256": "54c504349864c50121cd06f95b5c09259947fae9af4cf813a3cf3f40e0ca9538"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/trace.py",
@@ -678,6 +678,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "7a781fce5be41fd151f8ea47c4fffb1741c3e6de4a328c9a60f21a7fd9925915",
+  "source_snapshot_sha256": "8c11f34d988aa86321fb5c48465bb69c64004c8b7457aef84dac4abac7cb5205",
   "validator": "paper/src/check-provenance.py"
 }
