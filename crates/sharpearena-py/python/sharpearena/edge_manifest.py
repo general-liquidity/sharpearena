@@ -50,8 +50,19 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Optional, Union
 
-EDGE_MANIFEST_SCHEMA_VERSION = 1
+EDGE_MANIFEST_SCHEMA_VERSION = 2
 EDGE_MANIFEST_EVIDENCE_CLASS = "edge_manifest_candidate_pool"
+
+IDEA_SOURCE_TYPES = frozenset(
+    {
+        "dataset",
+        "operator_brief",
+        "paper",
+        "prior_candidate",
+        "repository",
+        "other",
+    }
+)
 
 #: Closed unit vocabulary. A threshold whose unit is outside this set is invalid.
 THRESHOLD_UNITS = frozenset(
@@ -98,6 +109,16 @@ def _digest(value: Any) -> str:
     return sha256(_canonical_bytes(value)).hexdigest()
 
 
+def _sha256_text(value: Any, path: str) -> str:
+    text = _text(value, path)
+    if not text.startswith("sha256:") or len(text) != 71:
+        raise EdgeManifestError(f"{path} must be 'sha256:' followed by 64 hex digits")
+    digest = text[7:]
+    if digest != digest.lower() or any(ch not in "0123456789abcdef" for ch in digest):
+        raise EdgeManifestError(f"{path} must use 64 lowercase hex digits")
+    return text
+
+
 def _closed(
     value: Any, allowed: set[str], required: set[str], path: str
 ) -> dict[str, Any]:
@@ -135,6 +156,165 @@ def _string_tuple(value: Any, path: str) -> tuple[str, ...]:
     if len(set(items)) != len(items):
         raise EdgeManifestError(f"{path} must not contain duplicates")
     return items
+
+
+def _string_tuple_allow_empty(value: Any, path: str) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        raise EdgeManifestError(f"{path} must be an array")
+    items = tuple(_text(item, f"{path}[{index}]") for index, item in enumerate(value))
+    if len(set(items)) != len(items):
+        raise EdgeManifestError(f"{path} must not contain duplicates")
+    return items
+
+
+@dataclass(frozen=True)
+class IdeaProvenance:
+    """One operator-bound source a generated candidate may cite.
+
+    The source is registered on the search plan, not invented in model output.
+    ``source_digest`` binds the exact bytes the operator supplied. Locators and
+    attribution fields explain those bytes, but never substitute for the digest.
+    """
+
+    source_type: str
+    source_digest: str
+    url_or_doi: Optional[str] = None
+    commit: Optional[str] = None
+    authors: tuple[str, ...] = ()
+    license: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if self.source_type not in IDEA_SOURCE_TYPES:
+            raise EdgeManifestError(
+                f"source_type {self.source_type!r} is outside the closed source set"
+            )
+        _sha256_text(self.source_digest, "source_digest")
+        if self.url_or_doi is not None:
+            _text(self.url_or_doi, "url_or_doi")
+        if self.commit is not None:
+            commit = _text(self.commit, "commit")
+            if commit.lower() in {"head", "latest", "main", "master"}:
+                raise EdgeManifestError("commit must name an immutable revision")
+        if len(set(self.authors)) != len(self.authors):
+            raise EdgeManifestError("authors must not contain duplicates")
+        for index, author in enumerate(self.authors):
+            _text(author, f"authors[{index}]")
+        if self.license is not None:
+            _text(self.license, "license")
+
+    def as_record(self) -> dict[str, Any]:
+        return {
+            "source_type": self.source_type,
+            "source_digest": self.source_digest,
+            "url_or_doi": self.url_or_doi,
+            "commit": self.commit,
+            "authors": list(self.authors),
+            "license": self.license,
+        }
+
+
+def bind_idea_source(
+    content: Union[str, bytes],
+    *,
+    source_type: str,
+    url_or_doi: Optional[str] = None,
+    commit: Optional[str] = None,
+    authors: Iterable[str] = (),
+    license: Optional[str] = None,
+) -> IdeaProvenance:
+    """Bind exact source bytes into a plan-owned provenance record."""
+
+    payload = content.encode("utf-8") if isinstance(content, str) else bytes(content)
+    return IdeaProvenance(
+        source_type=source_type,
+        source_digest=f"sha256:{sha256(payload).hexdigest()}",
+        url_or_doi=url_or_doi,
+        commit=commit,
+        authors=tuple(authors),
+        license=license,
+    )
+
+
+def parse_idea_provenance(
+    payload: Any, path: str = "idea_provenance"
+) -> IdeaProvenance:
+    obj = _closed(
+        payload,
+        {"source_type", "source_digest", "url_or_doi", "commit", "authors", "license"},
+        {"source_type", "source_digest"},
+        path,
+    )
+    authors = obj.get("authors", [])
+    if not isinstance(authors, list):
+        raise EdgeManifestError(f"{path}.authors must be an array")
+    return IdeaProvenance(
+        source_type=_text(obj["source_type"], f"{path}.source_type"),
+        source_digest=_sha256_text(obj["source_digest"], f"{path}.source_digest"),
+        url_or_doi=(
+            None
+            if obj.get("url_or_doi") is None
+            else _text(obj["url_or_doi"], f"{path}.url_or_doi")
+        ),
+        commit=(
+            None
+            if obj.get("commit") is None
+            else _text(obj["commit"], f"{path}.commit")
+        ),
+        authors=tuple(
+            _text(item, f"{path}.authors[{i}]") for i, item in enumerate(authors)
+        ),
+        license=(
+            None
+            if obj.get("license") is None
+            else _text(obj["license"], f"{path}.license")
+        ),
+    )
+
+
+@dataclass(frozen=True)
+class DeclaredCandidateLineage:
+    """References declared by a candidate, resolved by the host ledger."""
+
+    parent_candidate_ids: tuple[str, ...] = ()
+    idea_source_digests: tuple[str, ...] = ()
+
+    def as_record(self) -> dict[str, Any]:
+        return {
+            "parent_candidate_ids": list(self.parent_candidate_ids),
+            "idea_source_digests": list(self.idea_source_digests),
+        }
+
+
+def parse_candidate_lineage(
+    payload: Any, path: str = "lineage"
+) -> DeclaredCandidateLineage:
+    obj = _closed(
+        payload,
+        {"parent_candidate_ids", "idea_source_digests"},
+        {"parent_candidate_ids", "idea_source_digests"},
+        path,
+    )
+    parents = _string_tuple_allow_empty(
+        obj["parent_candidate_ids"], f"{path}.parent_candidate_ids"
+    )
+    source_digests = tuple(
+        _sha256_text(item, f"{path}.idea_source_digests[{index}]")
+        for index, item in enumerate(
+            _string_tuple_allow_empty(
+                obj["idea_source_digests"], f"{path}.idea_source_digests"
+            )
+        )
+    )
+    return DeclaredCandidateLineage(parents, source_digests)
+
+
+@dataclass(frozen=True)
+class CandidateValidation:
+    """Host-derived identity returned by a candidate validator."""
+
+    semantic_fingerprint: str
+    family_preimage: Any
+    candidate_id: str
 
 
 @dataclass(frozen=True)
@@ -263,7 +443,9 @@ def parse_condition(payload: Any, path: str) -> EdgeCondition:
     )
 
 
-def _parse_conditions(payload: Any, path: str, *, minimum: int) -> tuple[EdgeCondition, ...]:
+def _parse_conditions(
+    payload: Any, path: str, *, minimum: int
+) -> tuple[EdgeCondition, ...]:
     if not isinstance(payload, list):
         raise EdgeManifestError(f"{path} must be an array")
     if len(payload) < minimum:
@@ -406,7 +588,9 @@ def parse_edge_manifest(payload: Any, path: str = "edge_manifest") -> EdgeManife
         mechanism=_text(obj["mechanism"], f"{path}.mechanism", min_length=8),
         regimes=_string_tuple(obj["regimes"], f"{path}.regimes"),
         instruments=_string_tuple(obj["instruments"], f"{path}.instruments"),
-        invariants=_parse_conditions(obj["invariants"], f"{path}.invariants", minimum=1),
+        invariants=_parse_conditions(
+            obj["invariants"], f"{path}.invariants", minimum=1
+        ),
         kill_conditions=_parse_conditions(
             obj["kill_conditions"], f"{path}.kill_conditions", minimum=1
         ),
@@ -574,9 +758,7 @@ def monitor_edge(
             f"kill conditions fired on the {sample} sample: {ids}",
         )
     if unresolved:
-        metrics_missing = sorted(
-            {check.condition.metric for check in unresolved}
-        )
+        metrics_missing = sorted({check.condition.metric for check in unresolved})
         return EdgeHealthReport(
             "indeterminate",
             sample,
@@ -609,7 +791,9 @@ class ManifestedCandidate:
     """One raw candidate, its trial ordinal, and its manifest verdict.
 
     The record exists whether or not the candidate turned out to be valid or
-    unique. ``manifest`` is ``None`` exactly when ``invalid_reason`` is set.
+    unique. ``manifest`` is ``None`` when manifest parsing failed; a candidate
+    can also be invalid because its strategy or declared lineage failed after
+    the manifest parsed.
     """
 
     trial_ordinal: int
@@ -621,6 +805,14 @@ class ManifestedCandidate:
     duplicate_of_ordinal: Optional[int]
     model_digest: str
     split_plan_sha256: str
+    family_preimage: Any
+    family_digest: str
+    declared_lineage: Optional[DeclaredCandidateLineage]
+    parent_candidate_digests: tuple[str, ...]
+    generator_identity: dict[str, Any]
+    generator_identity_sha256: str
+    idea_provenance: tuple[IdeaProvenance, ...]
+    lineage_status: str
 
     @property
     def is_selectable(self) -> bool:
@@ -639,8 +831,37 @@ class ManifestedCandidate:
             "duplicate_of_ordinal": self.duplicate_of_ordinal,
             "model_digest": self.model_digest,
             "split_plan_sha256": self.split_plan_sha256,
+            "family_preimage": self.family_preimage,
+            "family_digest": self.family_digest,
+            "declared_lineage": (
+                None
+                if self.declared_lineage is None
+                else self.declared_lineage.as_record()
+            ),
+            "parent_candidate_digests": list(self.parent_candidate_digests),
+            "generator_identity": self.generator_identity,
+            "generator_identity_sha256": self.generator_identity_sha256,
+            "idea_provenance": [source.as_record() for source in self.idea_provenance],
+            "lineage_status": self.lineage_status,
+            "lineage_binding_sha256": self.lineage_binding_sha256,
             "binding_sha256": self.binding_sha256,
         }
+
+    @property
+    def lineage_binding_sha256(self) -> str:
+        """Hash the host-resolved family, ancestry, generator, and sources."""
+
+        return _digest(
+            {
+                "family_digest": self.family_digest,
+                "generator_identity_sha256": self.generator_identity_sha256,
+                "idea_source_digests": [
+                    source.source_digest for source in self.idea_provenance
+                ],
+                "parent_candidate_digests": list(self.parent_candidate_digests),
+                "raw_candidate_sha256": self.raw_candidate_sha256,
+            }
+        )
 
     @property
     def binding_sha256(self) -> str:
@@ -671,6 +892,8 @@ class EdgeManifestLedger:
         *,
         model_digest: str,
         split_plan_sha256: str,
+        generator_identity: Optional[Mapping[str, Any]] = None,
+        idea_provenance: Iterable[IdeaProvenance] = (),
     ) -> None:
         if not model_digest or not split_plan_sha256:
             raise EdgeManifestError(
@@ -679,8 +902,30 @@ class EdgeManifestLedger:
         self.path = path
         self.model_digest = model_digest
         self.split_plan_sha256 = split_plan_sha256
+        identity = dict(generator_identity or {"digest": model_digest})
+        if not identity or identity.get("digest") != model_digest:
+            raise EdgeManifestError(
+                "generator_identity.digest must equal the ledger model digest"
+            )
+        try:
+            normalized_identity = json.loads(_canonical_bytes(identity))
+        except (TypeError, ValueError) as error:
+            raise EdgeManifestError(
+                f"generator_identity must be canonical-JSON serializable: {error}"
+            ) from error
+        if not isinstance(normalized_identity, dict):
+            raise EdgeManifestError("generator_identity must be an object")
+        self.generator_identity = normalized_identity
+        self.generator_identity_sha256 = _digest(normalized_identity)
+        sources = tuple(idea_provenance)
+        source_digests = [source.source_digest for source in sources]
+        if len(set(source_digests)) != len(source_digests):
+            raise EdgeManifestError("idea_provenance source digests must be unique")
+        self.idea_provenance = sources
+        self._idea_sources = {source.source_digest: source for source in sources}
         self._records: list[ManifestedCandidate] = []
         self._fingerprints: dict[str, int] = {}
+        self._candidate_ids: dict[str, str] = {}
         if path is not None:
             path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -701,7 +946,9 @@ class EdgeManifestLedger:
         self,
         raw_candidate: Any,
         *,
-        candidate_validator: Optional[Callable[[Mapping[str, Any]], str]] = None,
+        candidate_validator: Optional[
+            Callable[[Mapping[str, Any]], Union[str, CandidateValidation]]
+        ] = None,
     ) -> ManifestedCandidate:
         """Record one proposal before deciding whether it can be selected.
 
@@ -722,6 +969,9 @@ class EdgeManifestLedger:
         raw_sha = _digest(normalized)
         manifest: Optional[EdgeManifest] = None
         manifest_sha: Optional[str] = None
+        declared_lineage: Optional[DeclaredCandidateLineage] = None
+        parent_candidate_digests: tuple[str, ...] = ()
+        resolved_sources: tuple[IdeaProvenance, ...] = ()
         invalid: Optional[str] = None
         duplicate: Optional[int] = None
         if not isinstance(raw_candidate, dict):
@@ -734,16 +984,67 @@ class EdgeManifestLedger:
                 manifest_sha = manifest.manifest_sha256
             except EdgeManifestError as error:
                 invalid = str(error)
-        strategy_fingerprint: Optional[str] = None
-        if manifest is not None and candidate_validator is not None:
+        if isinstance(raw_candidate, dict) and raw_candidate.get("lineage") is not None:
             try:
-                strategy_fingerprint = candidate_validator(normalized)
+                declared_lineage = parse_candidate_lineage(raw_candidate["lineage"])
+                missing_parents = [
+                    parent
+                    for parent in declared_lineage.parent_candidate_ids
+                    if parent not in self._candidate_ids
+                ]
+                if missing_parents:
+                    raise EdgeManifestError(
+                        "lineage.parent_candidate_ids must name earlier valid proposals; "
+                        f"not found: {missing_parents}"
+                    )
+                parent_candidate_digests = tuple(
+                    self._candidate_ids[parent]
+                    for parent in declared_lineage.parent_candidate_ids
+                )
+                missing_sources = [
+                    digest
+                    for digest in declared_lineage.idea_source_digests
+                    if digest not in self._idea_sources
+                ]
+                if missing_sources:
+                    raise EdgeManifestError(
+                        "lineage.idea_source_digests must reference plan-bound sources; "
+                        f"not found: {missing_sources}"
+                    )
+                resolved_sources = tuple(
+                    self._idea_sources[digest]
+                    for digest in declared_lineage.idea_source_digests
+                )
+            except EdgeManifestError as error:
+                if invalid is None:
+                    invalid = str(error)
+        strategy_fingerprint: Optional[str] = None
+        family_preimage: Any = {"unparsed_raw_candidate_sha256": raw_sha}
+        candidate_id: Optional[str] = None
+        if manifest is not None and invalid is None and candidate_validator is not None:
+            try:
+                validation = candidate_validator(normalized)
+                if isinstance(validation, CandidateValidation):
+                    strategy_fingerprint = validation.semantic_fingerprint
+                    family_preimage = json.loads(
+                        _canonical_bytes(validation.family_preimage)
+                    )
+                    candidate_id = _text(validation.candidate_id, "candidate_id")
+                else:
+                    strategy_fingerprint = validation
+                    family_preimage = {"semantic_fingerprint": validation}
                 if not strategy_fingerprint:
                     raise EdgeManifestError(
                         "candidate validator returned an empty fingerprint"
                     )
             except (EdgeManifestError, ValueError) as error:
                 invalid = str(error)
+        if candidate_id is not None:
+            if candidate_id in self._candidate_ids:
+                invalid = invalid or f"candidate id {candidate_id!r} is not unique"
+            else:
+                self._candidate_ids[candidate_id] = raw_sha
+        family_digest = _digest(family_preimage)
         if manifest is not None and invalid is None:
             fingerprint = _digest(
                 {
@@ -771,6 +1072,20 @@ class EdgeManifestLedger:
             duplicate_of_ordinal=duplicate,
             model_digest=self.model_digest,
             split_plan_sha256=self.split_plan_sha256,
+            family_preimage=family_preimage,
+            family_digest=family_digest,
+            declared_lineage=declared_lineage,
+            parent_candidate_digests=parent_candidate_digests,
+            generator_identity=self.generator_identity,
+            generator_identity_sha256=self.generator_identity_sha256,
+            idea_provenance=resolved_sources,
+            lineage_status=(
+                "declared"
+                if declared_lineage is not None and invalid is None
+                else "invalid"
+                if declared_lineage is not None
+                else "host-derived-unreferenced"
+            ),
         )
         self._records.append(entry)
         self._append(entry)
@@ -780,7 +1095,9 @@ class EdgeManifestLedger:
         self,
         raw_candidates: Iterable[Any],
         *,
-        candidate_validator: Optional[Callable[[Mapping[str, Any]], str]] = None,
+        candidate_validator: Optional[
+            Callable[[Mapping[str, Any]], Union[str, CandidateValidation]]
+        ] = None,
     ) -> tuple[ManifestedCandidate, ...]:
         return tuple(
             self.record(candidate, candidate_validator=candidate_validator)
@@ -788,6 +1105,13 @@ class EdgeManifestLedger:
         )
 
     def summary(self) -> dict[str, Any]:
+        family_counts: dict[str, dict[str, int]] = {}
+        for record in self._records:
+            counts = family_counts.setdefault(
+                record.family_digest, {"observed_trials": 0, "selectable": 0}
+            )
+            counts["observed_trials"] += 1
+            counts["selectable"] += int(record.is_selectable)
         return {
             "schema_version": EDGE_MANIFEST_SCHEMA_VERSION,
             "evidence_class": EDGE_MANIFEST_EVIDENCE_CLASS,
@@ -801,6 +1125,14 @@ class EdgeManifestLedger:
                 record.duplicate_of_ordinal is not None for record in self._records
             ),
             "selectable": len(self.selectable()),
+            "families": [
+                {"family_digest": digest, **family_counts[digest]}
+                for digest in sorted(family_counts)
+            ],
+            "family_count": len(family_counts),
+            "generator_identity_sha256": self.generator_identity_sha256,
+            "plan_bound_idea_sources": len(self.idea_provenance),
+            "family_grouping_role": "diagnostic-only-never-a-trial-deduplicator",
             "n_trials_source": "ledger-counted-before-validation-and-deduplication",
         }
 
@@ -814,9 +1146,15 @@ class EdgeManifestLedger:
 
 
 def read_manifest_ledger(path: Path) -> list[dict[str, Any]]:
-    """Read a ledger back in strict mode. A malformed line is an error."""
+    """Read and verify a ledger. Version-1 rows retain ordinal-only support.
+
+    Version 2 binds the raw candidate, host-derived family, generator identity,
+    resolved ancestry, and cited idea sources. Recomputing those bindings here
+    means a ledger is not trusted merely because it is parseable JSON.
+    """
 
     rows: list[dict[str, Any]] = []
+    earlier_candidate_digests: set[str] = set()
     with path.open("r", encoding="utf-8") as handle:
         for number, line in enumerate(handle, start=1):
             stripped = line.strip()
@@ -825,36 +1163,200 @@ def read_manifest_ledger(path: Path) -> list[dict[str, Any]]:
             try:
                 row = json.loads(stripped)
             except json.JSONDecodeError as error:
-                raise EdgeManifestError(f"{path}:{number} is not JSON: {error}") from error
+                raise EdgeManifestError(
+                    f"{path}:{number} is not JSON: {error}"
+                ) from error
             if not isinstance(row, dict) or row.get("trial_ordinal") != len(rows):
                 raise EdgeManifestError(
                     f"{path}:{number} has a broken trial ordinal; the ledger is not intact"
                 )
+            version = row.get("schema_version", 1)
+            if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+                raise EdgeManifestError(
+                    f"{path}:{number} has an invalid schema_version"
+                )
+            if version >= 2:
+                _verify_v2_ledger_row(
+                    row,
+                    path=path,
+                    line_number=number,
+                    earlier_candidate_digests=earlier_candidate_digests,
+                )
+            raw_digest = row.get("raw_candidate_sha256")
+            if isinstance(raw_digest, str):
+                earlier_candidate_digests.add(raw_digest)
             rows.append(row)
     return rows
+
+
+def _verify_v2_ledger_row(
+    row: Mapping[str, Any],
+    *,
+    path: Path,
+    line_number: int,
+    earlier_candidate_digests: set[str],
+) -> None:
+    """Verify one v2 row without accepting its self-reported digests."""
+
+    location = f"{path}:{line_number}"
+    required = {
+        "evidence_class",
+        "trial_ordinal",
+        "raw_candidate",
+        "raw_candidate_sha256",
+        "manifest",
+        "manifest_sha256",
+        "model_digest",
+        "split_plan_sha256",
+        "family_preimage",
+        "family_digest",
+        "generator_identity",
+        "generator_identity_sha256",
+        "parent_candidate_digests",
+        "idea_provenance",
+        "lineage_binding_sha256",
+        "binding_sha256",
+    }
+    missing = sorted(required - set(row))
+    if missing:
+        raise EdgeManifestError(f"{location} is missing v2 fields: {missing}")
+    if row["evidence_class"] != EDGE_MANIFEST_EVIDENCE_CLASS:
+        raise EdgeManifestError(
+            f"{location} has evidence_class {row['evidence_class']!r}, expected "
+            f"{EDGE_MANIFEST_EVIDENCE_CLASS!r}"
+        )
+
+    digest_checks = (
+        ("raw_candidate", "raw_candidate_sha256"),
+        ("family_preimage", "family_digest"),
+        ("generator_identity", "generator_identity_sha256"),
+    )
+    for value_field, digest_field in digest_checks:
+        expected = _digest(row[value_field])
+        if row[digest_field] != expected:
+            raise EdgeManifestError(
+                f"{location} has a stale {digest_field}; expected {expected}"
+            )
+
+    expected_manifest_digest = (
+        None if row["manifest"] is None else _digest(row["manifest"])
+    )
+    if row["manifest_sha256"] != expected_manifest_digest:
+        raise EdgeManifestError(
+            f"{location} has a stale manifest_sha256; expected "
+            f"{expected_manifest_digest}"
+        )
+    identity = row["generator_identity"]
+    if not isinstance(identity, dict) or identity.get("digest") != row["model_digest"]:
+        raise EdgeManifestError(
+            f"{location} generator_identity.digest does not match model_digest"
+        )
+
+    parents = row["parent_candidate_digests"]
+    if not isinstance(parents, list) or any(
+        not isinstance(item, str) for item in parents
+    ):
+        raise EdgeManifestError(
+            f"{location} parent_candidate_digests must be an array of strings"
+        )
+    if len(set(parents)) != len(parents):
+        raise EdgeManifestError(
+            f"{location} parent_candidate_digests must not contain duplicates"
+        )
+    missing_parents = sorted(set(parents) - earlier_candidate_digests)
+    if missing_parents:
+        raise EdgeManifestError(
+            f"{location} references candidate digests that are not earlier rows: "
+            f"{missing_parents}"
+        )
+
+    raw_sources = row["idea_provenance"]
+    if not isinstance(raw_sources, list):
+        raise EdgeManifestError(f"{location} idea_provenance must be an array")
+    sources = tuple(
+        parse_idea_provenance(item, f"{location}.idea_provenance[{index}]")
+        for index, item in enumerate(raw_sources)
+    )
+    source_digests = [source.source_digest for source in sources]
+    if len(set(source_digests)) != len(source_digests):
+        raise EdgeManifestError(
+            f"{location} idea_provenance source digests must not contain duplicates"
+        )
+
+    declared = row.get("declared_lineage")
+    if declared is None:
+        if parents or sources:
+            raise EdgeManifestError(
+                f"{location} resolves ancestry or sources without declared_lineage"
+            )
+    else:
+        parsed = parse_candidate_lineage(declared, f"{location}.declared_lineage")
+        if list(parsed.idea_source_digests) != source_digests:
+            raise EdgeManifestError(
+                f"{location} idea_provenance does not match the declared source order"
+            )
+        if len(parsed.parent_candidate_ids) != len(parents):
+            raise EdgeManifestError(
+                f"{location} resolved parent count does not match the declaration"
+            )
+
+    lineage_binding = _digest(
+        {
+            "family_digest": row["family_digest"],
+            "generator_identity_sha256": row["generator_identity_sha256"],
+            "idea_source_digests": source_digests,
+            "parent_candidate_digests": parents,
+            "raw_candidate_sha256": row["raw_candidate_sha256"],
+        }
+    )
+    if row["lineage_binding_sha256"] != lineage_binding:
+        raise EdgeManifestError(
+            f"{location} has a stale lineage_binding_sha256; expected {lineage_binding}"
+        )
+
+    binding = _digest(
+        {
+            "raw_candidate_sha256": row["raw_candidate_sha256"],
+            "manifest_sha256": row["manifest_sha256"],
+            "model_digest": row["model_digest"],
+            "split_plan_sha256": row["split_plan_sha256"],
+            "trial_ordinal": row["trial_ordinal"],
+        }
+    )
+    if row["binding_sha256"] != binding:
+        raise EdgeManifestError(
+            f"{location} has a stale binding_sha256; expected {binding}"
+        )
 
 
 __all__ = [
     "COMPARATORS",
     "EDGE_MANIFEST_EVIDENCE_CLASS",
     "EDGE_MANIFEST_SCHEMA_VERSION",
+    "IDEA_SOURCE_TYPES",
     "NUMERIC_COMPARATORS",
     "OUT_OF_SELECTION_SAMPLES",
     "SET_COMPARATORS",
     "THRESHOLD_UNITS",
+    "CandidateValidation",
     "ConditionCheck",
+    "DeclaredCandidateLineage",
     "EdgeCondition",
     "EdgeHealthReport",
     "EdgeManifest",
     "EdgeManifestError",
     "EdgeManifestLedger",
+    "IdeaProvenance",
     "ManifestedCandidate",
     "Threshold",
     "VerificationPlan",
+    "bind_idea_source",
     "evaluate_condition_against",
     "monitor_edge",
+    "parse_candidate_lineage",
     "parse_condition",
     "parse_edge_manifest",
+    "parse_idea_provenance",
     "parse_threshold",
     "parse_verification_plan",
     "read_manifest_ledger",

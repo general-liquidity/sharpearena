@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 
 import pytest
 from sharpearena.edge_manifest import (
+    CandidateValidation,
     EdgeManifestError,
     EdgeManifestLedger,
+    bind_idea_source,
     monitor_edge,
     parse_edge_manifest,
     parse_threshold,
@@ -284,7 +287,145 @@ def test_binding_hash_ties_the_manifest_to_the_model_and_split_plan(tmp_path):
         None, model_digest="sha256:model-a", split_plan_sha256="sha256:other"
     ).record(_candidate())
     assert left.manifest_sha256 == right.manifest_sha256
-    assert len({left.binding_sha256, right.binding_sha256, other_split.binding_sha256}) == 3
+    assert (
+        len({left.binding_sha256, right.binding_sha256, other_split.binding_sha256})
+        == 3
+    )
+
+
+def test_lineage_resolves_only_prior_candidates_and_plan_bound_sources():
+    source = bind_idea_source(
+        "exact source bytes",
+        source_type="paper",
+        url_or_doi="doi:10.0000/example",
+        authors=("A. Researcher",),
+        license="CC-BY-4.0",
+    )
+    identity = {
+        "generator": "fixture",
+        "digest": "sha256:model",
+        "runtime": "test",
+        "runtime_version": "1",
+    }
+    ledger = EdgeManifestLedger(
+        None,
+        model_digest="sha256:model",
+        split_plan_sha256="sha256:split",
+        generator_identity=identity,
+        idea_provenance=(source,),
+    )
+
+    def validate(candidate):
+        return CandidateValidation(
+            semantic_fingerprint=candidate["id"],
+            family_preimage={"signal": "momentum", "scope": "BTC"},
+            candidate_id=candidate["id"],
+        )
+
+    first = ledger.record(
+        _candidate(
+            id="parent",
+            lineage={
+                "parent_candidate_ids": [],
+                "idea_source_digests": [source.source_digest],
+            },
+        ),
+        candidate_validator=validate,
+    )
+    child = ledger.record(
+        _candidate(
+            id="child",
+            gross_target=0.3,
+            lineage={
+                "parent_candidate_ids": ["parent"],
+                "idea_source_digests": [source.source_digest],
+            },
+        ),
+        candidate_validator=validate,
+    )
+
+    assert child.parent_candidate_digests == (first.raw_candidate_sha256,)
+    assert child.idea_provenance == (source,)
+    assert child.generator_identity == identity
+    assert child.family_digest == first.family_digest
+    assert child.lineage_status == "declared"
+    expected_lineage_binding = _canonical_sha256_for_test(
+        {
+            "family_digest": child.family_digest,
+            "generator_identity_sha256": child.generator_identity_sha256,
+            "idea_source_digests": [source.source_digest],
+            "parent_candidate_digests": [first.raw_candidate_sha256],
+            "raw_candidate_sha256": child.raw_candidate_sha256,
+        }
+    )
+    assert child.lineage_binding_sha256 == expected_lineage_binding
+    assert ledger.summary()["observed_trials"] == 2
+    assert ledger.summary()["family_count"] == 1
+    assert ledger.summary()["family_grouping_role"].startswith("diagnostic-only")
+
+
+def _canonical_sha256_for_test(value):
+    return hashlib.sha256(
+        json.dumps(
+            value, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def test_lineage_rejects_forward_parents_and_unbound_source_digests_but_counts_trials():
+    unknown_source = "sha256:" + "a" * 64
+    ledger = EdgeManifestLedger(
+        None, model_digest="sha256:model", split_plan_sha256="sha256:split"
+    )
+
+    def validate(candidate):
+        return CandidateValidation(candidate["id"], {"family": "x"}, candidate["id"])
+
+    future_parent = ledger.record(
+        _candidate(
+            id="first",
+            lineage={
+                "parent_candidate_ids": ["future"],
+                "idea_source_digests": [],
+            },
+        ),
+        candidate_validator=validate,
+    )
+    unbound_source = ledger.record(
+        _candidate(
+            id="second",
+            lineage={
+                "parent_candidate_ids": [],
+                "idea_source_digests": [unknown_source],
+            },
+        ),
+        candidate_validator=validate,
+    )
+
+    assert "earlier valid proposals" in (future_parent.invalid_reason or "")
+    assert "plan-bound sources" in (unbound_source.invalid_reason or "")
+    assert ledger.observed_trials == 2
+    assert not ledger.selectable()
+
+
+def test_undeclared_lineage_is_backward_compatible_and_explicitly_labelled():
+    record = EdgeManifestLedger(
+        None, model_digest="sha256:model", split_plan_sha256="sha256:split"
+    ).record(_candidate())
+    assert record.is_selectable is True
+    assert record.declared_lineage is None
+    assert record.lineage_status == "host-derived-unreferenced"
+    assert record.idea_provenance == ()
+
+
+def test_generator_identity_digest_must_match_the_ledger_model():
+    with pytest.raises(EdgeManifestError, match="must equal"):
+        EdgeManifestLedger(
+            None,
+            model_digest="sha256:model",
+            split_plan_sha256="sha256:split",
+            generator_identity={"digest": "sha256:different"},
+        )
 
 
 def test_a_ledger_without_a_model_digest_cannot_be_opened():
@@ -301,6 +442,25 @@ def test_strict_ledger_read_rejects_a_corrupt_row(tmp_path):
     with path.open("a", encoding="utf-8") as handle:
         handle.write("{not json}\n")
     with pytest.raises(EdgeManifestError, match="is not JSON"):
+        read_manifest_ledger(path)
+
+
+def test_strict_ledger_read_recomputes_v2_lineage_bindings(tmp_path):
+    path = tmp_path / "m.jsonl"
+    ledger = EdgeManifestLedger(
+        path,
+        model_digest="sha256:model",
+        split_plan_sha256="sha256:split",
+    )
+    ledger.record(_candidate())
+    [row] = read_manifest_ledger(path)
+    row["family_preimage"]["tampered"] = True
+    path.write_text(
+        json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(EdgeManifestError, match="stale family_digest"):
         read_manifest_ledger(path)
 
 

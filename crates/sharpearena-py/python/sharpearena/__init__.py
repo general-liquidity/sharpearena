@@ -108,6 +108,11 @@ from .effective_config import (
     resolved_scenario_seed,
     scenario_fingerprint,
 )
+from .edge_manifest import (
+    DeclaredCandidateLineage,
+    IdeaProvenance,
+    bind_idea_source,
+)
 from .eval_seeds import (
     EVAL_SEEDS,
     EVAL_SET_VERSION,
@@ -362,6 +367,9 @@ __all__ = [
     "PromptRenderer",
     "SamplingConfig",
     "load_identity_manifest",
+    "DeclaredCandidateLineage",
+    "IdeaProvenance",
+    "bind_idea_source",
     "CandidateRejection",
     "GenerationResult",
     "OllamaStrategyGenerator",

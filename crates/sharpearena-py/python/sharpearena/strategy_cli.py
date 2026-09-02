@@ -8,6 +8,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Optional, Sequence
 
+from .edge_manifest import parse_idea_provenance
 from .local_agents import DatasetSpec, ModelRunConfig, OllamaClient, SamplingConfig
 from .local_field_cli import _resolve_csv_path
 from .strategy_generation import (
@@ -25,6 +26,7 @@ _PLAN_FIELDS = {
     "validation_seeds",
     "test_seeds",
     "max_steps",
+    "idea_provenance",
 }
 _MODEL_FIELDS = {
     "model",
@@ -104,6 +106,10 @@ def load_strategy_plan(path: Path) -> StrategySearchPlan:
         validation_seeds=tuple(int(seed) for seed in payload["validation_seeds"]),
         test_seeds=tuple(int(seed) for seed in payload["test_seeds"]),
         max_steps=payload.get("max_steps"),
+        idea_provenance=tuple(
+            parse_idea_provenance(item, f"idea_provenance[{index}]")
+            for index, item in enumerate(payload.get("idea_provenance", []))
+        ),
     )
 
 
@@ -131,6 +137,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     "test_dataset": plan.test_dataset.public_record(),
                     "validation_seeds": plan.validation_seeds,
                     "test_seeds": plan.test_seeds,
+                    "idea_provenance": [
+                        source.as_record() for source in plan.idea_provenance
+                    ],
                 },
                 sort_keys=True,
                 indent=2,

@@ -10,6 +10,7 @@ from dataclasses import replace
 import pytest
 import sharpearena.strategy_generation as strategy_generation
 from jsonschema import Draft202012Validator
+from sharpearena.edge_manifest import bind_idea_source
 from sharpearena.local_agents import DatasetSpec, ModelIdentity, ModelRunConfig
 from sharpearena.strategy_cli import load_strategy_plan
 from sharpearena.strategy_cli import main as strategy_cli_main
@@ -33,9 +34,9 @@ def _canonical_sha256(value) -> str:
     value against itself.
     """
     return hashlib.sha256(
-        json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode(
-            "utf-8"
-        )
+        json.dumps(
+            value, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode("utf-8")
     ).hexdigest()
 
 
@@ -101,6 +102,10 @@ def _response():
                     "edge_manifest": _edge_manifest(
                         "Three-bar momentum mean-reverts after crowded moves."
                     ),
+                    "lineage": {
+                        "parent_candidate_ids": ["trend"],
+                        "idea_source_digests": [],
+                    },
                 },
                 {
                     "id": "trend-copy",
@@ -148,12 +153,15 @@ def test_generation_schema_has_no_executable_code_surface():
         "value",
         "condition",
         "threshold",
+        "lineage",
         "edge_condition",
         "verification_plan",
         "edge_manifest",
     }
     item = STRATEGY_GENERATION_SCHEMA["properties"]["strategies"]["items"]
     assert "edge_manifest" in item["required"]
+    assert "lineage" in item["properties"]
+    assert "lineage" not in item["required"]
 
     Draft202012Validator.check_schema(STRATEGY_GENERATION_SCHEMA)
     validator = Draft202012Validator(STRATEGY_GENERATION_SCHEMA)
@@ -163,9 +171,7 @@ def test_generation_schema_has_no_executable_code_surface():
         not list(validator.iter_errors({"strategies": [candidate]}))
         for candidate in accepted
     )
-    assert list(
-        validator.iter_errors({"strategies": [payload["strategies"][3]]})
-    )
+    assert list(validator.iter_errors({"strategies": [payload["strategies"][3]]}))
 
 
 def test_observed_trial_count_precedes_validation_and_deduplication():
@@ -175,6 +181,74 @@ def test_observed_trial_count_precedes_validation_and_deduplication():
     assert [item.candidate_id for item in rejected] == ["trend-copy", "unsafe"]
     assert "duplicate strategy and edge manifest" in rejected[0].reason
     assert "unknown fields" in rejected[1].reason
+
+
+def test_family_digest_groups_parameter_variants_without_reducing_trials():
+    payload = json.loads(_response())
+    first = payload["strategies"][0]
+    variant = json.loads(json.dumps(first))
+    variant["id"] = "trend-retuned"
+    variant["gross_target"] = 0.25
+    variant["long_when"]["left"]["window"] = 21
+    variant["long_when"]["right"]["constant"] = 0.04
+    variant["edge_manifest"]["hypothesis"] = (
+        "The same trend family survives a different parameter setting."
+    )
+    different = json.loads(json.dumps(first))
+    different["id"] = "trend-inverted"
+    different["long_when"]["op"] = "lt"
+    different["edge_manifest"]["hypothesis"] = (
+        "An inverted signal is a distinct conceptual family."
+    )
+    payload["strategies"] = [first, variant, different]
+
+    observed, candidates, rejected = parse_generated_pool(json.dumps(payload))
+
+    assert observed == 3
+    assert not rejected
+    assert candidates[0].family_digest == candidates[1].family_digest
+    assert candidates[2].family_digest != candidates[0].family_digest
+    assert len({candidate.binding_sha256 for candidate in candidates}) == 3
+
+
+def test_plan_binds_idea_sources_into_the_hash_and_exact_generation_prompt():
+    source = bind_idea_source(
+        b"paper preimage",
+        source_type="paper",
+        url_or_doi="doi:10.0000/example",
+        authors=("A. Researcher",),
+        license="CC-BY-4.0",
+    )
+    base = StrategySearchPlan(
+        model=ModelRunConfig("test-fixture:synthetic"),
+        prompt="Generate candidates.",
+        requested_candidates=2,
+        validation_dataset=DatasetSpec("validation", tier="calm", n_days=12),
+        test_dataset=DatasetSpec("test", tier="hard", n_days=12),
+        validation_seeds=(1,),
+        test_seeds=(2,),
+    )
+    sourced = replace(base, idea_provenance=(source,))
+
+    assert base.generation_prompt == base.prompt
+    assert sourced.plan_sha256 != base.plan_sha256
+    assert source.source_digest in sourced.generation_prompt
+    assert '"source_type":"paper"' in sourced.generation_prompt
+
+
+def test_plan_rejects_duplicate_source_digests():
+    source = bind_idea_source("same", source_type="operator_brief")
+    with pytest.raises(ValueError, match="source digests must be unique"):
+        StrategySearchPlan(
+            model=ModelRunConfig("test-fixture:synthetic"),
+            prompt="Generate candidates.",
+            requested_candidates=2,
+            validation_dataset=DatasetSpec("validation", tier="calm", n_days=12),
+            test_dataset=DatasetSpec("test", tier="hard", n_days=12),
+            validation_seeds=(1,),
+            test_seeds=(2,),
+            idea_provenance=(source, source),
+        )
 
 
 def test_missing_or_invalid_manifest_is_counted_and_refused_before_selection():
@@ -275,9 +349,7 @@ def test_every_dsl_indicator_and_boolean_operator_has_numeric_semantics():
     assert not evaluate_condition(
         {"op": "and", "conditions": [rising, falling]}, prices
     )
-    assert evaluate_condition(
-        {"op": "or", "conditions": [falling, rising]}, prices
-    )
+    assert evaluate_condition({"op": "or", "conditions": [falling, rising]}, prices)
     assert not evaluate_condition(
         {"op": "or", "conditions": [falling, {"op": "not", "condition": rising}]},
         prices,
@@ -309,8 +381,14 @@ def test_search_selects_on_validation_and_tests_only_the_winner(tmp_path):
     assert ledger["summary"]["observed_trials"] == 4
     assert [row["trial_ordinal"] for row in ledger["records"]] == [0, 1, 2, 3]
     assert all(row["model_digest"] == "sha256:generator" for row in ledger["records"])
-    assert all(row["split_plan_sha256"] == plan.plan_sha256 for row in ledger["records"])
+    assert all(
+        row["split_plan_sha256"] == plan.plan_sha256 for row in ledger["records"]
+    )
     ledger_rows = {row["trial_ordinal"]: row for row in ledger["records"]}
+    assert ledger_rows[1]["parent_candidate_digests"] == [
+        ledger_rows[0]["raw_candidate_sha256"]
+    ]
+    assert ledger_rows[1]["lineage_status"] == "declared"
     for item in evidence["generation"]["accepted"]:
         row = ledger_rows[item["trial_ordinal"]]
         assert item["binding_sha256"] == _canonical_sha256(
@@ -334,9 +412,10 @@ def test_search_selects_on_validation_and_tests_only_the_winner(tmp_path):
     second = StrategySearchRunner(FixtureGenerator()).run(plan, path)
     rows = [json.loads(line) for line in path.read_text().splitlines()]
     assert len(rows) == 2
-    assert rows[0]["generation"]["raw_response_sha256"] == rows[1]["generation"][
-        "raw_response_sha256"
-    ]
+    assert (
+        rows[0]["generation"]["raw_response_sha256"]
+        == rows[1]["generation"]["raw_response_sha256"]
+    )
     assert second["status"] == "completed"
 
 
@@ -355,8 +434,7 @@ def test_selection_uses_descending_median_and_candidate_id_tie_break(
             }
         return {
             candidate.candidate_id: [
-                {"score": {"deflated_sharpe": 0.7}, "seed": seed}
-                for seed in seeds
+                {"score": {"deflated_sharpe": 0.7}, "seed": seed} for seed in seeds
             ]
             for candidate in candidates
         }
@@ -443,7 +521,9 @@ def test_search_refuses_overlapping_validation_and_test_splits():
     # The digest binds the split, so moving the test window has to move it.
     shifted = replace(
         disjoint,
-        test_dataset=DatasetSpec("test", csv_text=csv_text, window_start=10, window_end=19),
+        test_dataset=DatasetSpec(
+            "test", csv_text=csv_text, window_start=10, window_end=19
+        ),
     )
     assert disjoint.plan_sha256 != shifted.plan_sha256
 
@@ -478,7 +558,10 @@ def test_search_caps_requested_trials_and_persists_protocol_failure(tmp_path):
         StrategySearchRunner(BadGenerator()).run(plan, path)
     failure = json.loads(path.read_text())
     assert failure["status"] == "failed"
-    assert failure["generation"]["raw_response_sha256"] == hashlib.sha256(b"not-json").hexdigest()
+    assert (
+        failure["generation"]["raw_response_sha256"]
+        == hashlib.sha256(b"not-json").hexdigest()
+    )
     assert failure["failure"]["type"] == "StrategyProtocolError"
 
 
@@ -499,6 +582,12 @@ def test_strategy_plan_rejects_empty_prompt_duplicate_seed_and_bad_step_budget()
 
 
 def test_strategy_cli_resolves_paths_and_inspects_without_inference(tmp_path, capsys):
+    source = bind_idea_source(
+        "operator memo",
+        source_type="operator_brief",
+        authors=("Desk Research",),
+        license="internal",
+    )
     csv_path = tmp_path / "prices.csv"
     csv_path.write_text(
         "date,symbol,close\n2026-01-01,AAA,100\n2026-01-02,AAA,101\n",
@@ -525,6 +614,7 @@ def test_strategy_cli_resolves_paths_and_inspects_without_inference(tmp_path, ca
                 },
                 "validation_seeds": [1],
                 "test_seeds": [2],
+                "idea_provenance": [source.as_record()],
             }
         ),
         encoding="utf-8",
@@ -545,6 +635,7 @@ def test_strategy_cli_resolves_paths_and_inspects_without_inference(tmp_path, ca
     )
     inspected = json.loads(capsys.readouterr().out)
     assert inspected["plan_sha256"] == plan.plan_sha256
+    assert inspected["idea_provenance"] == [source.as_record()]
 
     payload = json.loads(plan_path.read_text(encoding="utf-8"))
     payload["typo"] = True
@@ -594,14 +685,16 @@ def test_generated_text_is_never_executed_by_the_dsl_modules():
                 continue
             function = node.func
             if isinstance(function, ast.Name):
-                assert function.id not in forbidden_names, f"{module} calls {function.id}"
+                assert function.id not in forbidden_names, (
+                    f"{module} calls {function.id}"
+                )
             if isinstance(function, ast.Attribute):
                 owner = getattr(function.value, "id", "")
                 # `re.compile` builds a regex; it runs nothing.
                 if owner != "re":
-                    assert (
-                        function.attr not in forbidden_names
-                    ), f"{module} calls {owner}.{function.attr}"
+                    assert function.attr not in forbidden_names, (
+                        f"{module} calls {owner}.{function.attr}"
+                    )
                 assert (
                     owner,
                     function.attr,

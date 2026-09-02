@@ -19,9 +19,13 @@ from statistics import median, pstdev
 from typing import Any, Optional, Protocol, Sequence
 
 from .edge_manifest import (
+    CandidateValidation,
+    DeclaredCandidateLineage,
     EdgeManifest,
     EdgeManifestError,
     EdgeManifestLedger,
+    IdeaProvenance,
+    parse_candidate_lineage,
     parse_edge_manifest,
 )
 from .local_agents import (
@@ -35,7 +39,7 @@ from .local_agents import (
 from .sharpearena_py import score_run
 
 STRATEGY_EVIDENCE_CLASS = "retrospective_generated_strategy"
-STRATEGY_SCHEMA_VERSION = 1
+STRATEGY_SCHEMA_VERSION = 2
 MAX_GENERATED_CANDIDATES = 256
 SUPPORTED_INDICATORS = {"price", "sma", "ema", "momentum", "rsi", "volatility"}
 COMPARISON_OPS = {"gt", "gte", "lt", "lte"}
@@ -84,6 +88,7 @@ STRATEGY_GENERATION_SCHEMA: dict[str, Any] = {
                         "maximum": 1,
                     },
                     "edge_manifest": {"$ref": "#/$defs/edge_manifest"},
+                    "lineage": {"$ref": "#/$defs/lineage"},
                 },
             },
         }
@@ -176,6 +181,26 @@ STRATEGY_GENERATION_SCHEMA: dict[str, Any] = {
                 },
             },
         },
+        "lineage": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["parent_candidate_ids", "idea_source_digests"],
+            "properties": {
+                "parent_candidate_ids": {
+                    "type": "array",
+                    "uniqueItems": True,
+                    "items": {"type": "string", "minLength": 1, "maxLength": 80},
+                },
+                "idea_source_digests": {
+                    "type": "array",
+                    "uniqueItems": True,
+                    "items": {
+                        "type": "string",
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                    },
+                },
+            },
+        },
         "edge_condition": {
             "type": "object",
             "additionalProperties": False,
@@ -260,6 +285,35 @@ class StrategyProtocolError(ValueError):
     """A generation response or DSL candidate violates the closed protocol."""
 
 
+def _family_value_shape(value: dict[str, Any]) -> dict[str, Any]:
+    """Erase tunable values while preserving the host-validated signal shape."""
+
+    if "constant" in value:
+        return {"constant": "parameter"}
+    shaped = {"indicator": value["indicator"]}
+    if value["indicator"] != "price":
+        shaped["window"] = "parameter"
+    return shaped
+
+
+def _family_condition_shape(condition: dict[str, Any]) -> dict[str, Any]:
+    op = condition["op"]
+    if op in COMPARISON_OPS:
+        return {
+            "op": op,
+            "left": _family_value_shape(condition["left"]),
+            "right": _family_value_shape(condition["right"]),
+        }
+    if op in BOOLEAN_OPS:
+        return {
+            "op": op,
+            "conditions": [
+                _family_condition_shape(item) for item in condition["conditions"]
+            ],
+        }
+    return {"op": "not", "condition": _family_condition_shape(condition["condition"])}
+
+
 @dataclass(frozen=True)
 class StrategyCandidate:
     candidate_id: str
@@ -268,9 +322,15 @@ class StrategyCandidate:
     short_when: Optional[dict[str, Any]]
     gross_target: float
     edge_manifest: EdgeManifest
+    declared_lineage: Optional[DeclaredCandidateLineage] = None
     trial_ordinal: int = -1
     manifest_sha256: str = ""
     binding_sha256: str = ""
+    family_digest: str = ""
+    parent_candidate_digests: tuple[str, ...] = ()
+    generator_identity_sha256: str = ""
+    idea_provenance: tuple[IdeaProvenance, ...] = ()
+    lineage_binding_sha256: str = ""
 
     @property
     def fingerprint(self) -> str:
@@ -282,6 +342,27 @@ class StrategyCandidate:
             }
         )
 
+    @property
+    def family_preimage(self) -> dict[str, Any]:
+        """Conceptual family, excluding parameter values and position size.
+
+        This is derived by the host rather than accepted as a model-provided
+        family label. Thresholds, indicator windows, and ``gross_target`` are
+        tunable variants; signal operators plus declared market scope define the
+        conceptual family, mirroring AIUTS's family-versus-candidate split.
+        """
+
+        return {
+            "long_when": _family_condition_shape(self.long_when),
+            "short_when": (
+                None
+                if self.short_when is None
+                else _family_condition_shape(self.short_when)
+            ),
+            "regimes": sorted(self.edge_manifest.regimes),
+            "instruments": sorted(self.edge_manifest.instruments),
+        }
+
     def as_record(self) -> dict[str, Any]:
         return {
             "candidate_id": self.candidate_id,
@@ -290,10 +371,21 @@ class StrategyCandidate:
             "short_when": self.short_when,
             "gross_target": self.gross_target,
             "edge_manifest": self.edge_manifest.as_record(),
+            "declared_lineage": (
+                None
+                if self.declared_lineage is None
+                else self.declared_lineage.as_record()
+            ),
             "trial_ordinal": self.trial_ordinal,
             "manifest_sha256": self.manifest_sha256,
             "binding_sha256": self.binding_sha256,
             "fingerprint": self.fingerprint,
+            "family_preimage": self.family_preimage,
+            "family_digest": self.family_digest,
+            "parent_candidate_digests": list(self.parent_candidate_digests),
+            "generator_identity_sha256": self.generator_identity_sha256,
+            "idea_provenance": [source.as_record() for source in self.idea_provenance],
+            "lineage_binding_sha256": self.lineage_binding_sha256,
         }
 
 
@@ -344,7 +436,9 @@ class OllamaStrategyGenerator:
                             "Generate point-in-time trading strategies in the supplied closed "
                             "JSON DSL. Do not emit code, tools, prose outside JSON, or future data. "
                             "Attach the required edge_manifest to every candidate before seeing "
-                            "any validation or test result. "
+                            "any validation or test result. When a lineage object is present, its "
+                            "parents must name earlier candidates in this response and its source "
+                            "digests must come from the operator-bound catalog in the prompt. "
                             f"Return exactly {requested_candidates} candidate objects."
                         ),
                     },
@@ -496,21 +590,22 @@ def parse_generated_pool(
     parsed: dict[int, StrategyCandidate] = {}
     seen_ids: set[str] = set()
 
-    def validate_strategy(item: dict[str, Any]) -> str:
+    def validate_strategy(item: dict[str, Any]) -> CandidateValidation:
         index = manifest_ledger.observed_trials
         obj = _closed_object(
-                item,
-                {
-                    "id",
-                    "thesis",
-                    "long_when",
-                    "short_when",
-                    "gross_target",
-                    "edge_manifest",
-                },
-                {"id", "thesis", "long_when", "gross_target", "edge_manifest"},
-                f"strategies[{index}]",
-            )
+            item,
+            {
+                "id",
+                "thesis",
+                "long_when",
+                "short_when",
+                "gross_target",
+                "edge_manifest",
+                "lineage",
+            },
+            {"id", "thesis", "long_when", "gross_target", "edge_manifest"},
+            f"strategies[{index}]",
+        )
         try:
             if (
                 not isinstance(obj["id"], str)
@@ -552,12 +647,21 @@ def parse_generated_pool(
                 # the candidate without allowing strategy validation to run
                 # ahead of manifest validation.
                 edge_manifest=parse_edge_manifest(obj["edge_manifest"]),
+                declared_lineage=(
+                    None
+                    if obj.get("lineage") is None
+                    else parse_candidate_lineage(obj["lineage"])
+                ),
             )
             if candidate.candidate_id in seen_ids:
                 raise StrategyProtocolError("duplicate candidate id")
             seen_ids.add(candidate.candidate_id)
             parsed[index] = candidate
-            return candidate.fingerprint
+            return CandidateValidation(
+                semantic_fingerprint=candidate.fingerprint,
+                family_preimage=candidate.family_preimage,
+                candidate_id=candidate.candidate_id,
+            )
         except EdgeManifestError as error:
             raise StrategyProtocolError(str(error)) from error
 
@@ -577,7 +681,9 @@ def parse_generated_pool(
                     "duplicate strategy and edge manifest; first proposed at trial "
                     f"{record.duplicate_of_ordinal}"
                 )
-            rejected.append(CandidateRejection(record.trial_ordinal, candidate_id, reason))
+            rejected.append(
+                CandidateRejection(record.trial_ordinal, candidate_id, reason)
+            )
             continue
         candidate = parsed[record.trial_ordinal]
         candidates.append(
@@ -586,6 +692,11 @@ def parse_generated_pool(
                 trial_ordinal=record.trial_ordinal,
                 manifest_sha256=record.manifest_sha256 or "",
                 binding_sha256=record.binding_sha256,
+                family_digest=record.family_digest,
+                parent_candidate_digests=record.parent_candidate_digests,
+                generator_identity_sha256=record.generator_identity_sha256,
+                idea_provenance=record.idea_provenance,
+                lineage_binding_sha256=record.lineage_binding_sha256,
             )
         )
     return manifest_ledger.observed_trials, candidates, rejected
@@ -691,6 +802,7 @@ class StrategySearchPlan:
     validation_seeds: tuple[int, ...]
     test_seeds: tuple[int, ...]
     max_steps: Optional[int] = None
+    idea_provenance: tuple[IdeaProvenance, ...] = ()
 
     def __post_init__(self) -> None:
         if not 1 <= self.requested_candidates <= MAX_GENERATED_CANDIDATES:
@@ -736,6 +848,23 @@ class StrategySearchPlan:
                 raise ValueError(
                     "validation and test datasets/windows must be disjoint"
                 )
+        source_digests = [source.source_digest for source in self.idea_provenance]
+        if len(set(source_digests)) != len(source_digests):
+            raise ValueError("idea_provenance source digests must be unique")
+
+    @property
+    def generation_prompt(self) -> str:
+        """Exact model prompt, including the operator-bound source catalog."""
+
+        if not self.idea_provenance:
+            return self.prompt
+        catalog = [source.as_record() for source in self.idea_provenance]
+        return (
+            f"{self.prompt.rstrip()}\n\n"
+            "Operator-bound idea-source catalog (cite only these source_digest values "
+            "in lineage.idea_source_digests):\n"
+            f"{json.dumps(catalog, sort_keys=True, separators=(',', ':'), ensure_ascii=False)}"
+        )
 
     @property
     def plan_sha256(self) -> str:
@@ -749,6 +878,9 @@ class StrategySearchPlan:
                 "validation_seeds": self.validation_seeds,
                 "test_seeds": self.test_seeds,
                 "max_steps": self.max_steps,
+                "idea_provenance": [
+                    source.as_record() for source in self.idea_provenance
+                ],
             }
         )
 
@@ -818,11 +950,13 @@ class StrategySearchRunner:
         manifest_ledger: Optional[EdgeManifestLedger] = None
         try:
             generated = self.generator.generate(
-                plan.model, plan.prompt, plan.requested_candidates
+                plan.model, plan.generation_prompt, plan.requested_candidates
             )
             manifest_ledger = EdgeManifestLedger(
                 model_digest=identity.digest,
                 split_plan_sha256=plan.plan_sha256,
+                generator_identity=asdict(identity),
+                idea_provenance=plan.idea_provenance,
             )
             observed_n_trials, candidates, rejected = parse_generated_pool(
                 generated.raw_response, ledger=manifest_ledger
@@ -876,14 +1010,14 @@ class StrategySearchRunner:
                         generated.raw_response.encode("utf-8")
                     ).hexdigest(),
                     "raw_response": generated.raw_response,
-                    "prompt": plan.prompt,
-                    "prompt_sha256": sha256(plan.prompt.encode("utf-8")).hexdigest(),
+                    "prompt": plan.generation_prompt,
+                    "prompt_sha256": sha256(
+                        plan.generation_prompt.encode("utf-8")
+                    ).hexdigest(),
                     "prompt_tokens": generated.prompt_tokens,
                     "output_tokens": generated.output_tokens,
                     "duration_ns": generated.total_duration_ns,
-                    "accepted": [
-                        candidate.as_record() for candidate in candidates
-                    ],
+                    "accepted": [candidate.as_record() for candidate in candidates],
                     "rejected": [asdict(item) for item in rejected],
                 },
                 "selection": {
@@ -937,8 +1071,7 @@ class StrategySearchRunner:
                         {
                             "summary": manifest_ledger.summary(),
                             "records": [
-                                record.as_record()
-                                for record in manifest_ledger.records
+                                record.as_record() for record in manifest_ledger.records
                             ],
                         }
                         if manifest_ledger is not None
