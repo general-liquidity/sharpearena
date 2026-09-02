@@ -6,9 +6,11 @@ version covers the Rust crates, the npm package and the PyPI package; each
 section is one `v*` tag and links the commits it was built from. The wire
 contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
-[Unreleased]: https://github.com/general-liquidity/sharpearena/compare/v0.22.0...HEAD
+[Unreleased]: https://github.com/general-liquidity/sharpearena/compare/v0.23.0...HEAD
 
 ## [Unreleased]
+
+## [0.23.0] - 2026-09-02
 
 ### Added
 - py: generated-strategy evidence now binds a host-derived conceptual family, exact generator identity, verified earlier-candidate ancestry, and operator-registered idea sources with content digests and optional immutable attribution metadata. The append-only ledger verifies every v2 binding when read back. Family grouping is explicitly diagnostic: retuned variants can be compared without merging proposals or reducing the observed DSR trial count. Plans and model responses that omit the new optional fields remain valid.
@@ -328,6 +330,7 @@ First published release, as OpenOutcry.
 ### Fixed
 - ci: toolchain pinned to 1.96.0 for the wasm32 target; a virtualenv for maturin ([bb0ee4d](https://github.com/general-liquidity/sharpearena/commit/bb0ee4d)).
 
+[0.23.0]: https://github.com/general-liquidity/sharpearena/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/general-liquidity/sharpearena/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/general-liquidity/sharpearena/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/general-liquidity/sharpearena/compare/v0.19.0...v0.20.0
