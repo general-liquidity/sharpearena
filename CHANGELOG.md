@@ -10,6 +10,9 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ## [Unreleased]
 
+### Added
+- py: generated-strategy evidence now binds a host-derived conceptual family, exact generator identity, verified earlier-candidate ancestry, and operator-registered idea sources with content digests and optional immutable attribution metadata. The append-only ledger verifies every v2 binding when read back. Family grouping is explicitly diagnostic: retuned variants can be compared without merging proposals or reducing the observed DSR trial count. Plans and model responses that omit the new optional fields remain valid.
+
 ### Fixed
 - ci/release: ordinary branch CI skips only the prospective patch rehearsal when HEAD already carries an exact `v*` tag. A successful release intentionally empties `[Unreleased]`, so immediately rehearsing the next patch made the released main commit red even though its separate tag-validation and registry workflow passed. All product, packaging, provenance, and platform jobs still run on the released commit.
 

@@ -31,6 +31,10 @@ provenance manifest live under [`paper/`](../paper/).
 - Native, WebAssembly, npm, and Python golden legs execute the shared engine;
   canonical pre-hash JSON and `SPEC_HASH` make drift both readable and
   fail-closed.
+- Generated-strategy evidence counts raw proposals before validation or
+  deduplication and binds host-derived family identity, exact generator identity,
+  earlier-candidate ancestry, and operator-registered idea sources. Family
+  summaries are diagnostic and cannot change the trial denominator or rank key.
 
 ## What is not established
 
@@ -43,6 +47,10 @@ provenance manifest live under [`paper/`](../paper/).
   evidence belongs to SharpeBench and remains narrow.
 - Synthetic realism diagnostics do not establish that the generator captures
   every market mechanism, tail, or interaction.
+- Candidate lineage records do not establish causal intellectual attribution.
+  They establish that a generated candidate declared references to specific
+  earlier proposals and exact source digests that were available in its bound
+  search plan.
 
 For the canonical evaluation inputs and eligibility contract, see
 [`EVALUATION.md`](../EVALUATION.md). For the exact scientific interpretation,

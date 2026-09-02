@@ -112,6 +112,21 @@ half-open windows must be explicit and non-overlapping. The evidence retains the
 prompt, raw generation response, accepted and rejected candidates, split metadata,
 seeds, score records, and hashes.
 
+Each ledger row also carries a host-derived strategy-family digest, the exact generator
+identity, and resolved lineage. A candidate may name only an earlier candidate as a
+parent and may cite only an idea-source digest registered by the operator in the search
+plan. Source records bind exact content bytes and may add a URL or DOI, immutable
+revision, authors, and license. The host resolves candidate IDs to raw-candidate digests
+before writing the row, then binds the family, ancestry, generator, sources, and raw
+candidate in a separate lineage hash. The strict reader recomputes every v2 digest and
+rejects forward ancestry, source mismatch, or tampering.
+
+Family grouping is diagnostic. It can show whether one conceptual signal is robust
+across retuned windows, thresholds, or exposure, but it never merges proposals and
+never lowers the DSR trial count. Invalid proposals and duplicates remain observed
+trials. Plans and responses without source or lineage fields remain valid, so the v1
+workflow continues to run while emitting the richer v2 evidence.
+
 ```bash
 python -m sharpearena.strategy_cli \
   --plan examples/local-agents/strategy-search-smoke.json \
@@ -120,7 +135,9 @@ python -m sharpearena.strategy_cli \
 ```
 
 This closes one specific weakness: trials generated inside this harness are observed,
-not declared. It does not reveal searches performed before an entrant was submitted.
+not declared. It also makes ancestry and cited research auditable for candidates created
+inside the run. It does not reveal searches performed before an entrant was submitted,
+prove that a cited source caused an idea, or make family membership a scoring input.
 
 ## Isolation model
 
