@@ -974,6 +974,9 @@ class EdgeManifestLedger:
         resolved_sources: tuple[IdeaProvenance, ...] = ()
         invalid: Optional[str] = None
         duplicate: Optional[int] = None
+        lineage_supplied = (
+            isinstance(raw_candidate, dict) and "lineage" in raw_candidate
+        )
         if not isinstance(raw_candidate, dict):
             invalid = "candidate must be an object"
         elif "edge_manifest" not in raw_candidate:
@@ -1083,7 +1086,7 @@ class EdgeManifestLedger:
                 "declared"
                 if declared_lineage is not None and invalid is None
                 else "invalid"
-                if declared_lineage is not None
+                if lineage_supplied
                 else "host-derived-unreferenced"
             ),
         )
@@ -1291,13 +1294,24 @@ def _verify_v2_ledger_row(
             )
     else:
         parsed = parse_candidate_lineage(declared, f"{location}.declared_lineage")
-        if list(parsed.idea_source_digests) != source_digests:
+        if (
+            row.get("lineage_status") == "declared"
+            and list(parsed.idea_source_digests) != source_digests
+        ):
             raise EdgeManifestError(
                 f"{location} idea_provenance does not match the declared source order"
             )
-        if len(parsed.parent_candidate_ids) != len(parents):
+        if row.get("lineage_status") == "declared" and len(
+            parsed.parent_candidate_ids
+        ) != len(parents):
             raise EdgeManifestError(
                 f"{location} resolved parent count does not match the declaration"
+            )
+        if row.get("lineage_status") == "invalid" and any(
+            digest not in parsed.idea_source_digests for digest in source_digests
+        ):
+            raise EdgeManifestError(
+                f"{location} resolved a source absent from its invalid declaration"
             )
 
     lineage_binding = _digest(

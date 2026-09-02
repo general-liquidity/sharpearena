@@ -408,6 +408,26 @@ def test_lineage_rejects_forward_parents_and_unbound_source_digests_but_counts_t
     assert not ledger.selectable()
 
 
+def test_invalid_lineage_rows_remain_readable_evidence(tmp_path):
+    path = tmp_path / "invalid-lineage.jsonl"
+    ledger = EdgeManifestLedger(
+        path, model_digest="sha256:model", split_plan_sha256="sha256:split"
+    )
+    row = ledger.record(
+        _candidate(
+            lineage={
+                "parent_candidate_ids": ["future"],
+                "idea_source_digests": [],
+            }
+        )
+    )
+
+    [persisted] = read_manifest_ledger(path)
+    assert row.lineage_status == "invalid"
+    assert persisted["lineage_status"] == "invalid"
+    assert ledger.observed_trials == 1
+
+
 def test_undeclared_lineage_is_backward_compatible_and_explicitly_labelled():
     record = EdgeManifestLedger(
         None, model_digest="sha256:model", split_plan_sha256="sha256:split"
