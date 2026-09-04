@@ -27,6 +27,7 @@ dependencies = [
 
 [project.scripts]
 sharpearena-local-field = "sharpearena.local_field_cli:main"
+sharpearena-prospective-field = "sharpearena.prospective_field:main"
 sharpearena-ollama-shim = "sharpearena.ollama_shim:main"
 sharpearena-openai-shim = "sharpearena.openai_compatible_shim:main"
 sharpearena-compile-bench = "sharpearena.bench_bridge:main"

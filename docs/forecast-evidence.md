@@ -67,6 +67,13 @@ blocks, eligible and late revisions, a pre-open rejection, and blind versus
 consensus-visible exposure. It is a compatibility fixture, not an empirical
 agent result.
 
+[`examples/prospective-forecast-field`](../examples/prospective-forecast-field/)
+is the separate live protocol. It freezes model bytes, public market
+observations, target candles, the stopping rule, and analysis before inference;
+seals pending ledgers before the outcome boundary; then refuses resolution until
+the data source's server clock is past every frozen candle. Model snapshots are
+loaded locally and the runner never trades.
+
 ## Non-claims
 
 - Logical clocks make ordering testable; they do not prove wall time.
