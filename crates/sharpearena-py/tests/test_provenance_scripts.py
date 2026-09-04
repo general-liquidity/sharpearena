@@ -98,6 +98,7 @@ def tree(tmp_path: Path) -> Path:
         root / "paper" / "src",
         root / "paper" / "sections",
         root / "paper" / "evidence" / "model-artifacts",
+        root / "paper" / "evidence" / "prospective-forecast-field",
         root / "paper" / "figures",
     ):
         directory.mkdir(parents=True, exist_ok=True)
@@ -120,6 +121,12 @@ def tree(tmp_path: Path) -> Path:
     }.items():
         (root / relative).write_bytes(content)
     (root / "paper" / "evidence" / "f1.json").write_bytes(b'{"result": 1}\n')
+    (
+        root / "paper" / "evidence" / "prospective-forecast-field" / "field.json"
+    ).write_bytes(b'{"field": 1}\n')
+    (
+        root / "paper" / "evidence" / "prospective-forecast-field" / "field-plan.sha256"
+    ).write_bytes(b"0123456789abcdef  field-plan.json\n")
     (root / "paper" / "figures" / "f1.pdf").write_bytes(
         b"%PDF-1.4\x00binary\r\nbytes\n"
     )
@@ -238,6 +245,8 @@ def test_writer_output_validates_and_records_the_tree(tree: Path) -> None:
     }
     assert {item["path"] for item in manifest["artifacts"]} == {
         "paper/evidence/f1.json",
+        "paper/evidence/prospective-forecast-field/field-plan.sha256",
+        "paper/evidence/prospective-forecast-field/field.json",
         "paper/figures/f1.pdf",
     }
     assert manifest["source_snapshot_scope"] == list(common.SOURCE_SCOPE)
@@ -666,6 +675,7 @@ def test_write_atomic_does_not_collide_with_an_existing_temp_file(
 
     assert target.read_bytes() == b'{"new": true}\n'
     assert squatter.read_bytes() == b"another writer's half-manifest"
+
 
 # --- the empty-scope floor ----------------------------------------------------------------
 

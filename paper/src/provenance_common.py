@@ -109,7 +109,12 @@ SOURCE_SCOPE = (
     "paper/refs.bib",
 )
 
-ARTIFACT_SCOPE = ("paper/evidence/*.json", "paper/figures/*.pdf")
+ARTIFACT_SCOPE = (
+    "paper/evidence/*.json",
+    "paper/evidence/prospective-forecast-field*/**/*.json",
+    "paper/evidence/prospective-forecast-field*/**/*.sha256",
+    "paper/figures/*.pdf",
+)
 MODEL_ARTIFACT_SCOPE = ("paper/evidence/model-artifacts/*.json",)
 
 # A backend fact the local-model recorder could not observe is written as one of these

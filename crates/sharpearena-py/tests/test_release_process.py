@@ -9,10 +9,10 @@ import os
 import re
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
 
 import pytest
+import tomllib
 
 REPO = Path(__file__).resolve().parents[3]
 RELEASE = REPO / "scripts" / "release.py"
@@ -59,9 +59,7 @@ def test_npm_lock_release_replacements_preserve_json() -> None:
         (REPO / "crates/sharpearena/release.toml").read_text(encoding="utf-8")
     )
     lock_path = "../../npm/sharpearena/package-lock.json"
-    payload = (REPO / "npm/sharpearena/package-lock.json").read_text(
-        encoding="utf-8"
-    )
+    payload = (REPO / "npm/sharpearena/package-lock.json").read_text(encoding="utf-8")
 
     for rule in config["pre-release-replacements"]:
         if rule["file"] != lock_path:
@@ -181,6 +179,12 @@ def _write_remaining_source_scope(root: Path) -> None:
     figure = root / "paper/figures/f1.pdf"
     figure.parent.mkdir(parents=True, exist_ok=True)
     figure.write_bytes(b"%PDF-1.4\x00binary\n")
+    field = root / "paper/evidence/prospective-forecast-field"
+    field.mkdir(parents=True, exist_ok=True)
+    (field / "field.json").write_text('{"field": 1}\n', encoding="utf-8")
+    (field / "field-plan.sha256").write_text(
+        "0123456789abcdef  field-plan.json\n", encoding="utf-8"
+    )
 
 
 def _write_manifest(root: Path, generation: str, *, dirty: bool = False) -> None:
@@ -252,7 +256,7 @@ def release_tree(tmp_path: Path) -> Path:
     source.parent.mkdir(parents=True)
     source.write_text("pub fn value() -> u8 { 19 }\n", encoding="utf-8")
     artifact = root / "paper/evidence/f1.json"
-    artifact.parent.mkdir(parents=True)
+    artifact.parent.mkdir(parents=True, exist_ok=True)
     artifact.write_text('{"value": 19}\n', encoding="utf-8")
     (root / "CHANGELOG.md").write_text(
         _CHANGELOG_PREAMBLE + _FIXTURE_UNRELEASED + _CHANGELOG_HISTORY,
@@ -757,7 +761,9 @@ def test_execute_refuses_changelog_entries_that_are_not_on_the_base(
     operator was looking at a full one. The working tree here is clean and local ``main``
     is one commit ahead of ``origin/main``, which is exactly that shape.
     """
-    _commit_changelog(release_tree, "\n### Added\n- an entry committed but not pushed\n")
+    _commit_changelog(
+        release_tree, "\n### Added\n- an entry committed but not pushed\n"
+    )
     module = _release_module("release_driver_unpushed_changelog")
     module.cut_release = lambda *args, **kwargs: pytest.fail("the cut must not start")
 
