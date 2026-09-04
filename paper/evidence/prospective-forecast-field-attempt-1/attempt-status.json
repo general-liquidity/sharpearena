@@ -1,0 +1,10 @@
+{
+  "aborted_at_server_ms": 1788534697438,
+  "forecast_artifacts_written": [],
+  "outcome_data_observed": false,
+  "reason": "The first preregistered 0.5B entrant had not completed after more than 16 minutes, leaving insufficient time to run and seal all three entrants before the frozen deadline.",
+  "reason_code": "inference_deadline_infeasible",
+  "schema_version": "sharpearena.prospective-forecast-attempt-status.v1",
+  "started_agent_id": "qwen-0.5b",
+  "status": "aborted_before_outcomes"
+}
