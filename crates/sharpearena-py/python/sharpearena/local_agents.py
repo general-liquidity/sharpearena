@@ -30,7 +30,7 @@ from .decision_parser import (
 )
 from .sharpearena_py import VecTradingEnv, decision_schema_json, score_run
 
-EVIDENCE_SCHEMA_VERSION = 1
+EVIDENCE_SCHEMA_VERSION = 2
 LOCAL_EVIDENCE_CLASS = "retrospective_local_model"
 
 
@@ -451,6 +451,9 @@ class InferenceResult:
     output_tokens: int
     reasoning_tokens: int
     total_duration_ns: int
+    # How ``total_duration_ns`` was observed. This is diagnostic provenance,
+    # not a rank input.
+    duration_source: str = "unspecified"
     reasoning_tokens_available: bool = False
     raw_response: Optional[str] = None
     retry_count: int = 0
@@ -721,6 +724,7 @@ class OllamaClient:
             output_tokens=output_tokens,
             reasoning_tokens=reasoning_tokens,
             total_duration_ns=int(response.get("total_duration", 0) or 0),
+            duration_source="backend-reported-total-duration",
             reasoning_tokens_available=reasoning_tokens_available,
             raw_response=raw,
         )
@@ -984,6 +988,7 @@ class OpenAICompatibleClient:
             output_tokens=output_tokens,
             reasoning_tokens=reasoning_tokens,
             total_duration_ns=elapsed,
+            duration_source="host-monotonic-request",
             reasoning_tokens_available=reasoning_tokens_available,
             raw_response=raw,
         )
@@ -1208,6 +1213,8 @@ class LocalFieldRunner:
         ]
         retry_counts = [0] * len(cells)
         inference_ns = [0] * len(cells)
+        inference_duration_samples_ns: list[list[int]] = [[] for _ in cells]
+        inference_duration_sources: list[set[str]] = [set() for _ in cells]
         termination: list[Optional[str]] = [None] * len(cells)
         last_decisions: list[dict[str, Any]] = [
             {"orders": [], "reasoning": "initial hold before first model decision"}
@@ -1252,6 +1259,28 @@ class LocalFieldRunner:
                         continue
                     result = outcome.result
                     assert result is not None
+                    accounting = (
+                        result.prompt_tokens,
+                        result.output_tokens,
+                        result.reasoning_tokens,
+                        result.retry_count,
+                        result.total_duration_ns,
+                    )
+                    if (
+                        any(
+                            isinstance(value, bool)
+                            or not isinstance(value, int)
+                            or value < 0
+                            for value in accounting
+                        )
+                        or not result.duration_source.strip()
+                    ):
+                        failed[lane] = {
+                            "type": "InvalidInferenceAccounting",
+                            "detail": "inference accounting must contain nonnegative integers and a duration source",
+                        }
+                        active[lane] = False
+                        continue
                     last_decisions[lane] = result.decision
                     if result.raw_response is not None:
                         raw_responses[lane].append(result.raw_response)
@@ -1266,6 +1295,8 @@ class LocalFieldRunner:
                     )
                     retry_counts[lane] += result.retry_count
                     inference_ns[lane] += result.total_duration_ns
+                    inference_duration_samples_ns[lane].append(result.total_duration_ns)
+                    inference_duration_sources[lane].add(result.duration_source)
 
             decisions = []
             infer_index_set = set(infer_indices)
@@ -1399,6 +1430,14 @@ class LocalFieldRunner:
                 ),
                 "retry_count": retry_counts[index],
                 "inference_duration_ns": inference_ns[index],
+                "inference_duration_samples_ns": inference_duration_samples_ns[index],
+                "inference_duration_source": (
+                    next(iter(inference_duration_sources[index]))
+                    if len(inference_duration_sources[index]) == 1
+                    else "mixed"
+                    if inference_duration_sources[index]
+                    else "unavailable"
+                ),
                 "raw_responses": raw_responses[index],
                 "response_sha256": response_hashes[index],
                 "observation_sha256": observation_hashes[index],

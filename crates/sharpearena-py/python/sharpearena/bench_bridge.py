@@ -19,7 +19,7 @@ from typing import Any, Optional, Sequence
 
 from .local_agents import EVIDENCE_SCHEMA_VERSION, LOCAL_EVIDENCE_CLASS
 
-BRIDGE_SCHEMA_VERSION = 1
+BRIDGE_SCHEMA_VERSION = 2
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 
 
@@ -35,6 +35,51 @@ def _canonical_bytes(value: Any) -> bytes:
 
 def _digest(value: Any) -> str:
     return sha256(_canonical_bytes(value)).hexdigest()
+
+
+def _nearest_rank(values: Sequence[int], percentile: int) -> int:
+    """Return a deterministic nearest-rank percentile over integer samples."""
+
+    if not values:
+        raise BenchBridgeError("an operational percentile requires at least one sample")
+    if not 0 < percentile <= 100:
+        raise BenchBridgeError("percentile must lie in (0, 100]")
+    ordered = sorted(values)
+    rank = math.ceil(percentile * len(ordered) / 100)
+    return ordered[max(0, rank - 1)]
+
+
+def _operational_profile(records: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate rank-neutral inference accounting from completed field cells."""
+
+    durations = [
+        duration
+        for record in records
+        for duration in record["inference_duration_samples_ns"]
+    ]
+    duration_sources = sorted(
+        {str(record["inference_duration_source"]) for record in records}
+    )
+    reasoning_sources = sorted(
+        {str(record["reasoning_tokens_source"]) for record in records}
+    )
+    return {
+        "rank_input": False,
+        "latency_definition": "one model request, nearest-rank percentile",
+        "inference_calls": len(durations),
+        "inference_duration_ns_total": sum(durations),
+        "inference_duration_ns_p50": _nearest_rank(durations, 50),
+        "inference_duration_ns_p95": _nearest_rank(durations, 95),
+        "duration_sources": duration_sources,
+        "tokens_in_total": sum(int(record["tokens_in"]) for record in records),
+        "tokens_out_total": sum(int(record["tokens_out"]) for record in records),
+        "reasoning_tokens_total": sum(
+            int(record["reasoning_tokens"]) for record in records
+        ),
+        "reasoning_token_sources": reasoning_sources,
+        "retry_count_total": sum(int(record["retry_count"]) for record in records),
+        "cells": len(records),
+    }
 
 
 def _atomic_json(path: Path, value: Any) -> str:
@@ -208,6 +253,57 @@ def _validate_field(records: Sequence[dict[str, Any]]) -> dict[str, Any]:
             )
         if record.get("returns_sha256") != _digest(returns):
             raise BenchBridgeError("returns_sha256 does not match returns")
+        accounting_fields = (
+            "tokens_in",
+            "tokens_out",
+            "reasoning_tokens",
+            "retry_count",
+            "inference_duration_ns",
+        )
+        if any(
+            isinstance(record.get(field), bool)
+            or not isinstance(record.get(field), int)
+            or int(record[field]) < 0
+            for field in accounting_fields
+        ):
+            raise BenchBridgeError(
+                "completed cell contains invalid inference accounting"
+            )
+        samples = record.get("inference_duration_samples_ns")
+        if (
+            not isinstance(samples, list)
+            or not samples
+            or any(
+                isinstance(value, bool) or not isinstance(value, int) or value < 0
+                for value in samples
+            )
+        ):
+            raise BenchBridgeError(
+                "completed cell contains invalid inference duration samples"
+            )
+        if sum(samples) != record["inference_duration_ns"]:
+            raise BenchBridgeError(
+                "inference duration samples do not sum to inference_duration_ns"
+            )
+        cadence = int(model_config.get("decision_cadence", 0))
+        steps = record.get("steps")
+        if cadence <= 0 or not isinstance(steps, int) or steps <= 0:
+            raise BenchBridgeError(
+                "completed cell has invalid steps or decision cadence"
+            )
+        expected_calls = math.ceil(steps / cadence)
+        if len(samples) != expected_calls:
+            raise BenchBridgeError(
+                "inference duration sample count disagrees with steps and decision cadence"
+            )
+        duration_source = record.get("inference_duration_source")
+        if not isinstance(duration_source, str) or not duration_source.strip():
+            raise BenchBridgeError("completed cell has no inference duration source")
+        reasoning_source = record.get("reasoning_tokens_source")
+        if reasoning_source not in {"provider-reported", "unavailable", "mixed"}:
+            raise BenchBridgeError(
+                "completed cell has an invalid reasoning token source"
+            )
     if seen_ordinals != set(range(expected_total)):
         raise BenchBridgeError(
             "field ordinals do not cover the planned Cartesian product"
@@ -296,6 +392,7 @@ def compile_benchmark_evidence(
                     "model_index": model_index,
                     "identity": representative["model"],
                     "config": representative["model_config"],
+                    "operational_profile": _operational_profile(model_records),
                 }
             )
         stem = _safe_dataset_name(str(dataset["dataset_id"]), dataset_index)

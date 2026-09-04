@@ -172,6 +172,14 @@ def test_field_runner_batches_scores_and_records_repetition_seed(tmp_path):
     )
     assert all(record["reasoning_tokens_source"] == "unavailable" for record in records)
     assert all(record["retry_count"] == 0 for record in records)
+    assert all(record["schema_version"] == 2 for record in records)
+    assert all(record["inference_duration_ns"] == 300 for record in records)
+    assert all(
+        record["inference_duration_samples_ns"] == [100, 100, 100] for record in records
+    )
+    assert all(
+        record["inference_duration_source"] == "unspecified" for record in records
+    )
     assert all(record["raw_responses"] for record in records)
     assert {record["cell_ordinal"] for record in records} == {0, 1, 2, 3}
     assert all(record["field_shape"]["total_cells"] == 4 for record in records)
@@ -867,6 +875,18 @@ def test_bench_bridge_compiles_complete_shards_and_preserves_frequency(tmp_path)
         LocalFieldRunner(FixedModel()).run(plan, EvidenceJournal(journal))["failed"]
         == 0
     )
+    records = [json.loads(line) for line in journal.read_text().splitlines()]
+    for record_index, record in enumerate(records):
+        first = record_index * 3 + 1
+        record["inference_duration_samples_ns"] = [first, first + 1, first + 2]
+        record["inference_duration_ns"] = sum(
+            record["inference_duration_samples_ns"]
+        )
+        record["inference_duration_source"] = "fixture-monotonic"
+    journal.write_text(
+        "".join(json.dumps(record) + "\n" for record in records),
+        encoding="utf-8",
+    )
 
     result = compile_benchmark_evidence([journal], tmp_path / "compiled")
     assert result["field_shape"]["repetitions"] == 2
@@ -886,6 +906,35 @@ def test_bench_bridge_compiles_complete_shards_and_preserves_frequency(tmp_path)
     assert submissions[0]["in_sample_trials"] == 1
     assert submissions[0]["candidates"] == []
     assert submissions[0]["runs"][0]["trace"]["events"]
+    profile = output["models"][0]["operational_profile"]
+    assert profile == {
+        "rank_input": False,
+        "latency_definition": "one model request, nearest-rank percentile",
+        "inference_calls": 12,
+        "inference_duration_ns_total": 78,
+        "inference_duration_ns_p50": 6,
+        "inference_duration_ns_p95": 12,
+        "duration_sources": ["fixture-monotonic"],
+        "tokens_in_total": 120,
+        "tokens_out_total": 60,
+        "reasoning_tokens_total": 0,
+        "reasoning_token_sources": ["unavailable"],
+        "retry_count_total": 0,
+        "cells": 4,
+    }
+
+
+def test_bench_bridge_refuses_inconsistent_inference_accounting(tmp_path):
+    journal = tmp_path / "field.jsonl"
+    LocalFieldRunner(FixedModel()).run(_plan(repetitions=1), EvidenceJournal(journal))
+    records = [json.loads(line) for line in journal.read_text().splitlines()]
+    records[0]["inference_duration_samples_ns"][0] += 1
+    journal.write_text(
+        "".join(json.dumps(record) + "\n" for record in records),
+        encoding="utf-8",
+    )
+    with pytest.raises(BenchBridgeError, match="do not sum"):
+        compile_benchmark_evidence([journal], tmp_path / "compiled")
 
 
 def test_bench_bridge_preserves_disclosed_selection_candidates(tmp_path):
