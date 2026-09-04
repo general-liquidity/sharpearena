@@ -1,8 +1,8 @@
 # SharpeArena for Python
 
-The Python distribution combines the native SharpeArena engine with a
-Gymnasium-compatible environment and optional adapters for multi-agent, RLVR,
-offline-RL, MCP, and local-model workflows.
+The Python distribution combines SharpeArena's deterministic point-in-time
+evaluation sandbox with a Gymnasium-compatible environment and optional adapters
+for multi-agent, RLVR, offline-RL, MCP, and local-model workflows.
 
 > Point-in-time observations prevent future-bar access through the environment API.
 > They do not isolate Python code from the host. Run trusted local code here, or use

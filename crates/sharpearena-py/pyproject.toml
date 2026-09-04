@@ -5,7 +5,7 @@ build-backend = "maturin"
 [project]
 name = "sharpearena"
 version = "0.24.0"
-description = "SharpeArena — a leak-free, point-in-time reinforcement-learning environment for trading agents (Python distribution)."
+description = "SharpeArena: a deterministic point-in-time evaluation sandbox and Gymnasium environment for trading agents."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT OR Apache-2.0" }

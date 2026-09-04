@@ -10,6 +10,9 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ## [Unreleased]
 
+### Changed
+- positioning: standardize the paper title, crate metadata, Python and npm descriptions, and distribution READMEs around SharpeArena as a deterministic point-in-time trading-agent evaluation sandbox and reinforcement-learning environment. The paper now defines evaluation sandbox as the governed market interface and explicitly separates it from process or container isolation; broad `leak-free` metadata claims are replaced by the narrower property the implementation enforces.
+
 ## [0.24.0] - 2026-09-04
 
 ### Added

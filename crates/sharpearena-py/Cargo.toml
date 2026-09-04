@@ -6,7 +6,7 @@ name = "sharpearena-py"
 version = "0.24.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
-description = "Python bindings (pyo3) for SharpeArena — the leak-free trading-agent environment."
+description = "Python bindings for SharpeArena's deterministic point-in-time trading-agent evaluation sandbox and RL environment."
 repository = "https://github.com/general-liquidity/sharpearena"
 
 [lib]

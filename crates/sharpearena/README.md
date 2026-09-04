@@ -1,7 +1,7 @@
 # SharpeArena for Rust
 
-The deterministic, point-in-time engine and governed agent contract behind
-SharpeArena.
+The deterministic point-in-time trading-agent evaluation sandbox and governed
+agent contract behind SharpeArena.
 
 SharpeArena owns the market cursor, exposes history only through each
 `MarketObservation`, validates each `Decision`, and advances one simulation step.
@@ -9,7 +9,7 @@ It also provides procedural scenarios, vector environments, execution noise,
 market clearing, a limit-order book, capture and replay, and checked external-agent
 execution.
 
-> SharpeArena is an evaluation environment, not a process sandbox. Rust code linked
+> SharpeArena is an evaluation sandbox, not a process sandbox. Rust code linked
 > into the evaluator has the evaluator's filesystem, network, and process access. Use
 > SharpeBench's digest-pinned container path for an untrusted entrant.
 

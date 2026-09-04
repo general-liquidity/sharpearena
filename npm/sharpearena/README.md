@@ -1,9 +1,9 @@
 # @general-liquidity/sharpearena
 
-A typed Node and Bun API for deterministic SharpeArena baselines, replay, synthetic
-data, stress scenarios, walk-forward windows, and regime tags. The package loads the
-same Rust engine compiled to WebAssembly and refuses a wrapper/engine `SPEC_HASH`
-mismatch at startup.
+A typed Node and Bun API for SharpeArena's deterministic point-in-time evaluation
+sandbox, including baselines, replay, synthetic data, stress scenarios,
+walk-forward windows, and regime tags. The package loads the same Rust engine
+compiled to WebAssembly and refuses a wrapper/engine `SPEC_HASH` mismatch at startup.
 
 This package is built as CommonJS for Node 18 or newer. Browser execution is not a
 supported distribution target.
