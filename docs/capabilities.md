@@ -54,8 +54,10 @@ the root README can stay task-oriented.
 
 ## Known limits
 
-- No model field has been completed or admitted as evidence. CI uses deterministic
-  model doubles and downloads no weights.
+- One prospective field is admitted as a descriptive protocol pilot: three
+  already-cached local model snapshots, one fixed forecast scaffold, 24 binary
+  contracts, and six settlement-clock blocks. It is not a full-agent or trading
+  result. CI still uses deterministic model doubles and downloads no weights.
 - SharpeArena provides structural point-in-time leak freedom, not process or
   container containment. Use SharpeBench's digest-pinned `--image` path for an
   untrusted entrant.
