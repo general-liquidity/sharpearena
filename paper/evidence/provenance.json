@@ -115,6 +115,26 @@
       "sha256": "ab0dd163998182b7a6e126aa7f737e853c293fbd1d376f2f5b9828bcaf0697a4"
     },
     {
+      "path": "paper/evidence/prospective-forecast-field/resolution-manifest.json",
+      "sha256": "c7f213512aa80558bd4c0ded3155798516b2a283911929a6e9c67012e2b78bbc"
+    },
+    {
+      "path": "paper/evidence/prospective-forecast-field/resolution.json",
+      "sha256": "5b9d5530a9b2b57cdd978856dc391159f5b5e67888d057fff6d2688b3b921d3a"
+    },
+    {
+      "path": "paper/evidence/prospective-forecast-field/resolved/phi-4.json",
+      "sha256": "c820b86d5c79ef9da21c1eb84614ae065e97e3bfbafb927890de3d8dafd295d1"
+    },
+    {
+      "path": "paper/evidence/prospective-forecast-field/resolved/qwen-0.5b.json",
+      "sha256": "b8c4468e650e6fb6ebfaa3d1e6d26b75d2bab956bd1c335543fad259738f5bbc"
+    },
+    {
+      "path": "paper/evidence/prospective-forecast-field/resolved/qwen-7b.json",
+      "sha256": "19edce59688fb607c1994b6f6b73607ba049e2108746b7cc92ba1be5b8ac9b5f"
+    },
+    {
       "path": "paper/evidence/sealed-seeds.json",
       "sha256": "a111ae0114f88f83a128970f60cebd00200d32540328137de927fa7ed6c8851f"
     },
@@ -196,7 +216,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "a4d6fb807e4c446b936cddc5f4e53f4555721b6b",
+  "generated_at_head": "c9c7b2b005ebafbb2e61a518450b63f54c18dd2e",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
