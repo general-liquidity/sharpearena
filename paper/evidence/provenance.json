@@ -1,6 +1,8 @@
 {
   "artifact_scope": [
     "paper/evidence/*.json",
+    "paper/evidence/prospective-forecast-field*/**/*.json",
+    "paper/evidence/prospective-forecast-field*/**/*.sha256",
     "paper/figures/*.pdf"
   ],
   "artifacts": [
@@ -39,6 +41,78 @@
     {
       "path": "paper/evidence/predictability.json",
       "sha256": "bf4c2b3bb4c6311a0795a7b0b65a2fe00b76a06193f3051de0a1f63391782a8a"
+    },
+    {
+      "path": "paper/evidence/prospective-forecast-field-attempt-1/attempt-status.json",
+      "sha256": "099f7b75061aa02e93206cd2936c462e9603c2fcef85a9beecfe9274ba7c692b"
+    },
+    {
+      "path": "paper/evidence/prospective-forecast-field-attempt-1/field-plan.json",
+      "sha256": "54efc07e6fbe4eb7d9dc888805e894bd63816f30530f5c654a0ad04008d90a59"
+    },
+    {
+      "path": "paper/evidence/prospective-forecast-field-attempt-1/field-plan.sha256",
+      "sha256": "28210b07b79a4d56442d0a1dbc0db5508bebfb218f1200e30f76f02ab566115a"
+    },
+    {
+      "path": "paper/evidence/prospective-forecast-field-attempt-1/observation.json",
+      "sha256": "bf7c917bb732fb4aab0c7e17231f2938fc2f1eefbf3eea641b200a1f75a7914c"
+    },
+    {
+      "path": "paper/evidence/prospective-forecast-field-attempt-2/attempt-status.json",
+      "sha256": "908adb0b98b05fc0545ed596d5440e2bc8d1e304bfa13c7452cae325bc8b70ad"
+    },
+    {
+      "path": "paper/evidence/prospective-forecast-field-attempt-2/field-plan.json",
+      "sha256": "e2105be70b996168a9c5238e92a97737d99ed154bd2fc88a11e261e551e4889b"
+    },
+    {
+      "path": "paper/evidence/prospective-forecast-field-attempt-2/field-plan.sha256",
+      "sha256": "1d2954811fd85d925308a0f306070e27cbbd0b43ce117e24e4e2c70ad025fa20"
+    },
+    {
+      "path": "paper/evidence/prospective-forecast-field-attempt-2/observation.json",
+      "sha256": "0816fdc56e2d562fc606534b3d173b3041b49258085f441bdfe950f8714aa86c"
+    },
+    {
+      "path": "paper/evidence/prospective-forecast-field/field-plan.json",
+      "sha256": "61d225c357ec13dea63851afd17ca66866d841efd71dc1da18b74c85a3342a3c"
+    },
+    {
+      "path": "paper/evidence/prospective-forecast-field/field-plan.sha256",
+      "sha256": "3705d58a7bc372b377e5c259b8a3afcb3782e2e1dafb3c515ca0f16d19d3bbd6"
+    },
+    {
+      "path": "paper/evidence/prospective-forecast-field/forecast-commit.json",
+      "sha256": "cc0e06840ef047d2d149050f0ae410df6a3db273cae4f66da67b0e9e05bf26b9"
+    },
+    {
+      "path": "paper/evidence/prospective-forecast-field/inference/phi-4.json",
+      "sha256": "62d83067212d1f764444cc799fad3f39797001c601df763e2974072f4e7033d0"
+    },
+    {
+      "path": "paper/evidence/prospective-forecast-field/inference/qwen-0.5b.json",
+      "sha256": "e673bc796b74355b715f02f87eddbf55659aa385c3e56e79d544933404f6e140"
+    },
+    {
+      "path": "paper/evidence/prospective-forecast-field/inference/qwen-7b.json",
+      "sha256": "b046e7cbb77438674399377e5e4c998da99ef001f7ba7e5e9b49898cfb23bbb3"
+    },
+    {
+      "path": "paper/evidence/prospective-forecast-field/observation.json",
+      "sha256": "3657bdd797457a64207258a9804b620efe092f02b643ab6423ee254d4750d1b7"
+    },
+    {
+      "path": "paper/evidence/prospective-forecast-field/pending/phi-4.json",
+      "sha256": "fa318d2d520180d35a75526ea3a0abb1025783a26978a33cd479a4d2137a267a"
+    },
+    {
+      "path": "paper/evidence/prospective-forecast-field/pending/qwen-0.5b.json",
+      "sha256": "9aea81d596d0c0c09391051b86a7616b0864afedb2d6853c0265d16470e96e1c"
+    },
+    {
+      "path": "paper/evidence/prospective-forecast-field/pending/qwen-7b.json",
+      "sha256": "ab0dd163998182b7a6e126aa7f737e853c293fbd1d376f2f5b9828bcaf0697a4"
     },
     {
       "path": "paper/evidence/sealed-seeds.json",
@@ -122,7 +196,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "0d2de44481afbc00d595bdce53d674cece6fa41b",
+  "generated_at_head": "a4d6fb807e4c446b936cddc5f4e53f4555721b6b",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -656,7 +730,7 @@
     },
     {
       "path": "paper/src/provenance_common.py",
-      "sha256": "d9e892fb91aaaf89b01f2333dfbf80d0468601c5c76f7e2f58fdb9614f239e79"
+      "sha256": "a073144f957ca46e6f4007ee1f7f29cd46c94b61f7a08663e29917a3817af8ac"
     },
     {
       "path": "release.toml",
@@ -690,6 +764,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "c436b4b4f90be1be94ed59352fc670452fd41461a0856d1eb48e66da1f5404ed",
+  "source_snapshot_sha256": "8116f688ca178bd8f59b1b0f985e403a04449a2fb07ee907e81d1a9e17080814",
   "validator": "paper/src/check-provenance.py"
 }
