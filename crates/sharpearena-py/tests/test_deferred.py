@@ -9,12 +9,15 @@ scoring arithmetic.
 from __future__ import annotations
 
 import json
+import math
 
 import pytest
 
 from sharpearena.deferred import (
+    CATEGORICAL,
     DIRECTION,
     INTERVAL,
+    NORMAL,
     POINT,
     PROBABILITY,
     Claim,
@@ -30,12 +33,55 @@ from sharpearena.deferred import (
     score_claim,
     summarize,
 )
+from sharpearena.forecast_contract import (
+    BINARY_LOG,
+    CATEGORICAL_BRIER,
+    CATEGORICAL_LOG,
+    ForecastContract,
+    ForecastContractError,
+)
 
 
 def desk_at(bar: int, **kwargs) -> DeferredDesk:
     desk = DeferredDesk(**kwargs)
     desk.tick(bar)
     return desk
+
+
+def contract(
+    kind: str,
+    *,
+    scoring_rule: str | None = None,
+    categories: tuple[str, ...] = (),
+    interval_alpha: float | None = None,
+    neutral_threshold: float = 0.0,
+) -> ForecastContract:
+    default = {
+        POINT: "point_errors",
+        PROBABILITY: "binary_brier",
+        CATEGORICAL: "categorical_brier",
+        NORMAL: "normal_crps",
+        DIRECTION: "direction_accuracy",
+        INTERVAL: "interval_score",
+    }
+    return ForecastContract(
+        contract_id=f"contract-{kind}",
+        question=f"settle {kind}",
+        instrument="ES",
+        target="ES.close",
+        kind=kind,
+        opens_at=2,
+        deadline=5,
+        resolves_at=10,
+        observation_source="frozen-fixture.csv",
+        open_definition="close at bar 2",
+        close_definition="close at bar 10",
+        unit="USD",
+        scoring_rule=scoring_rule or default[kind],
+        neutral_threshold=neutral_threshold,
+        categories=categories,
+        interval_alpha=interval_alpha,
+    )
 
 
 # -- the structural guarantee -----------------------------------------------
@@ -59,11 +105,10 @@ def test_a_claim_carries_nothing_that_was_not_knowable_at_commit_time():
     payload = claim.to_dict()
     assert set(payload) == {
         "claim_id",
-        "question",
-        "kind",
+        "contract",
+        "contract_sha256",
         "prediction",
         "committed_at",
-        "horizon",
         "resolves_at",
         "confidence",
         "rationale",
@@ -154,6 +199,24 @@ def test_an_outcome_for_an_unknown_claim_is_refused():
         resolve_claims([], [Outcome("ghost", 1.0, available_at=5)])
 
 
+def test_duplicate_claims_and_duplicate_outcomes_are_refused():
+    claim = desk_at(1).commit("x", POINT, 1.0, horizon=2)
+    with pytest.raises(ClaimRejected, match="duplicate claim_id"):
+        resolve_claims([claim, claim], [])
+    outcome = Outcome(claim.claim_id, 1.0, available_at=3)
+    with pytest.raises(DeferredError, match="duplicate outcome"):
+        resolve_claims([claim], [outcome, outcome])
+
+
+def test_non_strict_duplicate_outcome_is_visible_but_never_double_scored():
+    claim = desk_at(1).commit("x", POINT, 1.0, horizon=2)
+    outcome = Outcome(claim.claim_id, 1.0, available_at=3)
+    report = resolve_claims([claim], [outcome, outcome], strict=False)
+    assert len(report["resolved"]) == 1
+    assert len(report["rejected"]) == 1
+    assert report["summary"]["n_resolved"] == 1
+
+
 def test_series_resolution_stamps_availability_at_the_horizon_bar():
     desk = desk_at(3)
     claim = desk.commit("level in 4", POINT, 0.0, horizon=4)
@@ -192,10 +255,79 @@ def test_claims_round_trip_through_json():
     assert [c.to_dict() for c in restored] == [c.to_dict() for c in desk.claims()]
 
 
+def test_a_prospective_contract_is_frozen_before_the_prediction():
+    desk = desk_at(3)
+    frozen = contract(PROBABILITY)
+    claim = desk.commit_contract(frozen, 0.7, claim_id="prob-1")
+    assert claim.contract.sha256 == claim.to_dict()["contract_sha256"]
+    assert claim.resolves_at == 10
+    assert claim.horizon == 7
+
+
+def test_contract_clock_and_scoring_rule_are_closed():
+    with pytest.raises(ForecastContractError, match="clock"):
+        ForecastContract(
+            contract_id="bad",
+            question="bad",
+            instrument="ES",
+            target="close",
+            kind=POINT,
+            opens_at=5,
+            deadline=4,
+            resolves_at=6,
+            observation_source="fixture",
+            open_definition="open",
+            close_definition="close",
+            unit="USD",
+            scoring_rule="point_errors",
+        )
+    raw = contract(POINT).to_dict()
+    raw["surprise"] = True
+    with pytest.raises(ForecastContractError, match="unknown=.*surprise"):
+        ForecastContract.from_dict(raw)
+
+
+def test_claim_document_refuses_unknown_fields_bad_hashes_and_duplicates():
+    desk = desk_at(4)
+    desk.commit("a", POINT, 1.25, horizon=3, claim_id="one")
+    original = json.loads(desk.to_json())
+
+    unknown = json.loads(desk.to_json())
+    unknown["claims"][0]["surprise"] = True
+    with pytest.raises(ClaimRejected, match="unknown=.*surprise"):
+        claims_from_json(json.dumps(unknown))
+
+    wrong_hash = json.loads(desk.to_json())
+    wrong_hash["claims"][0]["contract_sha256"] = "0" * 64
+    with pytest.raises(ClaimRejected, match="contract_sha256"):
+        claims_from_json(json.dumps(wrong_hash))
+
+    duplicate = original
+    duplicate["claims"].append(dict(duplicate["claims"][0]))
+    with pytest.raises(ClaimRejected, match="duplicate claim_id"):
+        claims_from_json(json.dumps(duplicate))
+
+
+def test_claim_document_refuses_inconsistent_resolution_and_invalid_confidence():
+    desk = desk_at(4)
+    desk.commit("a", POINT, 1.25, horizon=3)
+    inconsistent = json.loads(desk.to_json())
+    inconsistent["claims"][0]["resolves_at"] += 1
+    with pytest.raises(ClaimRejected, match="resolves_at"):
+        claims_from_json(json.dumps(inconsistent))
+
+    confidence = json.loads(desk.to_json())
+    confidence["claims"][0]["confidence"] = 1.5
+    with pytest.raises(ClaimRejected, match="confidence"):
+        claims_from_json(json.dumps(confidence))
+
+
 def test_a_serialized_claim_carries_no_answer():
     desk = desk_at(4)
     desk.commit("a", POINT, 1.25, horizon=3)
-    payload = json.loads(desk.to_json())[0]
+    document = json.loads(desk.to_json())
+    assert document["schema_version"] == "sharpearena.deferred-claims.v1"
+    payload = document["claims"][0]
     assert "outcome" not in payload
     assert "score" not in payload
 
@@ -218,11 +350,69 @@ def test_probability_claims_score_on_brier():
         score_claim(claim, 0.5)
 
 
+def test_binary_log_score_is_supported_without_clipping_endpoints():
+    desk = desk_at(3)
+    claim = desk.commit_contract(contract(PROBABILITY, scoring_rule=BINARY_LOG), 0.8)
+    assert score_claim(claim, 1.0)["log_loss"] == pytest.approx(-math.log(0.8))
+    with pytest.raises(ClaimRejected, match="strictly inside"):
+        desk.commit_contract(contract(PROBABILITY, scoring_rule=BINARY_LOG), 1.0)
+
+
+def test_categorical_brier_and_log_scores_use_the_full_probability_vector():
+    categories = ("bearish", "neutral", "bullish")
+    desk = desk_at(3)
+    brier = desk.commit_contract(
+        contract(CATEGORICAL, scoring_rule=CATEGORICAL_BRIER, categories=categories),
+        (0.2, 0.3, 0.5),
+        claim_id="cat-brier",
+    )
+    assert score_claim(brier, "bullish")["brier"] == pytest.approx(
+        0.2**2 + 0.3**2 + (0.5 - 1.0) ** 2
+    )
+    log = desk.commit_contract(
+        contract(CATEGORICAL, scoring_rule=CATEGORICAL_LOG, categories=categories),
+        (0.2, 0.3, 0.5),
+        claim_id="cat-log",
+    )
+    assert score_claim(log, "neutral")["log_loss"] == pytest.approx(-math.log(0.3))
+    with pytest.raises(ClaimRejected, match="sum to 1"):
+        desk.commit_contract(
+            contract(CATEGORICAL, categories=categories),
+            (0.2, 0.3, 0.4),
+        )
+
+
+def test_normal_forecast_uses_closed_form_crps():
+    desk = desk_at(3)
+    claim = desk.commit_contract(contract(NORMAL), (10.0, 2.0))
+    score = score_claim(claim, 10.0)
+    expected = 2.0 * (math.sqrt(2.0 / math.pi) - 1.0 / math.sqrt(math.pi))
+    assert score["crps"] == pytest.approx(expected)
+    assert score["z"] == 0.0
+
+
+def test_interval_score_penalizes_misses_by_the_precommitted_alpha():
+    desk = desk_at(3)
+    claim = desk.commit_contract(contract(INTERVAL, interval_alpha=0.1), (8.0, 12.0))
+    assert score_claim(claim, 10.0)["interval_score"] == pytest.approx(4.0)
+    assert score_claim(claim, 14.0)["interval_score"] == pytest.approx(44.0)
+
+
 def test_direction_claims_score_on_the_sign_of_the_move():
     claim = desk_at(0).commit("q", DIRECTION, 1.0, horizon=1)
     assert score_claim(claim, 0.4)["correct"] is True
     assert score_claim(claim, -0.4)["correct"] is False
     assert score_claim(claim, 0.0)["correct"] is False
+
+
+def test_direction_claim_uses_its_frozen_neutral_threshold():
+    desk = desk_at(3)
+    claim = desk.commit_contract(
+        contract(DIRECTION, neutral_threshold=0.01),
+        1.0,
+    )
+    assert score_claim(claim, 0.009)["realized_direction"] == 0.0
+    assert score_claim(claim, 0.011)["realized_direction"] == 1.0
 
 
 def test_interval_claims_score_on_coverage():
@@ -251,7 +441,10 @@ def test_the_summary_reports_the_resolution_rate_alongside_the_scores():
 def test_the_summary_keeps_the_kinds_apart():
     resolved = [
         {"kind": POINT, "score": {"abs_error": 2.0, "squared_error": 4.0}},
-        {"kind": INTERVAL, "score": {"covered": True, "width": 1.0}},
+        {
+            "kind": INTERVAL,
+            "score": {"covered": True, "width": 1.0, "interval_score": 1.0},
+        },
     ]
     summary = summarize(resolved, n_committed=2)
     assert summary["by_kind"][POINT]["mae"] == pytest.approx(2.0)

@@ -40,18 +40,29 @@ from __future__ import annotations
 import json
 import math
 from dataclasses import dataclass
-from typing import Any, Iterable, Optional, Sequence
+from typing import Any, Iterable, Mapping, Optional, Sequence
 
-#: A point forecast of a quantity: ``prediction = (value,)``.
-POINT = "point"
-#: A probability in ``[0, 1]`` for a binary event: ``prediction = (p,)``.
-PROBABILITY = "probability"
-#: A signed direction, ``-1`` or ``+1``: ``prediction = (sign,)``.
-DIRECTION = "direction"
-#: A closed interval: ``prediction = (lo, hi)`` with ``lo <= hi``.
-INTERVAL = "interval"
-
-KINDS = (POINT, PROBABILITY, DIRECTION, INTERVAL)
+from .forecast_contract import (
+    BINARY_BRIER,
+    BINARY_LOG,
+    CATEGORICAL,
+    CATEGORICAL_BRIER,
+    CATEGORICAL_LOG,
+    CLAIMS_SCHEMA_VERSION,
+    DIRECTION,
+    DIRECTION_ACCURACY,
+    INTERVAL,
+    INTERVAL_SCORE,
+    KINDS,
+    NORMAL,
+    NORMAL_CRPS,
+    POINT,
+    POINT_ERRORS,
+    PROBABILITY,
+    ForecastContract,
+    ForecastContractError,
+    canonical_json,
+)
 
 
 class DeferredError(RuntimeError):
@@ -91,28 +102,58 @@ class Claim:
     """
 
     claim_id: str
-    question: str
-    kind: str
+    contract: ForecastContract
     prediction: tuple[float, ...]
     committed_at: int
-    horizon: int
     confidence: float = 0.5
     rationale: str = ""
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.claim_id, str) or not self.claim_id.strip():
+            raise ClaimRejected("claim_id must be a non-empty string")
+        if isinstance(self.committed_at, bool) or not isinstance(self.committed_at, int):
+            raise ClaimRejected("committed_at must be an integer")
+        if not self.contract.opens_at <= self.committed_at <= self.contract.deadline:
+            raise ClaimRejected(
+                f"committed_at {self.committed_at} lies outside contract window "
+                f"[{self.contract.opens_at}, {self.contract.deadline}]"
+            )
+        if isinstance(self.confidence, bool) or not isinstance(self.confidence, (int, float)):
+            raise ClaimRejected("confidence must be numeric")
+        confidence = float(self.confidence)
+        if not math.isfinite(confidence) or not 0.0 <= confidence <= 1.0:
+            raise ClaimRejected("confidence must be finite and lie in [0, 1]")
+        object.__setattr__(self, "confidence", confidence)
+        object.__setattr__(self, "prediction", _validate(self.contract, self.prediction))
+        object.__setattr__(self, "claim_id", self.claim_id.strip())
+        if not isinstance(self.rationale, str):
+            raise ClaimRejected("rationale must be a string")
+
+    @property
+    def question(self) -> str:
+        return self.contract.question
+
+    @property
+    def kind(self) -> str:
+        return self.contract.kind
+
+    @property
+    def horizon(self) -> int:
+        return self.contract.resolves_at - self.committed_at
 
     @property
     def resolves_at(self) -> int:
         """The earliest bar at which this claim can legitimately be settled."""
-        return self.committed_at + self.horizon
+        return self.contract.resolves_at
 
     def to_dict(self) -> dict:
         """A JSON-friendly dict. Round-trips through :func:`claims_from_json`."""
         return {
             "claim_id": self.claim_id,
-            "question": self.question,
-            "kind": self.kind,
+            "contract": self.contract.to_dict(),
+            "contract_sha256": self.contract.sha256,
             "prediction": [float(x) for x in self.prediction],
             "committed_at": int(self.committed_at),
-            "horizon": int(self.horizon),
             "resolves_at": int(self.resolves_at),
             "confidence": float(self.confidence),
             "rationale": self.rationale,
@@ -130,8 +171,23 @@ class Outcome:
     """
 
     claim_id: str
-    value: float
+    value: float | str
     available_at: int
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.claim_id, str) or not self.claim_id.strip():
+            raise ClaimRejected("outcome claim_id must be a non-empty string")
+        if isinstance(self.available_at, bool) or not isinstance(self.available_at, int):
+            raise ClaimRejected("outcome available_at must be an integer")
+        if isinstance(self.value, bool):
+            object.__setattr__(self, "value", float(self.value))
+        elif isinstance(self.value, (int, float)):
+            value = float(self.value)
+            if not math.isfinite(value):
+                raise ClaimRejected("outcome value must be finite")
+            object.__setattr__(self, "value", value)
+        elif not isinstance(self.value, str) or not self.value.strip():
+            raise ClaimRejected("outcome value must be a finite number or non-empty category")
 
 
 class DeferredDesk:
@@ -186,27 +242,71 @@ class DeferredDesk:
         """
         if self._now < 0:
             raise ClaimRejected("the desk clock has not been started (call tick first)")
-        if int(horizon) < self._min_horizon:
+        if isinstance(horizon, bool) or not isinstance(horizon, int):
+            raise ClaimRejected("horizon must be an integer")
+        if horizon < self._min_horizon:
             raise ClaimRejected(
                 f"horizon {horizon} is shorter than the desk minimum {self._min_horizon}"
             )
         if self._max_open is not None and len(self.open_claims()) >= self._max_open:
             raise ClaimRejected(f"the desk already holds {self._max_open} open claims")
-        payload = _validate(kind, prediction)
-        if not 0.0 <= float(confidence) <= 1.0:
-            raise ClaimRejected("confidence must lie in [0, 1]")
+        identifier = claim_id or f"claim-{len(self._claims):04d}"
+        try:
+            contract = ForecastContract.legacy(
+                contract_id=f"{identifier}-contract",
+                question=str(question),
+                kind=kind,
+                committed_at=self._now,
+                horizon=horizon,
+            )
+        except (KeyError, ForecastContractError, ValueError) as error:
+            raise ClaimRejected(str(error)) from error
+        return self.commit_contract(
+            contract,
+            prediction,
+            confidence=confidence,
+            rationale=rationale,
+            claim_id=identifier,
+        )
+
+    def commit_contract(
+        self,
+        contract: ForecastContract,
+        prediction: Sequence[float] | float,
+        *,
+        confidence: float = 0.5,
+        rationale: str = "",
+        claim_id: Optional[str] = None,
+    ) -> Claim:
+        """Commit against a contract whose deadline and resolution were fixed first.
+
+        Unlike :meth:`commit`, this is suitable for revisions and independently
+        administered prospective runs: the contract exists before the prediction and
+        the prediction cannot move its own resolution horizon.
+        """
+
+        if self._now < 0:
+            raise ClaimRejected("the desk clock has not been started (call tick first)")
+        if not contract.opens_at <= self._now <= contract.deadline:
+            raise ClaimRejected(
+                f"contract {contract.contract_id!r} is not open at bar {self._now}"
+            )
+        if contract.resolves_at - self._now < self._min_horizon:
+            raise ClaimRejected(
+                f"contract resolves too soon for the desk minimum {self._min_horizon}"
+            )
+        if self._max_open is not None and len(self.open_claims()) >= self._max_open:
+            raise ClaimRejected(f"the desk already holds {self._max_open} open claims")
         identifier = claim_id or f"claim-{len(self._claims):04d}"
         if any(c.claim_id == identifier for c in self._claims):
             raise ClaimRejected(f"duplicate claim_id {identifier!r}")
         claim = Claim(
             claim_id=identifier,
-            question=str(question),
-            kind=kind,
-            prediction=payload,
+            contract=contract,
+            prediction=_validate(contract, prediction),
             committed_at=self._now,
-            horizon=int(horizon),
             confidence=float(confidence),
-            rationale=str(rationale),
+            rationale=rationale,
         )
         self._claims.append(claim)
         return claim
@@ -226,25 +326,75 @@ class DeferredDesk:
 
     def to_json(self) -> str:
         """Serialize the claims so they outlive the episode."""
-        return json.dumps([c.to_dict() for c in self._claims])
+        return canonical_json(
+            {
+                "schema_version": CLAIMS_SCHEMA_VERSION,
+                "claims": [c.to_dict() for c in self._claims],
+            }
+        )
 
 
 def claims_from_json(payload: str) -> list[Claim]:
-    """Rebuild claims written by :meth:`DeferredDesk.to_json`."""
-    out: list[Claim] = []
-    for raw in json.loads(payload):
-        out.append(
-            Claim(
-                claim_id=str(raw["claim_id"]),
-                question=str(raw["question"]),
-                kind=str(raw["kind"]),
-                prediction=_validate(str(raw["kind"]), raw["prediction"]),
-                committed_at=int(raw["committed_at"]),
-                horizon=int(raw["horizon"]),
-                confidence=float(raw.get("confidence", 0.5)),
-                rationale=str(raw.get("rationale", "")),
-            )
+    """Strictly rebuild the closed v1 document written by :meth:`DeferredDesk.to_json`."""
+
+    try:
+        document = json.loads(payload)
+    except (TypeError, json.JSONDecodeError) as error:
+        raise ClaimRejected(f"claims document is not valid JSON: {error}") from error
+    if not isinstance(document, dict) or set(document) != {"schema_version", "claims"}:
+        raise ClaimRejected(
+            "claims document must contain exactly schema_version and claims"
         )
+    if document["schema_version"] != CLAIMS_SCHEMA_VERSION:
+        raise ClaimRejected(
+            f"unsupported claims schema_version {document['schema_version']!r}"
+        )
+    if not isinstance(document["claims"], list):
+        raise ClaimRejected("claims must be an array")
+    out: list[Claim] = []
+    seen: set[str] = set()
+    expected = {
+        "claim_id",
+        "contract",
+        "contract_sha256",
+        "prediction",
+        "committed_at",
+        "resolves_at",
+        "confidence",
+        "rationale",
+    }
+    for index, raw in enumerate(document["claims"]):
+        if not isinstance(raw, Mapping):
+            raise ClaimRejected(f"claims[{index}] must be an object")
+        if set(raw) != expected:
+            raise ClaimRejected(
+                f"claims[{index}] fields do not match v1; "
+                f"missing={sorted(expected - set(raw))}, unknown={sorted(set(raw) - expected)}"
+            )
+        try:
+            contract = ForecastContract.from_dict(raw["contract"])
+        except (ForecastContractError, TypeError, ValueError) as error:
+            raise ClaimRejected(f"claims[{index}].contract: {error}") from error
+        if raw["contract_sha256"] != contract.sha256:
+            raise ClaimRejected(f"claims[{index}] contract_sha256 does not match contract")
+        if isinstance(raw["committed_at"], bool) or not isinstance(raw["committed_at"], int):
+            raise ClaimRejected(f"claims[{index}].committed_at must be an integer")
+        if raw["resolves_at"] != contract.resolves_at:
+            raise ClaimRejected(f"claims[{index}].resolves_at does not match contract")
+        if not isinstance(raw["rationale"], str):
+            raise ClaimRejected(f"claims[{index}].rationale must be a string")
+        claim = Claim(
+            claim_id=raw["claim_id"],
+            contract=contract,
+            prediction=_validate(contract, raw["prediction"]),
+            committed_at=raw["committed_at"],
+            confidence=raw["confidence"],
+            rationale=raw["rationale"],
+        )
+        if claim.claim_id in seen:
+            raise ClaimRejected(f"duplicate claim_id {claim.claim_id!r} in claims document")
+        seen.add(claim.claim_id)
+        out.append(claim)
     return out
 
 
@@ -313,17 +463,29 @@ def resolve_claims(
     Returns ``{"resolved": [...], "pending": [...], "rejected": [...], "summary": {...}}``.
     A claim with no matching outcome is ``pending``, not wrong.
     """
-    by_id = {c.claim_id: c for c in claims}
+    claim_list = list(claims)
+    by_id = {c.claim_id: c for c in claim_list}
+    if len(by_id) != len(claim_list):
+        raise ClaimRejected("claims contain duplicate claim_id values")
     seen: set[str] = set()
+    seen_outcomes: set[str] = set()
     resolved: list[dict] = []
     rejected: list[dict] = []
 
     for outcome in outcomes:
+        if outcome.claim_id in seen_outcomes:
+            message = f"duplicate outcome for claim {outcome.claim_id!r}"
+            if strict:
+                raise DeferredError(message)
+            rejected.append({"claim_id": outcome.claim_id, "reason": message, "status": "rejected"})
+            continue
+        seen_outcomes.add(outcome.claim_id)
         claim = by_id.get(outcome.claim_id)
         if claim is None:
             problem = {
                 "claim_id": outcome.claim_id,
                 "reason": "no such claim",
+                "status": "rejected",
             }
             if strict:
                 raise DeferredError(f"outcome for unknown claim {outcome.claim_id!r}")
@@ -337,7 +499,7 @@ def resolve_claims(
             )
             if strict:
                 raise LeakedResolution(message)
-            rejected.append({"claim_id": claim.claim_id, "reason": message})
+            rejected.append({"claim_id": claim.claim_id, "reason": message, "status": "rejected"})
             continue
         if outcome.available_at < claim.resolves_at:
             message = (
@@ -347,16 +509,24 @@ def resolve_claims(
             )
             if strict:
                 raise UnresolvedClaim(message)
-            rejected.append({"claim_id": claim.claim_id, "reason": message})
+            rejected.append({"claim_id": claim.claim_id, "reason": message, "status": "rejected"})
             continue
         seen.add(claim.claim_id)
         record = claim.to_dict()
-        record["outcome"] = float(outcome.value)
+        record["kind"] = claim.kind
+        record["status"] = "resolved"
+        record["outcome"] = outcome.value
         record["available_at"] = int(outcome.available_at)
         record["score"] = score_claim(claim, outcome.value)
         resolved.append(record)
 
-    pending = [c.to_dict() for c in by_id.values() if c.claim_id not in seen]
+    pending = []
+    for claim in by_id.values():
+        if claim.claim_id not in seen:
+            record = claim.to_dict()
+            record["kind"] = claim.kind
+            record["status"] = "pending"
+            pending.append(record)
     return {
         "resolved": resolved,
         "pending": pending,
@@ -365,7 +535,7 @@ def resolve_claims(
     }
 
 
-def score_claim(claim: Claim, outcome: float) -> dict:
+def score_claim(claim: Claim, outcome: float | str) -> dict:
     """Score one settled claim against its realized value.
 
     Each kind gets the scoring rule that is actually proper for it rather than a shared
@@ -375,8 +545,9 @@ def score_claim(claim: Claim, outcome: float) -> dict:
     confident probability fail in different ways and should be visible as different
     failures.
     """
-    value = float(outcome)
+    rule = claim.contract.scoring_rule
     if claim.kind == POINT:
+        value = _numeric_outcome(claim, outcome)
         error = value - claim.prediction[0]
         return {
             "error": error,
@@ -384,22 +555,69 @@ def score_claim(claim: Claim, outcome: float) -> dict:
             "squared_error": error * error,
         }
     if claim.kind == PROBABILITY:
+        value = _numeric_outcome(claim, outcome)
         if value not in (0.0, 1.0):
             raise ClaimRejected(
                 f"{claim.claim_id}: a probability claim resolves to 0 or 1, got {value}"
             )
         residual = claim.prediction[0] - value
-        return {"brier": residual * residual, "realized": value}
+        if rule == BINARY_BRIER:
+            return {"brier": residual * residual, "realized": value}
+        probability = claim.prediction[0] if value == 1.0 else 1.0 - claim.prediction[0]
+        return {"log_loss": -math.log(probability), "realized": value}
+    if claim.kind == CATEGORICAL:
+        if not isinstance(outcome, str) or outcome not in claim.contract.categories:
+            raise ClaimRejected(
+                f"{claim.claim_id}: categorical outcome must be one of "
+                f"{claim.contract.categories}, got {outcome!r}"
+            )
+        outcome_index = claim.contract.categories.index(outcome)
+        if rule == CATEGORICAL_BRIER:
+            total = sum(
+                (probability - (1.0 if index == outcome_index else 0.0)) ** 2
+                for index, probability in enumerate(claim.prediction)
+            )
+            return {"brier": total, "realized": outcome}
+        return {
+            "log_loss": -math.log(claim.prediction[outcome_index]),
+            "realized": outcome,
+        }
+    if claim.kind == NORMAL:
+        value = _numeric_outcome(claim, outcome)
+        mean, sigma = claim.prediction
+        z = (value - mean) / sigma
+        phi = math.exp(-0.5 * z * z) / math.sqrt(2.0 * math.pi)
+        cdf = 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
+        crps = sigma * (z * (2.0 * cdf - 1.0) + 2.0 * phi - 1.0 / math.sqrt(math.pi))
+        return {"crps": crps, "z": z, "realized": value}
     if claim.kind == DIRECTION:
-        realized = 0.0 if value == 0.0 else math.copysign(1.0, value)
+        value = _numeric_outcome(claim, outcome)
+        realized = (
+            0.0
+            if abs(value) <= claim.contract.neutral_threshold
+            else math.copysign(1.0, value)
+        )
         return {
             "correct": bool(realized != 0.0 and realized == claim.prediction[0]),
             "realized_direction": realized,
             "magnitude": abs(value),
         }
     if claim.kind == INTERVAL:
+        value = _numeric_outcome(claim, outcome)
         lo, hi = claim.prediction
-        return {"covered": bool(lo <= value <= hi), "width": hi - lo, "realized": value}
+        alpha = claim.contract.interval_alpha
+        assert alpha is not None
+        penalty = 0.0
+        if value < lo:
+            penalty = 2.0 * (lo - value) / alpha
+        elif value > hi:
+            penalty = 2.0 * (value - hi) / alpha
+        return {
+            "covered": bool(lo <= value <= hi),
+            "width": hi - lo,
+            "interval_score": hi - lo + penalty,
+            "realized": value,
+        }
     raise ClaimRejected(f"unknown claim kind {claim.kind!r}")
 
 
@@ -427,24 +645,52 @@ def summarize(resolved: Sequence[dict], *, n_committed: int) -> dict:
             entry["mae"] = sum(s["abs_error"] for s in scores) / len(scores)
             entry["mse"] = sum(s["squared_error"] for s in scores) / len(scores)
         elif kind == PROBABILITY:
-            entry["brier"] = sum(s["brier"] for s in scores) / len(scores)
+            if all("brier" in score for score in scores):
+                entry["brier"] = sum(s["brier"] for s in scores) / len(scores)
+            if all("log_loss" in score for score in scores):
+                entry["log_loss"] = sum(s["log_loss"] for s in scores) / len(scores)
+        elif kind == CATEGORICAL:
+            if all("brier" in score for score in scores):
+                entry["brier"] = sum(s["brier"] for s in scores) / len(scores)
+            if all("log_loss" in score for score in scores):
+                entry["log_loss"] = sum(s["log_loss"] for s in scores) / len(scores)
+        elif kind == NORMAL:
+            entry["crps"] = sum(s["crps"] for s in scores) / len(scores)
         elif kind == DIRECTION:
             entry["accuracy"] = sum(1.0 for s in scores if s["correct"]) / len(scores)
         elif kind == INTERVAL:
             entry["coverage"] = sum(1.0 for s in scores if s["covered"]) / len(scores)
             entry["mean_width"] = sum(s["width"] for s in scores) / len(scores)
+            entry["interval_score"] = sum(s["interval_score"] for s in scores) / len(scores)
         out["by_kind"][kind] = entry
     return out
 
 
-def _validate(kind: str, prediction: Sequence[float] | float) -> tuple[float, ...]:
+def _numeric_outcome(claim: Claim, outcome: float | str) -> float:
+    if isinstance(outcome, bool) or not isinstance(outcome, (int, float)):
+        raise ClaimRejected(f"{claim.claim_id}: {claim.kind} outcome must be numeric")
+    value = float(outcome)
+    if not math.isfinite(value):
+        raise ClaimRejected(f"{claim.claim_id}: outcome must be finite")
+    return value
+
+
+def _validate(
+    contract: ForecastContract, prediction: Sequence[float] | float
+) -> tuple[float, ...]:
     """Normalize and check one claim payload against its kind."""
+    kind = contract.kind
     if kind not in KINDS:
         raise ClaimRejected(f"unknown claim kind {kind!r} (expected one of {KINDS})")
     if isinstance(prediction, (int, float)) and not isinstance(prediction, bool):
         payload = (float(prediction),)
     else:
-        payload = tuple(float(x) for x in prediction)
+        if isinstance(prediction, (str, bytes)):
+            raise ClaimRejected("prediction must be numeric or an array of numbers")
+        try:
+            payload = tuple(float(x) for x in prediction)
+        except (TypeError, ValueError) as error:
+            raise ClaimRejected("prediction must be numeric or an array of numbers") from error
     if not all(math.isfinite(x) for x in payload):
         raise ClaimRejected("a prediction must be finite")
     if kind == INTERVAL:
@@ -453,10 +699,28 @@ def _validate(kind: str, prediction: Sequence[float] | float) -> tuple[float, ..
         if payload[0] > payload[1]:
             raise ClaimRejected("an interval claim needs lo <= hi")
         return payload
+    if kind in (CATEGORICAL, NORMAL):
+        expected = len(contract.categories) if kind == CATEGORICAL else 2
+        if len(payload) != expected:
+            raise ClaimRejected(f"a {kind} claim takes exactly {expected} values")
+        if kind == CATEGORICAL:
+            if any(value < 0.0 or value > 1.0 for value in payload):
+                raise ClaimRejected("categorical probabilities must lie in [0, 1]")
+            if not math.isclose(sum(payload), 1.0, rel_tol=0.0, abs_tol=1e-12):
+                raise ClaimRejected("categorical probabilities must sum to 1")
+            if contract.scoring_rule == CATEGORICAL_LOG and any(value <= 0.0 for value in payload):
+                raise ClaimRejected(
+                    "categorical_log requires every reported probability to be positive"
+                )
+        elif payload[1] <= 0.0:
+            raise ClaimRejected("a normal forecast requires a positive standard deviation")
+        return payload
     if len(payload) != 1:
         raise ClaimRejected(f"a {kind} claim takes exactly one value")
     if kind == PROBABILITY and not 0.0 <= payload[0] <= 1.0:
         raise ClaimRejected("a probability claim must lie in [0, 1]")
+    if kind == PROBABILITY and contract.scoring_rule == BINARY_LOG and not 0.0 < payload[0] < 1.0:
+        raise ClaimRejected("binary_log requires probability strictly inside (0, 1)")
     if kind == DIRECTION and payload[0] not in (-1.0, 1.0):
         raise ClaimRejected("a direction claim must be -1 or +1")
     return payload
@@ -465,9 +729,13 @@ def _validate(kind: str, prediction: Sequence[float] | float) -> tuple[float, ..
 __all__ = [
     "POINT",
     "PROBABILITY",
+    "CATEGORICAL",
+    "NORMAL",
     "DIRECTION",
     "INTERVAL",
     "KINDS",
+    "ForecastContract",
+    "ForecastContractError",
     "Claim",
     "Outcome",
     "DeferredDesk",
