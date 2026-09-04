@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from sharpearena.deferred import Outcome, PROBABILITY
+from sharpearena.deferred import Claim, Outcome, PROBABILITY, score_claim
 from sharpearena.forecast_contract import BINARY_BRIER, ForecastContract
 from sharpearena.forecast_evidence import (
     CANCELLED,
@@ -260,3 +260,28 @@ def test_contract_id_cannot_be_reused_with_different_settlement_bytes():
             submitted_at=12,
             idempotency_key="other-request",
         )
+
+
+def test_fixed_point_brier_model_matches_the_executable_float_rule():
+    scale = 1_000
+    for probability in (0, 100, 500, 900, 1_000):
+        for truth in (0, 200, 500, 800, 1_000):
+            checked = Claim(
+                claim_id="brier-conformance",
+                contract=contract(),
+                prediction=(probability / scale,),
+                committed_at=12,
+                confidence=0.5,
+                rationale="formal model conformance",
+            )
+            loss_zero = score_claim(checked, 0.0)["brier"]
+            loss_one = score_claim(checked, 1.0)["brier"]
+            expected = (truth / scale) * loss_one + (1.0 - truth / scale) * loss_zero
+            numerator = truth * (scale - probability) ** 2 + (
+                scale - truth
+            ) * probability**2
+            decomposed = truth * (scale - truth) * scale + scale * (
+                probability - truth
+            ) ** 2
+            assert numerator == decomposed
+            assert expected == pytest.approx(numerator / scale**3, abs=1e-15)

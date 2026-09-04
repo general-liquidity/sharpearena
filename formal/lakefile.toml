@@ -1,0 +1,6 @@
+name = "sharpearena-formal"
+version = "0.1.0"
+defaultTargets = ["SharpeArenaFormal"]
+
+[[lean_lib]]
+name = "SharpeArenaFormal"
