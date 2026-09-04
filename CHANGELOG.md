@@ -16,6 +16,9 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 ### Changed
 - evidence: advance local-field evidence to schema 2 and the Arena-to-Bench manifest to schema 2. Compilation now refuses missing, negative, or internally inconsistent inference accounting, including a duration-sample count that disagrees with the decision cadence.
 
+### Fixed
+- python tests: constrain pytest collection to the canonical `tests/` directory so a prior `cargo package` cannot add a second copied suite from `target/package` and make the local full-test command fail during collection.
+
 ## [0.24.1] - 2026-09-04
 
 ### Changed

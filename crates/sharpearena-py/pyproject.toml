@@ -56,3 +56,9 @@ module-name = "sharpearena.sharpearena_py"
 python-source = "python"
 manifest-path = "Cargo.toml"
 features = ["pyo3/extension-module"]
+
+[tool.pytest.ini_options]
+# Do not recursively collect copied test modules left by `cargo package` under
+# target/package. A used checkout must exercise the same canonical suite as a
+# clean CI checkout instead of importing two files with each test-module name.
+testpaths = ["tests"]
