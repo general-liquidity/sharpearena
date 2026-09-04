@@ -216,7 +216,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "5707add412f5451a7c82709285e617429315d8ae",
+  "generated_at_head": "c76b934db24b114a76d4ca684c5a7022e773512a",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -254,11 +254,11 @@
     },
     {
       "path": "crates/sharpearena-py/Cargo.toml",
-      "sha256": "2343b3b29c731a9e81bf78a39289ee8bfe02d101295895a6c8878e18005d80e7"
+      "sha256": "99ac85708e89cedf5e4451222385cf394649f9ee98b499b24d1f2d96e2715d25"
     },
     {
       "path": "crates/sharpearena-py/pyproject.toml",
-      "sha256": "4b8c0b0c7bfb4bdcd8979635505009ca7492bd6ef12cd7c6744a35304266d62e"
+      "sha256": "ed3dec8c4621aec08305e89e383197ced6885327b285175d03e6ef44b5d85aa5"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/__init__.py",
@@ -538,7 +538,7 @@
     },
     {
       "path": "crates/sharpearena-wasm/Cargo.toml",
-      "sha256": "de05280399f5386fc4fa0ef63c4b7990fba9de37b980356314a514c54dae16be"
+      "sha256": "7656d8275bf2f59105a04b6d687e8a5d071cf556b493bba4f7eb6ca9a16e3dc6"
     },
     {
       "path": "crates/sharpearena-wasm/src/lib.rs",
@@ -546,7 +546,7 @@
     },
     {
       "path": "crates/sharpearena/Cargo.toml",
-      "sha256": "5ca18b183908519a1241dda4df3fdab246eca843ae32b06b401aac1f8939f16d"
+      "sha256": "4d29a6b4adbe96cc3dbbc9b65864b8f6bf484ca4f39950480259637e9b3f40bc"
     },
     {
       "path": "crates/sharpearena/build.rs",
@@ -630,7 +630,7 @@
     },
     {
       "path": "paper/main.tex",
-      "sha256": "05b1935e7f64612873b4022ac71a9298935ccaf18e90293aedb60b52cec9862e"
+      "sha256": "1e1d14baaa61ecbc65604fdb9e06cab3d6c2d2ef1fa4a6a915a3a1e08c0b8b9f"
     },
     {
       "path": "paper/refs.bib",
@@ -638,11 +638,11 @@
     },
     {
       "path": "paper/sections/00-abstract.tex",
-      "sha256": "9e0c519ab73fdfa2a92ff94cadafea5005186ab241bec4910dfbd7d608b21f15"
+      "sha256": "0f6f2d381ac23168369f89a15844417f4c4748447b08056c66840087b2d3de1e"
     },
     {
       "path": "paper/sections/01-introduction.tex",
-      "sha256": "95448bfaf3999e39161618318e75a9346b9c91b864d87ee8aea7ca359e99064e"
+      "sha256": "c05dd0d350c642bf35973b461a9d267c95b2df4c0ad262e64c398a8cd0eb3d92"
     },
     {
       "path": "paper/sections/02-principles.tex",
@@ -678,7 +678,7 @@
     },
     {
       "path": "paper/sections/09-limitations.tex",
-      "sha256": "c60049cce2644b1954484531997e4c2701ae10cc1aa878c48d6b157130b110f2"
+      "sha256": "db666fa8263322cac8a8d7a49010e48b77d1f651cb5d5261739a50962e37a918"
     },
     {
       "path": "paper/sections/10-reproducibility.tex",
@@ -784,6 +784,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "eadecbb3b836f609f7bd2fed1e5cc4de9da6dbec04a6182174b8304d7dc7a008",
+  "source_snapshot_sha256": "a941af4ebb81a5fbc1ca6e57390f056ea253cf1431f75cdacf98efe35c388b21",
   "validator": "paper/src/check-provenance.py"
 }
