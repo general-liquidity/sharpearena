@@ -58,6 +58,15 @@ SharpeBench consumes this file without importing SharpeArena. It validates the
 contract and revision graph again and recomputes every diagnostic from the raw
 predictions and outcomes.
 
+## Executable cross-product example
+
+[`examples/forecast-quality`](../examples/forecast-quality/) generates two
+deterministic ledgers and can pass them directly to a sibling SharpeBench
+checkout. The committed output covers exact common support, resolution-time
+blocks, eligible and late revisions, a pre-open rejection, and blind versus
+consensus-visible exposure. It is a compatibility fixture, not an empirical
+agent result.
+
 ## Non-claims
 
 - Logical clocks make ordering testable; they do not prove wall time.
