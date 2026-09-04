@@ -216,7 +216,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "82051f5cb403950a0dd53bea75912c754b46e686",
+  "generated_at_head": "db1adbcdc7e7651f6aaddb26f3adc5ce7a369ca9",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -258,7 +258,7 @@
     },
     {
       "path": "crates/sharpearena-py/pyproject.toml",
-      "sha256": "0a34731a450f8d0009c55fc66cfd80051800550f650da33e5d0317fb5c52bcfc"
+      "sha256": "5ed4a5465432fc9c66ad2b89018ef0f8d8bb6afb7b030ece45a92fbd8af3a95a"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/__init__.py",
@@ -278,7 +278,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/bench_bridge.py",
-      "sha256": "eca704ff07e42c48a961b362fd1fb8ea25efa42800bf7c037dd9851e685dbf4f"
+      "sha256": "2f15734ff53dae6457ffcc01a10489bbd746ce2ca0f3c8ad38edc67250d2ec50"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/cascade.py",
@@ -386,7 +386,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/local_agents.py",
-      "sha256": "3bdbe318b844455b761d18df18ea8e6a7c0b5f2a4345fc2d5af207abd0e07ea9"
+      "sha256": "ef84b319b077615dd77d8d31153976d6ffb93d686e3cf79beb17c29f5a41b61b"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/local_field_cli.py",
@@ -784,6 +784,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "57ab096f0a4d6ae5a16900a7c560231ac8127bd0ff6d7df21286de034dd67ca4",
+  "source_snapshot_sha256": "6c718698c583b39759e74f7945f25089bc8de3bdd2dd92c062f9910542dc607a",
   "validator": "paper/src/check-provenance.py"
 }
