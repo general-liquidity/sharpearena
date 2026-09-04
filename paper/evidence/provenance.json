@@ -122,7 +122,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "b955208a1fbdab427a3faeec436e0f8015cb1081",
+  "generated_at_head": "2c432ee24d5e1695ccb40e3b55cc2a3051b4d823",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -156,7 +156,7 @@
     },
     {
       "path": "Cargo.toml",
-      "sha256": "db0a4b95db67464dcc7aeb6c0cff1759e17a0a0fbaea5cdf9b1dd0f2efed09d2"
+      "sha256": "384d262b20a08c30c15465cc9b48a30457faa87bbbce587a51aa727334e38936"
     },
     {
       "path": "crates/sharpearena-py/Cargo.toml",
@@ -164,7 +164,7 @@
     },
     {
       "path": "crates/sharpearena-py/pyproject.toml",
-      "sha256": "abecd278f3a54c446721d36b4512e69b0b594d52fbd34f85d724faf46fecf52b"
+      "sha256": "3822d7f0ad6030a64c8710d55b5ecc3cfc33377ddf717bf10f05a8b536be94cf"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/__init__.py",
@@ -369,6 +369,10 @@
     {
       "path": "crates/sharpearena-py/python/sharpearena/preprocessing.py",
       "sha256": "1c4fa20d55c07d7eecfd93ad459b79cb621014412f6eded025f0d8f65a401a59"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/prospective_field.py",
+      "sha256": "07a36836c61fb8401159815a294fa8015f5088f6949df83bc41b7e3ace9d0fac"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/realism.py",
@@ -686,6 +690,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "0020c218ee61ce13f0fd2fc3672338bb9763af5e623b3e906a097ff8442fa1de",
+  "source_snapshot_sha256": "bcf72efaf58106e686f2724dcdfe5bdfa2b8590e5b9322c2ef3872d27ba7bf26",
   "validator": "paper/src/check-provenance.py"
 }
