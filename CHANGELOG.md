@@ -6,9 +6,11 @@ version covers the Rust crates, the npm package and the PyPI package; each
 section is one `v*` tag and links the commits it was built from. The wire
 contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
-[Unreleased]: https://github.com/general-liquidity/sharpearena/compare/v0.23.0...HEAD
+[Unreleased]: https://github.com/general-liquidity/sharpearena/compare/v0.24.0...HEAD
 
 ## [Unreleased]
+
+## [0.24.0] - 2026-09-04
 
 ### Added
 - python: add closed, versioned prospective forecast contracts for point, binary probability, categorical distribution, Normal distribution, direction, and interval forecasts. Contracts freeze the settlement boundary and scoring rule before submission; binary and categorical Brier and log scores, Normal CRPS, directional accuracy, and interval score are recomputed from raw outcomes.
@@ -338,6 +340,7 @@ First published release, as OpenOutcry.
 ### Fixed
 - ci: toolchain pinned to 1.96.0 for the wasm32 target; a virtualenv for maturin ([bb0ee4d](https://github.com/general-liquidity/sharpearena/commit/bb0ee4d)).
 
+[0.24.0]: https://github.com/general-liquidity/sharpearena/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/general-liquidity/sharpearena/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/general-liquidity/sharpearena/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/general-liquidity/sharpearena/compare/v0.20.0...v0.21.0
