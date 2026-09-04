@@ -140,7 +140,10 @@ SharpeBench protocol, simulator, and scoring crates so both products share one
 execution model. SharpeBench does not depend on the full SharpeArena package.
 `sharpearena-compile-bench` refuses incomplete grids, failed cells, coordinate
 collisions, conflicting completions, and invalid return hashes before producing
-ordinary SharpeBench submissions.
+ordinary SharpeBench submissions. Its companion manifest preserves validated
+per-request latency, token, reasoning-token, and retry summaries as a
+rank-neutral operational profile. Those diagnostics describe how a field ran;
+they cannot change a SharpeBench score or eligibility verdict.
 
 ## What the environment guarantees
 
@@ -155,6 +158,10 @@ ordinary SharpeBench submissions.
   observation IDs are evidence metadata, not replay inputs.
 - **Known arm identity:** evidence producers compare requested configuration
   with values read back from the environment that consumed it.
+- **Operational accounting without rank leakage:** local-field evidence records
+  every model-call duration and its observation source; bridge manifests report
+  nearest-rank p50/p95 latency, token totals, reasoning-token availability, and
+  retries with `rank_input: false`.
 - **Cross-surface compatibility:** canonical pre-hash JSON, native/WASM/npm/
   Python parity tests, and `SPEC_HASH` turn wrapper/engine drift into a refusal.
 - **Closed inputs:** schemas, typed boundary errors, unknown-field rejection,

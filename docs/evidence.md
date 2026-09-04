@@ -49,7 +49,9 @@ provenance manifest live under [`paper/`](../paper/).
   autonomous trading agent. It uses one 12-bar observation, one venue, four
   correlated crypto pairs, six future clocks, one hardware stack, and obsolete
   convenience-sample checkpoints. It establishes neither current model quality,
-  general calibration, nor trading performance.
+  general calibration, nor trading performance. It also predates local-field
+  schema 2, so the new p50/p95 operational profile is a tested capability, not
+  a reported result for that pilot.
 - No live-capital route exists in the paper arm. Its provider-dependent paper
   evidence is a separate, non-replayable class from deterministic backtests.
 - No hostile entrant has been operated as a tenant. Container acceptance

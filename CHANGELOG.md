@@ -10,6 +10,12 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ## [Unreleased]
 
+### Added
+- python/bridge: preserve source-labelled duration for every local-model request and publish validated nearest-rank p50/p95 latency, token totals, reasoning-token provenance, and retries per model. The operational profile is explicitly marked `rank_input: false` and does not enter SharpeBench submissions.
+
+### Changed
+- evidence: advance local-field evidence to schema 2 and the Arena-to-Bench manifest to schema 2. Compilation now refuses missing, negative, or internally inconsistent inference accounting, including a duration-sample count that disagrees with the decision cadence.
+
 ## [0.24.1] - 2026-09-04
 
 ### Changed

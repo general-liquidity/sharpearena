@@ -73,8 +73,8 @@ and engine failures.
 | RLVR / Prime RL | `load_environment()` with the `verifiers` extra |
 | Offline RL export | `to_minari`, `to_minari_train_test` with the `minari` extra |
 | External tool server | MCP server with the `mcp` extra |
-| Evidence field | `sharpearena-local-field` and the model transport shims |
-| Benchmark compilation | `sharpearena-compile-bench` |
+| Evidence field | `sharpearena-local-field` and the model transport shims; raw schema 2 records source-labelled per-request duration and token/retry accounting |
+| Benchmark compilation | `sharpearena-compile-bench`; bridge schema 2 adds a validated, rank-neutral p50/p95 operational profile beside score submissions |
 | Strategy search | `sharpearena-strategy-search` |
 
 See the repository's [Gymnasium guide](../../docs/gymnasium.md),

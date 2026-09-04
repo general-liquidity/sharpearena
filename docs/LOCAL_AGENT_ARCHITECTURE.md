@@ -28,7 +28,8 @@ graph acyclic while making the two products operationally interdependent.
   deterministic.
 - Model inference is not claimed to be byte deterministic. Its artifact digest,
   server version, sampling settings, inference seed, cadence, response hashes, token
-  counts, and latency are evidence.
+  counts, and per-request latency are evidence. Every duration states whether it came
+  from the backend or a host monotonic clock.
 - In the direct-policy scheduler, an inference or schema failure fails that cell and
   cannot become a scoreable return series. The stdio compatibility adapter necessarily
   returns a flagged hold because the upstream `Agent` trait has no error variant;
@@ -88,6 +89,12 @@ The bridge refuses incomplete grids, failed cells, coordinate collisions, confli
 duplicates, bad return hashes, or misaligned confidence/outcome sequences. A failed
 attempt followed by one completed retry is valid; the source-journal hash commits to
 both attempts. A completion followed by another conflicting record is not valid.
+Raw-field schema 2 also requires nonnegative inference accounting, one duration sample
+per scheduled model call, exact agreement between the samples and total duration, and
+an observation source. Bridge schema 2 publishes nearest-rank p50/p95 duration, token
+totals, reasoning-token provenance, and retries for each model with `rank_input: false`.
+These fields support operational diagnosis and capacity planning; they cannot alter the
+score submission emitted beside the manifest.
 
 ## Stdio compatibility path
 

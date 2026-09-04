@@ -10,7 +10,7 @@ agent (any language)
         ▼
 SharpeArena
   scenario + PIT cursor + execution + process trace
-        │ append-only decisions, returns, effective config
+        │ append-only decisions, returns, effective config, operations
         ▼
 SharpeBench
   deflation + pass^k + significance + process/mandate gates
@@ -22,7 +22,9 @@ attested leaderboard / forward window
 SharpeArena depends on the small published SharpeBench protocol, simulator, and
 scoring crates. SharpeBench does not depend on the full SharpeArena package.
 `sharpearena-compile-bench` validates the completed field grid and emits ordinary
-SharpeBench submissions.
+SharpeBench submissions. The companion bridge manifest retains validated
+per-request inference accounting as a rank-neutral operational profile rather
+than mixing hardware-dependent latency or token use into trading rank.
 
 ## Package topology
 

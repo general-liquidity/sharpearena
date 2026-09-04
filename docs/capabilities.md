@@ -45,7 +45,8 @@ the root README can stay task-oriented.
 | Capability | Surface |
 |---|---|
 | External contract | Observation JSON in, validated Decision JSON out, by stdio or HTTP |
-| Local open-weight field | Fixed scaffold, Ollama/OpenAI-compatible shims, stable shards, append-only resume, model/runtime identity, strict failed cells |
+| Local open-weight field | Fixed scaffold, Ollama/OpenAI-compatible shims, stable shards, append-only resume, model/runtime identity, strict failed cells, and source-labelled per-request inference accounting |
+| SharpeBench bridge | Complete-grid validation, ordinary score submissions, and a rank-neutral operational profile with nearest-rank p50/p95 latency, token totals, reasoning-token provenance, and retries |
 | Strategy generation | Closed non-executable DSL, host-counted trial footprint, disjoint selection/test windows, unit-typed `EdgeManifest` kill conditions |
 | Paper-only forward arm | Read-only data, in-memory or fixed Alpaca paper endpoint, deny-first risk guard, crash-persistent unknown-submission reconciliation |
 | Deferred claims | Commit now, resolve later through a desk with no dataset or future-data path |
