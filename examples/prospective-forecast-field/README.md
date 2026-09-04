@@ -10,8 +10,9 @@ The field has four phases:
 1. `prepare` freezes the observation, contracts, models, stopping rule, and
    analysis plan.
 2. `forecast` runs each preregistered local model and writes pending evidence.
-   Generation stops as soon as one complete, exact-support forecast object is
-   present rather than spending the remaining token budget on trailing text.
+   Each probability is the normalized next-token preference for `1` versus
+   `0`, with both logits recorded. This fixed scaffold produces exact support
+   without repairing or selecting free-form model text.
 3. `seal` binds every pending ledger and raw inference record before the frozen
    deadline. Commit and push that directory at this point.
 4. `resolve` refuses to run until Binance server time is later than every target

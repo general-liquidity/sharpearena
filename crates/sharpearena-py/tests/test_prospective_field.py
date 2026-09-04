@@ -176,14 +176,30 @@ def test_field_phases_refuse_early_resolution_and_publish_complete_evidence(
         forecast_agent(
             field,
             specs[0],
-            infer=lambda _path, _prompt, _contract_ids: ("", {}),
+            infer=lambda _path, _prompts: ("", {}),
             fetch=fetch,
         )
     monkeypatch.setattr(prospective_field, "_scaffold_sha256", scaffold_sha256)
 
-    def infer(_path, prompt, _contract_ids):
-        contract_id = prompt.split('"contract_id":"', 1)[1].split('"', 1)[0]
-        return json.dumps({"forecasts": {contract_id: 0.6}}), {"fixture": True}
+    def infer(_path, prompts):
+        probabilities = {contract_id: 0.5 for contract_id in prompts}
+        return (
+            json.dumps({"forecasts": probabilities}),
+            {
+                "method": "binary_next_token_logit",
+                "class_token_ids": {"false": 15, "true": 16},
+                "logits": {
+                    contract_id: {
+                        "false_logit": 0.0,
+                        "true_logit": 0.0,
+                        "unclipped_probability": 0.5,
+                        "probability": 0.5,
+                    }
+                    for contract_id in prompts
+                },
+                "contract_count": len(prompts),
+            },
+        )
 
     clock["now"] = 1_100_000
     for spec in specs:

@@ -48,7 +48,6 @@ MARKET_SOURCE_ID = "binance-spot-public-klines-v3"
 DEFAULT_SYMBOLS = ("BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT")
 DEFAULT_TARGET_OFFSETS_MINUTES = (1, 3, 5, 7, 9, 11)
 DEFAULT_LOOKBACK_BARS = 12
-MAX_MODEL_OUTPUT_TOKENS = 640
 _SCAFFOLD_MODULES = (
     "deferred.py",
     "forecast_contract.py",
@@ -400,15 +399,17 @@ def prepare_field(
         "models": model_records,
         "contracts": contracts,
         "inference": {
-            "scaffold_id": "local-transformers-probability-json-v1",
+            "scaffold_id": "local-transformers-binary-logit-v1",
             "scaffold_files": _scaffold_files(),
             "scaffold_sha256": _scaffold_sha256(),
             "local_files_only": True,
-            "do_sample": False,
-            "max_new_tokens": MAX_MODEL_OUTPUT_TOKENS,
+            "method": "normalize next-token logits for token 0 versus token 1",
+            "class_tokens": {"false": "0", "true": "1"},
+            "probability_clip": [0.01, 0.99],
             "quantization": "bitsandbytes-nf4-4bit",
-            "one_prompt_per_agent": True,
-            "stop_on_complete_forecasts_object": True,
+            "one_prompt_per_contract": True,
+            "inference_batch_size": 1,
+            "logits_to_keep": 1,
         },
         "analysis": {
             "primary": "descriptive Brier score and calibration on all resolved contracts",
@@ -473,8 +474,9 @@ def _validated_plan(field_dir: Path) -> dict[str, object]:
     return plan
 
 
-def render_prompt(plan: Mapping[str, object], observation: Mapping[str, object]) -> str:
-    contracts = plan["contracts"]
+def render_prompts(
+    plan: Mapping[str, object], observation: Mapping[str, object]
+) -> dict[str, str]:
     compact_market = {}
     for symbol, bars in observation["symbols"].items():
         compact_market[symbol] = [
@@ -488,28 +490,28 @@ def render_prompt(plan: Mapping[str, object], observation: Mapping[str, object])
             ]
             for bar in bars
         ]
-    questions = [
-        {
-            "contract_id": raw["contract_id"],
-            "instrument": raw["instrument"],
-            "target_open_ms": raw["target_open_ms"],
-            "event": "one-minute close strictly above one-minute open",
-        }
-        for raw in contracts
-    ]
-    payload = {
+    common = {
         "bar_fields": ["open_time_ms", "open", "high", "low", "close", "volume"],
         "market_history": compact_market,
-        "questions": questions,
     }
-    return (
-        "You are making prospective probability forecasts from one frozen market snapshot. "
-        "You have no tools and must not invent newer observations. Return exactly one JSON "
-        "object with a forecasts object mapping every contract_id to a probability between "
-        "0.01 and 0.99. Include no prose and no extra keys. A probability is for the event "
-        "that the named future one-minute candle closes strictly above its own open.\n"
-        + canonical_json(payload)
-    )
+    prompts = {}
+    for raw in plan["contracts"]:
+        payload = {
+            **common,
+            "question": {
+                "contract_id": raw["contract_id"],
+                "instrument": raw["instrument"],
+                "target_open_ms": raw["target_open_ms"],
+                "event": "one-minute close strictly above one-minute open",
+            },
+        }
+        prompts[raw["contract_id"]] = (
+            "Make a prospective binary forecast from this frozen market snapshot. "
+            "You have no tools and must not invent newer observations. The next answer "
+            "token must be 1 if the event is more likely true and 0 if it is more likely "
+            "false. Do not explain.\n" + canonical_json(payload)
+        )
+    return prompts
 
 
 def parse_prediction_map(
@@ -553,17 +555,11 @@ def parse_prediction_map(
 
 
 def _run_local_transformer(
-    snapshot_path: Path, prompt: str, contract_ids: Sequence[str]
+    snapshot_path: Path, prompts: Mapping[str, str]
 ) -> tuple[str, dict[str, object]]:
     try:
         import torch
-        from transformers import (
-            AutoModelForCausalLM,
-            AutoTokenizer,
-            BitsAndBytesConfig,
-            StoppingCriteria,
-            StoppingCriteriaList,
-        )
+        from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
     except ImportError as error:
         raise ProspectiveFieldError(
             "local inference requires torch, transformers, accelerate, and bitsandbytes"
@@ -589,65 +585,61 @@ def _run_local_transformer(
         quantization_config=quantization,
         dtype=torch.float16,
     )
-    messages = [
-        {"role": "system", "content": "Return strict JSON only."},
-        {"role": "user", "content": prompt},
-    ]
-    rendered = tokenizer.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True
-    )
-    inputs = tokenizer(rendered, return_tensors="pt").to(model.device)
-
-    class CompleteForecastObject(StoppingCriteria):
-        def __init__(self, tokenizer, prompt_tokens: int, expected: Sequence[str]):
-            self.tokenizer = tokenizer
-            self.prompt_tokens = prompt_tokens
-            self.expected = expected
-
-        def __call__(self, input_ids, scores, **kwargs):
-            generated = input_ids[:, self.prompt_tokens :]
-            complete = []
-            for row in generated:
-                raw = self.tokenizer.decode(row, skip_special_tokens=True)
-                try:
-                    parse_prediction_map(raw, self.expected)
-                except ProspectiveFieldError:
-                    complete.append(False)
-                else:
-                    complete.append(True)
-            return torch.tensor(complete, dtype=torch.bool, device=input_ids.device)
-
+    false_ids = tokenizer.encode("0", add_special_tokens=False)
+    true_ids = tokenizer.encode("1", add_special_tokens=False)
+    if len(false_ids) != 1 or len(true_ids) != 1 or false_ids == true_ids:
+        raise ProspectiveFieldError(
+            "binary-logit inference requires distinct single-token 0 and 1 labels"
+        )
     torch.manual_seed(0)
     started = time.perf_counter_ns()
-    with torch.inference_mode():
-        output = model.generate(
-            **inputs,
-            do_sample=False,
-            max_new_tokens=MAX_MODEL_OUTPUT_TOKENS,
-            pad_token_id=tokenizer.eos_token_id,
-            stopping_criteria=StoppingCriteriaList(
-                [
-                    CompleteForecastObject(
-                        tokenizer,
-                        int(inputs["input_ids"].shape[1]),
-                        contract_ids,
-                    )
-                ]
-            ),
+    probabilities = {}
+    logit_records = {}
+    input_token_counts = []
+    for contract_id, prompt in prompts.items():
+        messages = [
+            {"role": "system", "content": "Answer with exactly one token: 0 or 1."},
+            {"role": "user", "content": prompt},
+        ]
+        rendered = tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
         )
+        inputs = tokenizer(rendered, return_tensors="pt").to(model.device)
+        input_token_counts.append(int(inputs["input_ids"].shape[1]))
+        with torch.inference_mode():
+            output = model(**inputs, use_cache=False, logits_to_keep=1)
+        final_logits = output.logits[0, -1, [false_ids[0], true_ids[0]]].float()
+        if not bool(torch.isfinite(final_logits).all()):
+            raise ProspectiveFieldError(
+                f"model returned non-finite binary logits for {contract_id}"
+            )
+        normalized = torch.softmax(final_logits, dim=0)
+        unclipped = float(normalized[1].item())
+        probability = min(0.99, max(0.01, unclipped))
+        probabilities[contract_id] = probability
+        logit_records[contract_id] = {
+            "false_logit": float(final_logits[0].item()),
+            "true_logit": float(final_logits[1].item()),
+            "unclipped_probability": unclipped,
+            "probability": probability,
+        }
+        del inputs, output, final_logits, normalized
     elapsed_ms = (time.perf_counter_ns() - started) // 1_000_000
-    generated = output[0, inputs["input_ids"].shape[1] :]
-    raw = tokenizer.decode(generated, skip_special_tokens=True).strip()
+    raw = canonical_json({"forecasts": probabilities})
     runtime = {
+        "method": "binary_next_token_logit",
+        "class_token_ids": {"false": false_ids[0], "true": true_ids[0]},
+        "logits": logit_records,
         "torch_version": torch.__version__,
         "transformers_version": __import__("transformers").__version__,
         "cuda_version": torch.version.cuda,
         "gpu": torch.cuda.get_device_name(0),
         "elapsed_ms": elapsed_ms,
-        "input_tokens": int(inputs["input_ids"].shape[1]),
-        "output_tokens": int(generated.shape[0]),
+        "input_tokens_min": min(input_token_counts),
+        "input_tokens_max": max(input_token_counts),
+        "contract_count": len(prompts),
     }
-    del model, tokenizer, inputs, output
+    del model, tokenizer
     torch.cuda.empty_cache()
     return raw, runtime
 
@@ -657,7 +649,7 @@ def forecast_agent(
     spec: LocalModelSpec,
     *,
     infer: Callable[
-        [Path, str, Sequence[str]], tuple[str, dict[str, object]]
+        [Path, Mapping[str, str]], tuple[str, dict[str, object]]
     ] = _run_local_transformer,
     fetch: JsonFetcher = _http_json,
 ) -> Path:
@@ -693,7 +685,7 @@ def forecast_agent(
             "runtime model snapshot differs from the preregistration"
         )
     observation = _read_json(field_dir / "observation.json")
-    prompt = render_prompt(plan, observation)
+    prompts = render_prompts(plan, observation)
     contracts = [_contract_from_plan(raw) for raw in plan["contracts"]]
     contract_ids = [item.contract_id for item in contracts]
     evidence_path = field_dir / "pending" / f"{spec.agent_id}.json"
@@ -702,7 +694,7 @@ def forecast_agent(
         raise ProspectiveFieldError(
             f"agent {spec.agent_id!r} already has forecast evidence; it is append-only"
         )
-    raw_output, runtime = infer(spec.snapshot_path, prompt, contract_ids)
+    raw_output, runtime = infer(spec.snapshot_path, prompts)
     submitted_at_ms = _server_time_ms(fetch)
     if submitted_at_ms > plan["submission_deadline_server_ms"]:
         raise ProspectiveFieldError(
@@ -716,7 +708,7 @@ def forecast_agent(
         model_sha256=digest,
         scaffold_id=plan["inference"]["scaffold_id"],
         scaffold_sha256=plan["inference"]["scaffold_sha256"],
-        prompt_sha256=_sha256_bytes(prompt.encode("utf-8")),
+        prompt_sha256=_sha256_json(prompts),
         operator_id="general-liquidity-prospective-field",
         config_sha256=_sha256_json(inference_config),
     )
@@ -729,7 +721,7 @@ def forecast_agent(
             contract=contract,
             prediction=probability,
             confidence=max(probability, 1.0 - probability),
-            rationale="strict JSON forecast from the preregistered local model",
+            rationale="normalized binary next-token logits from the preregistered local model",
             submitted_at=submitted_at,
             idempotency_key=f"{spec.agent_id}:{contract.contract_id}:initial",
             exposure=InformationExposure(
@@ -749,7 +741,8 @@ def forecast_agent(
         "model_revision": spec.revision,
         "model_snapshot_sha256": digest,
         "field_plan_sha256": _sha256_json(plan),
-        "prompt_sha256": _sha256_bytes(prompt.encode("utf-8")),
+        "prompt_sha256": _sha256_json(prompts),
+        "raw_output_kind": "canonical forecast map derived from recorded binary logits",
         "raw_output": raw_output,
         "raw_output_sha256": _sha256_bytes(raw_output.encode("utf-8")),
         "parsed_predictions": predictions,
@@ -758,6 +751,80 @@ def forecast_agent(
     }
     _write_json(audit_path, audit)
     return evidence_path
+
+
+def _validate_logit_runtime(
+    runtime: object, parsed_predictions: Mapping[str, float]
+) -> None:
+    if not isinstance(runtime, dict):
+        raise ProspectiveFieldError("inference runtime must be an object")
+    token_ids = runtime.get("class_token_ids")
+    logits = runtime.get("logits")
+    if (
+        runtime.get("method") != "binary_next_token_logit"
+        or runtime.get("contract_count") != len(parsed_predictions)
+        or not isinstance(token_ids, dict)
+        or set(token_ids) != {"false", "true"}
+        or isinstance(token_ids["false"], bool)
+        or isinstance(token_ids["true"], bool)
+        or not isinstance(token_ids["false"], int)
+        or not isinstance(token_ids["true"], int)
+        or token_ids["false"] == token_ids["true"]
+        or not isinstance(logits, dict)
+        or set(logits) != set(parsed_predictions)
+    ):
+        raise ProspectiveFieldError("binary-logit runtime has the wrong shape")
+    for contract_id, probability in parsed_predictions.items():
+        record = logits[contract_id]
+        if not isinstance(record, dict) or set(record) != {
+            "false_logit",
+            "true_logit",
+            "unclipped_probability",
+            "probability",
+        }:
+            raise ProspectiveFieldError(
+                f"binary-logit record has the wrong shape: {contract_id}"
+            )
+        values = tuple(record.values())
+        if any(
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(float(value))
+            for value in values
+        ):
+            raise ProspectiveFieldError(
+                f"binary-logit record is non-finite: {contract_id}"
+            )
+        delta = float(record["true_logit"]) - float(record["false_logit"])
+        if delta >= 0.0:
+            expected_unclipped = 1.0 / (1.0 + math.exp(-delta))
+        else:
+            exp_delta = math.exp(delta)
+            expected_unclipped = exp_delta / (1.0 + exp_delta)
+        expected_probability = min(0.99, max(0.01, expected_unclipped))
+        if (
+            not math.isclose(
+                float(record["unclipped_probability"]),
+                expected_unclipped,
+                rel_tol=1e-6,
+                abs_tol=1e-7,
+            )
+            or not math.isclose(
+                float(record["probability"]),
+                expected_probability,
+                rel_tol=1e-6,
+                abs_tol=1e-7,
+            )
+            or not math.isclose(
+                probability,
+                expected_probability,
+                rel_tol=1e-6,
+                abs_tol=1e-7,
+            )
+        ):
+            raise ProspectiveFieldError(
+                f"binary-logit probability does not reproduce: {contract_id}"
+            )
 
 
 def _validate_agent_artifacts(
@@ -774,7 +841,7 @@ def _validate_agent_artifacts(
     identity = document["identity"]
     inference = plan["inference"]
     observation = _read_json(field_dir / "observation.json")
-    prompt_sha256 = _sha256_bytes(render_prompt(plan, observation).encode("utf-8"))
+    prompt_sha256 = _sha256_json(render_prompts(plan, observation))
     expected_identity = {
         "agent_id": agent_id,
         "model_id": record["model_id"],
@@ -828,6 +895,7 @@ def _validate_agent_artifacts(
     ) != _sha256_bytes(raw_output.encode("utf-8")):
         raise ProspectiveFieldError(f"{agent_id} raw inference digest does not match")
     parsed_predictions = parse_prediction_map(raw_output, expected_contract_ids)
+    _validate_logit_runtime(audit.get("runtime"), parsed_predictions)
     if (
         audit.get("schema_version") != "sharpearena.prospective-model-inference.v1"
         or audit.get("agent_id") != agent_id
@@ -836,9 +904,10 @@ def _validate_agent_artifacts(
         or audit.get("model_snapshot_sha256") != record["snapshot_sha256"]
         or audit.get("field_plan_sha256") != _sha256_json(plan)
         or audit.get("prompt_sha256") != prompt_sha256
+        or audit.get("raw_output_kind")
+        != "canonical forecast map derived from recorded binary logits"
         or audit.get("parsed_predictions") != parsed_predictions
         or revision_predictions != parsed_predictions
-        or not isinstance(audit.get("runtime"), dict)
     ):
         raise ProspectiveFieldError(
             f"{agent_id} inference audit differs from its ledger"
