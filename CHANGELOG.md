@@ -16,6 +16,7 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ### Changed
 - python: deferred claims now carry the complete frozen contract and its canonical SHA-256 instead of relying only on a question, kind, and relative horizon. The historical `DeferredDesk.commit` call remains as a compatibility shorthand; administered revisions use `commit_contract` or `ForecastLedger.submit` so a prediction cannot move its own deadline or resolution boundary.
+- paper: document the prospective forecast producer contract, the executable cross-product tutorial, and the selected Lean-checked contract invariants while keeping capability separate from empirical evidence. No current-model forecast result is admitted; the superseded engineering pilot is excluded from every result, comparison, leaderboard, and rank claim.
 
 ## [0.23.0] - 2026-09-02
 
