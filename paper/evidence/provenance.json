@@ -122,7 +122,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "66132dd8a872d1b54fc8dbae5070e950def06ee1",
+  "generated_at_head": "0d2de44481afbc00d595bdce53d674cece6fa41b",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
