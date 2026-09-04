@@ -35,21 +35,21 @@ provenance manifest live under [`paper/`](../paper/).
   deduplication and binds host-derived family identity, exact generator identity,
   earlier-candidate ancestry, and operator-registered idea sources. Family
   summaries are diagnostic and cannot change the trial denominator or rank key.
-- A prospective protocol pilot sealed three exact local model snapshots before
-  24 Binance Spot one-minute candle outcomes existed. All three produced a
-  complete forecast ledger on the same support. SharpeBench independently
-  imported and rescored the field: Brier losses were 0.2548 for `qwen-7b`,
-  0.2599 for `phi-4`, and 0.3148 for `qwen-0.5b`. The result has only six
-  settlement-clock blocks, every pairwise interval crosses zero, and the frozen
-  30-block minimum prohibits a model-comparison claim.
+- A superseded engineering pilot sealed three exact, already-cached model
+  snapshots before 24 Binance Spot one-minute candle outcomes existed. All
+  three produced a complete ledger on common support, and SharpeBench
+  independently reconstructed the report. The field is retained to audit the
+  lifecycle, not as current model evidence: its older convenience-sample
+  checkpoints are excluded from benchmark comparison and from the paper's
+  empirical conclusions.
 
 ## What is not established
 
-- The admitted local-model field is a fixed two-token forecast scaffold, not an
+- The archived local-model pilot is a fixed two-token forecast scaffold, not an
   autonomous trading agent. It uses one 12-bar observation, one venue, four
-  correlated crypto pairs, six future clocks, one hardware stack, and models
-  selected from snapshots already available on the workstation. It establishes
-  neither general calibration nor trading performance.
+  correlated crypto pairs, six future clocks, one hardware stack, and obsolete
+  convenience-sample checkpoints. It establishes neither current model quality,
+  general calibration, nor trading performance.
 - No live-capital route exists in the paper arm. Its provider-dependent paper
   evidence is a separate, non-replayable class from deterministic backtests.
 - No hostile entrant has been operated as a tenant. Container acceptance

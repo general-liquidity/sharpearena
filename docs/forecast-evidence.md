@@ -74,21 +74,22 @@ seals pending ledgers before the outcome boundary; then refuses resolution until
 the data source's server clock is past every frozen candle. Model snapshots are
 loaded locally and the runner never trades.
 
-## Completed protocol pilot
+## Superseded engineering pilot
 
 [`paper/evidence/prospective-forecast-field`](../paper/evidence/prospective-forecast-field/)
-contains one completed field. Three model snapshots already cached on the
-workstation forecast 24 binary Binance Spot contracts from one frozen 12-bar
-observation. Forecasts were sealed at 15:32:28.578 UTC, before the 16:11 UTC
-deadline and before target candles opening from 16:12 through 16:22 UTC. The
-resolver wrote outcomes only after the source clock passed 16:23 UTC.
+contains one completed lifecycle exercise. Three older model snapshots already
+cached on the workstation forecast 24 binary Binance Spot contracts from one
+frozen 12-bar observation. Forecasts were sealed at 15:32:28.578 UTC, before the
+16:11 UTC deadline and before target candles opening from 16:12 through 16:22
+UTC. The resolver wrote outcomes only after the source clock passed 16:23 UTC.
 
 The field contains 24 contracts but only six settlement-clock blocks because
 four correlated assets resolve at each clock. Its preregistered minimum for a
-comparative claim is 30 blocks. SharpeBench reports descriptive Brier losses of
-0.2548 for `qwen-7b`, 0.2599 for `phi-4`, and 0.3148 for `qwen-0.5b`; all three
-Brier skill scores are negative against the field's observed base-rate forecast.
-Every pairwise interval crosses zero. The
+comparative claim is 30 blocks. The older checkpoints were a convenience sample
+and are no longer accepted as the product's model experiment. Their raw records
+and recomputed scores remain committed so the audit trail cannot be rewritten,
+but the field is excluded from model comparison, benchmark rank, and the
+paper's empirical conclusions. The
 [pre-outcome review](prospective-forecast-methodology-review.md) and
 [post-outcome review](prospective-forecast-result-review.md) state the complete
 chronology, checks, and limits.

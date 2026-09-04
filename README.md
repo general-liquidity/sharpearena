@@ -213,13 +213,13 @@ bidirectional conformance tests guard the Rust types. See the
 The committed paper separates two evidence strata. Historical calibration and
 falsification experiments use deterministic reference policies; F1 records
 package version 0.9.0, while most other historical artifacts do not serialize a
-runtime version. A later prospective protocol pilot sealed three already-cached
-local model snapshots before 24 Binance Spot candle outcomes existed, then
-resolved all contracts on exact common support. It measures a fixed forecast
-scaffold, not a tool-using trading agent. Only six settlement-clock blocks were
-observed, below the preregistered 30-block comparative threshold, and forecast
-quality cannot change trading rank. No model weights are part of the repository
-or downloaded by CI.
+runtime version. A later, now-superseded engineering pilot sealed three
+already-cached local model snapshots before 24 Binance Spot candle outcomes
+existed, then resolved all contracts on exact common support. It validates the
+protocol plumbing only. Its older convenience-sample checkpoints are excluded
+from the paper's model evidence and from any benchmark or comparative claim.
+Forecast quality cannot change trading rank. No model weights are part of the
+repository or downloaded by CI.
 
 Results, non-results, and finite-grid limits are summarized in
 [Evidence and current status](docs/evidence.md). Exact commands, fixed seeds,

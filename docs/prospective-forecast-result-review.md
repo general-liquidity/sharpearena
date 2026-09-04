@@ -11,9 +11,17 @@ This document applies its declared checks to the closed result. It is an
 adversarial review by a separate implementation path, not an external peer
 review.
 
-## Decision
+## Status after model-panel review
 
-The completed field is admissible as a descriptive prospective protocol
+This field is retained as a superseded engineering pilot. Its three
+convenience-sample checkpoints are too old to represent the model population
+the product intends to evaluate. The raw records remain immutable for audit
+transparency, but their scores are excluded from the academic paper's empirical
+conclusions, any model leaderboard, and every trading-rank decision.
+
+## Original protocol decision
+
+The completed field was admissible as a descriptive prospective protocol
 demonstration. It shows that three fixed local model-scaffold configurations
 produced complete, sealed forecasts before the outcomes existed and that a
 separate product recomputed proper scores from the committed records.
