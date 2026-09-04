@@ -47,8 +47,8 @@ MARKET_BASE_URL = "https://data-api.binance.vision"
 MARKET_SOURCE_ID = "binance-spot-public-klines-v3"
 DEFAULT_SYMBOLS = ("BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT")
 DEFAULT_TARGET_OFFSETS_MINUTES = (1, 3, 5, 7, 9, 11)
-DEFAULT_LOOKBACK_BARS = 60
-MAX_MODEL_OUTPUT_TOKENS = 768
+DEFAULT_LOOKBACK_BARS = 12
+MAX_MODEL_OUTPUT_TOKENS = 640
 _SCAFFOLD_MODULES = (
     "deferred.py",
     "forecast_contract.py",
@@ -354,7 +354,7 @@ def prepare_field(
         target_close_ms = target_open_ms + 60_000 - 1
         for symbol in symbols:
             contract = ForecastContract(
-                contract_id=f"{symbol.lower()}-minute-{target_open_ms}",
+                contract_id=f"{target_open_ms:x}-{symbol.lower()}",
                 question=(
                     f"Will {symbol} close above its open in the Binance Spot one-minute "
                     f"candle opening at {target_open_ms} ms UTC?"
@@ -408,6 +408,7 @@ def prepare_field(
             "max_new_tokens": MAX_MODEL_OUTPUT_TOKENS,
             "quantization": "bitsandbytes-nf4-4bit",
             "one_prompt_per_agent": True,
+            "stop_on_complete_forecasts_object": True,
         },
         "analysis": {
             "primary": "descriptive Brier score and calibration on all resolved contracts",
@@ -477,14 +478,14 @@ def render_prompt(plan: Mapping[str, object], observation: Mapping[str, object])
     compact_market = {}
     for symbol, bars in observation["symbols"].items():
         compact_market[symbol] = [
-            {
-                "open_time_ms": bar["open_time_ms"],
-                "open": bar["open"],
-                "high": bar["high"],
-                "low": bar["low"],
-                "close": bar["close"],
-                "volume": bar["volume"],
-            }
+            [
+                bar["open_time_ms"],
+                bar["open"],
+                bar["high"],
+                bar["low"],
+                bar["close"],
+                bar["volume"],
+            ]
             for bar in bars
         ]
     questions = [
@@ -496,7 +497,11 @@ def render_prompt(plan: Mapping[str, object], observation: Mapping[str, object])
         }
         for raw in contracts
     ]
-    payload = {"market_history": compact_market, "questions": questions}
+    payload = {
+        "bar_fields": ["open_time_ms", "open", "high", "low", "close", "volume"],
+        "market_history": compact_market,
+        "questions": questions,
+    }
     return (
         "You are making prospective probability forecasts from one frozen market snapshot. "
         "You have no tools and must not invent newer observations. Return exactly one JSON "
@@ -548,11 +553,17 @@ def parse_prediction_map(
 
 
 def _run_local_transformer(
-    snapshot_path: Path, prompt: str
+    snapshot_path: Path, prompt: str, contract_ids: Sequence[str]
 ) -> tuple[str, dict[str, object]]:
     try:
         import torch
-        from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+        from transformers import (
+            AutoModelForCausalLM,
+            AutoTokenizer,
+            BitsAndBytesConfig,
+            StoppingCriteria,
+            StoppingCriteriaList,
+        )
     except ImportError as error:
         raise ProspectiveFieldError(
             "local inference requires torch, transformers, accelerate, and bitsandbytes"
@@ -576,7 +587,7 @@ def _run_local_transformer(
         trust_remote_code=False,
         device_map="auto",
         quantization_config=quantization,
-        torch_dtype=torch.float16,
+        dtype=torch.float16,
     )
     messages = [
         {"role": "system", "content": "Return strict JSON only."},
@@ -586,6 +597,26 @@ def _run_local_transformer(
         messages, tokenize=False, add_generation_prompt=True
     )
     inputs = tokenizer(rendered, return_tensors="pt").to(model.device)
+
+    class CompleteForecastObject(StoppingCriteria):
+        def __init__(self, tokenizer, prompt_tokens: int, expected: Sequence[str]):
+            self.tokenizer = tokenizer
+            self.prompt_tokens = prompt_tokens
+            self.expected = expected
+
+        def __call__(self, input_ids, scores, **kwargs):
+            generated = input_ids[:, self.prompt_tokens :]
+            complete = []
+            for row in generated:
+                raw = self.tokenizer.decode(row, skip_special_tokens=True)
+                try:
+                    parse_prediction_map(raw, self.expected)
+                except ProspectiveFieldError:
+                    complete.append(False)
+                else:
+                    complete.append(True)
+            return torch.tensor(complete, dtype=torch.bool, device=input_ids.device)
+
     torch.manual_seed(0)
     started = time.perf_counter_ns()
     with torch.inference_mode():
@@ -594,6 +625,15 @@ def _run_local_transformer(
             do_sample=False,
             max_new_tokens=MAX_MODEL_OUTPUT_TOKENS,
             pad_token_id=tokenizer.eos_token_id,
+            stopping_criteria=StoppingCriteriaList(
+                [
+                    CompleteForecastObject(
+                        tokenizer,
+                        int(inputs["input_ids"].shape[1]),
+                        contract_ids,
+                    )
+                ]
+            ),
         )
     elapsed_ms = (time.perf_counter_ns() - started) // 1_000_000
     generated = output[0, inputs["input_ids"].shape[1] :]
@@ -617,7 +657,7 @@ def forecast_agent(
     spec: LocalModelSpec,
     *,
     infer: Callable[
-        [Path, str], tuple[str, dict[str, object]]
+        [Path, str, Sequence[str]], tuple[str, dict[str, object]]
     ] = _run_local_transformer,
     fetch: JsonFetcher = _http_json,
 ) -> Path:
@@ -654,22 +694,21 @@ def forecast_agent(
         )
     observation = _read_json(field_dir / "observation.json")
     prompt = render_prompt(plan, observation)
+    contracts = [_contract_from_plan(raw) for raw in plan["contracts"]]
+    contract_ids = [item.contract_id for item in contracts]
     evidence_path = field_dir / "pending" / f"{spec.agent_id}.json"
     audit_path = field_dir / "inference" / f"{spec.agent_id}.json"
     if evidence_path.exists() or audit_path.exists():
         raise ProspectiveFieldError(
             f"agent {spec.agent_id!r} already has forecast evidence; it is append-only"
         )
-    raw_output, runtime = infer(spec.snapshot_path, prompt)
+    raw_output, runtime = infer(spec.snapshot_path, prompt, contract_ids)
     submitted_at_ms = _server_time_ms(fetch)
     if submitted_at_ms > plan["submission_deadline_server_ms"]:
         raise ProspectiveFieldError(
             "model completed after the frozen submission deadline"
         )
-    contracts = [_contract_from_plan(raw) for raw in plan["contracts"]]
-    predictions = parse_prediction_map(
-        raw_output, [item.contract_id for item in contracts]
-    )
+    predictions = parse_prediction_map(raw_output, contract_ids)
     inference_config = dict(plan["inference"])
     identity = ForecastRunIdentity(
         agent_id=spec.agent_id,

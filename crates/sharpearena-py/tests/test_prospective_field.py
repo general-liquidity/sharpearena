@@ -174,11 +174,14 @@ def test_field_phases_refuse_early_resolution_and_publish_complete_evidence(
     monkeypatch.setattr(prospective_field, "_scaffold_sha256", lambda: "0" * 64)
     with pytest.raises(ProspectiveFieldError, match="runner bytes"):
         forecast_agent(
-            field, specs[0], infer=lambda _path, _prompt: ("", {}), fetch=fetch
+            field,
+            specs[0],
+            infer=lambda _path, _prompt, _contract_ids: ("", {}),
+            fetch=fetch,
         )
     monkeypatch.setattr(prospective_field, "_scaffold_sha256", scaffold_sha256)
 
-    def infer(_path, prompt):
+    def infer(_path, prompt, _contract_ids):
         contract_id = prompt.split('"contract_id":"', 1)[1].split('"', 1)[0]
         return json.dumps({"forecasts": {contract_id: 0.6}}), {"fixture": True}
 
