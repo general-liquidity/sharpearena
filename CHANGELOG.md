@@ -10,6 +10,13 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ## [Unreleased]
 
+### Added
+- python: add closed, versioned prospective forecast contracts for point, binary probability, categorical distribution, Normal distribution, direction, and interval forecasts. Contracts freeze the settlement boundary and scoring rule before submission; binary and categorical Brier and log scores, Normal CRPS, directional accuracy, and interval score are recomputed from raw outcomes.
+- evidence: add an append-only forecast ledger with ordered revisions, idempotent retries, late and rejected attempt retention, cancellation and resolution states, model and scaffold identity, and hashed information-exposure provenance. `write_forecast_evidence` publishes the strict `sharpe.forecast-evidence.v1` document atomically for an independent SharpeBench consumer. The producer export contains no score.
+
+### Changed
+- python: deferred claims now carry the complete frozen contract and its canonical SHA-256 instead of relying only on a question, kind, and relative horizon. The historical `DeferredDesk.commit` call remains as a compatibility shorthand; administered revisions use `commit_contract` or `ForecastLedger.submit` so a prediction cannot move its own deadline or resolution boundary.
+
 ## [0.23.0] - 2026-09-02
 
 ### Added

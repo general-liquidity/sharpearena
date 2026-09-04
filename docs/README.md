@@ -13,6 +13,7 @@ needs more detail.
 | Choose a market, wrapper, or operational surface | [Capability map](capabilities.md) |
 | Run the local open-weight field | [Local-agent architecture](LOCAL_AGENT_ARCHITECTURE.md) |
 | Compare supported local model runtimes | [Local model matrix](LOCAL_MODEL_MATRIX_2026.md) |
+| Commit forecasts now and score them after resolution | [Prospective forecast evidence](forecast-evidence.md) |
 
 Registry-specific instructions live with the [Rust crate](../crates/sharpearena/),
 [Python distribution](../crates/sharpearena-py/), and

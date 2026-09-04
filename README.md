@@ -172,6 +172,7 @@ Read the precise scopes and non-claims in
 - portfolio, execution, market-making, shared-impact, and limit-order-book tasks;
 - procedural, held-out, sealed-seed, real-data, and regime-transfer evaluations;
 - deterministic local-model fields with resumable journals and strict faults;
+- append-only prospective forecasts with frozen settlement contracts and raw evidence export;
 - host-counted strategy-search trials with a closed, non-executable DSL;
 - a separate paper-only forward arm with deny-first risk checks and persistent
   reconciliation state.
@@ -253,6 +254,7 @@ effective configuration, and release topology.
 | Interpret the current results honestly | [Evidence and current status](docs/evidence.md) · [`EVALUATION.md`](EVALUATION.md) |
 | Train an agent | [Gymnasium guide](docs/gymnasium.md) · [Training guide](docs/training.md) |
 | Connect an external agent | [Agent contract](docs/agent-contract.md) |
+| Commit and export prospective forecasts | [Prospective forecast evidence](docs/forecast-evidence.md) |
 | Run local open-weight models | [Local-agent architecture](docs/LOCAL_AGENT_ARCHITECTURE.md) · [Model matrix](docs/LOCAL_MODEL_MATRIX_2026.md) |
 | Operate or publish a release | [`RELEASING.md`](RELEASING.md) |
 | Browse everything | [Documentation map](docs/README.md) |
