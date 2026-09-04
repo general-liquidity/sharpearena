@@ -1,0 +1,10 @@
+{
+  "aborted_at_server_ms": 1788535169060,
+  "forecast_artifacts_written": [],
+  "outcome_data_observed": false,
+  "reason": "The preregistered 0.5B entrant completed in about 38 seconds but did not emit one exact-support JSON forecast object. The runner refused it before writing forecast evidence.",
+  "reason_code": "model_output_contract_failure",
+  "schema_version": "sharpearena.prospective-forecast-attempt-status.v1",
+  "started_agent_id": "qwen-0.5b",
+  "status": "aborted_before_outcomes"
+}
