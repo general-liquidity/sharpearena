@@ -6,9 +6,11 @@ version covers the Rust crates, the npm package and the PyPI package; each
 section is one `v*` tag and links the commits it was built from. The wire
 contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
-[Unreleased]: https://github.com/general-liquidity/sharpearena/compare/v0.24.0...HEAD
+[Unreleased]: https://github.com/general-liquidity/sharpearena/compare/v0.24.1...HEAD
 
 ## [Unreleased]
+
+## [0.24.1] - 2026-09-04
 
 ### Changed
 - positioning: standardize the paper title, crate metadata, Python and npm descriptions, and distribution READMEs around SharpeArena as a deterministic point-in-time trading-agent evaluation sandbox and reinforcement-learning environment. The paper now defines evaluation sandbox as the governed market interface and explicitly separates it from process or container isolation; broad `leak-free` metadata claims are replaced by the narrower property the implementation enforces.
@@ -343,6 +345,7 @@ First published release, as OpenOutcry.
 ### Fixed
 - ci: toolchain pinned to 1.96.0 for the wasm32 target; a virtualenv for maturin ([bb0ee4d](https://github.com/general-liquidity/sharpearena/commit/bb0ee4d)).
 
+[0.24.1]: https://github.com/general-liquidity/sharpearena/compare/v0.24.0...v0.24.1
 [0.24.0]: https://github.com/general-liquidity/sharpearena/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/general-liquidity/sharpearena/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/general-liquidity/sharpearena/compare/v0.21.0...v0.22.0
