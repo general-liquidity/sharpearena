@@ -1,6 +1,6 @@
 {
   "name": "@general-liquidity/sharpearena",
-  "version": "0.24.0",
+  "version": "0.24.1",
   "description": "A deterministic point-in-time evaluation sandbox and reinforcement-learning environment for trading agents, backed by SharpeArena's Rust engine compiled to WebAssembly.",
   "keywords": [
     "trading",

@@ -1,7 +1,7 @@
 {
   "name": "sharpearena-wasm",
   "description": "WASM bindings for SharpeArena's deterministic trading-agent environment, baselines, and replay engine.",
-  "version": "0.24.0",
+  "version": "0.24.1",
   "license": "MIT OR Apache-2.0",
   "repository": {
     "type": "git",

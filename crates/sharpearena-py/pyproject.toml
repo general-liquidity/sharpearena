@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "sharpearena"
-version = "0.24.0"
+version = "0.24.1"
 description = "SharpeArena: a deterministic point-in-time evaluation sandbox and Gymnasium environment for trading agents."
 readme = "README.md"
 requires-python = ">=3.9"

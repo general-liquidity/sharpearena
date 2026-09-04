@@ -7,7 +7,7 @@ description = "WASM bindings for SharpeArena's deterministic trading-agent envir
 repository.workspace = true
 
 [dependencies]
-sharpearena = { path = "../sharpearena", version = "0.24.0" }
+sharpearena = { path = "../sharpearena", version = "0.24.1" }
 serde = { version = "1", features = ["derive"] }
 # `float_roundtrip` makes JSON float *parsing* bit-exact, so a Dataset/trajectory
 # round-tripped through the boundary recomputes to a byte-identical Run — the
