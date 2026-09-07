@@ -216,7 +216,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "9628ba3e0b2d14744a62e5370c6d1df0d0f29d5f",
+  "generated_at_head": "63143a7d5b89e3ac7fb65fa4d51c1cb3d72693e1",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -477,6 +477,10 @@
       "sha256": "1c4fa20d55c07d7eecfd93ad459b79cb621014412f6eded025f0d8f65a401a59"
     },
     {
+      "path": "crates/sharpearena-py/python/sharpearena/promotion_replay.py",
+      "sha256": "065122a1bff416dd85b266b00c36a9d5482b4607ccb2f3e7914cf073b78256d2"
+    },
+    {
       "path": "crates/sharpearena-py/python/sharpearena/prospective_field.py",
       "sha256": "7b15d246a43d5596d7d5855171dfdfe0236f1c3a0bf90f11bf06f979d0a8f505"
     },
@@ -526,7 +530,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/trace_promotion.py",
-      "sha256": "4cf84f634bcffb6d14f3817408900f37f56c9128613970ce403125db65e72b2f"
+      "sha256": "9b0b802c56c0fdd1d691ef937d16e8040345f770c053a2dbdb6d03a4908a4fc5"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/vector.py",
@@ -770,7 +774,7 @@
     },
     {
       "path": "paper/src/make-throughput.py",
-      "sha256": "7ccd6de98417686584526d6187a5c2062bdbce8407ef60b4691b203d5d28be49"
+      "sha256": "8fa5a1499e96b8f2417e9a2684480c03d07bc32bc13d0f1baeaa82a2740335be"
     },
     {
       "path": "paper/src/make-witness.py",
@@ -816,6 +820,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "c0cc902d2e15a65114e9f383ebc4e5e4b0d32dfe1ec788b9e64781214b2e36b9",
+  "source_snapshot_sha256": "e777182df679c71123a9bbde493ddc71e0b3191935dbf1acfae4636184a3b8c2",
   "validator": "paper/src/check-provenance.py"
 }
