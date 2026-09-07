@@ -13,20 +13,22 @@
 //!    the headline number is stable versus a lucky seed draw.
 //! 2. a **paired-difference significance test** across the *shared* held-out seed band.
 //!    For every bootstrap draw the same resampled seed indices feed both entries, so the
-//!    price-path luck common to both cancels and the difference isolates skill. If the
-//!    difference CI straddles zero the two entries are statistically tied; otherwise one
-//!    ranks above the other beyond seed noise.
+//!    shared-path covariance is retained. Pairing does not remove all luck or isolate
+//!    skill. A difference CI containing zero does not establish a difference, nor prove
+//!    equivalence. Multiple pairwise comparisons here are not multiplicity-adjusted.
 //!
 //! The deflated-Sharpe math is the Bailey & López de Prado estimator, ported here
-//! self-contained (no `sharpebench-stats` dependency) so the CI brackets the very
-//! statistic the leaderboard reports. The resample RNG is a fixed-seed SplitMix64, so a
+//! self-contained (no `sharpebench-stats` dependency). Its corrected empirical moments
+//! currently differ from the exact-pinned Bench 0.15.0 scoring kernel: these intervals
+//! are Arena diagnostics, not confidence intervals for that older scorer. The resample
+//! RNG is a fixed-seed SplitMix64, so a
 //! confidence report replays bit-for-bit from its resample seed.
 
 use serde::{Deserialize, Serialize};
 
 /// **Annualized** cross-trial Sharpe dispersion the deflation assumes, mirroring
-/// `sharpebench_core::ScoreConfig::default().trials_sr_std`. Kept in sync so a CI built
-/// here brackets the point deflated Sharpe the scoring kernel reports. Like the kernel,
+/// `sharpebench_core::ScoreConfig::default().trials_sr_std`. Matching configuration alone
+/// does not establish estimator parity with the older pinned kernel. Like the kernel,
 /// every public entry point here takes this in annualized units and converts it per
 /// period exactly once (dividing by `sqrt(PERIODS_PER_YEAR)`).
 pub const TRIALS_SR_STD_DEFAULT: f64 = 0.5;
@@ -43,7 +45,7 @@ pub const PERIODS_PER_YEAR: f64 = 252.0;
 /// leaderboard number must deflate against `KERNEL_BASE_TRIALS + declared`.
 pub const KERNEL_BASE_TRIALS: u32 = 50;
 
-// --- self-contained statistics (ported to match the scoring kernel bit-for-bit) -------
+// --- self-contained statistics (corrected moments; see compatibility note above) -------
 
 fn mean(xs: &[f64]) -> f64 {
     if xs.is_empty() {
@@ -308,9 +310,10 @@ pub struct PairedDiff {
     pub p_value: f64,
     /// Confidence level, `1 - alpha`.
     pub confidence: f64,
-    /// `true` when the difference CI excludes zero (A and B separate beyond seed noise).
+    /// `true` when the difference CI excludes zero under this resampling procedure.
     pub significant: bool,
-    /// `"a_better"`, `"b_better"`, or `"tied"`: the leaderboard-facing verdict.
+    /// `"a_better"`, `"b_better"`, or legacy `"tied"`. The latter means difference not
+    /// established, not equivalence. Retained as a wire label for existing consumers.
     pub verdict: String,
     /// Number of bootstrap resamples used.
     pub n_boot: usize,

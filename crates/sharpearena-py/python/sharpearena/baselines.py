@@ -28,6 +28,7 @@ from typing import Callable, Iterable, Optional, Sequence
 import numpy as np
 
 from .confidence import (
+    _validated_interval,
     DEFAULT_ALPHA,
     DEFAULT_N_BOOT,
     DEFAULT_RESAMPLE_SEED,
@@ -566,14 +567,14 @@ def leaderboard_markdown(rows: Sequence[dict], *, show_ci: bool = False) -> str:
     is that entrants are ranked on the deflated, process-checked number, never raw
     return. Mean return is shown for context, not for ranking.
 
-    With ``show_ci`` set, an extra column reports the seed-paired bootstrap 95% CI on the
-    deflated Sharpe (from each row's ``deflated_sharpe_ci``), so the table shows not just the
+    With ``show_ci`` set, an extra column reports the seed-paired bootstrap CI and its
+    actual confidence level (from each row's ``deflated_sharpe_ci``), so the table shows the
     ranked number but how firmly the seeds support it. Default off, so the canonical baseline
     tables reproduce byte-identically.
     """
     ordered = sorted(rows, key=lambda r: r.get("deflated_sharpe", 0.0), reverse=True)
     if show_ci:
-        header = "| Rank | Policy | Deflated Sharpe | 95% CI | pass^k rate | Mean return |"
+        header = "| Rank | Policy | Deflated Sharpe | Bootstrap CI | pass^k rate | Mean return |"
         sep = "|---|---|---|---|---|---|"
     else:
         header = "| Rank | Policy | Deflated Sharpe | pass^k rate | Mean return |"
@@ -590,8 +591,10 @@ def leaderboard_markdown(rows: Sequence[dict], *, show_ci: bool = False) -> str:
             if ci is None:
                 cells.append("unavailable")
             else:
-                cells.append("[{lo:.4f}, {hi:.4f}]".format(
-                    lo=float(ci["lo"]), hi=float(ci["hi"])))
+                lo, hi, confidence = _validated_interval(ci)
+                if not 0.0 <= lo <= hi <= 1.0:
+                    raise ValueError("deflated-Sharpe interval bounds must lie in [0, 1]")
+                cells.append(f"{100 * confidence:.6g}% [{lo:.4f}, {hi:.4f}]")
         cells.append("{:.2f}".format(float(r.get("passed_k_rate", 0.0))))
         cells.append("{:.6f}".format(float(r.get("mean_return", 0.0))))
         lines.append("| " + " | ".join(cells) + " |")

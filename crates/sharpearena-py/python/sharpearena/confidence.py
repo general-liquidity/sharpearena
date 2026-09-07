@@ -10,12 +10,12 @@ Machine Learning, Ch. 19, A/B testing under sampling uncertainty):
   Sharpe by resampling its held-out seeds (the independent sampling units) with replacement.
   A wide interval means the headline number rests on a few lucky seeds.
 * :func:`paired_dsr_diff` runs a **paired-difference significance test** across the *shared*
-  held-out seed band: each bootstrap draw feeds the same resampled seeds to both entries, so
-  the common price-path luck cancels and the difference isolates skill. A difference CI that
-  straddles zero means the two entries are statistically tied.
+  held-out seed band: each bootstrap draw feeds the same resampled indices to both entries.
+  Pairing retains shared-path covariance; it does not remove all luck or isolate skill.
+  A difference CI containing zero does not establish a difference, or prove equivalence.
 * :func:`pairwise_significance` applies the paired test down a ranked leaderboard, so each
-  neighbouring pair is labelled ``a_better`` / ``tied`` and the ranking states which gaps are
-  real and which are within seed noise.
+  neighbouring pair has a directional or unresolved diagnostic. These unadjusted pairwise
+  intervals do not establish a simultaneous ranking guarantee or official eligibility.
 
 The heavy lifting is the self-contained Rust core (no ``sharpebench-stats`` dependency).
 It uses corrected empirical population standardized moments. The packaged ``score_run``
@@ -29,6 +29,8 @@ Everything is deterministic in ``resample_seed``.
 from __future__ import annotations
 
 import json
+import math
+from numbers import Real
 from typing import Sequence
 
 from .sharpearena_py import bootstrap_dsr_ci as _bootstrap_dsr_ci
@@ -77,9 +79,11 @@ def paired_dsr_diff(
     """Paired-difference significance test between two entries on the **same** seed band.
 
     ``a_per_seed_returns[i]`` and ``b_per_seed_returns[i]`` must be the two entries' return
-    series on the *same* seed ``i`` (the pairing is what cancels the shared price-path luck).
+    series on the *same* seed ``i``. Positional pairing assumes the caller has aligned the
+    identities; it does not independently verify them or their statistical independence.
     Returns ``{point_diff, lo, hi, p_value, confidence, significant, verdict, n_boot}`` with
-    ``verdict`` one of ``"a_better"`` / ``"b_better"`` / ``"tied"``.
+    ``verdict`` one of ``"a_better"`` / ``"b_better"`` / ``"tied"``. The legacy wire label
+    ``tied`` means only that the interval includes zero, not that equivalence was shown.
     """
     a = [list(map(float, r)) for r in a_per_seed_returns]
     b = [list(map(float, r)) for r in b_per_seed_returns]
@@ -103,8 +107,10 @@ def pairwise_significance(
     ``rows`` are leaderboard entries (each carrying ``"policy"`` and ``"per_seed_returns"``,
     as produced by :func:`~sharpearena.baselines.run_baselines`). They are ranked by deflated
     Sharpe (desc) and each neighbouring pair ``(A, B)`` is tested; ``A`` is the higher-ranked
-    entry, so ``verdict == "a_better"`` means the rank gap is real and ``"tied"`` means the
-    two are within seed noise. Rows without ``"per_seed_returns"`` are skipped.
+    entry under that displayed estimator. The paired diagnostic can point in either
+    direction; ``tied`` means the difference was not established, not equivalence.
+    Rows without ``"per_seed_returns"`` are skipped. These adjacent comparisons are
+    exploratory and not multiplicity-adjusted.
     """
     usable = [r for r in rows if r.get("per_seed_returns")]
     ordered = sorted(usable, key=lambda r: r.get("deflated_sharpe", 0.0), reverse=True)
@@ -128,33 +134,62 @@ def pairwise_significance(
     return out
 
 
-def significance_markdown(comparisons: Sequence[dict]) -> str:
-    """Render :func:`pairwise_significance` output as a markdown table.
+def _finite_field(record: dict, key: str) -> float:
+    value = record.get(key)
+    if not isinstance(value, Real) or isinstance(value, bool) or not math.isfinite(value):
+        raise ValueError(f"confidence field {key} must be a finite real number")
+    return float(value)
 
-    One row per adjacent leaderboard pair: the ranked-above entry ``A``, the ranked-below
-    entry ``B``, the deflated-Sharpe difference with its bootstrap CI, the two-sided p-value,
-    and a plain-English verdict (``A > B beyond seed noise`` vs ``statistically tied``).
+
+def _validated_interval(record: dict) -> tuple[float, float, float]:
+    if not isinstance(record, dict):
+        raise ValueError("confidence interval must be a dict")
+    lo, hi = _finite_field(record, "lo"), _finite_field(record, "hi")
+    confidence = _finite_field(record, "confidence")
+    if lo > hi or not 0.0 < confidence < 1.0:
+        raise ValueError("confidence interval requires lo <= hi and 0 < confidence < 1")
+    return lo, hi, confidence
+
+
+def _comparison_label(record: dict, key: str) -> str:
+    value = record.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"comparison {key} must name an entry")
+    return value.replace("|", "\\|").replace("\n", " ").replace("\r", " ")
+
+
+def significance_markdown(comparisons: Sequence[dict]) -> str:
+    """Render each actual direction and confidence level, refusing inconsistent records.
+
+    A CI containing zero says ``difference not established``. This table does not turn
+    lack of separation into an equivalence claim or unadjusted comparisons into a ranking
+    guarantee. The p-value is displayed as supplied, not used to relabel the CI decision.
     """
     lines = [
-        "| A (ranked above) | B (ranked below) | Deflated Sharpe diff | 95% CI | p-value | Verdict |",
-        "|---|---|---|---|---|---|",
+        "| A | B | Deflated Sharpe diff | Bootstrap CI | Confidence | p-value | Verdict |",
+        "|---|---|---|---|---|---|---|",
     ]
     for c in comparisons:
-        verdict = (
-            f"{c['a']} > {c['b']} beyond seed noise"
-            if c.get("significant")
-            else "statistically tied"
-        )
+        lo, hi, confidence = _validated_interval(c)
+        point = _finite_field(c, "point_diff")
+        p = _finite_field(c, "p_value")
+        if not 0.0 <= p <= 1.0 or type(c.get("significant")) is not bool:
+            raise ValueError("comparison requires a probability and boolean significant")
+        expected = "a_better" if lo > 0.0 else "b_better" if hi < 0.0 else "tied"
+        if (c.get("verdict") != expected or c["significant"] != (expected != "tied")
+                or (expected == "a_better" and point <= 0.0)
+                or (expected == "b_better" and point >= 0.0)):
+            raise ValueError("comparison verdict, direction and interval disagree")
+        a, b = _comparison_label(c, "a"), _comparison_label(c, "b")
+        if expected == "a_better":
+            verdict = f"{a} > {b} (CI excludes zero)"
+        elif expected == "b_better":
+            verdict = f"{b} > {a} (CI excludes zero)"
+        else:
+            verdict = "difference not established"
         lines.append(
-            "| {a} | {b} | {diff:+.4f} | [{lo:+.4f}, {hi:+.4f}] | {p:.3f} | {verdict} |".format(
-                a=c.get("a", "?"),
-                b=c.get("b", "?"),
-                diff=float(c.get("point_diff", 0.0)),
-                lo=float(c.get("lo", 0.0)),
-                hi=float(c.get("hi", 0.0)),
-                p=float(c.get("p_value", 1.0)),
-                verdict=verdict,
-            )
+            f"| {a} | {b} | {point:+.4f} | [{lo:+.4f}, {hi:+.4f}] | "
+            f"{100 * confidence:.6g}% | {p:.3g} | {verdict} |"
         )
     return "\n".join(lines)
 

@@ -133,8 +133,23 @@ def test_run_baselines_withholds_incompatible_kernel_confidence():
 def test_absent_confidence_is_not_rendered_as_a_zero_width_interval():
     rows = [{"policy": "x", "deflated_sharpe": 0.5}]
     assert "unavailable" in leaderboard_markdown(rows, show_ci=True)
-    rows[0]["deflated_sharpe_ci"] = {"lo": 0.3, "hi": 0.8}
+    rows[0]["deflated_sharpe_ci"] = {"lo": 0.3, "hi": 0.8, "confidence": 0.9}
     assert "[0.3000, 0.8000]" in leaderboard_markdown(rows, show_ci=True)
+    assert "90%" in leaderboard_markdown(rows, show_ci=True)
+    assert "95%" not in leaderboard_markdown(rows, show_ci=True)
+
+
+@pytest.mark.parametrize("interval", [
+    {"lo": 0.3, "hi": 0.8},
+    {"lo": 0.8, "hi": 0.3, "confidence": 0.9},
+    {"lo": 0.3, "hi": float("nan"), "confidence": 0.9},
+    {"lo": 0.3, "hi": 0.8, "confidence": True},
+    {"lo": -0.3, "hi": 0.8, "confidence": 0.9},
+])
+def test_baseline_renderer_refuses_invalid_confidence(interval):
+    with pytest.raises(ValueError):
+        leaderboard_markdown([{"policy": "x", "deflated_sharpe": 0.5,
+                               "deflated_sharpe_ci": interval}], show_ci=True)
 
 
 @requires_binding
