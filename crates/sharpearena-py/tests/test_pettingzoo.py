@@ -84,6 +84,30 @@ def test_same_seed_agents_see_identical_obs_at_reset():
 
 
 @needs_pz
+@pytest.mark.parametrize("difficulty", ["hard", "extreme"])
+def test_requested_difficulty_reaches_each_native_consumer_and_reset(difficulty):
+    from sharpearena.gym import SharpeArenaEnv
+
+    env = MultiAgentSharpeArenaEnv(n_agents=2, n_symbols=2, n_days=60, distribution_mode=difficulty)
+    for seed in [0, 7, None]:
+        observed, _ = env.reset(seed=seed)
+        resolved = 7 if seed is None else seed
+        reference = SharpeArenaEnv(n_symbols=2, n_days=60, seed=resolved, distribution_mode=difficulty)
+        calm = SharpeArenaEnv(n_symbols=2, n_days=60, seed=resolved, distribution_mode="calm")
+        expected, _ = reference.reset()
+        control, _ = calm.reset()
+        differs = False
+        for _ in range(5):
+            for agent in env.agents:
+                np.testing.assert_array_equal(observed[agent]["closes"], expected["closes"])
+            differs |= not np.array_equal(expected["closes"], control["closes"])
+            observed = env.step({a: np.zeros(2) for a in env.agents})[0]
+            expected = reference.step(np.zeros(2))[0]
+            control = calm.step(np.zeros(2))[0]
+        assert differs, "the paired fixture must distinguish calm from requested stress"
+
+
+@needs_pz
 def test_episode_end_attaches_cross_agent_ranking():
     """At episode end the per-agent info carries the cross-agent deflated-Sharpe
     leaderboard, ranked and reproducible."""

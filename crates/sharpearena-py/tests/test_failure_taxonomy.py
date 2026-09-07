@@ -173,6 +173,39 @@ def test_rollup_empty_is_safe():
     assert all(v == 0 for v in r.counts.values())
 
 
+@pytest.mark.parametrize("returns", [[], [float("nan")], [float("inf")], [float("-inf")], [True], ["0.01"], [1e308, 1e308]])
+def test_missing_or_invalid_returns_never_count_as_clean(returns):
+    assert classify_episode_failure(returns, []).value == "invalid_evidence"
+
+
+def test_failed_and_incomplete_episode_records_remain_in_the_denominator():
+    records = [
+        {"returns": [0.01], "events": [], "status": "completed"},
+        {"status": "failed", "error": "timeout"},
+        {"returns": [float("nan")], "events": []},
+        {"returns": [0.01]},
+        {"returns": [0.01], "events": [], "status": "invented"},
+        {"returns": [0.01], "events": [], "status": "failed"},
+    ]
+    r = rollup_failure_modes(records)
+    assert r.total == 6
+    assert r.clean == 1
+    assert r.failures == 5
+    assert r.clean_rate == pytest.approx(1 / 6)
+    assert r.counts.get("invalid_evidence") == 3
+    assert r.counts.get("execution_failed") == 2
+
+
+def test_protocol_error_is_an_execution_failure_not_a_clean_empty_run():
+    assert classify_episode_failure([], [{"event": "protocol_error"}]).value == "execution_failed"
+    assert classify_episode_failure([0.1], [{"event": "protocol_error"}]).value == "execution_failed"
+
+
+@pytest.mark.parametrize("events", [[None], [{"event": "margin_call", "nav": float("nan")}], [{"event": "target_weights", "weights": [float("inf")]}], [{"stopped_out": "false"}]])
+def test_malformed_event_evidence_never_counts_as_clean(events):
+    assert classify_episode_failure([0.01], events).value == "invalid_evidence"
+
+
 def test_rollup_to_dict_roundtrips_keys():
     r = rollup_failure_modes([FailureMode.CLEAN, FailureMode.BANKRUPT])
     d = r.to_dict()

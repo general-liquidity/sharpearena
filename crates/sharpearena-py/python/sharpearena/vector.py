@@ -44,6 +44,7 @@ except Exception:  # noqa: BLE001
     _AUTORESET_ENUM = {}
 
 from .sharpearena_py import VecTradingEnv
+from ._action_validation import validate_weight_limit, validated_action
 
 _BUY, _SELL, _HOLD = "buy", "sell", "hold"
 
@@ -95,6 +96,7 @@ class SharpeArenaVectorEnv(VectorEnv):
         # forwards the spec value to the vector entry point); the engine already
         # truncates at the window end, so it is an advisory cap, not enforced here.
         del max_episode_steps
+        validate_weight_limit(max_weight, allow_short)
         if mode not in ("train", "eval"):
             raise ValueError("mode must be 'train' or 'eval'")
         if seeds is None:
@@ -193,7 +195,7 @@ class SharpeArenaVectorEnv(VectorEnv):
         }
 
     def _actions_to_decisions_json(self, actions: np.ndarray) -> str:
-        actions = np.asarray(actions, dtype=np.float64).reshape(self.num_envs, -1)
+        actions = validated_action(actions, self.action_space)
         decisions = [
             {
                 "orders": [
@@ -216,6 +218,7 @@ class SharpeArenaVectorEnv(VectorEnv):
     def reset(
         self, *, seed: Optional[int] = None, options: Optional[dict] = None
     ) -> tuple[dict[str, np.ndarray], dict]:
+        self._pending_actions = None
         out = json.loads(self._env.reset_batch())
         obs = self._stack_obs(out["observations"])
         infos = {
@@ -230,7 +233,7 @@ class SharpeArenaVectorEnv(VectorEnv):
         ``step_async`` is still pending (call ``step_wait`` first)."""
         if self._pending_actions is not None:
             raise RuntimeError("step_async called twice without an intervening step_wait")
-        self._pending_actions = actions
+        self._pending_actions = validated_action(actions, self.action_space)
 
     def step_wait(
         self,

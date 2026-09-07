@@ -8,6 +8,7 @@ distinct from the competition env in ``test_pettingzoo.py``.
 """
 
 import importlib.util
+import json
 
 import numpy as np
 import pytest
@@ -18,6 +19,50 @@ from sharpearena.market_env import EndogenousMarketEnv, make_aec_env
 
 _HAS_PETTINGZOO = importlib.util.find_spec("pettingzoo") is not None
 needs_pz = pytest.mark.skipif(not _HAS_PETTINGZOO, reason="pettingzoo not installed")
+
+
+@pytest.mark.parametrize("prior_steps", [3, 100])
+def test_native_reset_restores_every_mutable_market_component(prior_steps):
+    from sharpearena.sharpearena_py import PyMarketClearing
+
+    def fresh():
+        return PyMarketClearing(n_symbols=2, n_days=35, n_agents=2, seed=7,
+                                distribution_mode="extreme", richness="data_rich", vol_scale=3.0)
+
+    market, reference = fresh(), fresh()
+    initial = market.reset_market()
+    reference.reset_market()
+    buy = json.dumps([[0.6, 0.2], [-0.2, 0.1]])
+    flat = json.dumps([[0.0, 0.0], [0.0, 0.0]])
+    moved = False
+    for t in range(prior_steps):
+        result = json.loads(market.step_market(buy if t % 2 == 0 else flat))
+        moved |= any(nav != 1.0 for nav in result["navs"])
+        if market.done:
+            break
+    assert moved, "exercise holdings, impact and reward history before reset"
+    assert market.done == (prior_steps == 100)
+    assert market.reset_market() == initial
+    assert not market.done
+    for t in range(100):
+        action = buy if t % 2 == 0 else flat
+        assert market.step_market(action) == reference.step_market(action)
+        assert market.done == reference.done
+        if market.done:
+            break
+    assert market.done
+
+
+@needs_pz
+def test_python_market_reset_without_seed_replays_initial_state():
+    env = EndogenousMarketEnv(n_symbols=2, n_days=35, n_agents=2, seed=7)
+    initial, _ = env.reset()
+    for _ in range(3):
+        env.step({agent: np.array([0.5, 0.1]) for agent in env.agents})
+    replay, _ = env.reset()
+    for agent in initial:
+        for key in initial[agent]:
+            np.testing.assert_array_equal(replay[agent][key], initial[agent][key])
 
 
 def _make(n_agents=3, n_symbols=2, n_days=40, seed=0, **kwargs):

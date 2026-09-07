@@ -111,6 +111,7 @@ class LOBMarketEnv(ParallelEnv):  # type: ignore[misc]
         self._step = 0
         self._inventory = {a: 0 for a in self.agents}
         self._cash = {a: 0.0 for a in self.agents}
+        self._prev_equity = {a: 0.0 for a in self.agents}
         ladder = json.loads(self._book.ladder())
         obs = {a: self._obs(a, ladder) for a in self.agents}
         infos = {a: {} for a in self.agents}

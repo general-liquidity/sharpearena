@@ -490,12 +490,14 @@ def run_baselines(
     ``n_trials`` defaults to the number of baseline policies — the honest declared
     in-sample search breadth, which deflates the Sharpe for multiple-comparison luck.
 
-    When ``confidence`` is set (default), each row also carries a seed-paired bootstrap CI
-    on the deflated Sharpe (``deflated_sharpe_ci``) and the per-seed return series
-    (``per_seed_returns``) that a paired significance test consumes — see
-    :func:`~sharpearena.confidence.pairwise_significance`. The CI's ``point`` equals the row's
-    ``deflated_sharpe`` because the deflation footprint is matched. ``n_boot`` /
-    ``resample_seed`` / ``alpha`` tune the bootstrap and are deterministic in the seed.
+    With ``confidence=True``, retain the per-seed returns and the corrected Arena
+    estimate as ``arena_deflated_sharpe_ci``. The packaged scorer still pins Bench
+    0.15.0, whose standardized-moment convention differs. Consequently the official
+    row's ``deflated_sharpe_ci`` is ``None`` and ``confidence_status`` records the
+    incompatibility. Even coincident point estimates would not establish estimator
+    compatibility. A coordinated dependency upgrade is required before attaching
+    that interval to the scoring-kernel value. The standalone Arena diagnostic is
+    not used to alter this row's score or pass rate.
 
     Pass a dict as ``readback`` to collect the per-seed effective configuration read back
     out of each environment this function builds (see
@@ -505,7 +507,8 @@ def run_baselines(
     scored rather than after it is published.
 
     Returns one row per policy: ``{policy, deflated_sharpe, passed_k_rate, mean_return}``
-    plus, when ``confidence`` is set, ``{deflated_sharpe_ci, per_seed_returns}``.
+    With confidence enabled, also returns ``deflated_sharpe_ci`` (unavailable),
+    ``confidence_status``, ``arena_deflated_sharpe_ci`` and ``per_seed_returns``.
     """
     seeds = list(seeds)
     trials = len(BASELINE_POLICIES) if n_trials is None else int(n_trials)
@@ -517,14 +520,17 @@ def run_baselines(
         for s in seeds:
             policy = factory()
             env = _make_env(n_symbols, n_days, s, distribution_mode)
+            effective = check_env_effective_config(
+                env,
+                seed=s,
+                n_symbols=n_symbols,
+                n_days=n_days,
+                distribution_mode=distribution_mode,
+            )
             if readback is not None and s not in readback:
-                readback[s] = check_env_effective_config(
-                    env,
-                    seed=s,
-                    n_symbols=n_symbols,
-                    n_days=n_days,
-                    distribution_mode=distribution_mode,
-                )
+                # Deduplicate stored evidence, never the validation of a newly
+                # constructed consumer (including a repeated seed or call).
+                readback[s] = effective
             returns = _rollout_returns(env, policy, max_steps)
             per_seed.append(returns)
             pooled.extend(returns)
@@ -539,13 +545,15 @@ def run_baselines(
             "mean_return": float(np.mean(pooled)) if pooled else 0.0,
         }
         if confidence:
-            row["deflated_sharpe_ci"] = deflated_sharpe_ci(
+            row["arena_deflated_sharpe_ci"] = deflated_sharpe_ci(
                 per_seed,
                 trials,
                 n_boot=n_boot,
                 resample_seed=resample_seed,
                 alpha=alpha,
             )
+            row["deflated_sharpe_ci"] = None
+            row["confidence_status"] = "unavailable_scoring_kernel_mismatch"
             row["per_seed_returns"] = per_seed
         rows.append(row)
     return rows
@@ -578,12 +586,12 @@ def leaderboard_markdown(rows: Sequence[dict], *, show_ci: bool = False) -> str:
             "{:.4f}".format(float(r.get("deflated_sharpe", 0.0))),
         ]
         if show_ci:
-            ci = r.get("deflated_sharpe_ci") or {}
-            cells.append(
-                "[{lo:.4f}, {hi:.4f}]".format(
-                    lo=float(ci.get("lo", 0.0)), hi=float(ci.get("hi", 0.0))
-                )
-            )
+            ci = r.get("deflated_sharpe_ci")
+            if ci is None:
+                cells.append("unavailable")
+            else:
+                cells.append("[{lo:.4f}, {hi:.4f}]".format(
+                    lo=float(ci["lo"]), hi=float(ci["hi"])))
         cells.append("{:.2f}".format(float(r.get("passed_k_rate", 0.0))))
         cells.append("{:.6f}".format(float(r.get("mean_return", 0.0))))
         lines.append("| " + " | ".join(cells) + " |")

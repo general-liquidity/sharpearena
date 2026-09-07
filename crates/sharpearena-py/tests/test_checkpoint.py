@@ -88,6 +88,41 @@ def test_restore_resets_recorded_prefix():
     assert len(again.actions) == 3
 
 
+@pytest.mark.parametrize("native", [False, True])
+def test_checkpoint_preserves_every_scenario_control(native):
+    controls = dict(vol_clustering=0.7, jump_burst_probability=0.5,
+                    jump_burst_persistence=0.8, jump_burst_size=0.12)
+    env = CheckpointableEnv(SharpeArenaEnv(
+        n_symbols=2, n_days=80, seed=17, distribution_mode="extreme", **controls))
+    env.reset()
+    action = np.array([0.3, 0.2], dtype=np.float32)
+    _roll(env, action, 3)
+    snap = env.clone_state(native=native)
+    expected = _roll(env, action, 10)
+    fork = env.branch(snap)
+    actual = _roll(fork, action, 10)
+    assert len(actual) == len(expected) == 10
+    assert all(r1 == r2 and _obs_equal(o1, o2)
+               for (o1, r1), (o2, r2) in zip(expected, actual))
+    assert all(snap.params[key] == value for key, value in controls.items())
+
+
+def test_replay_checkpoint_after_native_restore_keeps_the_entire_prefix():
+    env = _make()
+    action = _equal_weight(env)
+    _roll(env, action, 4)
+    snap = env.clone_state(native=True)
+    env.restore_state(snap)
+    _roll(env, action, 2)
+    second = env.clone_state()
+    assert len(second.actions) == second.step == 6
+    expected = _roll(env, action, 5)
+    actual = _roll(env.branch(second), action, 5)
+    assert len(actual) == len(expected) == 5
+    assert all(r1 == r2 and _obs_equal(o1, o2)
+               for (o1, r1), (o2, r2) in zip(expected, actual))
+
+
 # -- branch ------------------------------------------------------------------
 
 

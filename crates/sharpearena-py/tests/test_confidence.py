@@ -1,7 +1,7 @@
 """Tests for the leaderboard statistical-confidence layer (bootstrap CI + paired A/B).
 
-These exercise the real native core: the seed-paired bootstrap CI must bracket the same
-point deflated Sharpe ``score_run`` reports and widen for a noisier/shorter track, and the
+These exercise the real native core: the seed-paired bootstrap CI uses Arena's corrected
+moment convention and widens for a noisier/shorter track, and the
 paired-difference test must flag two close entries as tied while separating a clear skill
 gap. When the binding is absent the file still imports and the pure-Python rendering is
 checked directly.
@@ -52,14 +52,15 @@ def _sharpe_series(target: float, n: int, phase: float) -> list[float]:
 
 
 @requires_binding
-def test_ci_point_matches_score_run_and_brackets():
+def test_strong_positive_fixture_saturates_both_estimators():
     per_seed = [_steady_seed(s, 120) for s in range(8)]
     pooled = [x for s in per_seed for x in s]
     declared = 6
     point = json.loads(score_run(pooled, declared))["deflated_sharpe"]
     ci = deflated_sharpe_ci(per_seed, declared)
-    # The interval is built around the very number the leaderboard ranks on.
-    assert np.isclose(ci["point"], point)
+    # Saturation is not cross-kernel parity evidence. The baseline test uses
+    # an unsaturated fixture to expose the known old/new moment mismatch.
+    assert ci["point"] == point == 1.0
     assert ci["lo"] - 1e-9 <= ci["point"] <= ci["hi"] + 1e-9
     assert ci["width"] >= 0.0
     assert ci["confidence"] == pytest.approx(0.95)

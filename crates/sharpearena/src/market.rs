@@ -552,6 +552,43 @@ impl MarketClearing {
         }
     }
 
+    /// Reset the episode over the same immutable exogenous path and disclosure.
+    /// All book, impact, cursor and volatility state is restored, including after
+    /// a terminal step. This does not regenerate or clone the full input dataset.
+    pub fn reset(&mut self) {
+        self.cursor = self.start_bar;
+        self.impact_mult.fill(1.0);
+        self.prev_mid = self
+            .exo
+            .iter()
+            .map(|series| series[self.start_bar.min(series.len() - 1)])
+            .collect();
+        self.cleared_history = self
+            .exo
+            .iter()
+            .map(|series| series[..self.start_bar.min(series.len())].to_vec())
+            .collect();
+        self.vol = self
+            .cleared_history
+            .iter()
+            .map(|series| {
+                let mut tracker = VolTracker::new();
+                for pair in series.windows(2) {
+                    if pair[0].abs() > EPS {
+                        tracker.push((pair[1] - pair[0]) / pair[0]);
+                    }
+                }
+                tracker
+            })
+            .collect();
+        for book in &mut self.agents {
+            book.cash = self.capital;
+            book.shares.fill(0.0);
+            book.cost_basis.fill(0.0);
+            book.prev_weight.fill(0.0);
+        }
+    }
+
     /// The observation-richness disclosure this market surfaces (the information-poverty
     /// difficulty axis).
     pub fn richness(&self) -> ObservationRichness {
@@ -1094,6 +1131,44 @@ mod tests {
     /// A flat-everywhere order block (`n_agents × n_sym`, all weight `w`).
     fn block(n_agents: usize, n_sym: usize, w: f64) -> Vec<Vec<f64>> {
         vec![vec![w; n_sym]; n_agents]
+    }
+
+    #[test]
+    fn reset_replays_book_impact_volatility_and_terminal_state() {
+        let data = Dataset::synthetic(2, 40, 7);
+        let params = MarketParams {
+            vol_scale: 3.0,
+            ..MarketParams::default()
+        };
+        let orders = vec![vec![0.6, 0.2], vec![-0.2, 0.1]];
+        for prior_steps in [3, 40] {
+            let mut market = MarketClearing::from_dataset(&data, 2, 1.0);
+            let mut reference = MarketClearing::from_dataset(&data, 2, 1.0);
+            let input_address = market.exo[0].as_ptr();
+            for _ in 0..prior_steps {
+                market.step(&orders, &params);
+                if market.is_done() {
+                    break;
+                }
+            }
+            assert!(market.agents.iter().any(|book| book.cash != 1.0));
+            assert_eq!(market.is_done(), prior_steps == 40);
+            market.reset();
+            assert_eq!(
+                market.exo[0].as_ptr(),
+                input_address,
+                "reset must retain the immutable input allocation"
+            );
+            assert_eq!(market.cursor(), reference.cursor());
+            assert!(!market.is_done());
+            while !market.is_done() {
+                assert_eq!(
+                    serde_json::to_string(&market.step(&orders, &params)).unwrap(),
+                    serde_json::to_string(&reference.step(&orders, &params)).unwrap()
+                );
+            }
+            assert!(reference.is_done());
+        }
     }
 
     #[test]

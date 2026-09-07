@@ -107,19 +107,34 @@ def test_run_baselines_returns_scored_rows():
 
 
 @requires_binding
-def test_run_baselines_attaches_confidence_by_default():
+def test_run_baselines_withholds_incompatible_kernel_confidence():
     rows = run_baselines(n_symbols=3, n_days=40, seeds=range(4))
+    disagrees = []
     for r in rows:
-        assert "deflated_sharpe_ci" in r
+        assert r["deflated_sharpe_ci"] is None
+        assert r["confidence_status"] == "unavailable_scoring_kernel_mismatch"
         assert "per_seed_returns" in r
-        ci = r["deflated_sharpe_ci"]
-        # The CI point is the same deflated Sharpe the row (and score_run) reports.
-        assert np.isclose(ci["point"], r["deflated_sharpe"])
-        # The interval brackets that point and reports a non-negative width.
+        ci = r["arena_deflated_sharpe_ci"]
+        from sharpearena.confidence import deflated_sharpe_ci
+        assert ci == deflated_sharpe_ci(r["per_seed_returns"], len(BASELINE_POLICIES))
+        # Do not widen the former parity tolerance: prove these are currently
+        # different estimators and retain, but do not mislabel, the diagnostic.
+        disagrees.append(not np.isclose(ci["point"], r["deflated_sharpe"]))
         assert ci["lo"] - 1e-9 <= ci["point"] <= ci["hi"] + 1e-9
         assert ci["width"] >= 0.0
         # One return series per seed was retained for the paired test.
         assert len(r["per_seed_returns"]) == 4
+    assert any(disagrees), "the fixture must actually expose the estimator mismatch"
+    rendered = leaderboard_markdown(rows, show_ci=True)
+    assert rendered.count("unavailable") == len(rows)
+    assert "[0.0000, 0.0000]" not in rendered
+
+
+def test_absent_confidence_is_not_rendered_as_a_zero_width_interval():
+    rows = [{"policy": "x", "deflated_sharpe": 0.5}]
+    assert "unavailable" in leaderboard_markdown(rows, show_ci=True)
+    rows[0]["deflated_sharpe_ci"] = {"lo": 0.3, "hi": 0.8}
+    assert "[0.3000, 0.8000]" in leaderboard_markdown(rows, show_ci=True)
 
 
 @requires_binding

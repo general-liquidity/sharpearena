@@ -1,5 +1,9 @@
 """The exact-output inversion result, and the deliberate observation boundary."""
 
+import math
+
+import pytest
+
 from sharpearena.splitmix_inversion import (
     candidate_states_from_unit,
     mix64,
@@ -27,3 +31,17 @@ def test_candidate_states_reproduce_the_observed_upper_53_bits():
     unit = (output >> 11) / float(1 << 53)
     expected = output >> 11
     assert all(mix64(s) >> 11 == expected for s in candidate_states_from_unit(unit))
+
+
+@pytest.mark.parametrize("unit", [2.0**-60, math.nextafter(0.0, 1.0), 0.1])
+def test_off_grid_units_have_no_consistent_generator_state(unit):
+    with pytest.raises(ValueError, match="representable"):
+        candidate_states_from_unit(unit)
+
+
+@pytest.mark.parametrize("numerator", [0, 1, (1 << 53) - 1])
+def test_exact_grid_boundaries_roundtrip_every_candidate(numerator):
+    unit = numerator / (1 << 53)
+    states = candidate_states_from_unit(unit)
+    assert len(set(states)) == 2048
+    assert all((mix64(s) >> 11) / (1 << 53) == unit for s in states)

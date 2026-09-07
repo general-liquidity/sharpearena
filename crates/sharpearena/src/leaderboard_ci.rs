@@ -62,13 +62,19 @@ fn std_dev(xs: &[f64]) -> f64 {
     (ss / (n as f64 - 1.0)).sqrt()
 }
 
+// Empirical standardized moments use the same n-normalized second moment as
+// their numerator. Sharpe volatility above deliberately uses n-1 instead.
+fn population_std_dev(xs: &[f64], center: f64) -> f64 {
+    (xs.iter().map(|x| (x - center).powi(2)).sum::<f64>() / xs.len() as f64).sqrt()
+}
+
 fn skewness(xs: &[f64]) -> f64 {
     let n = xs.len();
-    if n < 3 {
+    if n < 2 {
         return 0.0;
     }
     let m = mean(xs);
-    let s = std_dev(xs);
+    let s = population_std_dev(xs, m);
     if s == 0.0 {
         return 0.0;
     }
@@ -78,11 +84,11 @@ fn skewness(xs: &[f64]) -> f64 {
 
 fn kurtosis(xs: &[f64]) -> f64 {
     let n = xs.len();
-    if n < 4 {
+    if n < 2 {
         return 3.0;
     }
     let m = mean(xs);
-    let s = std_dev(xs);
+    let s = population_std_dev(xs, m);
     if s == 0.0 {
         return 3.0;
     }
@@ -463,6 +469,27 @@ fn verdict_for(point_diff: f64, significant: bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn standardized_moments_use_one_population_normalization() {
+        // Independent exact central moments also pinned by sharpebench-stats:
+        // m2=3/16, m3=3/32, m4=21/256 for [0,0,0,1].
+        let asymmetric = [0.0, 0.0, 0.0, 1.0];
+        assert!((skewness(&asymmetric) - 2.0 / 3.0_f64.sqrt()).abs() < 1e-12);
+        assert!((kurtosis(&asymmetric) - 7.0 / 3.0).abs() < 1e-12);
+        assert!((kurtosis(&[1.0, 2.0, 3.0, 4.0]) - 41.0 / 25.0).abs() < 1e-12);
+        assert!(skewness(&[1.0, 2.0, 3.0, 4.0]).abs() < 1e-12);
+    }
+
+    #[test]
+    fn standardized_moments_are_defined_for_small_nonconstant_samples() {
+        assert!(skewness(&[1.0, 2.0]).abs() < 1e-12);
+        assert!((kurtosis(&[1.0, 2.0]) - 1.0).abs() < 1e-12);
+        assert!((kurtosis(&[1.0, 2.0, 3.0]) - 1.5).abs() < 1e-12);
+        assert!((skewness(&[0.0, 0.0, 1.0]) - 1.0 / 2.0_f64.sqrt()).abs() < 1e-12);
+        assert!((kurtosis(&[10.0, 10.0, 10.0, 8.0]) - 7.0 / 3.0).abs() < 1e-12);
+        assert!((skewness(&[10.0, 10.0, 10.0, 8.0]) + 2.0 / 3.0_f64.sqrt()).abs() < 1e-12);
+    }
 
     // A long, low-vol, positive-drift track: a steady deterministic wobble around a
     // small positive mean. Many such seeds ⇒ a stable, high deflated Sharpe.

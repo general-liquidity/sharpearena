@@ -16,6 +16,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+from confidence_support import require_scoring_intervals
 
 PAPER = Path(__file__).resolve().parents[1]
 EVIDENCE = PAPER / "evidence"
@@ -37,6 +38,8 @@ def f1() -> None:
     if data is None:
         return
     tiers = data["tiers"]
+    for tier in TIERS:
+        require_scoring_intervals(tiers[tier]["rows"])
     policies = [r["policy"] for r in tiers[TIERS[0]]["rows"]]
     fig, ax = plt.subplots(figsize=(8, 4))
     width = 0.8 / len(TIERS)

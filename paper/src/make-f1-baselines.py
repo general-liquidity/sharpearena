@@ -19,6 +19,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 import sharpearena
+from confidence_support import require_scoring_intervals
 
 PAPER = Path(__file__).resolve().parents[1]
 EVIDENCE = PAPER / "evidence"
@@ -65,6 +66,8 @@ def main() -> None:
             resample_seed=RESAMPLE_SEED,
             readback=readback,
         )
+        # No evidence artifact is published until every scoring interval exists.
+        require_scoring_intervals(rows)
         tiers[tier] = {
             "rows": rows,
             "leaderboard_markdown": sharpearena.leaderboard_markdown(rows, show_ci=True),

@@ -11,8 +11,9 @@ and diagnostic only:
   is computed from closes observed up to that bar only.
 
 * :func:`radar_score` collapses a metric panel onto two bounded axes — Profitability
-  and Risk-Control — anchored so the do-nothing ``FlatPolicy`` maps to ``0`` and the
-  ``EqualWeightLong`` baseline maps to ``base``. The squashing is a deterministic
+  and Risk-Control. Flat profitability maps to ``0``; zero drawdown maps to the
+  best risk score, ``scale``. A usable ``EqualWeightLong`` reference maps to
+  ``base`` on both axes. The squashing is a deterministic
   ``tanh`` (logistic-family CDF approximation), so the score is reproducible and
   indicative, not a calibrated probability.
 """
@@ -130,9 +131,13 @@ def _profitability_raw(metrics: dict) -> float:
     return float(metrics.get(_PROFIT_KEY, metrics.get("mean_return", 0.0)))
 
 
-def _risk_control_raw(metrics: dict) -> float:
-    # Less drawdown is better, so negate: higher raw == better risk control.
-    return -float(metrics.get(_RISK_KEY, 0.0))
+def _drawdown(metrics: dict) -> float:
+    if _RISK_KEY not in metrics:
+        raise ValueError("radar requires observed max_drawdown for candidate and base anchor")
+    value = float(metrics[_RISK_KEY])
+    if not math.isfinite(value) or value < 0.0:
+        raise ValueError("max_drawdown must be finite and nonnegative")
+    return value
 
 
 def _anchor_axis(
@@ -146,10 +151,9 @@ def _anchor_axis(
     ``[0, scale]``; indicative, not calibrated.
     """
     denom = base_raw - zero
-    if abs(denom) < 1e-12:
-        n = 0.0 if value <= zero else 1.0
-    else:
-        n = (value - zero) / denom
+    if not all(math.isfinite(x) for x in (value, zero, base_raw, denom)) or denom <= 0.0:
+        raise ValueError("radar anchor span must be finite and strictly positive")
+    n = (value - zero) / denom
     k = math.atanh(min(max(base / scale, 1e-9), 1.0 - 1e-9))
     squashed = math.tanh(k * n)
     return float(min(max(squashed * scale, 0.0), scale))
@@ -163,14 +167,20 @@ def radar_score(
     base: float = 50.0,
     scale: float = 100.0,
 ) -> dict:
-    """Two-axis (Profitability, Risk-Control) radar score anchored on flat=0, base=base.
+    """Two-axis diagnostic with higher scores meaning better performance/control.
 
-    ``zero_anchor`` is the metric panel of ``FlatPolicy`` (maps to ``0`` on both axes) and
-    ``base_anchor`` that of ``EqualWeightLong`` (maps to ``base``). Profitability reads
-    ``deflated_sharpe`` (falling back to ``mean_return``); Risk-Control reads the inverted
-    ``max_drawdown``. ``overall`` is the mean of the two axes. All values are bounded to
-    ``[0, scale]``.
+    Profitability maps ``zero_anchor`` to zero and ``base_anchor`` to ``base``.
+    Risk maps zero drawdown to ``scale`` and the base's positive drawdown to
+    ``base``; more drawdown can never improve it. Requiring flat to be zero on
+    both axes would contradict that direction. Missing risk observations or a
+    nonpositive anchor span raise ``ValueError``, not a fabricated panel.
+    ``overall`` is the diagnostic mean of the two axes, each in ``[0, scale]``.
+    It is not a rank-eligibility rule or a calibrated probability.
     """
+    if not math.isfinite(base) or not math.isfinite(scale) or not 0.0 < base < scale:
+        raise ValueError("radar requires finite 0 < base < scale")
+    candidate_drawdown = _drawdown(metrics)
+    base_drawdown = _drawdown(base_anchor)
     profit = _anchor_axis(
         _profitability_raw(metrics),
         _profitability_raw(zero_anchor),
@@ -178,11 +188,11 @@ def radar_score(
         base=base,
         scale=scale,
     )
-    risk = _anchor_axis(
-        _risk_control_raw(metrics),
-        _risk_control_raw(zero_anchor),
-        _risk_control_raw(base_anchor),
-        base=base,
+    risk = scale - _anchor_axis(
+        candidate_drawdown,
+        0.0,
+        base_drawdown,
+        base=scale - base,
         scale=scale,
     )
     return {

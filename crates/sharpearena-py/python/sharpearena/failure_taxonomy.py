@@ -34,6 +34,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+import math
+from numbers import Real
 from typing import Any, Iterable, Optional, Sequence, Union
 
 from .mandate import Mandate, mandate_breach, validate_mandate
@@ -49,6 +51,36 @@ class FailureMode(str, Enum):
     MANDATE_STRUCTURAL = "mandate_structural"
     MANDATE_DRAWDOWN = "mandate_drawdown"
     MANDATE_INVENTORY = "mandate_inventory"
+    INVALID_EVIDENCE = "invalid_evidence"
+    EXECUTION_FAILED = "execution_failed"
+
+
+def _finite_real(value: Any) -> bool:
+    if not isinstance(value, Real) or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
+def _valid_events(events: list[Any]) -> bool:
+    for event in events:
+        if not isinstance(event, dict):
+            return False
+        if "stopped_out" in event and not isinstance(event["stopped_out"], bool):
+            return False
+        name = event.get("event")
+        if name is not None and not isinstance(name, str):
+            return False
+        required = {"margin_call": "nav", "cascade_impact": "mark_drop"}.get(name)
+        if required is not None and not _finite_real(event.get(required)):
+            return False
+        if name == "target_weights":
+            weights = event.get("weights")
+            if not isinstance(weights, (list, tuple)) or not weights or not all(map(_finite_real, weights)):
+                return False
+    return True
 
 
 def _nav_bankrupt(returns: Sequence[float]) -> bool:
@@ -152,8 +184,38 @@ def classify_episode_failure(
     *survived* cascade (:attr:`FailureMode.STOPPED_OUT`) — which outranks a mandate-policy
     breach (:attr:`FailureMode.MANDATE_STRUCTURAL` / :attr:`FailureMode.MANDATE_DRAWDOWN` /
     :attr:`FailureMode.MANDATE_INVENTORY`). An episode tripping none of these is
-    :attr:`FailureMode.CLEAN`. Deterministic and pure; safe on empty inputs.
+    :attr:`FailureMode.CLEAN`. Invalid/missing evidence is classified separately
+    as :attr:`FailureMode.INVALID_EVIDENCE`; explicit protocol/transport failures
+    as :attr:`FailureMode.EXECUTION_FAILED`. Neither can count as a clean episode.
+    These dispositions do not attribute an infrastructure failure to an agent.
     """
+    if not _finite_real(mandate_tol) or mandate_tol < 0.0:
+        raise ValueError("mandate_tol must be finite and nonnegative")
+    if isinstance(returns, (str, bytes, dict)) or isinstance(events, (str, bytes, dict)):
+        return FailureMode.INVALID_EVIDENCE
+    try:
+        returns, events = list(returns), list(events)
+    except TypeError:
+        return FailureMode.INVALID_EVIDENCE
+    if not _valid_events(events) or not all(map(_finite_real, returns)):
+        return FailureMode.INVALID_EVIDENCE
+    if any(e.get("event") in {"protocol_error", "transport_error", "agent_error", "infrastructure_error"} for e in events):
+        return FailureMode.EXECUTION_FAILED
+    if not returns:
+        return FailureMode.INVALID_EVIDENCE
+    nav = 1.0
+    for r in returns:
+        nav *= 1.0 + r
+        if not math.isfinite(nav):
+            return FailureMode.INVALID_EVIDENCE
+        if nav <= 0.0:
+            break
+    if mandate is not None:
+        try:
+            if not validate_mandate(mandate):
+                return FailureMode.INVALID_EVIDENCE
+        except (TypeError, ValueError):
+            return FailureMode.INVALID_EVIDENCE
     cascade = _cascade_outcome(events)
     if cascade == "wiped":
         return FailureMode.CASCADE_WIPED
@@ -204,9 +266,18 @@ def _as_mode(item: Any, *, mandate_tol: float) -> FailureMode:
     if isinstance(item, str):
         return FailureMode(item)
     if isinstance(item, dict):
+        status = item.get("status")
+        if status is not None and not isinstance(status, str):
+            return FailureMode.INVALID_EVIDENCE
+        if status in {"failed", "error", "timeout", "aborted", "refused", "incomplete"} or item.get("error") or item.get("failure"):
+            return FailureMode.EXECUTION_FAILED
+        if status is not None and status not in {"completed", "complete", "ok", "success"}:
+            return FailureMode.INVALID_EVIDENCE
+        if "returns" not in item or "events" not in item:
+            return FailureMode.INVALID_EVIDENCE
         return classify_episode_failure(
-            item.get("returns", []),
-            item.get("events", []),
+            item["returns"],
+            item["events"],
             item.get("mandate"),
             mandate_tol=mandate_tol,
         )
