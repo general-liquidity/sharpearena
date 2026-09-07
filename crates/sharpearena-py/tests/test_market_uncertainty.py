@@ -108,6 +108,35 @@ def test_invalid_uncertainty_inputs_raise_valueerror():
         m.set_uncertainty(eta_radius=-1.0)
 
 
+@pytest.mark.parametrize("name", ["lambda_radius", "eta_radius"])
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_nonfinite_radius_is_rejected_without_changing_installed_set(name, value):
+    with pytest.raises(ValueError, match="finite and non-negative"):
+        _market(**{name: value})
+    m = _market(lambda_radius=0.2, eta_radius=0.1, uncertainty_correlation=-0.9)
+    previous = m.uncertainty
+    with pytest.raises(ValueError, match="finite and non-negative"):
+        m.set_uncertainty(**{name: value})
+    assert m.uncertainty == previous
+
+
+def test_balanced_order_flow_uses_feasible_constrained_coefficients():
+    m = _market(lambda_radius=0.2, eta_radius=0.1, uncertainty_correlation=-0.9)
+    # Opposite signed orders make Q^2 zero, while sum(q_i^2) is positive.
+    # The unconstrained ellipse point has negative lambda. Simply flooring it
+    # yields a nonnegative but infeasible point, which a sign-only test misses.
+    result = json.loads(m.step_market(json.dumps([[0.5, 0.5], [-0.5, -0.5]])))
+    assert len(result["robust_impact"]) == N_SYMBOLS
+    for coefficients in result["robust_impact"]:
+        assert coefficients["lambda"] == 0.0
+        assert coefficients["eta"] == pytest.approx(
+            0.05 + 0.1 * (0.45 + np.sqrt(0.19 * 0.75)), abs=1e-14
+        )
+        u = (coefficients["lambda"] - 0.1) / 0.2
+        v = (coefficients["eta"] - 0.05) / 0.1
+        assert (u * u + 1.8 * u * v + v * v) / 0.19 <= 1.0 + 1e-12
+
+
 # ---------------------------------------------------------------------------
 # The kwarg normalizer + the EndogenousMarketEnv threading
 # ---------------------------------------------------------------------------

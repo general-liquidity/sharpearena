@@ -1014,10 +1014,10 @@ fn build_uncertainty(
     }
     let a = lambda_radius.unwrap_or(0.0);
     let b = eta_radius.unwrap_or(0.0);
-    if a < 0.0 || b < 0.0 {
+    if !a.is_finite() || !b.is_finite() || a < 0.0 || b < 0.0 {
         return Err(engine_err(
             CODE_INVALID_ARGUMENT,
-            "uncertainty radii must be non-negative",
+            "uncertainty radii must be finite and non-negative",
         ));
     }
     if !(-1.0..=1.0).contains(&correlation) {

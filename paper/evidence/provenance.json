@@ -216,7 +216,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "efb97be98d30a2793081e49ecef25aefeadd3f71",
+  "generated_at_head": "6c2d622a5ce5db7406d22d5c17f1e1de92f3c7e8",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -270,7 +270,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/_spec_hash.py",
-      "sha256": "69db7f836adcf9aa2b3a52ea397dedb46a828d6d5c7d51ad6981828e7d52d946"
+      "sha256": "8b0b78e0b55376ba7506c5d7f56962410484b6d79133f08b955c5d1063278200"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/adverse_selection.py",
@@ -538,7 +538,7 @@
     },
     {
       "path": "crates/sharpearena-py/src/lib.rs",
-      "sha256": "fd62a3d8c5e91d2c51d3055cdca8a63b195e4dbefd540837bb1c52645f14f915"
+      "sha256": "ed4631d962320e82cddad31db30946af1f46a5b59a90ac36adb41b4e2600b303"
     },
     {
       "path": "crates/sharpearena-wasm/Cargo.toml",
@@ -602,7 +602,7 @@
     },
     {
       "path": "crates/sharpearena/src/market.rs",
-      "sha256": "c5a3ac2dcd3d2973e25ee181dcbebcfa6f752ad61c7d67843f31da70fb3a19fa"
+      "sha256": "a6a6455934650d637d1c2256b1b19b4ef2dad5658364a0977c407f960abdf9f3"
     },
     {
       "path": "crates/sharpearena/src/richness.rs",
@@ -808,6 +808,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "94ccd9bbf271b94ad003cee5259b8df6c674b02a730023c2456086e8bf2cf413",
+  "source_snapshot_sha256": "0c9681c1e33871ef0aa41bf779b5a4fb38abc7f537a4c0026f469083bed64b69",
   "validator": "paper/src/check-provenance.py"
 }
