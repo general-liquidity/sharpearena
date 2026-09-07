@@ -17,10 +17,13 @@ Machine Learning, Ch. 19, A/B testing under sampling uncertainty):
   neighbouring pair is labelled ``a_better`` / ``tied`` and the ranking states which gaps are
   real and which are within seed noise.
 
-The heavy lifting is the self-contained Rust core (no ``sharpebench-stats`` dependency); the
-deflation footprint is folded on the Rust side so a CI here brackets the same point deflated
-Sharpe :func:`~sharpearena.score_run` reports. Everything is deterministic in
-``resample_seed``, so a confidence report replays bit-for-bit.
+The heavy lifting is the self-contained Rust core (no ``sharpebench-stats`` dependency).
+It uses corrected empirical population standardized moments. The packaged ``score_run``
+still consumes Bench 0.15.0 with an older convention: these intervals must not be
+presented as confidence intervals for that scorer, even where rounded point estimates
+coincide. ``run_baselines`` retains them as separately named Arena diagnostics and
+withholds the scoring-kernel interval pending a coordinated dependency upgrade.
+Everything is deterministic in ``resample_seed``.
 """
 
 from __future__ import annotations
@@ -51,8 +54,9 @@ def deflated_sharpe_ci(
     """Seed-paired percentile bootstrap CI on an entry's deflated Sharpe.
 
     ``per_seed_returns`` is one per-bar return series per held-out seed. ``n_trials`` is the
-    entry's *declared* in-sample search budget (folded onto the kernel's baseline footprint
-    Rust-side, so the CI brackets the ``score_run`` point). Returns
+    entry's *declared* in-sample search budget, folded onto the configured baseline
+    footprint Rust-side. This is the corrected Arena estimator, not the older pinned
+    ``score_run`` estimator. Returns
     ``{point, lo, hi, width, confidence, n_boot}``.
     """
     rows = [list(map(float, r)) for r in per_seed_returns]

@@ -11,6 +11,7 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 ## [Unreleased]
 
 ### Fixed
+- Baseline rows withhold the scoring-kernel confidence interval while Arena's corrected moments disagree with its pinned Bench 0.15.0 scorer. Corrected estimates remain separately available as `arena_deflated_sharpe_ci`; `deflated_sharpe_ci` is null with an explicit incompatibility status. Missing confidence renders as unavailable, never a zero-width interval. Coordinated shared-engine dependency propagation remains open.
 - Replay and native checkpoint reconstruction preserve volatility clustering and every jump-burst control. Native restoration also retains the full action prefix so a subsequent replay-based snapshot cannot silently restart from a shorter history.
 - Core and Python explicitly require correctly rounded JSON floats, matching wasm. Serialized native state restores the same binary values instead of introducing one-bit cash/position drift. The scoped engine epoch advances to 3 with rebuilt wrapper pins and wasm; historical results are not regenerated.
 - Native shared-market resets restore capital, positions, the cursor, impact and volatility history. Reset after a partial or completed episode now replays the fresh market byte-for-byte instead of returning an observation over stale books. Wrapper pins and the committed wasm are rebuilt for the changed engine fingerprint.
