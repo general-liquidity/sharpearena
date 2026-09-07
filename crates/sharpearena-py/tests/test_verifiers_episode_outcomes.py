@@ -151,7 +151,7 @@ def test_process_block_is_a_reward_gate_not_only_a_metric(market, event):
     assert score(state) == -1.0
 
 
-@pytest.mark.parametrize("mutation", ["count", "horizon", "nan", "error"])
+@pytest.mark.parametrize("mutation", ["count", "horizon", "nan", "error", "timeout"])
 def test_inconsistent_completed_record_cannot_keep_credit(market, mutation):
     env, state, _, _ = market
     for _ in range(3):
@@ -162,6 +162,8 @@ def test_inconsistent_completed_record_cannot_keep_credit(market, mutation):
         state["episode"]["planned_bars"] = 2
     elif mutation == "nan":
         state["returns"][0] = float("nan")
+    elif mutation == "timeout":
+        state["timed_out"] = True
     else:
         state["error"] = vf.ModelError("synthetic failure")
     assert score(state) == -1.0

@@ -22,7 +22,12 @@ def is_process_block(event: dict) -> bool:
 
 def reward_eligible(state: dict | None) -> bool:
     """Refuse missing, failed, nonfinite, or horizon-inconsistent rollout evidence."""
-    if not state or state.get("error") is not None or state.get("protocol_failures", 0):
+    if (
+        not state
+        or state.get("error") is not None
+        or state.get("protocol_failures", 0)
+        or state.get("timed_out", False)
+    ):
         return False
     episode = state.get("episode")
     if not isinstance(episode, dict) or episode.get("schema_version") != 1:
