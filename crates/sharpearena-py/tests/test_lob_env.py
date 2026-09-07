@@ -148,3 +148,26 @@ def test_lob_env_parallel_api():
     from sharpearena.lob_env import LOBMarketEnv
 
     parallel_api_test(LOBMarketEnv(n_agents=2, n_steps=20, seed=2), num_cycles=10)
+
+
+@pytest.mark.parametrize("first_steps", [3, 12])
+def test_reset_after_partial_or_terminal_episode_replays_rewards(first_steps):
+    from sharpearena.lob_env import LOBMarketEnv, symmetric_quote_policy
+
+    env = LOBMarketEnv(n_agents=2, n_steps=12, seed=7)
+    env.reset()
+    for _ in range(first_steps):
+        env.step({a: symmetric_quote_policy(offset=3) for a in env.agents})
+    # Ensure the old state could contaminate the reward, not merely a flat reset.
+    assert any(value != 0 for value in env._prev_equity.values())
+    actual, _ = env.reset()
+    fresh = LOBMarketEnv(n_agents=2, n_steps=12, seed=7)
+    expected, _ = fresh.reset()
+    for agent in env.agents:
+        np.testing.assert_array_equal(actual[agent], expected[agent])
+    while env.agents:
+        actions = {a: symmetric_quote_policy(offset=3) for a in env.agents}
+        actual, expected = env.step(actions), fresh.step(actions)
+        assert actual[1:] == expected[1:]
+        for agent in actual[0]:
+            np.testing.assert_array_equal(actual[0][agent], expected[0][agent])
