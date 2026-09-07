@@ -11,6 +11,7 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 ## [Unreleased]
 
 ### Fixed
+- Baseline evaluation verifies every newly constructed environment before rollout, even without a readback collector or when a seed already has a stored readback. Deduplicating reporting no longer disables validation.
 - Failure rollups preserve malformed/missing episodes as `invalid_evidence` and explicit execution failures as `execution_failed`, rather than increasing the clean rate. Finite returns and event inputs are required; the two new dispositions do not attribute infrastructure faults to an agent.
 - SplitMix inversion refuses off-grid floating-point observations rather than truncating them to another published unit. Boundary tests verify every returned state reproduces the exact observed value.
 - Diagnostic run metrics include initial capital in return and drawdown, snapshot mutable action buffers for turnover, and use full-sample zero-target downside RMS. The Sortino training reward now uses the same denominator (previously it averaged only losing bars); no historical evidence has been regenerated.

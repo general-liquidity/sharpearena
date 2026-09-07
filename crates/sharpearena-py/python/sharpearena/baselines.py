@@ -517,14 +517,17 @@ def run_baselines(
         for s in seeds:
             policy = factory()
             env = _make_env(n_symbols, n_days, s, distribution_mode)
+            effective = check_env_effective_config(
+                env,
+                seed=s,
+                n_symbols=n_symbols,
+                n_days=n_days,
+                distribution_mode=distribution_mode,
+            )
             if readback is not None and s not in readback:
-                readback[s] = check_env_effective_config(
-                    env,
-                    seed=s,
-                    n_symbols=n_symbols,
-                    n_days=n_days,
-                    distribution_mode=distribution_mode,
-                )
+                # Deduplicate stored evidence, never the validation of a newly
+                # constructed consumer (including a repeated seed or call).
+                readback[s] = effective
             returns = _rollout_returns(env, policy, max_steps)
             per_seed.append(returns)
             pooled.extend(returns)
