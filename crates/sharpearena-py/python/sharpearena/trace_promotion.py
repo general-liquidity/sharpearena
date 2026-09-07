@@ -17,10 +17,9 @@ The pipeline is deliberately linear and every stage refuses to guess.
     is defaulted.
 
 ``compute_trace_fingerprint``
-    A deterministic identity over six components: environment, model, scaffold,
-    contract, data and the process-event sequence. Two runs that agree on all six
-    are the same case; a run that differs in any of them is a different case and
-    must not silently reuse another's decision.
+    Six lineage components: environment, model, scaffold, contract, data and the
+    process-event sequence. They are not a complete content identity. Candidate
+    and gold IDs separately bind the complete serialized case payload.
 
 ``run_promotion_checks``
     Deterministic assertions over the loaded trace. These run BEFORE any
@@ -34,15 +33,15 @@ The pipeline is deliberately linear and every stage refuses to guess.
     There is no code path that transitions a candidate on its own.
 
 ``GoldCase``
-    A gold case freezes a MINIMAL scenario plus the named invariant that must
-    hold on it. It does not freeze the transcript. A transcript-shaped case
-    passes for the wrong reason: it re-asserts one recorded conversation instead
-    of the property the failure was about.
+    A V2 gold case freezes reconstruction inputs and the complete action prefix
+    from reset, plus its invariant. Only the silver diagnostic excerpt is minimized;
+    removing replay history can remove the state that caused the defect.
 
 ``evaluate_gold_case``
-    Runs the frozen invariant against the frozen scenario with sockets disabled
-    and no model in the loop, so a gold case is executable in CI on a machine
-    with no network and no credentials.
+    Reruns the installed Gym/native producer and checks its NEW output. Output-only
+    V1 cases are refused. The socket guard detects ordinary Python socket calls;
+    it is not OS containment. The fixed adapter makes no model calls. Replay inputs
+    contain private seeds/CSV data and must not be exposed to evaluated agents.
 """
 
 from __future__ import annotations
@@ -53,12 +52,13 @@ import os
 import socket
 import time
 from contextlib import contextmanager
-from dataclasses import dataclass
+from copy import deepcopy
+from dataclasses import dataclass, replace
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, Iterator, Mapping, Optional, Sequence
 
-PROMOTION_SCHEMA_VERSION = "sharpearena.promotion/1.0.0"
+PROMOTION_SCHEMA_VERSION = "sharpearena.promotion/2.0.0"
 SILVER_EVIDENCE_CLASS = "promotion_silver_candidate"
 GOLD_EVIDENCE_CLASS = "promotion_gold_case"
 
@@ -94,12 +94,38 @@ class PromotionError(RuntimeError):
 
 def _canonical_bytes(value: Any) -> bytes:
     return json.dumps(
-        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
     ).encode("utf-8")
 
 
 def _digest(value: Any) -> str:
     return sha256(_canonical_bytes(value)).hexdigest()
+
+
+def _read_record(text: str, where: str) -> dict[str, Any]:
+    def unique_object(pairs):
+        value = {}
+        for key, item in pairs:
+            if key in value:
+                raise TraceIntegrityError(f"{where}: duplicate JSON key {key!r}")
+            value[key] = item
+        return value
+
+    def invalid_constant(value):
+        raise TraceIntegrityError(f"{where}: nonfinite JSON constant {value}")
+
+    try:
+        record = json.loads(
+            text, object_pairs_hook=unique_object, parse_constant=invalid_constant
+        )
+    except json.JSONDecodeError as error:
+        raise TraceIntegrityError(f"{where}: not JSON: {error}") from error
+    _require(isinstance(record, dict), f"{where}: record must be an object")
+    return record
 
 
 @dataclass(frozen=True)
@@ -160,7 +186,9 @@ def _require(condition: bool, message: str) -> None:
         raise TraceIntegrityError(message)
 
 
-def _validate_step(record: Mapping[str, Any], expected_ordinal: int, where: str) -> dict[str, Any]:
+def _validate_step(
+    record: Mapping[str, Any], expected_ordinal: int, where: str
+) -> dict[str, Any]:
     _require(record.get("kind") == "step", f"{where}: expected a step record")
     for name in ("step", "observation", "decision"):
         _require(name in record, f"{where}: step record is missing {name!r}")
@@ -279,12 +307,16 @@ def process_events(steps: Sequence[Mapping[str, Any]]) -> tuple[dict[str, Any], 
                 "step": step["step"],
                 "n_orders": len(orders) if isinstance(orders, list) else 0,
                 "actions": sorted(actions),
-                "env_events": sorted(str(item) for item in recorded)
-                if isinstance(recorded, list)
-                else [],
-                "terminated": bool(info.get("terminated", False))
-                if isinstance(info, dict)
-                else False,
+                "env_events": (
+                    sorted(str(item) for item in recorded)
+                    if isinstance(recorded, list)
+                    else []
+                ),
+                "terminated": (
+                    bool(info.get("terminated", False))
+                    if isinstance(info, dict)
+                    else False
+                ),
             }
         )
     return tuple(events)
@@ -351,9 +383,11 @@ def _check_no_lookahead(trace: StrictTrace) -> CheckResult:
         "no_lookahead_in_observation",
         "block",
         not implicated,
-        "no forbidden observation keys"
-        if not implicated
-        else f"observations expose future-bearing keys {sorted(seen)}",
+        (
+            "no forbidden observation keys"
+            if not implicated
+            else f"observations expose future-bearing keys {sorted(seen)}"
+        ),
         tuple(implicated),
     )
 
@@ -366,9 +400,11 @@ def _check_rewards_finite(trace: StrictTrace) -> CheckResult:
         "rewards_finite",
         "block",
         not implicated,
-        "every reward is finite"
-        if not implicated
-        else f"non-finite rewards at steps {list(implicated)}",
+        (
+            "every reward is finite"
+            if not implicated
+            else f"non-finite rewards at steps {list(implicated)}"
+        ),
         implicated,
     )
 
@@ -384,9 +420,11 @@ def _check_decision_shape(trace: StrictTrace) -> CheckResult:
         "decision_is_structured",
         "block",
         not implicated,
-        "every decision is a structured order set"
-        if not implicated
-        else f"unstructured decisions at steps {list(implicated)}",
+        (
+            "every decision is a structured order set"
+            if not implicated
+            else f"unstructured decisions at steps {list(implicated)}"
+        ),
         implicated,
     )
 
@@ -403,9 +441,11 @@ def _check_seeds_declared(trace: StrictTrace) -> CheckResult:
         "seeds_declared_in_meta",
         "block",
         not missing,
-        "every observed scenario seed is declared in meta"
-        if not missing
-        else f"steps used undeclared seeds {missing}",
+        (
+            "every observed scenario seed is declared in meta"
+            if not missing
+            else f"steps used undeclared seeds {missing}"
+        ),
         tuple(
             step["step"]
             for step in trace.steps
@@ -422,9 +462,11 @@ def _check_not_degenerate(trace: StrictTrace) -> CheckResult:
         "reward_series_varies",
         "warn",
         not flat,
-        "reward series varies"
-        if not flat
-        else "every reward is identical; the lane may not have traded",
+        (
+            "reward series varies"
+            if not flat
+            else "every reward is identical; the lane may not have traded"
+        ),
         tuple(step["step"] for step in trace.steps) if flat else (),
     )
 
@@ -446,9 +488,7 @@ def run_promotion_checks(trace: StrictTrace) -> tuple[CheckResult, ...]:
 
 def blocking_failures(results: Sequence[CheckResult]) -> tuple[CheckResult, ...]:
     return tuple(
-        result
-        for result in results
-        if result.severity == "block" and not result.passed
+        result for result in results if result.severity == "block" and not result.passed
     )
 
 
@@ -485,8 +525,8 @@ def minimize_scenario(trace: StrictTrace, check_id: str) -> StrictTrace:
     """Shrink a trace to the smallest window on which ``check_id`` still fails.
 
     Greedy two-sided shrink, floored at two steps because a strict trace needs
-    two. The result is the frozen scenario: small enough to read, and still a
-    genuine reproduction rather than a summary of one.
+    two. This is a diagnostic excerpt of recorded output, not executable replay
+    input. It must not replace the full action prefix used for producer regression.
     """
 
     if _run_named_check(trace, check_id).passed:
@@ -509,7 +549,7 @@ def minimize_scenario(trace: StrictTrace, check_id: str) -> StrictTrace:
 
 @dataclass(frozen=True)
 class SilverCandidate:
-    """An immutable promotion candidate. Not yet a regression case."""
+    """A content-bound diagnostic candidate, optionally carrying replay inputs."""
 
     candidate_id: str
     triggering_check: str
@@ -522,19 +562,28 @@ class SilverCandidate:
     created_at_unix_ns: int
 
     def as_record(self) -> dict[str, Any]:
-        return {
-            "schema_version": PROMOTION_SCHEMA_VERSION,
-            "evidence_class": SILVER_EVIDENCE_CLASS,
-            "candidate_id": self.candidate_id,
-            "triggering_check": self.triggering_check,
-            "severity": self.severity,
-            "detail": self.detail,
-            "source_trace_sha256": self.source_trace_sha256,
-            "fingerprint": self.fingerprint.as_record(),
-            "scenario": self.scenario,
-            "expected_invariant": self.expected_invariant,
-            "created_at_unix_ns": self.created_at_unix_ns,
-        }
+        return deepcopy(
+            {
+                "schema_version": PROMOTION_SCHEMA_VERSION,
+                "evidence_class": SILVER_EVIDENCE_CLASS,
+                "candidate_id": self.candidate_id,
+                "triggering_check": self.triggering_check,
+                "severity": self.severity,
+                "detail": self.detail,
+                "source_trace_sha256": self.source_trace_sha256,
+                "fingerprint": self.fingerprint.as_record(),
+                "scenario": self.scenario,
+                "expected_invariant": self.expected_invariant,
+                "created_at_unix_ns": self.created_at_unix_ns,
+            }
+        )
+
+    def validate_identity(self) -> None:
+        record = self.as_record()
+        record.pop("candidate_id")
+        record.pop("created_at_unix_ns")
+        if self.candidate_id != _digest(record):
+            raise PromotionError("silver candidate content does not match its identity")
 
     @property
     def content_sha256(self) -> str:
@@ -555,38 +604,62 @@ def _scenario_payload(minimal: StrictTrace) -> dict[str, Any]:
 
 
 def build_silver_candidate(
-    trace: StrictTrace, failure: CheckResult, *, now_unix_ns: Optional[int] = None
+    trace: StrictTrace,
+    failure: CheckResult,
+    *,
+    now_unix_ns: Optional[int] = None,
+    replay_inputs: Optional[dict[str, Any]] = None,
 ) -> SilverCandidate:
-    """Freeze a MINIMAL reproduction plus the invariant that must hold on it."""
+    """Freeze diagnostic output and, when provided, independently replayed inputs.
+
+    Output-only candidates can be triaged but cannot become executable gold. A
+    supplied recipe must reproduce the complete source trace before minimization.
+    Its content enters the candidate ID that the operator approves.
+    """
 
     if failure.passed:
         raise PromotionError("only a failing check produces a promotion candidate")
+    actual_failure = _run_named_check(trace, failure.check_id)
+    if failure != actual_failure or failure.severity != "block":
+        raise PromotionError("candidate requires the actual blocking check result")
+    if replay_inputs is not None:
+        from .promotion_replay import replay_gym_inputs
+
+        with sockets_disabled():
+            replayed = replay_gym_inputs(replay_inputs, trace.meta)
+        if _digest(replayed.steps) != _digest(trace.steps) or _digest(
+            replayed.meta
+        ) != _digest(trace.meta):
+            raise PromotionError(
+                "replay inputs do not reproduce the complete source trace"
+            )
     minimal = minimize_scenario(trace, failure.check_id)
     scenario = _scenario_payload(minimal)
-    fingerprint = trace.fingerprint
-    candidate_id = _digest(
-        {
-            "fingerprint": fingerprint.composite,
-            "check": failure.check_id,
-            "scenario": scenario,
+    if replay_inputs is not None:
+        scenario["replay"] = {
+            "inputs": deepcopy(replay_inputs),
+            "meta": deepcopy(trace.meta),
         }
-    )[:32]
-    return SilverCandidate(
-        candidate_id=candidate_id,
+    fingerprint = trace.fingerprint
+    candidate = SilverCandidate(
+        candidate_id="",
         triggering_check=failure.check_id,
         severity=failure.severity,
         detail=failure.detail,
         source_trace_sha256=trace.source_sha256,
         fingerprint=fingerprint,
-        scenario=scenario,
+        scenario=deepcopy(scenario),
         expected_invariant={
             "check_id": failure.check_id,
             "must_pass": True,
-            "rationale": "the frozen scenario reproduces the failure; a fix is "
-            "what makes this check pass on it",
+            "rationale": "the named check must pass on newly produced replay output",
         },
         created_at_unix_ns=time.time_ns() if now_unix_ns is None else int(now_unix_ns),
     )
+    record = candidate.as_record()
+    record.pop("candidate_id")
+    record.pop("created_at_unix_ns")
+    return replace(candidate, candidate_id=_digest(record))
 
 
 class SilverStore:
@@ -604,6 +677,7 @@ class SilverStore:
     def append(self, candidate: SilverCandidate) -> bool:
         """Write the candidate. Returns False if it was already stored verbatim."""
 
+        candidate.validate_identity()
         for existing in self.read():
             if existing.candidate_id == candidate.candidate_id:
                 if existing.content_sha256 == candidate.content_sha256:
@@ -629,11 +703,15 @@ class SilverStore:
         ):
             where = f"{self.path}:{number}"
             _require(line.strip() != "", f"{where}: blank line in the silver queue")
-            try:
-                row = json.loads(line)
-            except json.JSONDecodeError as error:
-                raise TraceIntegrityError(f"{where}: not JSON: {error}") from error
-            _require(isinstance(row, dict), f"{where}: row must be an object")
+            row = _read_record(line, where)
+            _require(
+                row.get("schema_version") == PROMOTION_SCHEMA_VERSION,
+                f"{where}: silver schema version mismatch; recapture V2 candidates",
+            )
+            _require(
+                row.get("evidence_class") == SILVER_EVIDENCE_CLASS,
+                f"{where}: not a silver candidate",
+            )
             missing = sorted(
                 {
                     "candidate_id",
@@ -670,12 +748,14 @@ class SilverStore:
                     created_at_unix_ns=int(row["created_at_unix_ns"]),
                 )
             )
+            out[-1].validate_identity()
+            _require(row == out[-1].as_record(), f"{where}: noncanonical silver record")
         return tuple(out)
 
 
 @dataclass(frozen=True)
 class OperatorDecision:
-    """An explicit, attributable human decision. Nothing else promotes."""
+    """An operator's declared decision, not identity authentication or a signature."""
 
     candidate_id: str
     #: ``promote`` or ``reject``.
@@ -706,7 +786,7 @@ class OperatorDecision:
 
 @dataclass(frozen=True)
 class GoldCase:
-    """A frozen, offline-executable regression case. No transcript."""
+    """A content-bound producer replay. Mutable nested edits invalidate its ID."""
 
     case_id: str
     triggering_check: str
@@ -716,22 +796,45 @@ class GoldCase:
     fingerprint: TraceFingerprint
     decision: OperatorDecision
 
+    def _payload(self) -> dict[str, Any]:
+        return deepcopy(
+            {
+                "schema_version": PROMOTION_SCHEMA_VERSION,
+                "evidence_class": GOLD_EVIDENCE_CLASS,
+                "triggering_check": self.triggering_check,
+                "scenario": self.scenario,
+                "expected_invariant": self.expected_invariant,
+                "source_trace_sha256": self.source_trace_sha256,
+                "fingerprint": self.fingerprint.as_record(),
+                "operator_decision": self.decision.as_record(),
+                "offline": {
+                    "network": "python_socket_guard",
+                    "model_calls": "none",
+                },
+            }
+        )
+
+    def validate_identity(self) -> None:
+        if self.case_id != _digest(self._payload()):
+            raise PromotionError("gold case content does not match its identity")
+        if self.decision.decision != "promote":
+            raise PromotionError("gold case lacks a promotion decision")
+        if (
+            self.expected_invariant.get("check_id") != self.triggering_check
+            or self.expected_invariant.get("must_pass") is not True
+        ):
+            raise PromotionError("gold case requires its triggering check to pass")
+        if set(self.scenario) != {"inputs", "meta"}:
+            raise PromotionError(
+                "gold case requires producer replay inputs, not stored output"
+            )
+        from .promotion_replay import validate_replay_inputs
+
+        validate_replay_inputs(self.scenario["inputs"])
+
     def as_record(self) -> dict[str, Any]:
-        return {
-            "schema_version": PROMOTION_SCHEMA_VERSION,
-            "evidence_class": GOLD_EVIDENCE_CLASS,
-            "case_id": self.case_id,
-            "triggering_check": self.triggering_check,
-            "scenario": self.scenario,
-            "expected_invariant": self.expected_invariant,
-            "source_trace_sha256": self.source_trace_sha256,
-            "fingerprint": self.fingerprint.as_record(),
-            "operator_decision": self.decision.as_record(),
-            "offline": {
-                "network": "forbidden",
-                "model_calls": "none",
-            },
-        }
+        self.validate_identity()
+        return {"case_id": self.case_id, **self._payload()}
 
     def write(self, path: Path) -> Path:
         path = Path(path)
@@ -742,11 +845,14 @@ class GoldCase:
         return path
 
 
-def promote_to_gold(
-    candidate: SilverCandidate, decision: OperatorDecision
-) -> GoldCase:
-    """Freeze a silver candidate as a gold case under a recorded human decision."""
+def promote_to_gold(candidate: SilverCandidate, decision: OperatorDecision) -> GoldCase:
+    """Promote content-bound replay inputs under a recorded operator decision.
 
+    The decision is attributable metadata, not proof of a human identity or a
+    signature. The surrounding review/store permissions remain trusted.
+    """
+
+    candidate.validate_identity()
     if decision.candidate_id != candidate.candidate_id:
         raise PromotionError(
             "the operator decision names a different candidate than the one supplied"
@@ -755,27 +861,69 @@ def promote_to_gold(
         raise PromotionError(
             f"candidate {candidate.candidate_id} was {decision.decision}ed, not promoted"
         )
-    return GoldCase(
-        case_id=candidate.candidate_id,
+    replay = candidate.scenario.get("replay")
+    if replay is None:
+        raise PromotionError(
+            "candidate has no producer replay inputs; output alone is not a regression"
+        )
+    case = GoldCase(
+        case_id="",
         triggering_check=candidate.triggering_check,
-        scenario=candidate.scenario,
-        expected_invariant=candidate.expected_invariant,
+        scenario=deepcopy(replay),
+        expected_invariant=deepcopy(candidate.expected_invariant),
         source_trace_sha256=candidate.source_trace_sha256,
         fingerprint=candidate.fingerprint,
         decision=decision,
     )
+    case = replace(case, case_id=_digest(case._payload()))
+    case.validate_identity()
+    return case
 
 
 def load_gold_case(path: Path) -> GoldCase:
-    row = json.loads(Path(path).read_text(encoding="utf-8"))
-    _require(isinstance(row, dict), f"{path}: gold case must be an object")
+    row = _read_record(Path(path).read_text(encoding="utf-8"), str(path))
     _require(
         row.get("schema_version") == PROMOTION_SCHEMA_VERSION,
-        f"{path}: gold case schema version mismatch",
+        f"{path}: gold case schema version mismatch; V1 output-only cases need replay inputs",
     )
+    _require(
+        row.get("evidence_class") == GOLD_EVIDENCE_CLASS, f"{path}: not a gold case"
+    )
+    for field in ("case_id", "triggering_check", "source_trace_sha256"):
+        _require(isinstance(row.get(field), str), f"{path}: missing or invalid {field}")
+    for field in ("scenario", "expected_invariant", "fingerprint", "operator_decision"):
+        _require(
+            isinstance(row.get(field), dict), f"{path}: missing or invalid {field}"
+        )
     fingerprint_row = row["fingerprint"]
     decision = row["operator_decision"]
-    return GoldCase(
+    _require(
+        set(fingerprint_row)
+        == {
+            "environment",
+            "model",
+            "scaffold",
+            "contract",
+            "data",
+            "process",
+            "composite",
+        },
+        f"{path}: invalid fingerprint fields",
+    )
+    _require(
+        set(decision)
+        == {"candidate_id", "decision", "operator", "rationale", "decided_at_unix_ns"},
+        f"{path}: invalid decision fields",
+    )
+    _require(
+        all(
+            isinstance(decision[key], str)
+            for key in ("candidate_id", "decision", "operator", "rationale")
+        )
+        and type(decision["decided_at_unix_ns"]) is int,
+        f"{path}: invalid decision values",
+    )
+    case = GoldCase(
         case_id=row["case_id"],
         triggering_check=row["triggering_check"],
         scenario=row["scenario"],
@@ -794,14 +942,24 @@ def load_gold_case(path: Path) -> GoldCase:
             decision=decision["decision"],
             operator=decision["operator"],
             rationale=decision["rationale"],
-            decided_at_unix_ns=int(decision["decided_at_unix_ns"]),
+            decided_at_unix_ns=decision["decided_at_unix_ns"],
         ),
     )
+    case.validate_identity()
+    _require(
+        row == case.as_record(),
+        f"{path}: gold record has noncanonical or unknown fields",
+    )
+    return case
 
 
 @contextmanager
 def sockets_disabled() -> Iterator[None]:
-    """Make any socket construction raise for the duration of the block."""
+    """Guard ordinary Python socket construction, not native/subprocess/existing I/O.
+
+    This temporarily changes process-global state; do not run concurrent replays in
+    the same process. It is a test guard, not containment for untrusted producers.
+    """
 
     original = socket.socket
 
@@ -826,27 +984,19 @@ class GoldOutcome:
 
 
 def evaluate_gold_case(case: GoldCase) -> GoldOutcome:
-    """Run the frozen invariant on the frozen scenario, offline.
+    """Rerun the fixed local producer, then apply the invariant to NEW output."""
 
-    Sockets are disabled for the duration and no model is consulted, so a gold
-    case is executable in CI without network or credentials.
-    """
+    from .promotion_replay import replay_gym_inputs
 
-    scenario = case.scenario
-    meta = dict(scenario["meta"])
-    meta["n_steps"] = len(scenario["steps"])
-    trace = StrictTrace(
-        tuple(dict(step) for step in scenario["steps"]),
-        meta,
-        case.source_trace_sha256,
-    )
+    case.validate_identity()
+    scenario = deepcopy(case.scenario)
     with sockets_disabled():
+        trace = replay_gym_inputs(scenario["inputs"], scenario["meta"])
         result = _run_named_check(trace, case.expected_invariant["check_id"])
-    expected = bool(case.expected_invariant["must_pass"])
     return GoldOutcome(
         case.case_id,
         result.check_id,
-        result.passed is expected,
+        result.passed,
         result.detail,
     )
 
