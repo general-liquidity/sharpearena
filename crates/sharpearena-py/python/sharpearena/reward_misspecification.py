@@ -1,27 +1,28 @@
 """Reward-misspecification **negative controls** for SharpeArena.
 
-SharpeArena's thesis is that the SharpeBench kernel (deflated Sharpe / ``pass^k`` /
-process checks) PUNISHES naive, over-fit, churn-heavy strategies. This module makes that
-thesis *falsifiable*: it ships a registry of deliberately-FLAWED reward functions and a
-demonstration that proxy agents optimized for them score BELOW a clean baseline on the
-scorer — high in-sample raw return, near-zero deflated Sharpe out-of-sample.
+This module pairs deliberately incomplete reward functions with hand-written policies
+and compares their return-series diagnostics under the SharpeBench kernel. It does not
+train or optimize agents, establish an in/out-of-sample gap, or guarantee that a proxy
+underperforms. A policy comparison is not evidence of the effect of optimizing a reward.
 
 CRITICAL INVARIANT — these rewards are NEGATIVE CONTROLS for research only. They are NOT
 valid scoring options. They MUST NEVER be registered into ``rewards.REWARD_SCHEMES`` and
 MUST NEVER feed the scorer or the rank key. They re-introduce over-leverage / overfit /
 churn / myopia *by design*. Importing this module does not mutate any production registry.
 
-The proxy policies (:data:`MISSPECIFIED_PROXY_POLICIES`) STAND IN for trained agents: we
-cannot run GRPO here, so each proxy is the greedy maximizer of its flawed reward (a
-max-leverage book for ``raw_pnl``, a tiny-position book for ``win_rate``, a momentum
-chaser for ``indicator_shaped``, a last-bar chaser for ``recency_biased``). That is an
-honest stand-in — the wedge is structural (deflated Sharpe is scale-invariant, so leverage
-inflates raw return without moving Sharpe; deflation then floors it).
+The indicator proxy aligns net exposure with the last three realized portfolio returns,
+which are the signal consumed by ``indicator_shaped``. The recency proxy follows the last
+market-price move, a different heuristic. Neither is a global optimizer: actions affect
+future returns. Full-long and tiny-long books are not maximizers of raw PnL or win rate
+without assumptions about the market. In a frictionless positive scaling of returns,
+win rate and Sharpe can stay unchanged; shrinking a position need not improve either.
 """
 
 from __future__ import annotations
 
 import json
+import math
+from collections import deque
 from typing import Any, Callable, Optional, Sequence
 
 import numpy as np
@@ -63,11 +64,12 @@ def raw_pnl_unpenalized(
     state: Optional[dict] = None,
     **kwargs: Any,
 ) -> float:
-    """NEGATIVE CONTROL — gross PnL with no risk, cost, or drawdown penalty.
+    """NEGATIVE CONTROL — amplified summed returns with no added risk penalty.
 
     ``tanh(GAIN * sum(returns))``: a high-gain reward on raw cumulative return that ignores
-    volatility, turnover, and drawdown entirely, so it pays an agent to over-leverage and
-    churn. Bounded in ``[-1, 1]``. NOT a valid scoring option.
+    volatility, turnover, and drawdown as separate objectives. Input returns can already
+    include execution costs, so this is not a gross-PnL reconstruction and churn need not
+    improve it. Bounded in ``[-1, 1]``. The historical function name is retained.
     """
     rets = _returns_from_state(state)
     if not rets:
@@ -107,6 +109,8 @@ def indicator_shaped(
     ``target_weights`` events; vacuously ``0.0`` if the agent never declared a direction.
     Bounded in ``[0, 1]``. NOT a valid scoring option.
     """
+    if type(window) is not int or window <= 0:
+        raise ValueError("indicator window must be a positive integer")
     rets = _returns_from_state(state)
     nets = _net_weights_per_bar(state)
     if len(rets) <= window or not nets:
@@ -153,16 +157,16 @@ MISSPECIFIED_REWARDS: dict[str, Callable[..., float]] = {
 
 
 # ---------------------------------------------------------------------------
-# Proxy policies — greedy maximizers of each flawed reward. STAND-INS for trained agents.
+# Hand-written proxy policies. No training or global reward optimization is performed.
 # ---------------------------------------------------------------------------
 
 
 class MaxLeveragePolicy:
-    """Greedy maximizer of ``raw_pnl_unpenalized``: full long on every symbol.
+    """Constant full-long exposure, not a PnL optimizer.
 
-    Gross exposure ``= n`` (max per-symbol weight), so it harvests the most raw PnL the action
-    space allows. Because deflated Sharpe is scale-invariant, the leverage that inflates raw
-    return does NOT move the Sharpe — the wedge."""
+    Gross target exposure is ``n * max_weight``. A falling market can make the opposite
+    position more profitable; execution costs and constraints also affect realized returns.
+    """
 
     name = "max_leverage"
 
@@ -175,10 +179,11 @@ class MaxLeveragePolicy:
 
 
 class TinyPositionPolicy:
-    """Greedy maximizer of ``win_rate``: a tiny constant long.
+    """A tiny constant long, not a win-rate optimizer.
 
-    Minimal exposure maximizes the fraction of green bars (slight drift wins often) while each
-    win is negligible — high win_rate, near-zero risk-adjusted edge."""
+    Positive scaling alone preserves return signs in a frictionless model. Transaction
+    costs and execution can change that relation; no win-rate improvement is promised.
+    """
 
     name = "tiny_position"
 
@@ -191,30 +196,42 @@ class TinyPositionPolicy:
 
 
 class MomentumChasePolicy:
-    """Greedy maximizer of ``indicator_shaped``: full-size last-move sign chase.
+    """Align net weight with the trailing ``window`` realized portfolio returns.
 
-    Bets the full per-symbol weight in the direction of the last close change, so its position
-    sign agrees with short-window momentum by construction. Warms up full long."""
+    Call ``observe_return`` after each step, as the diagnostic runner does. A completed
+    history selects the same signal as ``indicator_shaped(window=window)``; zero signal
+    selects flat. Warm-up is full long. This aligns the current signal, not future reward.
+    """
 
     name = "momentum_chase"
 
-    def __init__(self, max_weight: float = 1.0) -> None:
+    def __init__(
+        self, max_weight: float = 1.0, window: int = _INDICATOR_WINDOW
+    ) -> None:
+        if type(window) is not int or window <= 0:
+            raise ValueError("indicator window must be a positive integer")
         self._w = float(max_weight)
-        self._prev: Optional[np.ndarray] = None
+        if not math.isfinite(self._w) or self._w <= 0:
+            raise ValueError("indicator max_weight must be finite and positive")
+        self._returns: deque[float] = deque(maxlen=window)
+        self._window = window
+
+    def observe_return(self, reward: float) -> None:
+        value = float(reward)
+        if not math.isfinite(value):
+            raise ValueError("indicator feedback must be a finite realized return")
+        self._returns.append(value)
 
     def __call__(self, obs: dict) -> np.ndarray:
-        closes = np.asarray(obs["closes"], dtype=np.float64).reshape(-1)
-        n = closes.shape[0]
-        if self._prev is None:
-            self._prev = closes
-            return np.full((n,), self._w, dtype=np.float32)
-        sign = np.sign(closes - self._prev)
-        self._prev = closes
-        return (sign * self._w).astype(np.float32)
+        n = np.asarray(obs["closes"]).size
+        sign = (
+            1.0 if len(self._returns) < self._window else np.sign(np.sum(self._returns))
+        )
+        return np.full((n,), sign * self._w, dtype=np.float32)
 
 
 class RecencyChasePolicy:
-    """Greedy maximizer of ``recency_biased``: bet on the single most recent move.
+    """One-bar market-price chaser, not an optimizer of ``recency_biased``.
 
     Sizes each symbol by the sign of its last one-bar change at full weight and ignores all
     earlier history — maximally myopic. Warms up full long."""
@@ -229,16 +246,15 @@ class RecencyChasePolicy:
         closes = np.asarray(obs["closes"], dtype=np.float64).reshape(-1)
         n = closes.shape[0]
         if self._prev is None:
-            self._prev = closes
+            self._prev = closes.copy()
             return np.full((n,), self._w, dtype=np.float32)
         sign = np.sign(closes - self._prev)
-        self._prev = closes
+        self._prev = closes.copy()
         return (sign * self._w).astype(np.float32)
 
 
 def _clean_reference_policy() -> Policy:
-    """An equal-weight-long book — buy-and-hold analog standing in for a clean
-    (differential-Sharpe-trained) agent."""
+    """An equal-weight-long reference. No reward optimization is implied."""
 
     def _policy(obs: dict) -> np.ndarray:
         n = int(np.asarray(obs["closes"]).reshape(-1).shape[0])
@@ -261,13 +277,19 @@ MISSPECIFIED_PROXY_POLICIES: dict[str, Callable[[], Policy]] = {
 
 
 def _rollout_returns(env, policy: Policy, max_steps: int) -> list[float]:
-    obs, _ = env.reset()
     out: list[float] = []
-    for _ in range(max_steps):
-        obs, reward, terminated, truncated, _info = env.step(policy(obs))
-        out.append(float(reward))
-        if bool(terminated) or bool(truncated):
-            break
+    try:
+        obs, _ = env.reset()
+        for _ in range(max_steps):
+            obs, reward, terminated, truncated, _info = env.step(policy(obs))
+            out.append(float(reward))
+            observe = getattr(policy, "observe_return", None)
+            if callable(observe):
+                observe(float(reward))
+            if bool(terminated) or bool(truncated):
+                break
+    finally:
+        env.close()
     return out
 
 
@@ -305,14 +327,13 @@ def misspecification_gap(
     max_steps: int = 512,
     n_trials: int = 2,
 ) -> dict:
-    """Score a clean reference vs a flawed-optimized proxy over the SAME seeds.
+    """Compare a reference and a hand-written proxy over the same supplied seeds.
 
     ``policy`` is the clean reference policy factory (defaults to an equal-weight-long book
-    standing in for a ``clean_reward``-trained agent); the flawed side is the greedy proxy for
+    with no training); ``clean_reward`` is a legacy label only. The other side is the proxy for
     ``flawed_reward`` from :data:`MISSPECIFIED_PROXY_POLICIES`. Both are scored by the real
-    ``score_run`` kernel and the deflated-Sharpe / mean-return gaps are reported. The proxies
-    STAND IN for trained agents — we cannot run GRPO here, so we evaluate the reward's greedy
-    maximizer instead.
+    ``score_run`` kernel and the deflated-Sharpe / mean-return gaps are reported. No reward
+    optimization, train/test comparison, or causal effect of a training objective is measured.
     """
     if flawed_reward not in MISSPECIFIED_PROXY_POLICIES:
         raise ValueError(
@@ -323,7 +344,9 @@ def misspecification_gap(
     clean_factory = policy or _clean_reference_policy
     flawed_factory = MISSPECIFIED_PROXY_POLICIES[flawed_reward]
     clean = _score_policy(make_env_for_seed, seeds, clean_factory, max_steps, n_trials)
-    flawed = _score_policy(make_env_for_seed, seeds, flawed_factory, max_steps, n_trials)
+    flawed = _score_policy(
+        make_env_for_seed, seeds, flawed_factory, max_steps, n_trials
+    )
     return {
         "clean_reward": clean_reward,
         "flawed_reward": flawed_reward,
@@ -332,6 +355,9 @@ def misspecification_gap(
         "gap_deflated_sharpe": clean["deflated_sharpe"] - flawed["deflated_sharpe"],
         "gap_mean_return": clean["mean_return"] - flawed["mean_return"],
         "proxy_is_stand_in": True,
+        "comparison_kind": "heuristic_policy_comparison",
+        "optimization_performed": False,
+        "clean_reward_role": "label_only",
     }
 
 
@@ -344,12 +370,11 @@ def demonstrate_punishment(
 ) -> dict:
     """Run every flawed-reward proxy over ``seeds`` and score it with SharpeBench.
 
-    Returns ``{reward_name: {deflated_sharpe, passed_k, mean_return}}`` — the falsifiable
-    demonstration that proxies optimized for the misspecified rewards never clear the
-    kernel's rank-eligibility (the deflated-Sharpe bar and ``pass^k`` together) despite,
-    where applicable, a healthy raw mean return. The
-    proxies STAND IN for trained agents. ``n_trials`` defaults to the proxy count — the honest
-    declared in-sample search breadth, which deflates Sharpe for multiple-comparison luck.
+    Returns ``{reward_name: {deflated_sharpe, passed_k, mean_return}}``. The legacy name
+    does not guarantee punishment: proxies can score well on supplied paths. These are
+    pooled-return diagnostics and per-seed pass fractions, not a complete ranking-eligibility
+    protocol. ``n_trials`` defaults to the number of proxy policies as a declared comparison
+    count; it does not reconstruct an operator's search history.
     """
     seeds = list(seeds)
     trials = len(MISSPECIFIED_PROXY_POLICIES) if n_trials is None else int(n_trials)

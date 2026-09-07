@@ -1,7 +1,7 @@
 """Tests for the reward-misspecification negative-control track.
 
 When the native binding and numpy are importable these exercise a real (small) proxy sweep
-against the SharpeBench kernel and the falsifiable punishment demonstration. The module
+against the SharpeBench kernel. They do not validate a training intervention. The module
 imports ``score_run`` at top, so the whole file is binding-gated like ``test_baselines``.
 """
 
@@ -15,6 +15,8 @@ try:
     from sharpearena.reward_misspecification import (
         MISSPECIFIED_PROXY_POLICIES,
         MISSPECIFIED_REWARDS,
+        MomentumChasePolicy,
+        RecencyChasePolicy,
         demonstrate_punishment,
         indicator_shaped,
         misspecification_gap,
@@ -71,7 +73,7 @@ def test_rewards_handle_empty_state():
 
 
 @requires_binding
-def test_raw_pnl_rewards_gross_return_unpenalized():
+def test_raw_pnl_rewards_supplied_return_unpenalized():
     # No risk/cost term: a bigger summed return strictly scores higher.
     low = raw_pnl_unpenalized(state={"returns": [0.001, 0.001]})
     high = raw_pnl_unpenalized(state={"returns": [0.05, 0.05]})
@@ -105,7 +107,7 @@ def test_proxy_policies_produce_valid_actions():
 
 
 @requires_binding
-def test_demonstrate_punishment_scorer_punishes_flawed_proxies():
+def test_demo_fixture_reports_proxy_diagnostics():
     table = demonstrate_punishment(_make_env, range(6), max_steps=128)
     assert set(table) == set(MISSPECIFIED_REWARDS)
     for row in table.values():
@@ -113,19 +115,12 @@ def test_demonstrate_punishment_scorer_punishes_flawed_proxies():
         assert np.isfinite(row["deflated_sharpe"])
         assert 0.0 <= row["passed_k"] <= 1.0
 
-    # No flawed proxy wins on the real metric: none clears the kernel's rank-eligibility
-    # conjunction (deflated Sharpe over the 0.95 bar AND pass^k on every seed). Under the
-    # sharpebench <0.5.0 kernel the annualized 0.5 deflation prior was applied per period
-    # (a benchmark of annualized Sharpe ~18), so every proxy sat at DSR ~0 and the old
-    # assertion was simply `max DSR <= 0.5`. The corrected kernel lets a lucky proxy
-    # (win_rate here) reach a high DSR on this small demo, and it is pass^k that keeps it
-    # ineligible, which is exactly the reliability role pass^k plays in the benchmark.
+    # Pin this synthetic fixture only. These two summary fields do not implement
+    # full ranking eligibility or guarantee punishment on another seed population.
     for name, row in table.items():
         assert row["deflated_sharpe"] < 0.95 or row["passed_k"] < 1.0, name
 
-    # The wedge: the proxy with the best raw mean return looks profitable in-sample yet
-    # earns a weak deflated Sharpe — naive reward -> high raw return, scorer does not
-    # reward it.
+    # This fixture has no training phase or in/out-of-sample split.
     best = max(table.values(), key=lambda r: r["mean_return"])
     assert best["mean_return"] > 0.0
     assert best["deflated_sharpe"] <= 0.5
@@ -133,7 +128,9 @@ def test_demonstrate_punishment_scorer_punishes_flawed_proxies():
 
 @requires_binding
 def test_misspecification_gap_reports_clean_vs_flawed():
-    g = misspecification_gap(_make_env, range(6), flawed_reward="raw_pnl_unpenalized", max_steps=128)
+    g = misspecification_gap(
+        _make_env, range(6), flawed_reward="raw_pnl_unpenalized", max_steps=128
+    )
     assert g["clean_reward"] == "differential_sharpe"
     assert g["flawed_reward"] == "raw_pnl_unpenalized"
     assert g["proxy_is_stand_in"] is True
@@ -163,3 +160,112 @@ def test_negative_controls_are_not_in_production_registry():
         "recency_biased",
     ):
         assert name not in production_rewards.REWARD_SCHEMES
+
+
+@requires_binding
+def test_indicator_proxy_uses_three_realized_portfolio_returns_not_last_price_move():
+    momentum = MomentumChasePolicy()
+    recency = RecencyChasePolicy()
+    realized = [-0.2, 0.2, -0.1, 0.0]
+    events = []
+    for close, reward in zip([100.0, 80.0, 64.0, 70.4], realized):
+        obs = {"closes": np.array([close])}
+        action = momentum(obs)
+        last_move = recency(obs)
+        events.append({"event": "target_weights", "weights": action.tolist()})
+        momentum.observe_return(reward)
+    assert action.tolist() == [-1.0]
+    assert last_move.tolist() == [1.0]
+    assert indicator_shaped(state={"returns": realized, "events": events}) == 1.0
+    events[-1]["weights"] = [1.0]
+    assert indicator_shaped(state={"returns": realized, "events": events}) == 0.0
+
+
+@requires_binding
+@pytest.mark.parametrize(
+    "history, direction",
+    [
+        ([-0.3, 0.05, 0.05], -1.0),
+        ([0.3, -0.05, -0.05], 1.0),
+        ([0.0, 0.0, 0.0], 0.0),
+    ],
+)
+def test_indicator_proxy_obeys_its_window_and_zero_signal(history, direction):
+    policy = MomentumChasePolicy(window=3)
+    for reward in [
+        10.0,
+        *history,
+    ]:  # The older observation must fall out of the window.
+        policy.observe_return(reward)
+    assert policy({"closes": np.array([100.0, 1.0])}).tolist() == [direction] * 2
+
+
+@requires_binding
+def test_proxy_rollout_delivers_realized_feedback_and_closes_on_failure():
+    from sharpearena.reward_misspecification import _rollout_returns
+
+    observed = []
+
+    class Policy:
+        def __call__(self, obs):
+            return np.array([0.0])
+
+        def observe_return(self, reward):
+            observed.append(reward)
+
+    class Market:
+        closed = False
+        count = 0
+
+        def reset(self):
+            return {}, {}
+
+        def step(self, action):
+            self.count += 1
+            if self.count == 2:
+                raise RuntimeError("synthetic market failure")
+            return {}, 0.125, False, False, {}
+
+        def close(self):
+            self.closed = True
+
+    env = Market()
+    with pytest.raises(RuntimeError, match="synthetic market failure"):
+        _rollout_returns(env, Policy(), 3)
+    assert observed == [0.125]
+    assert env.closed
+
+
+@requires_binding
+def test_recency_observation_is_an_owned_snapshot():
+    policy = RecencyChasePolicy()
+    closes = np.array([100.0])
+    policy({"closes": closes})
+    closes[0] = 90.0
+    assert policy({"closes": closes}).tolist() == [-1.0]
+
+
+@requires_binding
+def test_gap_labels_are_not_reported_as_optimization_evidence():
+    result = misspecification_gap(
+        _make_env, [0], flawed_reward="indicator_shaped", max_steps=4
+    )
+    assert result["comparison_kind"] == "heuristic_policy_comparison"
+    assert result["optimization_performed"] is False
+    assert result["clean_reward_role"] == "label_only"
+
+
+@requires_binding
+@pytest.mark.parametrize("window", [0, -1, True, 1.5])
+def test_indicator_reward_and_policy_reject_the_same_invalid_windows(window):
+    with pytest.raises(ValueError, match="positive integer"):
+        MomentumChasePolicy(window=window)
+    with pytest.raises(ValueError, match="positive integer"):
+        indicator_shaped(state=_hand_state(), window=window)
+
+
+@requires_binding
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_indicator_feedback_refuses_nonfinite_returns(value):
+    with pytest.raises(ValueError, match="finite realized return"):
+        MomentumChasePolicy().observe_return(value)
