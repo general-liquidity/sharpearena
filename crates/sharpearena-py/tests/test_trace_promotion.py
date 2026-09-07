@@ -650,3 +650,27 @@ def test_silver_load_revalidates_content_identity(tmp_path):
     store.path.write_text(json.dumps(record) + "\n", encoding="utf-8")
     with pytest.raises(PromotionError, match="identity"):
         store.read()
+
+
+@pytest.mark.parametrize(
+    "field", ["fingerprint", "scenario", "expected_invariant", "created_at_unix_ns"]
+)
+def test_malformed_silver_values_have_explicit_integrity_errors(tmp_path, field):
+    _, candidate = _leaky_candidate(tmp_path)
+    record = candidate.as_record()
+    record[field] = None
+    store = SilverStore(tmp_path / "silver.jsonl")
+    store.path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+    with pytest.raises(TraceIntegrityError, match=field):
+        store.read()
+
+
+def test_gold_loader_refuses_overflowed_json_numbers(tmp_path, monkeypatch):
+    _, _, gold, _ = _replay_gold(tmp_path, monkeypatch)
+    encoded = json.dumps(gold.as_record())
+    assert '"max_weight": 1.0' in encoded
+    encoded = encoded.replace('"max_weight": 1.0', '"max_weight": 1e999')
+    path = tmp_path / "overflow.json"
+    path.write_text(encoded, encoding="utf-8")
+    with pytest.raises(TraceIntegrityError, match="finite JSON"):
+        load_gold_case(path)

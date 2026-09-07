@@ -125,6 +125,12 @@ def _read_record(text: str, where: str) -> dict[str, Any]:
     except json.JSONDecodeError as error:
         raise TraceIntegrityError(f"{where}: not JSON: {error}") from error
     _require(isinstance(record, dict), f"{where}: record must be an object")
+    try:
+        _canonical_bytes(record)
+    except (TypeError, ValueError) as error:
+        raise TraceIntegrityError(
+            f"{where}: record must contain finite JSON values"
+        ) from error
     return record
 
 
@@ -727,7 +733,26 @@ class SilverStore:
                 - set(row)
             )
             _require(not missing, f"{where}: row is missing {missing}")
+            for field in ("fingerprint", "scenario", "expected_invariant"):
+                _require(isinstance(row[field], dict), f"{where}: invalid {field}")
+            _require(
+                type(row["created_at_unix_ns"]) is int,
+                f"{where}: created_at_unix_ns must be an integer",
+            )
             fingerprint_row = row["fingerprint"]
+            _require(
+                set(fingerprint_row)
+                == {
+                    "environment",
+                    "model",
+                    "scaffold",
+                    "contract",
+                    "data",
+                    "process",
+                    "composite",
+                },
+                f"{where}: invalid fingerprint fields",
+            )
             out.append(
                 SilverCandidate(
                     candidate_id=row["candidate_id"],
@@ -745,7 +770,7 @@ class SilverStore:
                     ),
                     scenario=row["scenario"],
                     expected_invariant=row["expected_invariant"],
-                    created_at_unix_ns=int(row["created_at_unix_ns"]),
+                    created_at_unix_ns=row["created_at_unix_ns"],
                 )
             )
             out[-1].validate_identity()
