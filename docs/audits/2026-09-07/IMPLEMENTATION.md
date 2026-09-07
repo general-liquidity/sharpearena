@@ -2,8 +2,8 @@
 
 Goal started 2026-09-07. Status: active; accelerated implementation resumed.
 
-All nine checklist sections are preserved: 93 rows, 29 closed and 64 open. The
-previous checkpoint had 28 closed and 65 open; BM6 is the only newly closed row.
+All nine checklist sections are preserved: 93 rows, 32 closed and 61 open. The
+preceding saved checkpoint had 29 closed and 64 open; AI9, AD4 and BM9 are newly closed.
 Unchecked rows include partially implemented work and unconfirmed probes, so these
 counts are checklist dispositions, not a count of independent confirmed defects.
 
@@ -101,7 +101,7 @@ listed below, not silently omitted from the goal.
 - [x] BM4, BM5: checked options pricing and separate payoff-tail classification in Bench `36617b2`; rebuilt wasm, migration docs and provenance through `b75ccb3`. PR #17 merged at `77ea0b5` after all 17 Actions jobs passed on that exact head; merged tree equals tested tree. This classifies the supplied same-expiry payoff, not intermediate margin or assignment risk.
 - [x] BI7, BM8: Momentum lookback fixed in Bench `259555e`, PR #15 merged at `09e4d31`. Pending-trade precedence fixed in `4077551`, PR #16 merged at `f2439fb` after all 17 Actions jobs passed on `ad2fce3`.
 - [ ] BI6: team-member resource accounting and concurrency semantics.
-- [ ] BM9: normalized area aggregation and duplicate handling in briefings.
+- [x] BM9: Bench `011154a`, rebuilt wasm/npm regression `05522cb`. Repeated normalized areas aggregate all rows; required unspecified ordering, empty identities and invalid salience limits fail explicitly. PR #20 merged normally at `0b04a13` after all 17 Actions jobs passed on `4d55366`; merged tree equals tested tree. This is structural declared-content auditing, not semantic truth verification.
 - [ ] Supplementary: budget support/search population, plateau terminology, zero-return versus no-trade, regime reversals.
 - [ ] Supplementary: aligned noncausal attribution, unknown process checks, turnover semantics, configured disqualification rollups.
 - [ ] Supplementary: dated rediscovery and explicit transitive clone-cluster semantics.
@@ -123,10 +123,10 @@ listed below, not silently omitted from the goal.
 - [x] R18: unconditional per-environment readback, reporting deduplication separate. Arena `6e57c3c`.
 - [x] AI2: executable prompt examples generated from the actual action contract. Arena `8f9a2a8`, PR #18 merged at `0e6a7a1` after all 11 Actions jobs passed on `b786088`.
 - [x] AI10: exact Gym vector shape, finiteness and policy/bounds validation. Arena `e51937c`.
-- [ ] AI9: implemented in Arena `da019a2` and `d7189d5`; full-horizon/process eligibility gates all eight training schemes, terminal state survives closure, framework cutoffs close once, and failed/incomplete episodes receive a composite -1. Raw traces remain descriptive. Local regressions pass; exact-head CI and main merge pending.
+- [x] AI9: Arena `da019a2` and `d7189d5`; full-horizon/process eligibility gates all eight training schemes, terminal state survives closure, framework cutoffs close once, and failed/incomplete episodes receive a composite -1. Raw traces remain descriptive. PR #21 merged at `9d4e246` after all 11 Actions jobs passed on `986444f`; merged tree equals tested tree.
 - [x] AI3: trusted full snapshot separated from default step/action-only export. Arena `2fcf7ed`; private snapshots and pickles remain operator-only. This omits private reconstruction data, not information deliberately encoded in actions. PR #15 merged at `da47780` after all 11 Actions checks passed. `dfd8891` additionally makes exact-action restoration transactional.
 - [x] AI5: receipt-backed V2 execution evidence in Arena `2e6b41b`, PR #19 merged at `a205289`. Cumulative fill snapshots preserve unknown outcomes and avoid retry double-counting; local reference-price marks are not realized P&L or independent broker attestations.
-- [ ] R16: content-bound promoted gold inputs rerun the producer.
+- [ ] R16: implemented in Arena `e648b41`, persisted-input follow-up `d9146c6`, migration `486cca5`. V2 binds complete reconstruction inputs before operator review and reruns the fixed Gym/native producer. Full action history is preserved, output-only V1 is refused, and identity checks detect edits. Other producer families are explicitly unsupported. Local verification passes; exact-head CI/main merge pending.
 - [x] R10: constrained ellipse fix in Arena `05078a7`; PR #17 merged at `d3f457a`, post-merge main CI `34147591625` passed. Finite nonnegative centre/cost and representable floating-point intermediates remain documented preconditions, not an assumption-free proof.
 
 ## 6. Arena metrics and telemetry
@@ -140,7 +140,7 @@ listed below, not silently omitted from the goal.
 - [x] AD6: prior-action snapshot does not alias caller arrays. Arena `919eb32`.
 - [ ] AR1, AR3: strict optional telemetry and reconciled counts/reasoning/steps/cadence.
 - [ ] AR4: ordered per-measurement duration value/unit/source provenance.
-- [ ] AD4: implemented in Arena `4ac09d3`; indicator proxy consumes the same three-bar realized-return signal as its reward, recency keeps a distinct one-price-change rule, and reports withdraw unsupported optimization/guaranteed-punishment claims. Local regressions pass; exact-head CI and main merge pending.
+- [x] AD4: Arena `4ac09d3`; indicator proxy consumes the same three-bar realized-return signal as its reward, recency keeps a distinct one-price-change rule, and reports withdraw unsupported optimization/guaranteed-punishment claims. PR #21 merged at `9d4e246` after all 11 Actions jobs passed on `986444f`; merged tree equals tested tree.
 - [x] AD8: exact representable PRNG output grid and inversion round trips. Arena `3d0aa82`.
 
 ## 7. Evidence producers
@@ -160,7 +160,7 @@ listed below, not silently omitted from the goal.
 - [ ] AP4: persist pre-execution commitment separately from reveal; witness limits explicit.
 - [ ] AP5: full actual scenario/trajectory replay, not a different first-bar proxy.
 - [ ] AP6: complete frozen-input figure renderer registry.
-- [ ] R21: direct POSIX/Windows Node argument forwarding.
+- [ ] R21: Arena `1c6dd70` invokes Node directly without a shell. Three pre-fix failures reproduced; four forwarding tests pass, including a real Node fixture on POSIX and Windows/POSIX command-construction checks. No throughput experiment ran. Exact-head CI/main merge pending.
 
 ## 8. Verification and publication documents
 
@@ -189,6 +189,26 @@ listed below, not silently omitted from the goal.
 
 ## Verification log
 
+- Arena producer replay: 51 focused promotion cases and 4 Node-forwarding cases
+  pass. The initial two output-only/changed-identity regressions failed before
+  repair. The unchanged gold payload fails with an injected observation leak,
+  then passes after restoring the actual producer; the test asserts all 11
+  observation calls reached it. Six identity-guard mutations and two missing
+  source-comparison cases fail in the temporary package; restoration passes.
+  The first complete Python rerun passed 1,385 with 9 optional skips before five
+  additional persisted-input boundary tests were added; all 55 focused tests pass
+  afterward. Historical artifacts remain untouched. R21's real Node probe executes
+  only a tiny argument-reporting fixture, never the throughput experiment.
+
+- BM9 closure: PR #20 merged at `0b04a13e39caa9e23979019571ba679131f6c5b5`.
+  CI `34161858383` and npm `34161858390` passed all 17 Actions jobs on
+  `4d553666b16b6ccd66b37f5fce70977061a1817a`; both trees equal
+  `635bdfe5f12fcb80630e6573083f05531bc2783a`. Locally, 14 briefing tests,
+  affected-crate Clippy, product workspace excluding xtask, 15 npm tests and the
+  offline installed-package smoke passed. Seven new area/ordering/threshold cases
+  failed against the old implementation. The actual committed WASM was rebuilt
+  and exercised. Provenance validates 169 sources and 40 artifacts.
+
 - Accelerated Arena reward/diagnostic batch: 41 episode-outcome cases failed against
   the prior implementation, including favorable-prefix reward through the real rubric.
   The expanded 48-case suite covers all eight schemes, native window endpoints,
@@ -198,7 +218,16 @@ listed below, not silently omitted from the goal.
   absent optional Minari paths and 2 concern unavailable-dependency branches while
   PettingZoo is installed. No skipped test is treated as passing. The test environment
   uses the project's pinned verifiers 0.1.14 and MCP 1.28.1. Historical results and papers
-  are untouched. AI9/AD4 remain unchecked above until CI/merge verification completes.
+  are untouched. AI9/AD4 then passed all 11 Actions jobs in run
+  [34161346359](https://github.com/general-liquidity/sharpearena/actions/runs/34161346359)
+  on `986444f01b30eb5bb16fafb1c4ffe58e9181cb94`; PR #21 merged at
+  `9d4e246e60f0ff39490550c09a253706d063c36e`. Both trees equal
+  `f0d2149a5c06dd9d11a163c505bf5b2dfeb4fdfb`. Replacing the failure floor
+  with zero fails all 16 abort-reward cases; restoration passes all 16.
+  The actual CI Python job passed 1,364 tests with 2 skips. Replacing the indicator
+  proxy's rolling history with only its last return fails 2 targeted cases; restoring
+  the implementation passes all 3 targeted cases. Both mutations used a temporary
+  installed package, not the production worktree.
 
 The latest closure notes come first. The subsequent log preserves work in progress
 as recorded at the time; older phrases such as "pending" or "in progress" are

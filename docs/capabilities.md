@@ -50,7 +50,7 @@ the root README can stay task-oriented.
 | Strategy generation | Closed non-executable DSL, host-counted trial footprint, disjoint selection/test windows, unit-typed `EdgeManifest` kill conditions |
 | Paper-only forward arm | Read-only data, in-memory or fixed Alpaca paper endpoint, deny-first risk guard, crash-persistent unknown-submission reconciliation |
 | Deferred claims | Commit now, resolve later through a desk with no dataset or future-data path |
-| Trace promotion | Strict silver-to-gold conversion of flagged traces into immutable minimal regressions after an operator decision |
+| Trace promotion | [V2 producer replay](trace-promotion.md): content-bound silver candidates, recorded operator decisions, and gold checks over fresh Gym/native output from the complete action prefix |
 | MCP | Episode `reset`, `step`, and `spec` tools over the Python environment |
 
 ## Known limits
@@ -70,4 +70,8 @@ the root README can stay task-oriented.
 - The local-field target-weight surface does not have the intended-versus-filled
   per-order quantities required to populate the forward arm's counterfactual
   ledger without inference, so it does not pretend to do so.
+- Trace promotion supports one built-in Gym/actions producer, without model calls.
+  Replay inputs contain private seeds and possibly full CSV data. Its Python
+  socket guard is process-global and provides neither concurrent replay safety
+  nor OS isolation; hashes and operator metadata do not authenticate authorship.
 - A PrimeIntellect Environments-Hub listing is not yet shipped.

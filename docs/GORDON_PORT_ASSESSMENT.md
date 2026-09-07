@@ -7,13 +7,15 @@
 **Targets:** SharpeArena and SharpeBench
 **Scope:** architecture and portability only. This assessment does not port Gordon code.
 
-**Current-status note (2026-09-01):** this document began as a pre-implementation
-assessment. The four native candidates it identified have since shipped:
+**Current-status note (2026-09-08):** this document began as a pre-implementation
+assessment. Earlier versions of the four native candidates have shipped. The
+table describes the current implementation, including untagged repairs such as
+V2 trace promotion; it does not describe a new release.
 
 | Candidate | Current disposition |
 |---|---|
 | `EdgeManifest` | Implemented as a closed, unit-typed strategy-evidence schema with host-counted raw trial ordinals and held-out kill-condition evaluation. |
-| Strict trace promotion | Implemented as immutable silver candidates, explicit operator promotion, deterministic fingerprints, and offline gold regressions. |
+| Strict trace promotion | V2 binds captured Gym construction parameters and the complete action prefix to a silver candidate before recorded operator promotion. Gold reruns the fixed local producer and checks fresh output; [scope and migration](trace-promotion.md). |
 | Paper reconciliation | Implemented with a crash-persistent `submission_unknown` state, deterministic client-order identity, query-before-retry, and no production endpoint. Partial-fill state remains the broker's cumulative last-write view rather than an independently accumulated fill ledger. |
 | Evidence coverage | Implemented in SharpeBench as a machine-readable covered/excluded-field inventory with a drift test and secret redaction. |
 
@@ -27,7 +29,7 @@ Gordon should not become the runtime underneath SharpeArena or SharpeBench. It i
 The scan nevertheless found three Gordon ideas worth preserving as native concepts. The assessment itself did not port them; later Sharpe-suite work implemented product-native versions without a Gordon dependency.
 
 1. **An edge manifest for generated strategies.** Gordon's `EdgeSpec` usefully binds a hypothesis to a mechanism, regimes, invariants, kill conditions, and a verification plan. SharpeArena now carries that concept as typed evidence attached to every generated candidate without importing Gordon's parser or monitor.
-2. **A production-trace-to-regression promotion queue.** Gordon has a sound silver-to-gold workflow for turning a flagged real trace into a frozen regression scenario. SharpeArena now provides a strict, operator-approved native workflow over its typed traces.
+2. **A production-trace-to-regression promotion queue.** Gordon supplies the silver-to-gold triage concept. SharpeArena now provides a strict native workflow with recorded operator decisions and executable regressions for its built-in Gym/actions producer.
 3. **An explicit uncertain-execution state for paper trading.** Gordon's termination/reconciliation work captures the important distinction between “not submitted,” “submission outcome unknown,” and “broker acknowledged.” The paper-only arm now models that state explicitly and persists it before reconciliation.
 
 A fourth group belongs only in a **later heavy-scaffold experimental arm**: multi-agent orchestration, tool loops, context compaction, offloaded tool results, rejection memory, and richer process checks. The same model must be evaluated under the minimal scaffold and the heavy scaffold on identical cells. Otherwise the benchmark would report Gordon-plus-model as model performance.
@@ -204,7 +206,7 @@ SharpeBench already has typed trading process events and gates, and the local-ag
 
 Gordon process checks inspect a coding/assistant-style sequence of named tool calls and often match tool names or substrings. That does not map directly to a trading environment whose canonical output is a typed `Decision`. The target analogue is a typed state machine over observation, decision, risk evaluation, submission, acknowledgment, fill, and reconciliation events. String-pattern checks would be brittle and would reward naming conventions rather than behavior.
 
-### Trace promotion was a genuine gap and is now implemented
+### Trace promotion is implemented for the Gym/actions producer
 
 Gordon converts a real audit trace into normalized process/judge views, scores recent traces, appends flagged cases to a promotion queue, and requires operator silver-to-gold triage before freezing a regression scenario (`work/gordon-work/src/infra/domain/evals/harness/traces/traceAdapter.ts`; `traceScorer.ts`; `promotionQueue.ts`; `CLAUDE.md:104`).
 
@@ -213,12 +215,22 @@ SharpeArena already had an append-only point-in-time trace writer and replay sur
 **Decision: implemented natively — concept only.** The promotion path:
 
 1. reads in strict mode and rejects malformed/incomplete traces;
-2. fingerprints the environment, model, scaffold, contract, data, and process-event sequence;
-3. applies deterministic process checks before any model judge;
-4. writes immutable silver candidates with the triggering check and source-trace hash;
-5. requires explicit operator review to become gold;
-6. freezes a minimal scenario plus expected invariant, not an overfit full transcript;
-7. runs gold cases in CI without network or live model calls.
+2. records environment, model, scaffold, contract, data and process lineage fingerprints;
+3. applies deterministic checks to identify blocking failures;
+4. reruns supplied reconstruction inputs and requires the complete source trace to reproduce before building a promotable silver candidate;
+5. binds those inputs, a minimized diagnostic excerpt, the triggering check and source hash into the candidate ID targeted by a recorded operator decision;
+6. freezes the complete action prefix from reset and construction parameters in gold, preserving the state history that may cause the defect;
+7. reruns the installed Gym/native producer and applies the named invariant to newly produced output. A repaired producer can pass the same unchanged case.
+
+V1 output-only cases cannot serve as executable regressions. V2 supports one
+fixed Gym/actions adapter; it does not replay LOB environments, arbitrary wrappers
+or models, or load plugins from artifacts. Reconstruction inputs include private
+seeds and possibly full CSV data and must stay outside the evaluated agent's
+access. The Python socket guard catches ordinary socket construction, is
+process-global, and is neither concurrency-safe nor OS isolation. Content hashes
+detect changes under an existing ID; supplied lineage and operator metadata are
+not independent attestation or proof of human approval. See the [API and V1
+migration](trace-promotion.md).
 
 The k-run live producer in Gordon is sequential (`kRunProducer.ts:35-58`), while SharpeArena already has vectorized/sharded execution. The target implementation is stronger. Gordon's eval “sandbox” only redirects files, database, and environment; it is not an operating-system security boundary. Its dry-run synthesis and loose recent-trace matching must not enter evidence.
 
@@ -380,15 +392,16 @@ all four with the scope and caveats recorded in the current-status table above.
 
 **Source idea:** Gordon silver-to-gold trace promotion.
 
-**Owner:** SharpeArena trace/eval layer with SharpeBench typed checks.
+**Owner:** SharpeArena trace/eval layer with local deterministic promotion checks.
 **Acceptance criteria:**
 
 - strict trace reader for promotion;
-- deterministic fingerprint and reason for flagging;
-- immutable silver queue;
-- explicit human promotion record;
-- frozen minimal gold scenario runnable offline in CI;
-- regression scenario carries source trace and environment hashes.
+- lineage fingerprint and reason for flagging;
+- content-bound silver queue, with reconstruction inputs verified against the complete source trace;
+- recorded operator decision naming the candidate and a review rationale;
+- gold preserves the complete action prefix and checks fresh output from the fixed Gym/native producer;
+- source trace and case hashes detect changed content under an ID, without authenticating authorship;
+- V1 output-only cases require recapture and a new decision; private replay inputs remain operator-only.
 
 #### D3 Paper-execution reconciliation state machine — implemented with a partial-fill caveat
 
