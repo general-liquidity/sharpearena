@@ -1,6 +1,6 @@
 # Sharpe suite audit implementation
 
-Goal started 2026-09-07. Status: paused; repairs incomplete. Checkpoint saved on 2026-09-07.
+Goal started 2026-09-07. Status: active; accelerated implementation resumed.
 
 All nine checklist sections are preserved: 93 rows, 29 closed and 64 open. The
 previous checkpoint had 28 closed and 65 open; BM6 is the only newly closed row.
@@ -18,7 +18,7 @@ or release publication are authorized by this implementation goal. Synthetic
 regressions, existing-fixture tests, package checks and finite diagnostics are in scope.
 Existing published numerical evidence stays frozen until its validity is assessed.
 
-## Status at this checkpoint
+## Status at the preceding saved checkpoint
 
 Bench main is [`e6f2ab189622a8e27d78b0ae8183fdd7cc5e84f4`](https://github.com/general-liquidity/sharpebench/commit/e6f2ab189622a8e27d78b0ae8183fdd7cc5e84f4).
 [Memory PR #18](https://github.com/general-liquidity/sharpebench/pull/18) merged normally after
@@ -40,7 +40,7 @@ helper tests, qualification-recomputing randomization checks and four isolated
 failing mutants are recorded below. They validate the implementation under its
 stated assumptions; they do not prove that supplied replicates are independent.
 
-The full repair goal remains paused and unfinished. No model download, model
+At that documentation checkpoint the repair goal was paused and unfinished. No model download, model
 execution, new benchmark experiment, historical evidence regeneration or release
 publication was performed for this documentation checkpoint.
 
@@ -123,7 +123,7 @@ listed below, not silently omitted from the goal.
 - [x] R18: unconditional per-environment readback, reporting deduplication separate. Arena `6e57c3c`.
 - [x] AI2: executable prompt examples generated from the actual action contract. Arena `8f9a2a8`, PR #18 merged at `0e6a7a1` after all 11 Actions jobs passed on `b786088`.
 - [x] AI10: exact Gym vector shape, finiteness and policy/bounds validation. Arena `e51937c`.
-- [ ] AI9: failure/horizon accounting prevents profitable-prefix abort selection.
+- [ ] AI9: implemented in Arena `da019a2` and `d7189d5`; full-horizon/process eligibility gates all eight training schemes, terminal state survives closure, framework cutoffs close once, and failed/incomplete episodes receive a composite -1. Raw traces remain descriptive. Local regressions pass; exact-head CI and main merge pending.
 - [x] AI3: trusted full snapshot separated from default step/action-only export. Arena `2fcf7ed`; private snapshots and pickles remain operator-only. This omits private reconstruction data, not information deliberately encoded in actions. PR #15 merged at `da47780` after all 11 Actions checks passed. `dfd8891` additionally makes exact-action restoration transactional.
 - [x] AI5: receipt-backed V2 execution evidence in Arena `2e6b41b`, PR #19 merged at `a205289`. Cumulative fill snapshots preserve unknown outcomes and avoid retry double-counting; local reference-price marks are not realized P&L or independent broker attestations.
 - [ ] R16: content-bound promoted gold inputs rerun the producer.
@@ -140,7 +140,7 @@ listed below, not silently omitted from the goal.
 - [x] AD6: prior-action snapshot does not alias caller arrays. Arena `919eb32`.
 - [ ] AR1, AR3: strict optional telemetry and reconciled counts/reasoning/steps/cadence.
 - [ ] AR4: ordered per-measurement duration value/unit/source provenance.
-- [ ] AD4: negative controls match claimed horizon/objective and are distinct.
+- [ ] AD4: implemented in Arena `4ac09d3`; indicator proxy consumes the same three-bar realized-return signal as its reward, recency keeps a distinct one-price-change rule, and reports withdraw unsupported optimization/guaranteed-punishment claims. Local regressions pass; exact-head CI and main merge pending.
 - [x] AD8: exact representable PRNG output grid and inversion round trips. Arena `3d0aa82`.
 
 ## 7. Evidence producers
@@ -188,6 +188,17 @@ listed below, not silently omitted from the goal.
 - [ ] Probe child OOM versus surviving wrapper classification.
 
 ## Verification log
+
+- Accelerated Arena reward/diagnostic batch: 41 episode-outcome cases failed against
+  the prior implementation, including favorable-prefix reward through the real rubric.
+  The expanded 48-case suite covers all eight schemes, native window endpoints,
+  process failures, inconsistent accounting, and the actual verifiers framework loop
+  with synthetic responses (no model calls). Seven proxy regressions also failed before
+  the repair. Latest complete Python suite: 1,357 passed, 9 skipped; 7 skips concern
+  absent optional Minari paths and 2 concern unavailable-dependency branches while
+  PettingZoo is installed. No skipped test is treated as passing. The test environment
+  uses the project's pinned verifiers 0.1.14 and MCP 1.28.1. Historical results and papers
+  are untouched. AI9/AD4 remain unchecked above until CI/merge verification completes.
 
 The latest closure notes come first. The subsequent log preserves work in progress
 as recorded at the time; older phrases such as "pending" or "in progress" are
