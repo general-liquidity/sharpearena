@@ -9,6 +9,7 @@ cleanly if it isn't importable. The pure-data round-trip below the skip guard ex
 ``CheckpointState`` serialization without the binding.
 """
 
+import json
 import pickle
 
 import numpy as np
@@ -184,7 +185,7 @@ def test_state_roundtrips_through_dict():
     _roll(env, action, 4)
     snap = env.clone_state()
 
-    restored = CheckpointState.from_dict(snap.to_dict())
+    restored = CheckpointState.from_dict(snap.to_dict(include_private=True))
     assert restored.params == snap.params
     assert restored.step == snap.step
     assert restored.include_rng == snap.include_rng
@@ -200,7 +201,7 @@ def test_state_is_picklable():
     blob = pickle.dumps(snap)
     back = pickle.loads(blob)
     assert isinstance(back, CheckpointState)
-    assert back.to_dict() == snap.to_dict()
+    assert back.to_dict(include_private=True) == snap.to_dict(include_private=True)
 
     # A pickled state restores a fresh env exactly.
     fresh = env.branch(back)
@@ -220,8 +221,8 @@ def test_state_carries_no_env_handle():
         ), "checkpoint params must not embed a live env/dataset handle"
 
 
-def test_native_o1_checkpoint_matches_replay():
-    """The native O(1) snapshot (native=True) restores byte-identically and agrees with
+def test_native_checkpoint_matches_replay():
+    """The native snapshot (native=True) restores byte-identically and agrees with
     the replay path."""
     import numpy as np
     from sharpearena import SharpeArenaEnv, CheckpointableEnv
@@ -237,7 +238,7 @@ def test_native_o1_checkpoint_matches_replay():
         env.step(a)
     snap_native = env.clone_state(native=True)
     snap_replay = env.clone_state(native=False)
-    # advance, then restore via the native O(1) path
+    # Advance, then restore via the native no-replay path.
     after = [tuple(env.step(a)[0]["closes"]) for _ in range(4)]
     env.restore_state(snap_native)
     native_after = [tuple(env.step(a)[0]["closes"]) for _ in range(4)]
@@ -248,5 +249,143 @@ def test_native_o1_checkpoint_matches_replay():
     assert native_after == replay_after
     # the native snapshot round-trips through to_dict/from_dict
     from sharpearena import CheckpointState
-    rt = CheckpointState.from_dict(snap_native.to_dict())
+    rt = CheckpointState.from_dict(snap_native.to_dict(include_private=True))
     assert rt.native_state == snap_native.native_state
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_public_export_omits_future_csv_and_reconstruction_data(native):
+    # The needle exists only in the last bar, not in the observed prefix. Checking
+    # for Dataset objects alone would pass while exporting this entire string.
+    future_price = "98765.432109"
+    csv_text = "date,symbol,close\n" + "\n".join(
+        f"2024-01-{day:02d},A,{future_price if day == 12 else 100 + day}"
+        for day in range(1, 13)
+    )
+    env = CheckpointableEnv(SharpeArenaEnv(csv_text=csv_text, n_symbols=1))
+    env.reset()
+    env.step([0.25])
+    snap = env.clone_state(native=native)
+    assert future_price in snap.params["csv_text"], "exercise the actual CSV path"
+    public = snap.to_dict()
+    assert set(public) == {"schema", "step", "actions"}
+    assert public["schema"] == "sharpearena.checkpoint-public.v1"
+    assert public["step"] == 1
+    assert public["actions"] == [[0.25]]
+    assert future_price not in json.dumps(public)
+    with pytest.raises(ValueError, match="public.*restor"):
+        CheckpointState.from_dict(public)
+
+    private = snap.to_dict(include_private=True)
+    assert future_price in json.dumps(private)
+    restored = CheckpointState.from_dict(json.loads(json.dumps(private)))
+    actual = env.branch(restored).step([0.1])
+    expected = env.step([0.1])
+    assert _obs_equal(actual[0], expected[0])
+    assert actual[1:] == expected[1:]
+
+
+def test_private_export_and_import_are_detached():
+    state = CheckpointState(params={"nested": {"values": [1, 2]}},
+                            actions=[[0.25]], step=1)
+    exported = state.to_dict(include_private=True)
+    imported = CheckpointState.from_dict(exported)
+    exported["params"]["nested"]["values"].append(3)
+    exported["actions"][0][0] = 0.5
+    assert state.params == imported.params == {"nested": {"values": [1, 2]}}
+    assert state.actions == imported.actions == [[0.25]]
+
+
+def test_nested_live_handle_is_refused_in_private_params():
+    env = _make()
+    with pytest.raises(TypeError, match="dataset/env handle"):
+        checkpoint._assert_no_leak({"nested": [{"handle": env.env}]})
+
+
+def test_legacy_private_payload_remains_restorable():
+    env = _make()
+    env.step(_equal_weight(env))
+    private = env.clone_state().to_dict(include_private=True)
+    del private["schema"]
+    restored = CheckpointState.from_dict(private)
+    assert env.branch(restored).clone_state().actions == private["actions"]
+
+
+def test_unknown_checkpoint_schema_is_refused():
+    with pytest.raises(ValueError, match="schema"):
+        CheckpointState.from_dict({"schema": "unknown", "params": {}})
+
+
+@pytest.mark.parametrize("action", [
+    [[0.2, 0.2, 0.2]], ["0.2", "0.2", "0.2"], [True, False, True],
+    [0.2, 0.2], [0.2, float("nan"), 0.2], [0.2, float("inf"), 0.2], [2, 0, 0],
+])
+def test_checkpoint_wrapper_rejects_invalid_actions_before_advance(action):
+    env = _make()
+    before = env.clone_state(native=True).to_dict(include_private=True)
+    with pytest.raises(ValueError):
+        env.step(action)
+    assert env.clone_state(native=True).to_dict(include_private=True) == before
+
+
+def test_checkpoint_records_and_replays_the_exact_float64_action():
+    env = _make()
+    direct = SharpeArenaEnv(n_symbols=3, n_days=60, seed=5)
+    direct.reset()
+    action = np.array([0.123456789123, 0.234567891234, 0.345678912345])
+    assert not np.array_equal(action, action.astype(np.float32))
+    actual, expected = env.step(action), direct.step(action)
+    snap = env.clone_state()
+    assert snap.actions == [action.tolist()]
+    assert actual[1:] == expected[1:]
+    assert _obs_equal(actual[0], expected[0])
+    fork = env.branch(snap)
+    actual, expected = fork.step(action), direct.step(action)
+    assert actual[1:] == expected[1:]
+    assert _obs_equal(actual[0], expected[0])
+
+
+@pytest.mark.parametrize("native", [False, True])
+@pytest.mark.parametrize("invalid", ["step", "string-step", "bool-step", "rng", "action"])
+def test_malformed_restore_does_not_replace_or_advance_live_environment(native, invalid):
+    env = _make()
+    _roll(env, _equal_weight(env), 3)
+    snap = env.clone_state(native=native)
+    before = env.clone_state(native=True).to_dict(include_private=True)
+    original = env.env
+    if invalid == "step":
+        snap.step = 2
+    elif invalid == "string-step":
+        snap.step = "3"
+    elif invalid == "bool-step":
+        snap.step = True
+    elif invalid == "rng":
+        snap.include_rng = "false"
+    else:
+        snap.actions[1] = [[0.2, 0.2, 0.2]]
+    with pytest.raises((TypeError, ValueError)):
+        env.restore_state(snap)
+    assert env.env is original, "failure must not replace the live engine"
+    assert env.clone_state(native=True).to_dict(include_private=True) == before
+
+
+def test_corrupt_native_snapshot_does_not_replace_live_environment():
+    env = _make()
+    env.step(_equal_weight(env))
+    before = env.clone_state(native=True).to_dict(include_private=True)
+    original = env.env
+    snap = env.clone_state(native=True)
+    snap.native_state = "{broken"
+    with pytest.raises(ValueError):
+        env.restore_state(snap)
+    assert env.env is original
+    assert env.clone_state(native=True).to_dict(include_private=True) == before
+
+
+@pytest.mark.parametrize("field,value", [("step", 1.5), ("step", -1),
+                                       ("step", True), ("include_rng", "false")])
+def test_private_decoder_refuses_coerced_metadata(field, value):
+    private = _make().clone_state().to_dict(include_private=True)
+    private[field] = value
+    with pytest.raises((TypeError, ValueError)):
+        CheckpointState.from_dict(private)

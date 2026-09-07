@@ -1,37 +1,23 @@
-"""Replay-based state clone / restore for :class:`~sharpearena.gym.SharpeArenaEnv`.
+"""Trusted replay/native checkpoints for :class:`~sharpearena.gym.SharpeArenaEnv`.
 
-SharpeArena's whole philosophy is "recompute from raw decisions": a trajectory replays
-byte-identically because the engine is deterministic given its construction params, the
-user seed, and the ordered sequence of actions applied so far. This module turns that
-property into a checkpoint primitive **without touching the engine**.
+A restorable checkpoint contains construction params (including the full CSV, if supplied,
+and the scenario seed), an action prefix and optionally a native snapshot. It is private
+operator state: never give it, its pickle, or its explicit private export to an evaluated
+agent. Rejecting live Dataset/env handles does not make reconstruction params future-free.
 
-A checkpoint is therefore *not* a memory image of the native env. It is::
+``state.to_dict()`` exports only a versioned step/action record. It omits construction
+params, seeds and native state and cannot be restored. ``to_dict(include_private=True)``
+opts into the full, trusted-only payload. This distinction does not protect information
+that a caller deliberately encodes in actions and is not an in-process isolation boundary.
 
-    (construction params) + (ordered action list) + (step index)
-
-and ``restore`` is "build a fresh env from the params, ``reset(seed)``, and replay every
-recorded action". Because the engine is seed-deterministic, the restored env is identical
-to the snapshot point — same next observations, same next rewards. ``branch`` does the same
-into an *independent* env, which is what tree search / MCTS / counterfactual rollouts need:
-explore a subtree without perturbing the parent.
-
-Two restoration paths:
-
-- **Replay (default):** ``restore_state`` / ``branch`` are O(prefix length) — they replay
-  every action up to the snapshot. Engine-agnostic and leak-free by construction.
-- **Native O(1) (opt-in, ``native=True``):** since ``sharpebench-sim 0.0.8`` the engine
-  exposes ``clone_state`` / ``restore_state``, so a snapshot is a direct copy of the native
-  simulator state (cursor + book). ``clone_state(native=True)`` captures that and
-  ``restore_state`` rewinds in O(1) with no replay — the fast path for deep tree search.
-
-Leak-safety: the state carries only construction params + decisions — **never** the
-underlying ``Dataset`` / native ``TradingEnv`` handle or a raw price series. Those would let
-a deserialized checkpoint peek at future bars. Params are validated against that invariant
-on capture (mirrors :mod:`sharpearena.trace`).
+Replay rebuilds the environment and applies every recorded action. Native restore avoids
+action replay but still rebuilds the environment and copies/parses the snapshot, including
+accumulated trace data; neither path promises constant-time restoration.
 """
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -39,10 +25,13 @@ import numpy as np
 import gymnasium as gym
 
 from .gym import SharpeArenaEnv, _EVAL_SEED_BASE
+from ._action_validation import validated_action
 
-# Mirrors trace.py: a checkpoint must never serialize a raw dataset / env handle — that
-# carries the full (incl. future) series. Matched by class name + the reset/step duck-type.
+# Live handles are not reconstruction data. CSV/seed params, however, are intentional
+# private inputs, not proof of leak-freedom. Match names plus the reset/step duck-type.
 _LEAKY_TYPE_NAMES = frozenset({"TradingEnv", "Dataset", "SharpeArenaEnv"})
+_PUBLIC_SCHEMA = "sharpearena.checkpoint-public.v1"
+_PRIVATE_SCHEMA = "sharpearena.checkpoint-restore.v1"
 
 
 def _is_leaky(value: Any) -> bool:
@@ -52,13 +41,19 @@ def _is_leaky(value: Any) -> bool:
 
 
 def _assert_no_leak(params: dict) -> None:
-    for key, value in params.items():
+    seen: set[int] = set()
+
+    def visit(value: Any) -> None:
         if _is_leaky(value):
             raise TypeError(
-                f"refusing to checkpoint param {key}={type(value).__name__!r}: a raw "
-                "dataset/env handle would leak future bars; the state stores construction "
-                "params + decisions only."
+                f"refusing to checkpoint a raw dataset/env handle ({type(value).__name__})"
             )
+        if isinstance(value, (dict, list, tuple)) and id(value) not in seen:
+            seen.add(id(value))
+            for nested in (value.values() if isinstance(value, dict) else value):
+                visit(nested)
+
+    visit(params)
 
 
 def _extract_params(env: SharpeArenaEnv) -> dict:
@@ -89,7 +84,7 @@ def _extract_params(env: SharpeArenaEnv) -> dict:
         "env_kwargs": dict(env._kwargs),
     }
     _assert_no_leak(params)
-    return params
+    return deepcopy(params)
 
 
 def _build_env(params: dict) -> SharpeArenaEnv:
@@ -115,7 +110,7 @@ def _build_env(params: dict) -> SharpeArenaEnv:
 
 @dataclass
 class CheckpointState:
-    """A serializable snapshot of an :class:`SharpeArenaEnv` at a point in an episode.
+    """A private, restorable snapshot; the default dict export is not restorable.
 
     Plain data only — construction ``params``, the ordered ``actions`` replayed so far (as
     nested lists, JSON/pickle-native), and the ``step`` index. ``include_rng`` records the
@@ -129,26 +124,68 @@ class CheckpointState:
     actions: list = field(default_factory=list)
     step: int = 0
     include_rng: bool = True
-    native_state: Any = None  # the native O(1) snapshot JSON (set when native=True)
+    native_state: Any = None  # private native snapshot JSON (set when native=True)
 
-    def to_dict(self) -> dict:
-        return {
-            "params": dict(self.params),
-            "actions": [list(a) for a in self.actions],
-            "step": int(self.step),
-            "include_rng": bool(self.include_rng),
-            "native_state": self.native_state,
+    def _validate(self) -> None:
+        if not isinstance(self.params, dict):
+            raise TypeError("checkpoint params must be a dict")
+        _assert_no_leak(self.params)
+        if type(self.step) is not int or self.step < 0:
+            raise ValueError("checkpoint step must be a nonnegative integer")
+        if not isinstance(self.actions, list) or len(self.actions) != self.step:
+            raise ValueError("checkpoint step must equal the action-prefix length")
+        if type(self.include_rng) is not bool:
+            raise TypeError("checkpoint include_rng must be a bool")
+        if self.native_state is not None and not isinstance(self.native_state, str):
+            raise TypeError("checkpoint native_state must be a JSON string or None")
+        for action in self.actions:
+            values = np.asarray(action)
+            if values.ndim != 1 or values.dtype.kind not in "fiu":
+                raise ValueError("checkpoint actions must be one-dimensional real arrays")
+            if not np.all(np.isfinite(values)):
+                raise ValueError("checkpoint actions must be finite")
+
+    def to_dict(self, *, include_private: bool = False) -> dict:
+        """Export a public step/action record, or explicitly opt into private state.
+
+        Private payloads and pickled CheckpointState objects contain future-reconstructing
+        inputs. Keep them operator-only; never unpickle data from an untrusted sender.
+        """
+        if type(include_private) is not bool:
+            raise TypeError("include_private must be a bool")
+        self._validate()
+        public = {
+            "schema": _PUBLIC_SCHEMA,
+            "actions": deepcopy(self.actions),
+            "step": self.step,
         }
+        if not include_private:
+            return public
+        _assert_no_leak(self.params)
+        return {**public, "schema": _PRIVATE_SCHEMA, "params": deepcopy(self.params),
+                "include_rng": self.include_rng, "native_state": deepcopy(self.native_state)}
 
     @classmethod
     def from_dict(cls, d: dict) -> "CheckpointState":
-        return cls(
-            params=dict(d["params"]),
-            actions=[list(a) for a in d.get("actions", [])],
-            step=int(d.get("step", 0)),
-            include_rng=bool(d.get("include_rng", True)),
-            native_state=d.get("native_state"),
+        """Read an explicit private payload (or a legacy private dict with params)."""
+        if not isinstance(d, dict):
+            raise TypeError("checkpoint payload must be a dict")
+        if d.get("schema") == _PUBLIC_SCHEMA:
+            raise ValueError("a public checkpoint export cannot restore an environment")
+        if d.get("schema") not in (None, _PRIVATE_SCHEMA):
+            raise ValueError("unsupported checkpoint schema")
+        if not isinstance(d.get("params"), dict):
+            raise ValueError("restoration requires private checkpoint params")
+        _assert_no_leak(d["params"])
+        state = cls(
+            params=deepcopy(d["params"]),
+            actions=deepcopy(d.get("actions", [])),
+            step=d.get("step", 0),
+            include_rng=d.get("include_rng", True),
+            native_state=deepcopy(d.get("native_state")),
         )
+        state._validate()
+        return state
 
 
 class CheckpointableEnv(gym.Wrapper):
@@ -176,7 +213,7 @@ class CheckpointableEnv(gym.Wrapper):
         return out
 
     def step(self, action):
-        arr = np.asarray(action, dtype=np.float32).reshape(-1)
+        arr = validated_action(action, self.env.action_space)
         result = self.env.step(arr)
         self._actions.append(arr.copy())
         self._step += 1
@@ -188,10 +225,12 @@ class CheckpointableEnv(gym.Wrapper):
         """Capture the current env state as a serializable :class:`CheckpointState`.
 
         With ``native=False`` (default) the snapshot is the recorded action prefix
-        (O(prefix length); engine-agnostic). With ``native=True`` it is the engine's O(1)
-        ``clone_state`` snapshot (cursor + book) — the fast path for deep tree search.
+        (O(prefix length); engine-agnostic). With ``native=True`` it also contains the
+        engine snapshot, whose copying/serialization cost grows with its state size.
         ``include_rng`` is documented on :class:`CheckpointState`.
         """
+        if type(include_rng) is not bool or type(native) is not bool:
+            raise TypeError("include_rng and native must be bools")
         return CheckpointState(
             params=_extract_params(self.env),
             actions=[a.tolist() for a in self._actions],
@@ -202,18 +241,16 @@ class CheckpointableEnv(gym.Wrapper):
 
     def restore_state(self, state: CheckpointState) -> None:
         """Rewind THIS env to ``state``. If ``state`` carries a ``native_state`` snapshot,
-        rebuild the env and restore the engine in O(1); otherwise rebuild and replay the
+        rebuild the env and restore the engine without replay; otherwise rebuild and replay the
         recorded action prefix (O(prefix length)). Both are exact (the engine is
         deterministic), so the restored env reproduces the snapshot point byte-for-byte.
         """
-        self.env = _build_env(state.params)
-        if state.native_state is not None:
-            self.env.reset()
-            self.env.restore_state(state.native_state)
-            self._actions = [np.array(a, dtype=np.float64, copy=True) for a in state.actions]
-            self._step = int(state.step)
-        else:
-            self._replay(state)
+        # Validation, reconstruction and replay may all fail. Keep the old engine and
+        # prefix untouched until the candidate has successfully completed every step.
+        candidate = self.branch(state)
+        self.env = candidate.env
+        self._actions = candidate._actions
+        self._step = candidate._step
 
     def branch(self, state: CheckpointState) -> "CheckpointableEnv":
         """Return a NEW, independent :class:`CheckpointableEnv` restored to ``state``.
@@ -223,27 +260,30 @@ class CheckpointableEnv(gym.Wrapper):
         the same ``state`` fed the same actions produce identical trajectories. Also
         O(prefix length) to materialize.
         """
-        fork = CheckpointableEnv(_build_env(state.params))
+        if not isinstance(state, CheckpointState):
+            raise TypeError("restore requires a private CheckpointState")
+        state._validate()
+        fork = CheckpointableEnv(_build_env(deepcopy(state.params)))
+        actions = [validated_action(a, fork.env.action_space) for a in state.actions]
         if state.native_state is not None:
             fork.env.reset()
             fork.env.restore_state(state.native_state)
-            fork._actions = [np.array(a, dtype=np.float64, copy=True) for a in state.actions]
-            fork._step = int(state.step)
+            fork._actions = actions
+            fork._step = state.step
         else:
-            fork._replay(state)
+            fork._replay(actions)
         return fork
 
     # -- internal ----------------------------------------------------------
 
-    def _replay(self, state: CheckpointState) -> None:
-        """Reset ``self.env`` (assumed freshly built from ``state.params``) and replay."""
+    def _replay(self, actions: list[np.ndarray]) -> None:
+        """Reset a freshly built candidate and replay its validated action prefix."""
         self.env.reset()
         self._actions = []
-        for a in state.actions:
-            arr = np.asarray(a, dtype=np.float32).reshape(-1)
+        for arr in actions:
             self.env.step(arr)
             self._actions.append(arr)
-        self._step = int(state.step)
+        self._step = len(actions)
 
 
 __all__ = ["CheckpointableEnv", "CheckpointState"]

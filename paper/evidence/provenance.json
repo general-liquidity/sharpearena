@@ -216,7 +216,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "382659a982a4b853c6e83953d5f74dafb81b3e0f",
+  "generated_at_head": "dfd8891beaf78776969f34a1a973372e1e6541d0",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -294,7 +294,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/checkpoint.py",
-      "sha256": "d8004d809248791bf7d5ca02230721810c420bc0ed1126c208f745d76b6e799b"
+      "sha256": "5622e5622f2c57902500f57bb7019408f4dd3460b7d6494f378271758972ac20"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/confidence.py",
@@ -378,7 +378,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/gym.py",
-      "sha256": "dcd58a74e5640ab29f82320e0d85d888af681f445877e32f5a78f8e30a8b6f88"
+      "sha256": "3f0ff9a28e9aba1689ff5dd23a6fa476b341c38555cb0c45bf0af732a006b0a4"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/indicators.py",
@@ -538,7 +538,7 @@
     },
     {
       "path": "crates/sharpearena-py/src/lib.rs",
-      "sha256": "7af3372bae15de727a4d51e00bf36b7df0cb61b31411e261c044579d7a8378fc"
+      "sha256": "fd62a3d8c5e91d2c51d3055cdca8a63b195e4dbefd540837bb1c52645f14f915"
     },
     {
       "path": "crates/sharpearena-wasm/Cargo.toml",
@@ -808,6 +808,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "c4767013ad4c424585cf676ac0f853a31f25c49de5df6ce10f2b0a277d2ac4cd",
+  "source_snapshot_sha256": "f409f7e89dfcf581bdebd0c6584f38d47942fa2f7df398317a4cabd1b67afee0",
   "validator": "paper/src/check-provenance.py"
 }
