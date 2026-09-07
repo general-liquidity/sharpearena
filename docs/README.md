@@ -43,6 +43,7 @@ the package:
 
 - [Sandbox and generated-code research](SANDBOX_ENVIRONMENT_RESEARCH_2026.md)
 - [Gordon port assessment](GORDON_PORT_ASSESSMENT.md)
+- [Suite audit and complete repair checklist, 7 September 2026](audits/2026-09-07/README.md)
 
 The package READMEs are intentionally self-contained so registry users do not need the
 repository layout for first use.
