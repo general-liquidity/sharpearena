@@ -50,7 +50,7 @@ const SPEC_FILES: [&str; 7] = [
 /// Manual epoch: bump to force a new spec hash for a semantics change the file set
 /// and the exact suite-dependency pins cannot see (for example, a toolchain codegen
 /// property that becomes part of the wire contract).
-const SPEC_EPOCH: &[u8] = b"spec-epoch-2";
+const SPEC_EPOCH: &[u8] = b"spec-epoch-3";
 const DEPENDENCY_INPUT: &str = "suite-dependencies.v1.toml";
 
 fn fnv1a(seed: u64, bytes: impl IntoIterator<Item = u8>) -> u64 {

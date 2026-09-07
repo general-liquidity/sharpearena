@@ -60,7 +60,7 @@ mod tests {
         // so the record documents the real provenance of the value.
         assert_eq!(
             doc["epoch"].as_str(),
-            Some("spec-epoch-2"),
+            Some("spec-epoch-3"),
             "epoch drifted from build.rs SPEC_EPOCH"
         );
         let build_rs = include_str!("../build.rs");

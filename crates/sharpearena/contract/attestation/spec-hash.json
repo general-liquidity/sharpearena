@@ -1,7 +1,7 @@
 {
   "note": "Cross-surface tape-semantics fingerprint. build.rs hashes the seven named source files followed by suite-dependencies.v1.toml, a canonical record derived from Cargo.toml by build_support.rs. It binds exact versions and features of sharpebench-core, sharpebench-protocol and sharpebench-sim without depending on Cargo's package-manifest rewriting. The manual epoch covers changes outside those inputs, including non-suite dependencies. This fingerprint is a compatibility check, not cryptographic attestation of every transitive dependency or the toolchain. Python and npm wrappers pin the engine value and refuse mismatches.",
   "algorithm": "fnv1a-64 seeded with fnv1a-64(offset_basis, epoch); each input contributes UTF-8 file name, NUL, canonical byte length as little-endian u64, then bytes with CRLF normalized to LF (lone CR retained)",
-  "epoch": "spec-epoch-2",
+  "epoch": "spec-epoch-3",
   "files": [
     "src/contract.rs",
     "src/exec_noise.rs",
@@ -12,5 +12,5 @@
     "src/scenario_gen.rs",
     "suite-dependencies.v1.toml"
   ],
-  "spec_hash": "5d746e43f3ae96c9"
+  "spec_hash": "9e0a9dc9225ea83a"
 }
