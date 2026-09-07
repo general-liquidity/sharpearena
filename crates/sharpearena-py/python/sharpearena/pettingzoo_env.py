@@ -133,6 +133,7 @@ class MultiAgentSharpeArenaEnv(ParallelEnv):
                 n_symbols=self._n_symbols,
                 n_days=self._n_days,
                 seed=self._scenario_seed,
+                distribution_mode=self._distribution_mode,
                 max_weight=self._max_weight,
                 allow_short=self._allow_short,
                 env_kwargs=self._kwargs,
