@@ -11,6 +11,7 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 ## [Unreleased]
 
 ### Fixed
+- Native shared-market resets restore capital, positions, the cursor, impact and volatility history. Reset after a partial or completed episode now replays the fresh market byte-for-byte instead of returning an observation over stale books. Wrapper pins and the committed wasm are rebuilt for the changed engine fingerprint.
 - SPEC_HASH uses a canonical record of the exact suite dependency versions/features instead of Cargo.toml's raw formatting, so Cargo's normalized package and the source checkout agree. The epoch advances to 2; Python/npm pins and the committed wasm are rebuilt together. CI now executes the pin assertion inside the actual Cargo package and refuses zero-test runs. This remains a scoped compatibility fingerprint, not full supply-chain attestation.
 - Limit-order-book resets clear the previous-equity reward baseline as well as inventory and cash, so partial and completed prior episodes cannot contaminate replayed rewards.
 - PettingZoo competition forwards the requested distribution mode into every native consumer, including reseeded resets; stress-labelled tournaments no longer silently run Calm.

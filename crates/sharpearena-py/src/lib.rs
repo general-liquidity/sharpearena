@@ -1171,8 +1171,9 @@ impl PyMarketClearing {
         self.inner.is_done()
     }
 
-    /// Pre-trade per-agent observations + market metadata as a JSON string.
-    fn reset_market(&self) -> PyResult<String> {
+    /// Reset all mutable market state and return initial observations + metadata.
+    fn reset_market(&mut self) -> PyResult<String> {
+        self.inner.reset();
         let observations = observations_to_json(&self.inner.initial_observations())?;
         let out = serde_json::json!({
             "symbols": self.inner.symbols(),
