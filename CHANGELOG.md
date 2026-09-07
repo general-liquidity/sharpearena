@@ -11,6 +11,7 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 ## [Unreleased]
 
 ### Fixed
+- Radar diagnostics assign zero drawdown the best risk score and cannot reward increasing drawdown. Missing observed risk or degenerate anchors are unavailable (`ValueError`), not fabricated zero-risk panels. Flat profitability remains zero; flat risk control is necessarily best, not zero.
 - Baseline evaluation verifies every newly constructed environment before rollout, even without a readback collector or when a seed already has a stored readback. Deduplicating reporting no longer disables validation.
 - Failure rollups preserve malformed/missing episodes as `invalid_evidence` and explicit execution failures as `execution_failed`, rather than increasing the clean rate. Finite returns and event inputs are required; the two new dispositions do not attribute infrastructure faults to an agent.
 - SplitMix inversion refuses off-grid floating-point observations rather than truncating them to another published unit. Boundary tests verify every returned state reproduces the exact observed value.

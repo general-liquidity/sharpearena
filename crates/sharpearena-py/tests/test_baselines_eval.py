@@ -136,12 +136,12 @@ def test_label_regime_expected_labels():
 
 @requires_numpy
 def test_radar_score_bounded_and_anchored():
-    zero = {"deflated_sharpe": 0.0, "max_drawdown": 0.30}
+    zero = {"deflated_sharpe": 0.0, "max_drawdown": 0.0}
     base = {"deflated_sharpe": 0.5, "max_drawdown": 0.10}
     flat = radar_score(zero, zero_anchor=zero, base_anchor=base, base=50.0, scale=100.0)
     based = radar_score(base, zero_anchor=zero, base_anchor=base, base=50.0, scale=100.0)
     assert flat["profitability"] == pytest.approx(0.0, abs=1e-6)
-    assert flat["risk_control"] == pytest.approx(0.0, abs=1e-6)
+    assert flat["risk_control"] == pytest.approx(100.0, abs=1e-6)
     assert based["profitability"] == pytest.approx(50.0, abs=1e-6)
     assert based["risk_control"] == pytest.approx(50.0, abs=1e-6)
     # An all-around stronger panel stays bounded and beats the base anchor.
@@ -150,14 +150,27 @@ def test_radar_score_bounded_and_anchored():
     for axis in ("profitability", "risk_control", "overall"):
         assert 0.0 <= sr[axis] <= 100.0
     assert sr["profitability"] > 50.0
+    assert sr["risk_control"] > 50.0
 
 
 @requires_numpy
-def test_radar_degenerate_anchor_does_not_crash():
+def test_real_flat_anchor_never_rewards_more_drawdown():
+    zero = {"deflated_sharpe": 0.0, "max_drawdown": 0.0}
+    base = {"deflated_sharpe": 0.5, "max_drawdown": 0.1}
+    panels = [radar_score({"deflated_sharpe": 0.5, "max_drawdown": d}, zero_anchor=zero, base_anchor=base) for d in [0.0, 0.05, 0.1, 0.2]]
+    assert panels[0]["risk_control"] == pytest.approx(100.0)
+    assert panels[2]["risk_control"] == pytest.approx(50.0)
+    assert panels[3]["risk_control"] == pytest.approx(20.0)
+    for a, b in zip(panels, panels[1:]):
+        assert a["risk_control"] > b["risk_control"]
+        assert a["overall"] > b["overall"]
+
+
+@requires_numpy
+def test_radar_degenerate_anchor_is_unavailable_not_an_invented_scale():
     same = {"deflated_sharpe": 0.1, "max_drawdown": 0.1}
-    out = radar_score(same, zero_anchor=same, base_anchor=same)
-    for axis in ("profitability", "risk_control", "overall"):
-        assert 0.0 <= out[axis] <= 100.0
+    with pytest.raises(ValueError, match="anchor"):
+        radar_score(same, zero_anchor=same, base_anchor=same)
 
 
 # -- end-to-end (needs the native binding) ----------------------------------
@@ -209,8 +222,7 @@ def test_evaluate_per_regime_radar_pipeline():
     flat = evaluate_seeds(_make_env_for_seed, seeds, FlatPolicy())
     base = evaluate_seeds(_make_env_for_seed, seeds, EqualWeightLongPolicy())
     cand = evaluate_seeds(_make_env_for_seed, seeds, MaxSharpePolicy())
-    # evaluate_seeds reports deflated_sharpe but not max_drawdown; radar tolerates the
-    # missing risk key by falling back to 0 drawdown for every panel.
-    sr = radar_score(cand, zero_anchor=flat, base_anchor=base)
-    for axis in ("profitability", "risk_control", "overall"):
-        assert 0.0 <= sr[axis] <= 100.0
+    # This aggregate does not contain observed drawdown. It is not valid input
+    # for a two-axis risk panel until the caller supplies that actual evidence.
+    with pytest.raises(ValueError, match="max_drawdown"):
+        radar_score(cand, zero_anchor=flat, base_anchor=base)
