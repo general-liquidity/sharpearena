@@ -11,6 +11,7 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 ## [Unreleased]
 
 ### Fixed
+- Gym and vector actions require exact shape, finite real values and the configured action-space bounds before native state advances. Async vector actions are owned snapshots; reset discards pending actions.
 - Radar diagnostics assign zero drawdown the best risk score and cannot reward increasing drawdown. Missing observed risk or degenerate anchors are unavailable (`ValueError`), not fabricated zero-risk panels. Flat profitability remains zero; flat risk control is necessarily best, not zero.
 - Baseline evaluation verifies every newly constructed environment before rollout, even without a readback collector or when a seed already has a stored readback. Deduplicating reporting no longer disables validation.
 - Failure rollups preserve malformed/missing episodes as `invalid_evidence` and explicit execution failures as `execution_failed`, rather than increasing the clean rate. Finite returns and event inputs are required; the two new dispositions do not attribute infrastructure faults to an agent.

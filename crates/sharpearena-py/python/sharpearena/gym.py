@@ -18,6 +18,7 @@ import gymnasium as gym
 from gymnasium import spaces
 
 from .sharpearena_py import TradingEnv
+from ._action_validation import validate_weight_limit, validated_action
 
 # Action label carried alongside the (signed) target weight. Sizing lives in the
 # weight; the label is descriptive and scored for calibration on the Rust side.
@@ -67,6 +68,7 @@ class SharpeArenaEnv(gym.Env):
         env_kwargs: Optional[dict] = None,
     ) -> None:
         super().__init__()
+        validate_weight_limit(max_weight, allow_short)
         if mode not in ("train", "eval"):
             raise ValueError("mode must be 'train' or 'eval'")
         self._seed = int(seed)
@@ -168,7 +170,7 @@ class SharpeArenaEnv(gym.Env):
         }
 
     def _action_to_decision_json(self, action: np.ndarray) -> str:
-        weights = np.asarray(action, dtype=np.float64).reshape(-1)
+        weights = validated_action(action, self.action_space)
         orders = [
             {
                 "symbol": sym,
@@ -197,7 +199,7 @@ class SharpeArenaEnv(gym.Env):
             "orders": {
                 "symbol": "str (one of self.symbols)",
                 "action": "str: buy | sell | hold | close",
-                "target_weight": "float in [-1, 1] (signed for shorts)",
+                "target_weight": f"float in [{float(self.action_space.low[0])}, {float(self.action_space.high[0])}]",
                 "confidence": "float in [0, 1]",
                 "rationale": "str (optional, default '')",
             },
