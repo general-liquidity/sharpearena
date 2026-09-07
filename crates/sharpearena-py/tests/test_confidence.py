@@ -127,7 +127,7 @@ def test_pairwise_significance_over_leaderboard_rows():
     assert comps[0]["a"] == "winner" and comps[0]["b"] == "loser"
     assert comps[0]["significant"]
     md = significance_markdown(comps)
-    assert "beyond seed noise" in md
+    assert "winner > loser (CI excludes zero)" in md
     assert "Verdict" in md
 
 
@@ -144,8 +144,52 @@ def test_significance_markdown_importable_without_binding():
                 "hi": 0.1,
                 "p_value": 1.0,
                 "significant": False,
+                "verdict": "tied",
+                "confidence": 0.9,
             }
         ]
     )
-    assert md.startswith("| A (ranked above)")
-    assert "statistically tied" in md
+    assert md.startswith("| A | B |")
+    assert "difference not established" in md
+    assert "statistically tied" not in md
+    assert "90%" in md and "95%" not in md
+
+
+def _comparison(**changes):
+    return dict(a="alpha", b="beta", point_diff=-0.2, lo=-0.3, hi=-0.1,
+                p_value=0.01, significant=True, verdict="b_better",
+                confidence=0.9, **changes)
+
+
+def test_renderer_names_actual_winner_and_each_confidence_level():
+    a = _comparison()
+    b = {**a, "point_diff": 0.2, "lo": 0.1, "hi": 0.3,
+         "verdict": "a_better", "confidence": 0.99}
+    md = significance_markdown([a, b])
+    lines = md.splitlines()
+    assert "beta > alpha (CI excludes zero)" in lines[2]
+    assert "90%" in lines[2]
+    assert "alpha > beta (CI excludes zero)" in lines[3]
+    assert "99%" in lines[3]
+    assert "95%" not in md
+
+
+@pytest.mark.parametrize("changes", [
+    {"verdict": "a_better"}, {"significant": False}, {"point_diff": 0.2},
+    {"verdict": "unknown"}, {"significant": "false"}, {"confidence": 1.0},
+    {"confidence": 0.0}, {"confidence": float("nan")}, {"p_value": -0.1},
+    {"p_value": 1.1}, {"point_diff": float("inf")}, {"lo": 0.3},
+    {"hi": float("nan")}, {"hi": True},
+])
+def test_renderer_refuses_inconsistent_or_nonfinite_comparisons(changes):
+    with pytest.raises(ValueError):
+        significance_markdown([{**_comparison(), **changes}])
+
+
+@pytest.mark.parametrize("key", ["confidence", "verdict", "point_diff", "lo", "hi",
+                                "significant", "p_value", "a", "b"])
+def test_renderer_does_not_default_missing_evidence(key):
+    comparison = _comparison()
+    del comparison[key]
+    with pytest.raises(ValueError):
+        significance_markdown([comparison])
