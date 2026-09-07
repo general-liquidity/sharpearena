@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from .decision_examples import render_decision_examples
 from .mandate import mandate_text, sample_mandate
 
 EVAL_SEED_BASE = 1_000_000
@@ -32,16 +33,18 @@ def _initial_question(
     n_symbols: int, n_days: int, mode: str, allow_short: bool, mandate_text_str: str
 ) -> str:
     side = "long or short" if allow_short else "long-only"
+    bounds = "[-1, 1]" if allow_short else "[0, 1]"
+    symbols = [f"SYM{i:02}" for i in range(n_symbols)]
     return (
         f"You are trading a leak-free, point-in-time SharpeArena market: {n_symbols} "
-        f"symbols over a {n_days}-bar window ({side}, target weights in [-1, 1]).\n"
+        f"symbols over a {n_days}-bar window ({side}, target weights in {bounds}).\n"
         f"Mandate: {mandate_text_str}\n"
         "Each turn you receive the latest bar (closes, positions, cash) and choose new "
         "target weights to maximize the run's deflated Sharpe while satisfying your "
         "mandate.\n"
-        "Reply with two XML fields: <reasoning>...</reasoning> and an <action> carrying "
-        'decision JSON, e.g. <action>{"weights": {"SYM00": 0.5, "SYM01": -0.3}}</action> '
-        'or <action>{"flat": true}</action> to hold flat. Unlisted symbols default to 0.'
+        "Reply with two XML fields: reasoning and action, with the latter "
+        "carrying the decision JSON.\n"
+        + render_decision_examples(symbols)
     )
 
 
