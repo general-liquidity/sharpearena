@@ -10,6 +10,10 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ## [Unreleased]
 
+### Fixed
+- Diagnostic run metrics include initial capital in return and drawdown, snapshot mutable action buffers for turnover, and use full-sample zero-target downside RMS. The Sortino training reward now uses the same denominator (previously it averaged only losing bars); no historical evidence has been regenerated.
+- The opt-in cost-adjusted diagnostic can no longer reward greater expense for negative base scores. Positive-score behavior is unchanged; negative scores decline toward twice the base as cost grows. This does not change the official rank key.
+
 ### Added
 - python/bridge: preserve source-labelled duration for every local-model request and publish validated nearest-rank p50/p95 latency, token totals, reasoning-token provenance, and retries per model. The operational profile is explicitly marked `rank_input: false` and does not enter SharpeBench submissions.
 

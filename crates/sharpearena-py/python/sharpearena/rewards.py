@@ -87,16 +87,18 @@ def sortino(
 ) -> float:
     """Downside-deviation-denominated risk-adjusted return, tanh-bounded.
 
-    ``mean(returns) / downside_deviation`` where the denominator is the RMS of the negative
-    bars only (upside volatility is not penalized). A series with no losing bar earns the
+    ``mean(returns) / downside_deviation`` where the denominator is the RMS of
+    ``min(return, 0)`` over every bar, matching the diagnostic panel and the
+    benchmark's full-sample zero-target convention. Upside bars contribute zero
+    shortfall, not a smaller sample denominator. A series with no losing bar earns the
     mean's sign at full magnitude; an all-flat series scores 0.
     """
     rets = _returns_from_state(state)
     if len(rets) < 2:
         return 0.0
     a = np.asarray(rets, dtype=float)
-    downside = a[a < 0.0]
-    dd = float(np.sqrt(np.mean(np.square(downside)))) if downside.size else 0.0
+    downside = np.minimum(a, 0.0)
+    dd = float(np.sqrt(np.mean(np.square(downside))))
     mean = float(a.mean())
     if dd <= 1e-12:
         return float(np.tanh(np.sign(mean) * a.size))

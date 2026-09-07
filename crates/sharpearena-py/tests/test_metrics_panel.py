@@ -42,14 +42,71 @@ def test_panel_matches_hand_computed_values():
     d = m.to_dict()
 
     assert d["volatility"] == pytest.approx(0.11924240017711822)
-    assert d["downside_deviation"] == pytest.approx(0.025)
-    assert d["sortino"] == pytest.approx(1.5)
+    # Full-sample target downside RMS: sqrt((.1**2 + .05**2) / 4).
+    assert d["downside_deviation"] == pytest.approx(np.sqrt(0.0125 / 4))
+    assert d["sortino"] == pytest.approx(0.0375 / np.sqrt(0.0125 / 4))
     assert d["var_95"] == pytest.approx(-0.0925)
     assert d["cvar_95"] == pytest.approx(-0.1)
     assert d["tail_ratio"] == pytest.approx(2.0)
-    assert d["realized_return"] == pytest.approx(0.026)
+    assert d["realized_return"] == pytest.approx(0.1286)
     assert d["max_drawdown"] == pytest.approx(0.1)
-    assert d["calmar"] == pytest.approx(0.26)
+    assert d["calmar"] == pytest.approx(1.286)
+
+
+@pytest.mark.parametrize("explicit_nav", [False, True])
+def test_initial_loss_is_part_of_whole_run_metrics(explicit_nav):
+    m = RunMetrics()
+    nav = 1.0
+    for r in [-0.5, 0.1]:
+        nav *= 1.0 + r
+        m.record_step(**({"nav": nav} if explicit_nav else {"reward": r}))
+    assert m.realized_return == pytest.approx(-0.45)
+    assert m.max_drawdown == pytest.approx(0.5)
+    assert m.calmar == pytest.approx(-0.9)
+
+
+@pytest.mark.parametrize("count", [2, 3, 10])
+def test_equal_losses_have_positive_downside_risk(count):
+    m = RunMetrics()
+    for _ in range(count):
+        m.record_step(reward=-0.1)
+    assert m.downside_deviation == pytest.approx(0.1)
+    assert m.sortino == pytest.approx(-1.0)
+
+
+@pytest.mark.parametrize("returns", [[0.1, -0.1, 0.2, -0.05], [-0.1, -0.1, -0.1]])
+def test_sortino_reward_and_panel_share_the_full_sample_denominator(returns):
+    from sharpearena.rewards import sortino
+
+    m = RunMetrics()
+    for r in returns:
+        m.record_step(reward=r)
+    expected_dd = np.sqrt(sum(min(r, 0.0) ** 2 for r in returns) / len(returns))
+    assert m.downside_deviation == pytest.approx(expected_dd)
+    assert sortino(state={"returns": returns}) == pytest.approx(np.tanh(m.sortino))
+
+
+def test_reused_action_buffer_cannot_rewrite_previous_weights():
+    m = RunMetrics()
+    buffer = np.array([0.5, 0.5])
+    m.record_step(weights=buffer)
+    buffer[:] = [1.0, 0.0]
+    m.record_step(weights=buffer)
+    assert m.turnover == pytest.approx(2.0)
+    assert m.to_dict()["cost_drag"] == pytest.approx(0.002)
+
+
+@pytest.mark.parametrize("base", [-2.0, -0.1, 0.0, 0.1, 2.0])
+def test_cost_cannot_improve_a_signed_base_score(base):
+    scores = []
+    for tokens in [0, 10_000, 100_000]:
+        m = RunMetrics()
+        m.record_step(tokens=tokens)
+        scores.append(cost_adjusted_score({"mean_return": base}, m, base_key="mean_return"))
+    assert scores[0] == base
+    assert scores[0] >= scores[1] >= scores[2]
+    if base != 0:
+        assert scores[0] > scores[1] > scores[2]
 
 
 def test_empty_series_panel_is_zero_and_finite():

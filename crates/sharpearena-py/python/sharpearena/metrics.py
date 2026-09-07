@@ -1,4 +1,4 @@
-"""Cost-adjusted run-metrics for an SharpeArena rollout.
+"""Cost-adjusted run-metrics for a SharpeArena rollout.
 
 :class:`RunMetrics` is a **diagnostic** block — separate from the env reward and from the
 SharpeBench score, never a scored signal. It tracks the cheap, deterministic facts about a
@@ -27,7 +27,13 @@ _DEFAULT_FEE_RATE = 0.001
 
 
 class RunMetrics:
-    """Per-run diagnostic counters. Update via :meth:`record_step`; read via :meth:`to_dict`."""
+    """Per-run diagnostic counters, with normalized initial NAV 1.0.
+
+    ``nav`` observations are post-step wealth in units of initial capital, not
+    absolute account balances. Downside risk uses zero-target RMS over all bars.
+    Undefined Sortino/Calmar ratios retain the documented zero display sentinel.
+    Update via :meth:`record_step`; read via :meth:`to_dict`.
+    """
 
     def __init__(self) -> None:
         self.steps = 0
@@ -83,15 +89,14 @@ class RunMetrics:
                 else np.zeros_like(w)
             )
             self.turnover += float(np.abs(w - base).sum())
-            self._prev_weights = w
+            self._prev_weights = w.copy()
         self._recompute()
 
     def _recompute(self) -> None:
         if not self._navs:
             return
-        first = self._navs[0] or 1.0
-        self.realized_return = self._navs[-1] / first - 1.0
-        peak = self._navs[0]
+        self.realized_return = self._navs[-1] - 1.0
+        peak = 1.0
         mdd = 0.0
         for v in self._navs:
             peak = max(peak, v)
@@ -103,8 +108,8 @@ class RunMetrics:
         if r.size == 0:
             return
         self.volatility = float(np.std(r))
-        neg = r[r < 0.0]
-        self.downside_deviation = float(np.std(neg)) if neg.size else 0.0
+        shortfalls = np.minimum(r, 0.0)
+        self.downside_deviation = float(np.sqrt(np.mean(np.square(shortfalls))))
         self.sortino = (
             float(r.mean() / self.downside_deviation)
             if self.downside_deviation > 0.0
@@ -174,9 +179,10 @@ def cost_adjusted_score(
 
     ``base = composite_score[base_key]`` (the deflated Sharpe the benchmark ranks on).
     ``cost`` is a per-step average of the weighted invalid-decision / token / byte / latency
-    budgets; ``penalty = 1 / (1 + cost) ∈ (0, 1]``. The result is ``base * penalty``, so
-    ``|result| ≤ |base|`` (bounded) and a higher cost monotonically pulls the magnitude
-    toward zero. The SharpeBench score is authoritative — the penalty can only discount it.
+    budgets; ``penalty = 1 / (1 + cost) ∈ (0, 1]``. Nonnegative bases use
+    ``base * penalty``. Negative bases use ``base * (2 - penalty)``: greater
+    cost makes the result worse, bounded between ``2 * base`` and ``base``.
+    This is an opt-in diagnostic ordering, not the official eligibility/rank key.
     """
     w = {**_DEFAULT_WEIGHTS, **(weights or {})}
     base = float(composite_score.get(base_key, 0.0)) if composite_score else 0.0
@@ -191,7 +197,7 @@ def cost_adjusted_score(
     )
     cost = max(raw_cost, 0.0) / steps
     penalty = 1.0 / (1.0 + cost)  # ∈ (0, 1]
-    return base * penalty
+    return base * penalty if base >= 0.0 else base * (2.0 - penalty)
 
 
 __all__ = [
