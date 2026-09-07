@@ -216,7 +216,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "097b1ba7ff27942324d019709f3dae7c6e327e2f",
+  "generated_at_head": "3b8ccb2ab5906e5550deed35cce632f62998df66",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -302,7 +302,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/counterfactual.py",
-      "sha256": "523e9437ac225ff47ff04c02fae5b309158b71897c81b401923538ff798c0117"
+      "sha256": "26160003aabd3c7143eeedc0ffb97234dd69db8cba3fde185753a9dae98d65a3"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/curriculum.py",
@@ -458,7 +458,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/paper_trading.py",
-      "sha256": "9c29ed9e2fcc8039c1d588c7855f720cef14e5f7d30a80aacbec29e7da6f9c1c"
+      "sha256": "a1e7b4a77cb2dad54246f9740d7994352685a9351103d7794fed4e47533d8573"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/pettingzoo_env.py",
@@ -812,6 +812,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "da1911d329f1a283b1254db001b998dbcadd198cb5ec769c24c7872a0a97dccb",
+  "source_snapshot_sha256": "cae0b0309d881b2e117e5ee420eb2e8e35a2a3d7c61c8a5d8f183683d72b07ce",
   "validator": "paper/src/check-provenance.py"
 }

@@ -97,7 +97,7 @@ def test_a_short_settles_with_the_opposite_sign():
     assert entry.intended_pnl == pytest.approx(-40.0)
 
 
-def test_an_unsettled_decision_contributes_no_pnl_but_still_reports_notional():
+def test_an_unsettled_decision_reports_unavailable_pnl_not_a_zero_return():
     ledger = CounterfactualLedger()
     entry = ledger.record(
         decision={"orders": [{"symbol": "AAA"}]},
@@ -105,7 +105,10 @@ def test_an_unsettled_decision_contributes_no_pnl_but_still_reports_notional():
         orders=[_dropped(quantity=3.0, price=50.0)],
         settlement_prices={},
     )
-    assert entry.intended_pnl == 0.0
+    assert entry.intended_pnl is None
+    assert entry.foregone_pnl is None
+    assert entry.executed_pnl == 0.0  # Known zero fills do not need a mark.
+    assert ledger.selection_gap().intended_pnl is None
     assert entry.intended_notional == 150.0
 
 
@@ -161,13 +164,14 @@ def test_orders_behind_a_refusal_are_not_submitted_rather_than_refused():
         intended, verdicts, {"AAA": 100.0, "BBB": 50.0}
     )
     assert [ghost.disposition for ghost in ghosts] == [
-        "executed",
+        "not_submitted",
         "risk_refused",
         "not_submitted",
     ]
     assert ghosts[1].reason == "gross-exposure-limit"
     assert ghosts[2].reason == "batch halted by an earlier refusal"
     assert ghosts[2].foregone_notional == pytest.approx(100.0)
+    assert all(ghost.executed_quantity == 0 for ghost in ghosts)
 
 
 def test_the_ledger_persists_one_json_line_per_decision(tmp_path):
@@ -205,3 +209,162 @@ def test_acted_must_agree_with_what_reached_the_broker():
             settlement_prices={},
             acted=True,
         )
+
+
+def test_tiny_positive_orders_do_not_turn_zero_fills_into_full_fills():
+    assert _dropped(quantity=1e-15).executed_quantity == 0
+    with pytest.raises(CounterfactualError, match="full intended"):
+        GhostOrder("AAA", "buy", 1e-15, 0, 100, "executed", "invalid")
+
+
+def test_unknown_fill_prevents_aggregate_availability_without_erasing_known_fills():
+    from dataclasses import replace
+
+    ledger = CounterfactualLedger()
+    ledger.record(
+        decision={},
+        observation={},
+        orders=[_executed()],
+        settlement_prices={"AAA": 101},
+    )
+    ledger.record(
+        decision={},
+        observation={},
+        orders=[
+            replace(
+                _dropped(), execution_complete=False, disposition="submission_unknown"
+            )
+        ],
+        settlement_prices={"AAA": 101},
+    )
+    gap = ledger.selection_gap()
+    assert (
+        gap.decisions,
+        gap.acted_decisions,
+        gap.unacted_decisions,
+        gap.unknown_decisions,
+    ) == (2, 1, 0, 1)
+    assert gap.confirmed_notional == 1000
+    assert gap.executed_notional is None
+    assert gap.executed_pnl is None
+    assert gap.foregone_pnl is None
+    assert gap.execution_ratio is None
+
+
+def test_v1_ledger_is_refused_not_silently_upgraded(tmp_path):
+    path = tmp_path / "legacy.jsonl"
+    path.write_text(json.dumps({"schema_version": 1}) + "\n")
+    with pytest.raises(CounterfactualError, match="requires V2 receipts"):
+        CounterfactualLedger(path)
+    assert json.loads(path.read_text())["schema_version"] == 1
+
+
+@pytest.mark.parametrize(
+    "mutation", ["sequence", "pnl", "quantity", "truncated", "blank"]
+)
+def test_corrupt_persisted_snapshot_is_rejected_before_append(tmp_path, mutation):
+    path = tmp_path / "ledger.jsonl"
+    ledger = CounterfactualLedger(path)
+    ledger.record(
+        decision={},
+        observation={},
+        orders=[_executed()],
+        settlement_prices={"AAA": 101},
+    )
+    row = json.loads(path.read_text())
+    if mutation == "sequence":
+        row["sequence"] = 3
+    elif mutation == "pnl":
+        row["executed_pnl"] = 1234
+    elif mutation == "quantity":
+        row["orders"][0]["executed_quantity"] = float("inf")
+    payload = (
+        "{"
+        if mutation == "truncated"
+        else "\n" if mutation == "blank" else json.dumps(row) + "\n"
+    )
+    path.write_text(payload)
+    with pytest.raises(CounterfactualError, match="invalid counterfactual"):
+        CounterfactualLedger(path)
+    assert path.read_text() == payload
+
+
+def test_revision_cannot_replace_intent_or_reduce_confirmed_fills():
+    ledger = CounterfactualLedger()
+    args = dict(
+        decision={},
+        observation={},
+        decision_key="decision-1",
+        settlement_prices={"AAA": 101},
+    )
+    ledger.record(**args, orders=[_executed()])
+    with pytest.raises(CounterfactualError, match="frozen intent"):
+        ledger.record(**args, orders=[_executed(quantity=9)])
+    with pytest.raises(CounterfactualError, match="fills cannot decrease"):
+        ledger.record(**args, orders=[_dropped()])
+    assert len(ledger) == 1
+    assert ledger.selection_gap().executed_notional == 1000
+
+
+def test_failed_append_does_not_advance_memory_and_poisoned_writer_refuses_retry(
+    tmp_path, monkeypatch
+):
+    import sharpearena.counterfactual as module
+
+    path = tmp_path / "ledger.jsonl"
+    ledger = CounterfactualLedger(path)
+
+    def fail(_):
+        raise OSError("injected fsync failure")
+
+    monkeypatch.setattr(module.os, "fsync", fail)
+    args = dict(
+        decision={},
+        observation={},
+        orders=[_executed()],
+        settlement_prices={"AAA": 101},
+    )
+    with pytest.raises(OSError, match="injected fsync"):
+        ledger.record(**args)
+    assert len(ledger) == 0
+    with pytest.raises(CounterfactualError, match="reopen and validate"):
+        ledger.record(**args)
+
+
+def test_settlement_snapshot_is_immutable_and_nonfinite_input_cannot_be_serialized():
+    ledger = CounterfactualLedger()
+    prices = {"AAA": 101}
+    entry = ledger.record(
+        decision={}, observation={}, orders=[_executed()], settlement_prices=prices
+    )
+    prices["AAA"] = 999
+    assert entry.executed_pnl == 10
+    with pytest.raises(TypeError):
+        entry.settlement_prices["AAA"] = 999
+    with pytest.raises(ValueError):
+        ledger.record(
+            decision={"x": float("nan")},
+            observation={},
+            orders=[],
+            settlement_prices={},
+        )
+    assert len(ledger) == 1
+
+
+@pytest.mark.parametrize("mutation", ["missing-newline", "duplicate-key"])
+def test_incomplete_delimiter_and_ambiguous_json_cannot_be_appended_to(
+    tmp_path, mutation
+):
+    path = tmp_path / "ledger.jsonl"
+    ledger = CounterfactualLedger(path)
+    ledger.record(decision={}, observation={}, orders=[], settlement_prices={})
+    payload = path.read_text()
+    payload = (
+        payload.rstrip("\n")
+        if mutation == "missing-newline"
+        else payload.replace('"acted":false', '"acted":true,"acted":false')
+    )
+    path.write_text(payload)
+    with pytest.raises(CounterfactualError, match="newline|duplicate JSON key"):
+        CounterfactualLedger(path)
+    assert path.read_text() == payload

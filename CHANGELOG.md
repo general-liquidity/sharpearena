@@ -10,6 +10,11 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ## [Unreleased]
 
+### Changed
+
+- Counterfactual evidence is schema V2: preflight approval no longer counts as execution. Confirmed cumulative fills are bound to broker receipts; acknowledgements, partial and unknown outcomes retain explicit availability. Final execution notional/P&L and `acted` can be null, and missing settlement prices no longer become zero returns. Reference-price P&L is not realized fill-price or transaction-cost accounting. V1 files are refused rather than relabelled as receipt-backed evidence; see [migration and contract](docs/counterfactual-ledger.md).
+- Paper-session client order IDs now bind broker, window and symbol-axis identity. Matching legacy lifecycle IDs cause a refusal requiring explicit reconciliation/migration, not an automatic resubmission. Repeated decisions retain original intent, cumulative receipt snapshots and one aggregate decision count. `refresh_execution()` queries pending fills without placing orders; submitted-without-verdict states require reconciliation after restart.
+
 ### Fixed
 - RL prompts generate canonical Decision examples through the runtime parser and actual symbol axis. Initial and per-turn instructions distinguish holding current positions from closing them; the rejected `weights`/`flat` dialect and the incorrect omitted-symbols-become-zero instruction are removed. Tests also validate the examples against the published native schema.
 - Opt-in robust impact maximizes over the ellipse intersected with nonnegative coefficients. It solves the active-axis cross-section when the unconstrained optimum is negative; independently flooring coefficients could previously leave the declared set. Degenerate-line and actual order-flow regressions cover the repair. Nonfinite uncertainty radii are refused; default point-estimate dynamics and historical artifacts are unchanged.

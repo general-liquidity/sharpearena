@@ -12,15 +12,20 @@ import math
 import os
 import re
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Mapping, Optional, Protocol, Sequence
+from typing import Any, Callable, Mapping, Optional, Protocol, Sequence
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
-from .counterfactual import CounterfactualLedger, ghost_orders_from_preflight
+from .counterfactual import (
+    CounterfactualLedger,
+    GhostOrder,
+    ghost_order_from_receipt,
+    ghost_orders_from_preflight,
+)
 from .decision_parser import decision_to_weights, parse_decision_payload
 
 FORWARD_EVIDENCE_CLASS = "forward_paper_trading"
@@ -645,9 +650,7 @@ def forward_window_from_preimage(path: Path) -> ForwardWindowIdentity:
     )
 
 
-def verify_forward_evidence_window(
-    path: Path, window: ForwardWindowIdentity
-) -> int:
+def verify_forward_evidence_window(path: Path, window: ForwardWindowIdentity) -> int:
     """Check that every forward record carries exactly this commitment."""
 
     lines = [
@@ -709,6 +712,7 @@ class OrderLifecycle:
         self.ack_latency_ns: Optional[int] = None
         self.replaced_by: Optional[str] = None
         self.transitions: list[LifecycleTransition] = []
+        self.execution_evidence: Optional[GhostOrder] = None
 
     # -- queries ------------------------------------------------------------
 
@@ -718,7 +722,7 @@ class OrderLifecycle:
 
     @property
     def awaiting_reconciliation(self) -> bool:
-        return self.state == STATE_SUBMISSION_UNKNOWN
+        return self.state in {STATE_SUBMITTED, STATE_SUBMISSION_UNKNOWN}
 
     @property
     def may_submit_replacement(self) -> bool:
@@ -760,6 +764,13 @@ class OrderLifecycle:
         moment = time.time_ns() if at_unix_ns is None else int(at_unix_ns)
         self._transition(STATE_SUBMITTED, at_unix_ns=moment)
         self.submitted_at_unix_ns = moment
+        if self.execution_evidence is not None:
+            self.execution_evidence = replace(
+                self.execution_evidence,
+                execution_complete=False,
+                disposition="submission_unknown",
+                reason="submitted without a receipt",
+            )
 
     def mark_acknowledged(
         self,
@@ -812,9 +823,7 @@ class OrderLifecycle:
     def mark_submission_unknown(
         self, reason: str, *, at_unix_ns: Optional[int] = None
     ) -> None:
-        self._transition(
-            STATE_SUBMISSION_UNKNOWN, at_unix_ns=at_unix_ns, reason=reason
-        )
+        self._transition(STATE_SUBMISSION_UNKNOWN, at_unix_ns=at_unix_ns, reason=reason)
 
     def mark_reconciled_accepted(
         self,
@@ -827,11 +836,22 @@ class OrderLifecycle:
         )
 
     def mark_reconciled_absent(self, *, at_unix_ns: Optional[int] = None) -> None:
+        if self.filled_quantity > 0:
+            raise LifecycleError(
+                "broker absence contradicts previously confirmed fills"
+            )
         self._transition(
             STATE_RECONCILED_ABSENT,
             at_unix_ns=at_unix_ns,
             reason="broker reported no order with this client order id",
         )
+        if self.execution_evidence is not None:
+            self.execution_evidence = replace(
+                self.execution_evidence,
+                execution_complete=True,
+                disposition="not_submitted",
+                reason="broker confirmed absence",
+            )
 
     def mark_replaced(self, replacement_client_order_id: str) -> None:
         if not self.may_submit_replacement:
@@ -852,6 +872,11 @@ class OrderLifecycle:
             "ack_latency_ns": self.ack_latency_ns,
             "replaced_by": self.replaced_by,
             "transitions": [item.as_record() for item in self.transitions],
+            "execution_evidence": (
+                None
+                if self.execution_evidence is None
+                else self.execution_evidence.as_record()
+            ),
         }
 
     @classmethod
@@ -863,6 +888,18 @@ class OrderLifecycle:
         lifecycle.acknowledged_at_unix_ns = record["acknowledged_at_unix_ns"]
         lifecycle.ack_latency_ns = record["ack_latency_ns"]
         lifecycle.replaced_by = record["replaced_by"]
+        evidence = record.get("execution_evidence")
+        if evidence is not None:
+            lifecycle.execution_evidence = GhostOrder(
+                **{key: evidence[key] for key in GhostOrder.__dataclass_fields__}
+            )
+            if (
+                lifecycle.execution_evidence.client_order_id
+                != lifecycle.client_order_id
+            ):
+                raise LifecycleError(
+                    "persisted receipt belongs to a different client order id"
+                )
         lifecycle.transitions = [
             LifecycleTransition(
                 from_state=item["from_state"],
@@ -908,6 +945,18 @@ class LifecycleStore:
 
     def get(self, client_order_id: str) -> Optional[OrderLifecycle]:
         return self._entries.get(client_order_id)
+
+    def resolve(self, client_order_id: str) -> Optional[OrderLifecycle]:
+        lifecycle = self.get(client_order_id)
+        seen = set()
+        while lifecycle is not None and lifecycle.replaced_by is not None:
+            if lifecycle.client_order_id in seen:
+                raise LifecycleError("cyclic replacement chain")
+            seen.add(lifecycle.client_order_id)
+            lifecycle = self.get(lifecycle.replaced_by)
+            if lifecycle is None:
+                raise LifecycleError("replacement chain points to a missing lifecycle")
+        return lifecycle
 
     def all(self) -> list[OrderLifecycle]:
         return list(self._entries.values())
@@ -1369,15 +1418,64 @@ class PaperTradingSession:
     def _apply_broker_view(
         self, lifecycle: OrderLifecycle, view: Mapping[str, Any]
     ) -> None:
+        evidence = (
+            None
+            if lifecycle.execution_evidence is None
+            else ghost_order_from_receipt(lifecycle.execution_evidence, view)
+        )
         status = str(view.get("status", "")).lower()
         quantity = view.get("filled_qty")
         filled = 0.0 if quantity is None else float(quantity)
-        if status == "filled":
+        if status == "filled" and quantity is not None:
             lifecycle.mark_filled(filled, view)
         elif status in {"partially_filled", "partial_fill"} and filled > 0.0:
             lifecycle.mark_partially_filled(filled, view)
-        elif status in {"rejected", "canceled", "cancelled", "expired"}:
+        elif (
+            status in {"rejected", "canceled", "cancelled", "expired"}
+            and quantity is not None
+        ):
             lifecycle.mark_rejected(status, view)
+            if quantity is not None:
+                lifecycle.filled_quantity = filled
+        if evidence is not None:
+            lifecycle.execution_evidence = evidence
+            lifecycle.filled_quantity = evidence.executed_quantity
+
+    def refresh_execution(self) -> list[dict[str, Any]]:
+        """Query outstanding acknowledged orders and append receipt revisions.
+
+        Unlike submission reconciliation, an absent query result for an accepted
+        order never authorizes a replacement. No order is submitted by this method.
+        """
+        records = []
+        for lifecycle in self.lifecycles.all():
+            if lifecycle.state not in {
+                STATE_ACKNOWLEDGED,
+                STATE_PARTIALLY_FILLED,
+                STATE_RECONCILED_ACCEPTED,
+            }:
+                continue
+            view = self._find_order(lifecycle.client_order_id)
+            if view is None:
+                raise PaperTradingError(
+                    "accepted order is absent from query; execution remains unresolved"
+                )
+            self._apply_broker_view(lifecycle, view)
+            self.lifecycles.save()
+            record = {
+                **self._envelope("execution-refresh"),
+                "client_order_id": lifecycle.client_order_id,
+                "broker_answer_sha256": _digest(view),
+                "lifecycle": lifecycle.as_record(),
+            }
+            self._append(record)
+            if (
+                self.counterfactual is not None
+                and lifecycle.execution_evidence is not None
+            ):
+                self.counterfactual.refresh_receipt(lifecycle.execution_evidence)
+            records.append(record)
+        return records
 
     def reconcile(self, lifecycle: OrderLifecycle) -> dict[str, Any]:
         """Resolve one unknown submission by asking for its client order id."""
@@ -1386,6 +1484,11 @@ class PaperTradingSession:
             raise LifecycleError(
                 f"{lifecycle.client_order_id} in state {lifecycle.state} needs no query"
             )
+        if lifecycle.state == STATE_SUBMITTED:
+            lifecycle.mark_submission_unknown(
+                "resumed submission has no recorded verdict"
+            )
+            self.lifecycles.save()
         found = self._find_order(lifecycle.client_order_id)
         if found is None:
             lifecycle.mark_reconciled_absent()
@@ -1404,6 +1507,8 @@ class PaperTradingSession:
             }
         )
         self._append(record)
+        if self.counterfactual is not None and lifecycle.execution_evidence is not None:
+            self.counterfactual.refresh_receipt(lifecycle.execution_evidence)
         return record
 
     def reconcile_all(self) -> list[dict[str, Any]]:
@@ -1437,20 +1542,120 @@ class PaperTradingSession:
             if isinstance(decision, str)
             else parse_decision_payload(json.dumps(decision))
         )
-        orders = target_weights_to_orders(parsed_decision, symbols, account, prices)
-        preflight = self.broker.risk.assess_batch(orders, account, prices)
         market_snapshot = {symbol: asdict(latest_bars[symbol]) for symbol in symbols}
-        if self.counterfactual is not None:
+        decision_key = _digest(
+            {
+                "agent_id": self.agent_id,
+                "model_digest": self.model_digest,
+                "broker": self.broker.broker_id,
+                "decision": parsed_decision,
+                "market": market_snapshot,
+                "symbols": list(symbols),
+                "window": None if self.window is None else self.window.as_record(),
+            }
+        )
+        previous = (
+            None
+            if self.counterfactual is None
+            else self.counterfactual.latest(decision_key)
+        )
+        # Retrying the same target after fills may produce zero delta from the now
+        # updated account. Keep its original intent, not a new zero-order snapshot.
+        orders = (
+            target_weights_to_orders(parsed_decision, symbols, account, prices)
+            if previous is None
+            else [
+                PaperOrder(item.symbol, item.side, item.intended_quantity)
+                for item in previous.orders
+            ]
+        )
+        legacy_ids = [
+            _digest(
+                {
+                    "agent_id": self.agent_id,
+                    "model_digest": self.model_digest,
+                    "decision": parsed_decision,
+                    "market": market_snapshot,
+                    "index": index,
+                }
+            )[:32]
+            for index in range(len(orders))
+        ]
+        if any(self.lifecycles.get(identity) is not None for identity in legacy_ids):
+            raise LifecycleError(
+                "legacy order identity requires explicit reconciliation and migration; no replacement submitted"
+            )
+        stable_ids = [
+            _digest({"decision_key_v2": decision_key, "index": index})[:32]
+            for index in range(len(orders))
+        ]
+        pending = []
+        for index, stable in enumerate(stable_ids):
+            lifecycle = self.lifecycles.resolve(stable)
+            if (
+                lifecycle is None
+                and previous is not None
+                and previous.orders[index].disposition
+                not in {"not_submitted", "risk_refused", "below_min_notional"}
+            ):
+                raise LifecycleError(
+                    "execution ledger references a missing lifecycle; restore it before retrying"
+                )
+            if (
+                lifecycle is None
+                or lifecycle.is_submittable
+                or lifecycle.awaiting_reconciliation
+                or lifecycle.may_submit_replacement
+            ):
+                pending.append(index)
+        # Replaying an already-filled target must not reserve its notional again
+        # in the preflight shadow account. Only possible new submissions consume it.
+        preflight: list[Optional[RiskVerdict]] = [None] * len(orders)
+        for index, verdict in zip(
+            pending,
+            self.broker.risk.assess_batch(
+                [orders[i] for i in pending], account, prices
+            ),
+        ):
+            preflight[index] = verdict
+        ghosts = ghost_orders_from_preflight(
+            [asdict(order) for order in orders],
+            [None if verdict is None else asdict(verdict) for verdict in preflight],
+            prices,
+        )
+
+        def record_execution() -> None:
+            if self.counterfactual is None:
+                return
+            observed = []
+            for ghost, stable in zip(ghosts, stable_ids):
+                lifecycle = self.lifecycles.resolve(stable)
+                if lifecycle is None or lifecycle.state == STATE_PREPARED:
+                    observed.append(replace(ghost, client_order_id=stable))
+                elif lifecycle.execution_evidence is not None:
+                    observed.append(lifecycle.execution_evidence)
+                else:
+                    # A legacy lifecycle's filled_quantity alone lacks a validated
+                    # receipt binding. Do not upgrade it to confirmed V2 evidence.
+                    observed.append(
+                        replace(
+                            ghost,
+                            client_order_id=stable,
+                            disposition="submission_unknown",
+                            execution_complete=False,
+                            reason="lifecycle has no validated V2 receipt",
+                        )
+                    )
             self.counterfactual.record(
                 decision=parsed_decision,
                 observation=market_snapshot,
-                orders=ghost_orders_from_preflight(
-                    [asdict(order) for order in orders],
-                    [asdict(verdict) for verdict in preflight],
-                    prices,
-                ),
-                settlement_prices=settlement_prices or {},
+                orders=observed,
+                decision_key=decision_key,
+                settlement_prices=settlement_prices
+                or (previous.settlement_prices if previous else {}),
             )
+
+        record_execution()
         decision_record: dict[str, Any] = {
             **self._envelope("decision"),
             "market_snapshot": market_snapshot,
@@ -1458,13 +1663,18 @@ class PaperTradingSession:
             "decision": parsed_decision,
             "decision_sha256": _digest(parsed_decision),
             "proposed_orders": [asdict(order) for order in orders],
-            "batch_preflight": [asdict(verdict) for verdict in preflight],
+            "batch_preflight": [
+                asdict(verdict) for verdict in preflight if verdict is not None
+            ],
+            "preflight_order_indices": [
+                index for index, verdict in enumerate(preflight) if verdict is not None
+            ],
         }
         refusal = next(
             (
                 (index, verdict)
                 for index, verdict in enumerate(preflight)
-                if not verdict.allowed
+                if verdict is not None and not verdict.allowed
             ),
             None,
         )
@@ -1485,20 +1695,42 @@ class PaperTradingSession:
             "preflight-passed" if orders else "no-orders"
         )
         self._append(decision_record)
+        try:
+            return self._submit_preflighted(
+                orders,
+                preflight,
+                stable_ids,
+                ghosts,
+                parsed_decision,
+                market_snapshot,
+                account,
+                prices,
+                record_execution,
+            )
+        finally:
+            # Includes partial batches, reconciliation failures and broker errors.
+            # An evidence-write failure stays visible, with any original exception
+            # retained in Python's exception chain; it is never treated as success.
+            record_execution()
+
+    def _submit_preflighted(
+        self,
+        orders: Sequence[PaperOrder],
+        preflight: Sequence[Optional[RiskVerdict]],
+        stable_ids: Sequence[str],
+        ghosts: Sequence[GhostOrder],
+        parsed_decision: Mapping[str, Any],
+        market_snapshot: Mapping[str, Any],
+        account: PaperAccount,
+        prices: Mapping[str, float],
+        record_execution: Callable[[], None],
+    ) -> list[dict[str, Any]]:
         submitted = []
         for index, order in enumerate(orders):
-            stable = _digest(
-                {
-                    "agent_id": self.agent_id,
-                    "model_digest": self.model_digest,
-                    "decision": parsed_decision,
-                    "market": market_snapshot,
-                    "index": index,
-                }
-            )[:32]
-            lifecycle = self.lifecycles.open_or_create(stable)
-            while lifecycle.replaced_by is not None:
-                lifecycle = self.lifecycles.open_or_create(lifecycle.replaced_by)
+            stable = stable_ids[index]
+            lifecycle = self.lifecycles.resolve(
+                stable
+            ) or self.lifecycles.open_or_create(stable)
             if lifecycle.awaiting_reconciliation:
                 # An unknown submission carried over from an earlier attempt is
                 # asked about before anything else is sent for this order.
@@ -1512,6 +1744,9 @@ class PaperTradingSession:
                 # The broker either holds this order or has already resolved it.
                 self.lifecycles.save()
                 continue
+            verdict = preflight[index]
+            if verdict is None or not verdict.allowed:
+                raise PaperTradingError("order has no approved preflight verdict")
             order = PaperOrder(
                 order.symbol,
                 order.side,
@@ -1523,10 +1758,14 @@ class PaperTradingSession:
                 "market_snapshot_sha256": _digest(market_snapshot),
                 "decision_sha256": _digest(parsed_decision),
                 "order": asdict(order),
-                "batch_preflight": asdict(preflight[index]),
+                "batch_preflight": asdict(verdict),
             }
+            lifecycle.execution_evidence = replace(
+                ghosts[index], client_order_id=lifecycle.client_order_id
+            )
             lifecycle.mark_submitted()
             self.lifecycles.save()
+            record_execution()  # Persist unknown outcome before crossing the broker boundary.
             try:
                 response = self.broker.submit(order, account=account, prices=prices)
             except SubmissionUnknown as error:
@@ -1544,7 +1783,8 @@ class PaperTradingSession:
                 self._append(record)
                 raise
             except Exception as error:
-                lifecycle.mark_rejected(f"{type(error).__name__}: {error}")
+                # An arbitrary exception does not prove the broker rejected it.
+                lifecycle.mark_submission_unknown(f"{type(error).__name__}: {error}")
                 self.lifecycles.save()
                 record.update(
                     {
@@ -1556,8 +1796,28 @@ class PaperTradingSession:
                 )
                 self._append(record)
                 raise
-            lifecycle.mark_acknowledged(response)
-            self._apply_broker_view(lifecycle, response)
+            try:
+                lifecycle.mark_acknowledged(response)
+                self._apply_broker_view(lifecycle, response)
+            except (TypeError, ValueError) as error:
+                if lifecycle.execution_evidence is not None:
+                    lifecycle.execution_evidence = replace(
+                        lifecycle.execution_evidence,
+                        execution_complete=False,
+                        disposition="submission_unknown",
+                        reason=f"invalid broker receipt: {type(error).__name__}: {error}",
+                    )
+                self.lifecycles.save()
+                record.update(
+                    {
+                        "submission_status": "invalid-broker-receipt",
+                        "error_type": type(error).__name__,
+                        "error": str(error),
+                        "lifecycle": lifecycle.as_record(),
+                    }
+                )
+                self._append(record)
+                raise
             self.lifecycles.save()
             record.update(
                 {
