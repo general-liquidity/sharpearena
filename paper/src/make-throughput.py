@@ -173,7 +173,7 @@ def run_wasm() -> dict:
         capture_output=True,
         text=True,
         check=True,
-        shell=True,
+        shell=False,
     )
     return json.loads(proc.stdout)
 
