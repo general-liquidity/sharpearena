@@ -446,14 +446,15 @@ impl PyTradingEnv {
         Ok((observation, res.reward, res.done, info.to_string()))
     }
 
-    /// An O(1) snapshot of the mutable sim state (cursor + book) as JSON — the native
+    /// A snapshot of the mutable sim state (cursor + book) as JSON — the native
     /// checkpoint that replaces replay-from-decisions. Pair with [`restore_state`].
     fn clone_state(&self) -> PyResult<String> {
         let state = self.inner.clone_state();
         serde_json::to_string(&state).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))
     }
 
-    /// Restore the env to a snapshot produced by [`clone_state`] in O(1) (no replay).
+    /// Restore a trusted snapshot produced by [`clone_state`] without replay.
+    /// Copying and JSON parsing scale with state size, including accumulated trace data.
     fn restore_state(&mut self, state_json: &str) -> PyResult<()> {
         let state: sharpearena::EnvState = serde_json::from_str(state_json)
             .map_err(|e| engine_err(CODE_INVALID_JSON, format!("invalid env state: {e}")))?;

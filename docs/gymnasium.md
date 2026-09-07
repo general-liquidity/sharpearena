@@ -120,6 +120,26 @@ For reward design, disjointness conventions, sealed evaluation, and Prime RL, co
 to the [training guide](training.md). For external model processes, read the
 [agent contract](agent-contract.md).
 
+### Checkpoint exports
+
+`CheckpointableEnv.clone_state()` returns private restoration state, including the
+scenario seed and, for a CSV-backed environment, the entire input CSV. Keep the object,
+its pickle, and any private export away from evaluated agents.
+
+```python
+snapshot = checkpointed_env.clone_state()
+public_record = snapshot.to_dict()  # step and past actions only; not restorable
+private_record = snapshot.to_dict(include_private=True)  # operator-only
+checkpointed_env.restore_state(CheckpointState.from_dict(private_record))
+```
+
+This is an export-policy distinction, not process isolation. The public record does
+not sanitize information deliberately encoded in actions. `from_dict` rejects public
+records and unknown schemas; it continues to read legacy private records containing
+`params`. Do not unpickle untrusted input. Native snapshots avoid action replay, but
+copying, serialization and restoration scale with state size rather than taking
+constant time.
+
 ## Trust boundary
 
 Gymnasium controls what market data reaches the policy through the environment API. It

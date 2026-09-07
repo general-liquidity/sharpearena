@@ -266,13 +266,15 @@ class SharpeArenaEnv(gym.Env):
         return obs, float(reward), terminated, truncated, info
 
     def clone_state(self) -> str:
-        """An O(1) native snapshot of the sim state (cursor + book) as a JSON string.
+        """A private native snapshot of the sim state (cursor + book) as a JSON string.
         Pair with :meth:`restore_state` for what-if branching without replaying decisions
-        (the engine-level checkpoint, vs the replay path in ``CheckpointableEnv``)."""
+        (the engine-level checkpoint, vs the replay path in ``CheckpointableEnv``).
+        Copying/serialization scales with state size, including accumulated trace data.
+        """
         return self._env.clone_state()
 
     def restore_state(self, state_json: str) -> None:
-        """Restore the env to a :meth:`clone_state` snapshot in O(1) (no replay)."""
+        """Restore a trusted native snapshot without replay; cost scales with its size."""
         self._env.restore_state(state_json)
 
     def render(self):  # pragma: no cover - no visual rendering
