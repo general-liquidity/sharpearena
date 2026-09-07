@@ -11,6 +11,7 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 ## [Unreleased]
 
 ### Fixed
+- Checkpoint wrappers preserve float64 actions and enforce the same exact shape, real-value and bound checks as Gym. Restores validate metadata/action-prefix consistency and build a separate candidate before replacing the live environment, so malformed replay or native snapshots cannot partially reset it.
 - Checkpoint exports omit reconstruction params, full CSV inputs, seeds and native snapshots by default. Restorable payloads now require `to_dict(include_private=True)` and must remain operator-only; `from_dict` refuses public exports but accepts legacy private payloads. Nested live handles are refused and private copies are detached. Native checkpoints avoid replay, but do not have constant-time copying or restoration.
 - Baseline rows withhold the scoring-kernel confidence interval while Arena's corrected moments disagree with its pinned Bench 0.15.0 scorer. Corrected estimates remain separately available as `arena_deflated_sharpe_ci`; `deflated_sharpe_ci` is null with an explicit incompatibility status. Missing confidence renders as unavailable, never a zero-width interval. Coordinated shared-engine dependency propagation remains open.
 - Replay and native checkpoint reconstruction preserve volatility clustering and every jump-burst control. Native restoration also retains the full action prefix so a subsequent replay-based snapshot cannot silently restart from a shorter history.

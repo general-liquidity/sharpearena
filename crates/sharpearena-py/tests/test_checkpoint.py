@@ -314,3 +314,78 @@ def test_legacy_private_payload_remains_restorable():
 def test_unknown_checkpoint_schema_is_refused():
     with pytest.raises(ValueError, match="schema"):
         CheckpointState.from_dict({"schema": "unknown", "params": {}})
+
+
+@pytest.mark.parametrize("action", [
+    [[0.2, 0.2, 0.2]], ["0.2", "0.2", "0.2"], [True, False, True],
+    [0.2, 0.2], [0.2, float("nan"), 0.2], [0.2, float("inf"), 0.2], [2, 0, 0],
+])
+def test_checkpoint_wrapper_rejects_invalid_actions_before_advance(action):
+    env = _make()
+    before = env.clone_state(native=True).to_dict(include_private=True)
+    with pytest.raises(ValueError):
+        env.step(action)
+    assert env.clone_state(native=True).to_dict(include_private=True) == before
+
+
+def test_checkpoint_records_and_replays_the_exact_float64_action():
+    env = _make()
+    direct = SharpeArenaEnv(n_symbols=3, n_days=60, seed=5)
+    direct.reset()
+    action = np.array([0.123456789123, 0.234567891234, 0.345678912345])
+    assert not np.array_equal(action, action.astype(np.float32))
+    actual, expected = env.step(action), direct.step(action)
+    snap = env.clone_state()
+    assert snap.actions == [action.tolist()]
+    assert actual[1:] == expected[1:]
+    assert _obs_equal(actual[0], expected[0])
+    fork = env.branch(snap)
+    actual, expected = fork.step(action), direct.step(action)
+    assert actual[1:] == expected[1:]
+    assert _obs_equal(actual[0], expected[0])
+
+
+@pytest.mark.parametrize("native", [False, True])
+@pytest.mark.parametrize("invalid", ["step", "string-step", "bool-step", "rng", "action"])
+def test_malformed_restore_does_not_replace_or_advance_live_environment(native, invalid):
+    env = _make()
+    _roll(env, _equal_weight(env), 3)
+    snap = env.clone_state(native=native)
+    before = env.clone_state(native=True).to_dict(include_private=True)
+    original = env.env
+    if invalid == "step":
+        snap.step = 2
+    elif invalid == "string-step":
+        snap.step = "3"
+    elif invalid == "bool-step":
+        snap.step = True
+    elif invalid == "rng":
+        snap.include_rng = "false"
+    else:
+        snap.actions[1] = [[0.2, 0.2, 0.2]]
+    with pytest.raises((TypeError, ValueError)):
+        env.restore_state(snap)
+    assert env.env is original, "failure must not replace the live engine"
+    assert env.clone_state(native=True).to_dict(include_private=True) == before
+
+
+def test_corrupt_native_snapshot_does_not_replace_live_environment():
+    env = _make()
+    env.step(_equal_weight(env))
+    before = env.clone_state(native=True).to_dict(include_private=True)
+    original = env.env
+    snap = env.clone_state(native=True)
+    snap.native_state = "{broken"
+    with pytest.raises(ValueError):
+        env.restore_state(snap)
+    assert env.env is original
+    assert env.clone_state(native=True).to_dict(include_private=True) == before
+
+
+@pytest.mark.parametrize("field,value", [("step", 1.5), ("step", -1),
+                                       ("step", True), ("include_rng", "false")])
+def test_private_decoder_refuses_coerced_metadata(field, value):
+    private = _make().clone_state().to_dict(include_private=True)
+    private[field] = value
+    with pytest.raises((TypeError, ValueError)):
+        CheckpointState.from_dict(private)

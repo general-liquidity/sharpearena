@@ -25,6 +25,7 @@ import numpy as np
 import gymnasium as gym
 
 from .gym import SharpeArenaEnv, _EVAL_SEED_BASE
+from ._action_validation import validated_action
 
 # Live handles are not reconstruction data. CSV/seed params, however, are intentional
 # private inputs, not proof of leak-freedom. Match names plus the reset/step duck-type.
@@ -125,6 +126,25 @@ class CheckpointState:
     include_rng: bool = True
     native_state: Any = None  # private native snapshot JSON (set when native=True)
 
+    def _validate(self) -> None:
+        if not isinstance(self.params, dict):
+            raise TypeError("checkpoint params must be a dict")
+        _assert_no_leak(self.params)
+        if type(self.step) is not int or self.step < 0:
+            raise ValueError("checkpoint step must be a nonnegative integer")
+        if not isinstance(self.actions, list) or len(self.actions) != self.step:
+            raise ValueError("checkpoint step must equal the action-prefix length")
+        if type(self.include_rng) is not bool:
+            raise TypeError("checkpoint include_rng must be a bool")
+        if self.native_state is not None and not isinstance(self.native_state, str):
+            raise TypeError("checkpoint native_state must be a JSON string or None")
+        for action in self.actions:
+            values = np.asarray(action)
+            if values.ndim != 1 or values.dtype.kind not in "fiu":
+                raise ValueError("checkpoint actions must be one-dimensional real arrays")
+            if not np.all(np.isfinite(values)):
+                raise ValueError("checkpoint actions must be finite")
+
     def to_dict(self, *, include_private: bool = False) -> dict:
         """Export a public step/action record, or explicitly opt into private state.
 
@@ -133,6 +153,7 @@ class CheckpointState:
         """
         if type(include_private) is not bool:
             raise TypeError("include_private must be a bool")
+        self._validate()
         public = {
             "schema": _PUBLIC_SCHEMA,
             "actions": deepcopy(self.actions),
@@ -156,13 +177,15 @@ class CheckpointState:
         if not isinstance(d.get("params"), dict):
             raise ValueError("restoration requires private checkpoint params")
         _assert_no_leak(d["params"])
-        return cls(
+        state = cls(
             params=deepcopy(d["params"]),
             actions=deepcopy(d.get("actions", [])),
             step=d.get("step", 0),
             include_rng=d.get("include_rng", True),
             native_state=deepcopy(d.get("native_state")),
         )
+        state._validate()
+        return state
 
 
 class CheckpointableEnv(gym.Wrapper):
@@ -190,7 +213,7 @@ class CheckpointableEnv(gym.Wrapper):
         return out
 
     def step(self, action):
-        arr = np.asarray(action, dtype=np.float32).reshape(-1)
+        arr = validated_action(action, self.env.action_space)
         result = self.env.step(arr)
         self._actions.append(arr.copy())
         self._step += 1
@@ -206,6 +229,8 @@ class CheckpointableEnv(gym.Wrapper):
         engine snapshot, whose copying/serialization cost grows with its state size.
         ``include_rng`` is documented on :class:`CheckpointState`.
         """
+        if type(include_rng) is not bool or type(native) is not bool:
+            raise TypeError("include_rng and native must be bools")
         return CheckpointState(
             params=_extract_params(self.env),
             actions=[a.tolist() for a in self._actions],
@@ -220,14 +245,12 @@ class CheckpointableEnv(gym.Wrapper):
         recorded action prefix (O(prefix length)). Both are exact (the engine is
         deterministic), so the restored env reproduces the snapshot point byte-for-byte.
         """
-        self.env = _build_env(state.params)
-        if state.native_state is not None:
-            self.env.reset()
-            self.env.restore_state(state.native_state)
-            self._actions = [np.array(a, dtype=np.float64, copy=True) for a in state.actions]
-            self._step = int(state.step)
-        else:
-            self._replay(state)
+        # Validation, reconstruction and replay may all fail. Keep the old engine and
+        # prefix untouched until the candidate has successfully completed every step.
+        candidate = self.branch(state)
+        self.env = candidate.env
+        self._actions = candidate._actions
+        self._step = candidate._step
 
     def branch(self, state: CheckpointState) -> "CheckpointableEnv":
         """Return a NEW, independent :class:`CheckpointableEnv` restored to ``state``.
@@ -237,27 +260,30 @@ class CheckpointableEnv(gym.Wrapper):
         the same ``state`` fed the same actions produce identical trajectories. Also
         O(prefix length) to materialize.
         """
-        fork = CheckpointableEnv(_build_env(state.params))
+        if not isinstance(state, CheckpointState):
+            raise TypeError("restore requires a private CheckpointState")
+        state._validate()
+        fork = CheckpointableEnv(_build_env(deepcopy(state.params)))
+        actions = [validated_action(a, fork.env.action_space) for a in state.actions]
         if state.native_state is not None:
             fork.env.reset()
             fork.env.restore_state(state.native_state)
-            fork._actions = [np.array(a, dtype=np.float64, copy=True) for a in state.actions]
-            fork._step = int(state.step)
+            fork._actions = actions
+            fork._step = state.step
         else:
-            fork._replay(state)
+            fork._replay(actions)
         return fork
 
     # -- internal ----------------------------------------------------------
 
-    def _replay(self, state: CheckpointState) -> None:
-        """Reset ``self.env`` (assumed freshly built from ``state.params``) and replay."""
+    def _replay(self, actions: list[np.ndarray]) -> None:
+        """Reset a freshly built candidate and replay its validated action prefix."""
         self.env.reset()
         self._actions = []
-        for a in state.actions:
-            arr = np.asarray(a, dtype=np.float32).reshape(-1)
+        for arr in actions:
             self.env.step(arr)
             self._actions.append(arr)
-        self._step = int(state.step)
+        self._step = len(actions)
 
 
 __all__ = ["CheckpointableEnv", "CheckpointState"]
