@@ -2,9 +2,10 @@
 
 Goal started 2026-09-07. Status: active; accelerated implementation resumed.
 
-All nine checklist sections are preserved: 93 rows, 34 closed and 59 open. The
-preceding saved checkpoint had 29 closed and 64 open; AI9, AD4, BM9, R16 and R21
-are newly closed.
+All nine checklist sections are preserved: 93 rows, 35 closed and 58 open. The
+preceding saved checkpoint had 29 closed and 64 open; AI9, AD4, BM9, R16, R21
+and the R15 evidence-producer row are newly closed. The combined R15/BI3
+CSV/ranking row remains open.
 Unchecked rows include partially implemented work and unconfirmed probes, so these
 counts are checklist dispositions, not a count of independent confirmed defects.
 
@@ -21,14 +22,34 @@ Existing published numerical evidence stays frozen until its validity is assesse
 
 ## Accelerated checkpoint
 
-Bench code is merged at `0b04a13e39caa9e23979019571ba679131f6c5b5` (PR #20).
-Its exact-head CI and npm workflows passed all 17 Actions jobs; post-merge runs
-`34162684532` and `34162684535` also passed.
+Bench code is merged normally at `7cfc954881437013d6c6f9457143b104a546549f`
+([PR #22](https://github.com/general-liquidity/sharpebench/pull/22)).
+[CI `34165122503`](https://github.com/general-liquidity/sharpebench/actions/runs/34165122503)
+and [npm `34165122442`](https://github.com/general-liquidity/sharpebench/actions/runs/34165122442)
+passed all 17 Actions jobs on exact head `7ccc6acfcbe4a05d8d63751d5169eafd471d08e5`.
+The merged and tested Bench trees both equal `c4215bdc061e0d42ae011f7b30b643640d6ac799`.
+Provenance validates 171 sources and 40 artifacts.
+The earlier BM9 repair merged at `0b04a13e39caa9e23979019571ba679131f6c5b5`
+(PR #20); its exact-head gates and post-merge runs `34162684532` and
+`34162684535` passed.
 Arena code is merged at `2130fdc41f56bda3817a346072bae03b3a1565a3` (PR #22).
 [CI `34163805160`](https://github.com/general-liquidity/sharpearena/actions/runs/34163805160)
 passed all 11 Actions jobs on `14cf1022bd195a4e01af8c2c9f41143ed76493d1`.
 The merged and tested Arena trees both equal `e679593ed55f92a49f1e2832839d4d011be8b872`.
 These are verified code checkpoints, not releases or completion of the remaining goal.
+
+Bench's R15 evidence-producer repair is implemented in `c9dc85f`, with Unicode
+newline handling in `4ff3637` and operator documentation in `e60e1f7`. Its
+producer row is closed after the verified CI and merge above. The combined
+R15/BI3 ranking-geometry row remains open for CSV/ranking keyed support.
+
+The preceding documentation checkpoints also merged: Bench PR #21 at `0197c27`
+after [CI `34164138339`](https://github.com/general-liquidity/sharpebench/actions/runs/34164138339)
+and [npm `34164138347`](https://github.com/general-liquidity/sharpebench/actions/runs/34164138347)
+passed; Arena PR #23 at `77caef9` after
+[CI `34164191851`](https://github.com/general-liquidity/sharpearena/actions/runs/34164191851)
+passed. Arena's post-merge [CI `34164561834`](https://github.com/general-liquidity/sharpearena/actions/runs/34164561834)
+also passed.
 
 ## Status at the preceding saved checkpoint
 
@@ -94,7 +115,7 @@ listed below, not silently omitted from the goal.
 ## 2. Bench ranking and verification
 
 - [x] R01: original process evidence survives common-support restriction. Bench `dff0d84`.
-- [ ] R15, BI3: complete expected geometry, keyed support rather than positional ambiguity.
+- [ ] R15, BI3: complete expected geometry, keyed support rather than positional ambiguity. The assembler portion is implemented in Bench `c9dc85f`; CSV/ranking keyed support remains open.
 - [ ] BM1: observed search-footprint floors and valid/unavailable PBO.
 - [ ] BM2, BS6: displayed board content/count/order and trusted terminal receipt anchor.
 - [ ] BI2, BI8: identical declared mandates and rank-context explanations on all surfaces.
@@ -157,7 +178,7 @@ listed below, not silently omitted from the goal.
 
 ## 7. Evidence producers
 
-- [ ] R15: declared unique Cartesian sweep support, not just row count.
+- [x] R15: declared unique Cartesian sweep support in Bench `c9dc85f`, Unicode newline follow-up `4ff3637`, operator documentation `e60e1f7`. PR #22 merged normally at `7cfc954` after all 17 Actions jobs passed on exact head `7ccc6ac`; merged tree equals tested tree. This closes the evidence-producer row only; section 2's CSV/ranking keyed support remains open.
 - [ ] BP1: requested/effective model identity and no silent substitution.
 - [ ] BP2: collision-free calibration seed tuples with explicit CRN policy.
 - [ ] BP3: full effective request/scaffold/parser cache identity.
@@ -200,6 +221,40 @@ listed below, not silently omitted from the goal.
 - [ ] Probe child OOM versus surviving wrapper classification.
 
 ## Verification log
+
+- R15 evidence-producer closure: Bench `c9dc85f` adds
+  declared 4 × 4 × 4 × 8 coverage, strict JSON, dataset/configuration agreement
+  and required table-input validation. Assembly preserves original JSON line
+  contents in fixed key order with LF endings; the reducer validates all nine
+  required datasets before printing tables. Operator documentation is `e60e1f7`.
+  All 16 focused tests and all 28 tests discovered under `paper/src` pass.
+  The nine frozen principal datasets each contain 512 unique declared cells;
+  this validates STRUCTURE ONLY, without rescoring or establishing numerical
+  parity with the current engine. The new paper CI command is
+  `python -m unittest paper/src/test_sweep_grid.py`, which executes the actual
+  16-test suite. CI `34165122503` and npm `34165122442` passed all 17 Actions
+  jobs on exact head `7ccc6acfcbe4a05d8d63751d5169eafd471d08e5`. PR #22
+  merged normally at `7cfc954881437013d6c6f9457143b104a546549f`; both trees
+  equal `c4215bdc061e0d42ae011f7b30b643640d6ac799`. Provenance validates
+  171 sources and 40 artifacts.
+  A newline-boundary follow-up replaces `splitlines()` with `split('\n')` so
+  legal U+2028 inside a JSON string stays within its record. The new regression
+  fails against the old temporary reader and passes with the repair in `4ff3637`.
+  Three isolated temporary mutations fail as expected: bypassing grid validation
+  fails five tests, disabling duplicate-JSON-key rejection fails one subcase,
+  and bypassing renderer-field validation fails seven subcases. Restoring the
+  temporary copy passes all 15 tests. No mutation touched production source.
+  Before repair, the initial 10 tests produced 22 failures, including changed
+  diagnostics; those are not 22 independent accepted defects. No benchmark
+  experiment or historical-artifact rewrite ran. The section 2 combined R15/BI3
+  row remains open because CSV/ranking keyed support is separate from this
+  assembler repair.
+
+- Final-paper follow-up: [A-commands.tex](https://github.com/general-liquidity/sharpebench/blob/7ccc6acfcbe4a05d8d63751d5169eafd471d08e5/paper/sections/A-commands.tex#L55)
+  still connects shard assembly with output identical to the serial producer.
+  Revise that claim during the final paper pass: the new fixed grid-key order
+  differs from the serial producer's score-rank order, even though original JSON
+  lines are preserved. No paper edit or evidence regeneration has been made.
 
 - Arena producer replay: 51 focused promotion cases and 4 Node-forwarding cases
   pass. The initial two output-only/changed-identity regressions failed before
