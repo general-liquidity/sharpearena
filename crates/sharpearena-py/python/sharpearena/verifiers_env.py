@@ -28,6 +28,7 @@ from typing import Any, Optional, Sequence
 
 import numpy as np
 
+from .decision_examples import render_decision_examples
 from .decision_parser import (
     DecisionParseError,
     build_parser,
@@ -219,9 +220,8 @@ def render_observation(
     tail = (
         ""
         if final
-        else " Respond with <reasoning> and an <action> containing canonical Decision JSON: "
-        '{"orders":[{"symbol":"SYM00","action":"buy","target_weight":0.25}],'
-        '"reasoning":"brief rationale"}. An empty orders array is a hold.'
+        else " Respond with reasoning and action XML fields containing your decision.\n"
+        + render_decision_examples(symbols)
     )
     return f"{head} cash={cash_v:.2f}. " + "; ".join(rows) + "." + tail
 

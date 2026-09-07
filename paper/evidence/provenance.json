@@ -216,7 +216,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "6c2d622a5ce5db7406d22d5c17f1e1de92f3c7e8",
+  "generated_at_head": "097b1ba7ff27942324d019709f3dae7c6e327e2f",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -314,7 +314,11 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/dataset.py",
-      "sha256": "00c6ba654f5a0da19c8dbff15b396f0eb0492579f38d3c8e6ffffc391f8c3548"
+      "sha256": "829cc1d3c0d827ebbb7be9c8b2c83bb4cc5d8ed6402a112ddef2b0865938dbab"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/decision_examples.py",
+      "sha256": "f36bb3fd44bdd8c17f5b96d0698ff1c9619e05a6d5bda97b9dfa701edf5b9aa3"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/decision_parser.py",
@@ -526,7 +530,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/verifiers_env.py",
-      "sha256": "edb9315a8d0e9600119a4c039168ef9125fc4cb0d1327d2ad69c22d484b132df"
+      "sha256": "17d9a5313845565a876c64d647bed8ed0a6386df70f74b2f968b095057286457"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/wrappers.py",
@@ -808,6 +812,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "0c9681c1e33871ef0aa41bf779b5a4fb38abc7f537a4c0026f469083bed64b69",
+  "source_snapshot_sha256": "da1911d329f1a283b1254db001b998dbcadd198cb5ec769c24c7872a0a97dccb",
   "validator": "paper/src/check-provenance.py"
 }
