@@ -81,6 +81,10 @@ def _extract_params(env: SharpeArenaEnv) -> dict:
         "max_weight": high,
         "allow_short": low < 0.0,
         "distribution_mode": env._distribution_mode,
+        "vol_clustering": env._vol_clustering,
+        "jump_burst_probability": env._jump_burst_probability,
+        "jump_burst_persistence": env._jump_burst_persistence,
+        "jump_burst_size": env._jump_burst_size,
         "mode": "eval" if env._seed_offset == _EVAL_SEED_BASE else "train",
         "env_kwargs": dict(env._kwargs),
     }
@@ -100,6 +104,10 @@ def _build_env(params: dict) -> SharpeArenaEnv:
         max_weight=params.get("max_weight", 1.0),
         allow_short=params.get("allow_short", True),
         distribution_mode=params.get("distribution_mode", "calm"),
+        vol_clustering=params.get("vol_clustering", 0.0),
+        jump_burst_probability=params.get("jump_burst_probability", 0.0),
+        jump_burst_persistence=params.get("jump_burst_persistence", 0.0),
+        jump_burst_size=params.get("jump_burst_size", 0.0),
         mode=params.get("mode", "train"),
         env_kwargs=params.get("env_kwargs") or None,
     )
@@ -202,7 +210,7 @@ class CheckpointableEnv(gym.Wrapper):
         if state.native_state is not None:
             self.env.reset()
             self.env.restore_state(state.native_state)
-            self._actions = []
+            self._actions = [np.array(a, dtype=np.float64, copy=True) for a in state.actions]
             self._step = int(state.step)
         else:
             self._replay(state)
@@ -219,6 +227,7 @@ class CheckpointableEnv(gym.Wrapper):
         if state.native_state is not None:
             fork.env.reset()
             fork.env.restore_state(state.native_state)
+            fork._actions = [np.array(a, dtype=np.float64, copy=True) for a in state.actions]
             fork._step = int(state.step)
         else:
             fork._replay(state)
