@@ -216,7 +216,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "3b8ccb2ab5906e5550deed35cce632f62998df66",
+  "generated_at_head": "9628ba3e0b2d14744a62e5370c6d1df0d0f29d5f",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -343,6 +343,10 @@
     {
       "path": "crates/sharpearena-py/python/sharpearena/effective_config.py",
       "sha256": "7d3794ad5d55c1c3fd989804ba88626a1893078e63b36e4a9857fb2c139e81f6"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/episode_outcomes.py",
+      "sha256": "c0f9b8fa314eea13df39c12e4923e15c988e7b0b213a85b89e9132af4ef1cdde"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/eval_seeds.py",
@@ -490,11 +494,11 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/reward_misspecification.py",
-      "sha256": "bdfa59cd7dd17c9be6090998022bba080bb2f30a00a778b5a306a557e1fbf7da"
+      "sha256": "161331c6fd3a044e6a3c9baaf3a016da98a8021a2368b837bfdd813e943d02be"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/rewards.py",
-      "sha256": "3194b2e8ccfae109a7908404990f9f8a098053f89c00c67b8269d0139c227316"
+      "sha256": "16ec3b10bdff55da7e8ce0dbb9da18eca2723c84c78b0c55d37e0dadd3d8a27a"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/risk.py",
@@ -530,7 +534,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/verifiers_env.py",
-      "sha256": "17d9a5313845565a876c64d647bed8ed0a6386df70f74b2f968b095057286457"
+      "sha256": "e9a3f3b6c9264c9dc9a35b4bc3a6d86b7432a8cbddf59c2f789d5e5dbaafb3ad"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/wrappers.py",
@@ -812,6 +816,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "cae0b0309d881b2e117e5ee420eb2e8e35a2a3d7c61c8a5d8f183683d72b07ce",
+  "source_snapshot_sha256": "c0cc902d2e15a65114e9f383ebc4e5e4b0d32dfe1ec788b9e64781214b2e36b9",
   "validator": "paper/src/check-provenance.py"
 }

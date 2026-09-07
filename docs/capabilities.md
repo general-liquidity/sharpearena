@@ -22,7 +22,7 @@ the root README can stay task-oriented.
 | Gymnasium | Scalar/vector envs, registered difficulty and held-out IDs, causal wrappers, `check_env` determinism harness |
 | `verifiers` / RLVR | Multi-turn environment, scenario dataset, XML decision parser, bounded reward over the SharpeBench score |
 | Reward shaping | Differential Sharpe, Sortino, drawdown, turnover, loss aversion, and causal risk-aware schemes; never the rank key |
-| Negative controls | Misspecified reward/proxy pairs that must underperform the clean scorer |
+| Negative controls | Incomplete research rewards and distinct hand-written proxy policies; diagnostic comparisons, not trained optimizers or guaranteed underperformance |
 | Generalization | Disjoint train/eval bands, cross-regime transfer, bootstrap confidence intervals, frozen eval set |
 | Offline RL | Minari export and train/test dataset helpers |
 | Evaluation contract | [`EVALUATION.md`](../EVALUATION.md) fixes seeds, gates, baselines, and reporting semantics |
