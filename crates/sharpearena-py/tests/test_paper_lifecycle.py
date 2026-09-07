@@ -7,6 +7,7 @@ code path under test can reach a real-capital endpoint.
 from __future__ import annotations
 
 import json
+from hashlib import sha256
 from urllib.error import HTTPError
 
 import pytest
@@ -195,9 +196,7 @@ def test_every_transition_and_broker_ack_hash_is_recorded():
         "filled",
     ]
     assert record["transitions"][0]["broker_ack_sha256"] is None
-    hashes = [
-        item["broker_ack_sha256"] for item in record["transitions"][1:]
-    ]
+    hashes = [item["broker_ack_sha256"] for item in record["transitions"][1:]]
     assert all(isinstance(value, str) and len(value) == 64 for value in hashes)
     assert len(set(hashes)) == 3
     assert record["filled_quantity"] == 5.0
@@ -317,9 +316,7 @@ def test_transitions_and_ack_hashes_reach_the_forward_evidence(tmp_path):
     assert reconciliation["queried_by"] == "client_order_id"
     assert reconciliation["broker_answer"] == "present"
     assert len(reconciliation["broker_answer_sha256"]) == 64
-    states = [
-        item["to_state"] for item in reconciliation["lifecycle"]["transitions"]
-    ]
+    states = [item["to_state"] for item in reconciliation["lifecycle"]["transitions"]]
     assert states == [
         "submitted",
         "submission_unknown",
@@ -585,6 +582,472 @@ def test_an_executed_batch_closes_the_selection_gap(tmp_path):
     assert gap.execution_ratio == pytest.approx(1.0)
     assert gap.foregone_pnl == pytest.approx(0.0)
     assert gap.executed_pnl == pytest.approx(80.0)
+
+
+def test_atomic_refusal_never_executes_the_approved_prefix(tmp_path):
+    ledger = CounterfactualLedger()
+    broker = ScriptedBroker(
+        _guard(
+            allowed_symbols=("AAA", "BBB"),
+            max_gross_exposure=1,
+            max_order_notional=20000,
+        )
+    )
+    session = _session(broker, tmp_path, counterfactual=ledger)
+    decision = {
+        "orders": [
+            {"symbol": symbol, "action": "buy", "target_weight": 0.75}
+            for symbol in ("AAA", "BBB")
+        ]
+    }
+    with pytest.raises(PaperTradingError, match="refused before submission"):
+        session.execute_decision(
+            decision,
+            ["AAA", "BBB"],
+            _account(),
+            {"AAA": _bar(), "BBB": _bar("BBB")},
+            settlement_prices={"AAA": 110, "BBB": 110},
+        )
+    assert broker.submits == []
+    assert ledger.selection_gap().acted_decisions == 0
+    assert ledger.selection_gap().executed_notional == 0
+    assert ledger.selection_gap().executed_pnl == 0
+
+
+class ReceiptBroker(ScriptedBroker):
+    def __init__(self, *args, receipts, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.receipts = list(receipts)
+
+    def submit(self, order, *, account, prices):
+        self.submits.append(order.client_order_id)
+        response = self.receipts.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return {"client_order_id": order.client_order_id, **response}
+
+
+@pytest.mark.parametrize(
+    "response,confirmed",
+    [
+        ({"status": "new", "filled_qty": "0"}, 0),
+        ({"status": "partially_filled", "filled_qty": "3"}, 3),
+    ],
+)
+def test_acknowledgement_and_partial_fill_are_not_final_execution(
+    tmp_path, response, confirmed
+):
+    ledger = CounterfactualLedger()
+    broker = ReceiptBroker(_guard(), receipts=[response])
+    session = _session(broker, tmp_path, counterfactual=ledger)
+    session.execute_decision(
+        DECISION, ["AAA"], _account(), {"AAA": _bar()}, settlement_prices={"AAA": 104}
+    )
+    entry = ledger.records[-1]
+    assert entry.orders[0].executed_quantity == confirmed
+    assert entry.executed_notional is None
+    assert entry.executed_pnl is None
+    assert entry.foregone_pnl is None
+    assert entry.acted is (True if confirmed else None)
+
+
+def test_unqueryable_unknown_is_recorded_without_inventing_a_fill(tmp_path):
+    ledger = CounterfactualLedger()
+    session = _session(UnqueryableBroker(_guard()), tmp_path, counterfactual=ledger)
+    with pytest.raises(PaperTradingError, match="cannot be queried"):
+        session.execute_decision(DECISION, ["AAA"], _account(), {"AAA": _bar()})
+    assert len(ledger) >= 1
+    assert ledger.records[-1].acted is None
+    assert ledger.selection_gap().executed_notional is None
+    assert ledger.selection_gap().executed_pnl is None
+
+
+def test_repeated_decision_does_not_double_count_broker_fills(tmp_path):
+    ledger = CounterfactualLedger(tmp_path / "counterfactual.jsonl")
+    broker = ScriptedBroker(_guard())
+    session = _session(broker, tmp_path, counterfactual=ledger)
+    for _ in range(2):
+        session.execute_decision(
+            DECISION,
+            ["AAA"],
+            _account(),
+            {"AAA": _bar()},
+            settlement_prices={"AAA": 104},
+        )
+    assert len(broker.submits) == 1
+    gap = ledger.selection_gap()
+    assert gap.decisions == 1
+    assert gap.executed_notional == 2000
+    assert gap.executed_pnl == 80
+    reloaded = CounterfactualLedger(tmp_path / "counterfactual.jsonl")
+    assert reloaded.selection_gap().as_record() == gap.as_record()
+
+
+def test_partial_receipt_refresh_closes_only_the_confirmed_quantity(tmp_path):
+    ledger = CounterfactualLedger(tmp_path / "counterfactual.jsonl")
+    broker = ReceiptBroker(
+        _guard(), receipts=[{"status": "partially_filled", "filled_qty": "3"}]
+    )
+    state = tmp_path / "lifecycle.json"
+    session = _session(
+        broker, tmp_path, counterfactual=ledger, lifecycles=LifecycleStore(state)
+    )
+    session.execute_decision(
+        DECISION, ["AAA"], _account(), {"AAA": _bar()}, settlement_prices={"AAA": 104}
+    )
+    assert ledger.selection_gap().confirmed_notional == 300
+    assert ledger.selection_gap().executed_notional is None
+    broker.found = {
+        "status": "canceled",
+        "filled_qty": "5",
+        "client_order_id": broker.submits[0],
+    }
+    # Reload both stores: receipt accounting must not depend on in-memory state.
+    ledger = CounterfactualLedger(tmp_path / "counterfactual.jsonl")
+    session = _session(
+        broker, tmp_path, counterfactual=ledger, lifecycles=LifecycleStore(state)
+    )
+    session.refresh_execution()
+    gap = ledger.selection_gap()
+    assert (gap.decisions, gap.acted_decisions, gap.unknown_decisions) == (1, 1, 0)
+    assert gap.executed_notional == 500
+    assert gap.executed_pnl == 20
+    assert gap.foregone_pnl == 60
+    order = ledger.records[-1].orders[0]
+    assert order.client_order_id == broker.submits[0]
+    assert (
+        order.receipt_sha256
+        == sha256(
+            json.dumps(
+                broker.found,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                allow_nan=False,
+            ).encode()
+        ).hexdigest()
+    )
+    assert session.refresh_execution() == []
+    assert len(broker.submits) == 1
+    assert ledger.selection_gap().executed_pnl == 20
+
+
+@pytest.mark.parametrize(
+    "receipt",
+    [
+        {"status": "filled"},
+        {"status": "canceled"},
+    ],
+)
+def test_terminal_status_without_fill_quantity_is_unavailable(tmp_path, receipt):
+    ledger = CounterfactualLedger()
+    session = _session(
+        ReceiptBroker(_guard(), receipts=[receipt]), tmp_path, counterfactual=ledger
+    )
+    session.execute_decision(DECISION, ["AAA"], _account(), {"AAA": _bar()})
+    assert ledger.selection_gap().executed_notional is None
+    assert ledger.selection_gap().acted_decisions == 0
+    assert ledger.selection_gap().unknown_decisions == 1
+
+
+@pytest.mark.parametrize(
+    "receipt",
+    [
+        {"status": "filled", "filled_qty": 21},
+        {"status": "filled", "filled_qty": 19},
+        {"status": "filled", "filled_qty": True},
+        {"status": "filled", "filled_qty": "NaN"},
+        {"status": "filled", "filled_qty": "Infinity"},
+        {"status": "filled", "filled_qty": -1},
+        {"status": "filled", "filled_qty": 20, "client_order_id": "another-order"},
+        {"status": "filled", "filled_qty": 20, "symbol": "BBB"},
+        {"status": "filled", "filled_qty": 20, "side": "sell"},
+    ],
+)
+def test_malformed_or_misbound_receipt_cannot_invent_execution(tmp_path, receipt):
+    from sharpearena.counterfactual import CounterfactualError
+
+    ledger = CounterfactualLedger()
+    session = _session(
+        ReceiptBroker(_guard(), receipts=[receipt]), tmp_path, counterfactual=ledger
+    )
+    with pytest.raises(CounterfactualError):
+        session.execute_decision(
+            DECISION,
+            ["AAA"],
+            _account(),
+            {"AAA": _bar()},
+            settlement_prices={"AAA": 104},
+        )
+    assert ledger.selection_gap().executed_notional is None
+    assert ledger.selection_gap().executed_pnl is None
+    assert "invalid broker receipt" in ledger.records[-1].orders[0].reason
+    journal = [
+        json.loads(line)
+        for line in (tmp_path / "forward.jsonl").read_text().splitlines()
+    ]
+    assert journal[-1]["submission_status"] == "invalid-broker-receipt"
+
+
+def test_filled_prefix_survives_an_exception_in_the_next_submission(tmp_path):
+    ledger = CounterfactualLedger()
+    broker = ReceiptBroker(
+        _guard(allowed_symbols=("AAA", "BBB")),
+        receipts=[
+            {"status": "filled", "filled_qty": 20},
+            RuntimeError("adapter failed"),
+        ],
+    )
+    session = _session(broker, tmp_path, counterfactual=ledger)
+    decision = {
+        "orders": [
+            {"symbol": symbol, "action": "buy", "target_weight": 0.2}
+            for symbol in ("AAA", "BBB")
+        ]
+    }
+    with pytest.raises(RuntimeError, match="adapter failed"):
+        session.execute_decision(
+            decision,
+            ["AAA", "BBB"],
+            _account(),
+            {"AAA": _bar(), "BBB": _bar("BBB")},
+            settlement_prices={"AAA": 104, "BBB": 104},
+        )
+    orders = ledger.records[-1].orders
+    assert [order.executed_quantity for order in orders] == [20, 0]
+    assert [order.execution_complete for order in orders] == [True, False]
+    assert ledger.selection_gap().confirmed_notional == 2000
+    assert ledger.selection_gap().executed_notional is None
+    assert ledger.selection_gap().executed_pnl is None
+
+
+def test_submission_unknown_reconciled_to_fill_is_counted_once(tmp_path):
+    ledger = CounterfactualLedger()
+    broker = ScriptedBroker(
+        _guard(), outcomes=["unknown"], found={"status": "filled", "filled_qty": 20}
+    )
+    session = _session(broker, tmp_path, counterfactual=ledger)
+    with pytest.raises(SubmissionUnknown):
+        session.execute_decision(
+            DECISION,
+            ["AAA"],
+            _account(),
+            {"AAA": _bar()},
+            settlement_prices={"AAA": 104},
+        )
+    assert any(entry.acted is None for entry in ledger.records)
+    assert ledger.selection_gap().executed_pnl == 80
+    session.execute_decision(
+        DECISION, ["AAA"], _account(), {"AAA": _bar()}, settlement_prices={"AAA": 104}
+    )
+    assert ledger.selection_gap().decisions == 1
+    assert ledger.selection_gap().executed_pnl == 80
+    assert len(broker.submits) == 1
+
+
+def test_retried_target_retains_original_intent_after_account_was_updated(tmp_path):
+    ledger = CounterfactualLedger()
+    broker = InMemoryPaperBroker(_guard())
+    account = _account()
+    session = _session(broker, tmp_path, counterfactual=ledger)
+    session.execute_decision(
+        DECISION, ["AAA"], account, {"AAA": _bar()}, settlement_prices={"AAA": 104}
+    )
+    assert account.positions["AAA"] == 20
+    assert (
+        session.execute_decision(
+            DECISION, ["AAA"], account, {"AAA": _bar()}, settlement_prices={"AAA": 104}
+        )
+        == []
+    )
+    assert account.positions["AAA"] == 20
+    assert ledger.selection_gap().intended_notional == 2000
+    assert ledger.selection_gap().executed_pnl == 80
+
+
+def test_retry_does_not_reserve_an_already_filled_order_again(tmp_path):
+    ledger = CounterfactualLedger()
+    broker = InMemoryPaperBroker(_guard(max_order_notional=10000))
+    account = _account()
+    decision = {"orders": [{"symbol": "AAA", "action": "buy", "target_weight": 0.75}]}
+    session = _session(broker, tmp_path, counterfactual=ledger)
+    session.execute_decision(
+        decision, ["AAA"], account, {"AAA": _bar()}, settlement_prices={"AAA": 104}
+    )
+    assert account.positions["AAA"] == 75
+    assert session.execute_decision(decision, ["AAA"], account, {"AAA": _bar()}) == []
+    assert account.positions["AAA"] == 75
+    assert ledger.selection_gap().executed_pnl == 300
+
+
+def test_broker_identity_is_part_of_order_id_not_only_the_evidence_key(tmp_path):
+    ledger, store = CounterfactualLedger(), LifecycleStore()
+    first, second = ScriptedBroker(_guard()), ScriptedBroker(_guard())
+    second.broker_id = "different-paper-broker"
+    for broker in (first, second):
+        _session(
+            broker, tmp_path, lifecycles=store, counterfactual=ledger
+        ).execute_decision(
+            DECISION,
+            ["AAA"],
+            _account(),
+            {"AAA": _bar()},
+            settlement_prices={"AAA": 104},
+        )
+    assert len(first.submits) == len(second.submits) == 1
+    assert first.submits[0] != second.submits[0]
+    assert ledger.selection_gap().decisions == 2
+
+
+def test_legacy_order_id_cannot_be_resubmitted_under_a_new_v2_id(tmp_path):
+    from dataclasses import asdict
+    from sharpearena.decision_parser import parse_decision_payload
+
+    store = LifecycleStore()
+    session = _session(ScriptedBroker(_guard()), tmp_path, lifecycles=store)
+    payload = {
+        "agent_id": session.agent_id,
+        "model_digest": session.model_digest,
+        "decision": parse_decision_payload(json.dumps(DECISION)),
+        "market": {"AAA": asdict(_bar())},
+        "index": 0,
+    }
+    legacy = sha256(
+        json.dumps(
+            payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode()
+    ).hexdigest()[:32]
+    store.open_or_create(legacy).mark_submitted()
+    with pytest.raises(LifecycleError, match="legacy order identity"):
+        session.execute_decision(DECISION, ["AAA"], _account(), {"AAA": _bar()})
+    assert session.broker.submits == []
+
+
+def test_crash_after_submit_intent_leaves_unknown_and_reconciles_before_retry(tmp_path):
+    class CrashBroker(ScriptedBroker):
+        def submit(self, order, *, account, prices):
+            self.submits.append(order.client_order_id)
+            raise KeyboardInterrupt("simulated supervisor interruption")
+
+    path, state = tmp_path / "ledger.jsonl", tmp_path / "state.json"
+    broker = CrashBroker(_guard())
+    session = _session(
+        broker,
+        tmp_path,
+        lifecycles=LifecycleStore(state),
+        counterfactual=CounterfactualLedger(path),
+    )
+    with pytest.raises(KeyboardInterrupt):
+        session.execute_decision(
+            DECISION,
+            ["AAA"],
+            _account(),
+            {"AAA": _bar()},
+            settlement_prices={"AAA": 104},
+        )
+    ledger = CounterfactualLedger(path)
+    assert ledger.selection_gap().executed_notional is None
+    assert ledger.selection_gap().unknown_decisions == 1
+    restored = LifecycleStore(state)
+    assert restored.unresolved()[0].state == "submitted"
+    broker = ScriptedBroker(_guard(), found={"status": "filled", "filled_qty": 20})
+    session = _session(broker, tmp_path, lifecycles=restored, counterfactual=ledger)
+    assert (
+        session.execute_decision(DECISION, ["AAA"], _account(), {"AAA": _bar()}) == []
+    )
+    assert broker.submits == []
+    assert len(broker.queries) == 1
+    assert ledger.selection_gap().executed_pnl == 80
+    assert ledger.selection_gap().decisions == 1
+
+
+def test_confirmed_absence_then_replacement_is_one_decision(tmp_path):
+    ledger = CounterfactualLedger()
+    broker = ScriptedBroker(_guard(), outcomes=["unknown", "filled"], found=None)
+    session = _session(broker, tmp_path, counterfactual=ledger)
+    with pytest.raises(SubmissionUnknown):
+        session.execute_decision(
+            DECISION,
+            ["AAA"],
+            _account(),
+            {"AAA": _bar()},
+            settlement_prices={"AAA": 104},
+        )
+    assert ledger.selection_gap().executed_notional == 0
+    session.execute_decision(DECISION, ["AAA"], _account(), {"AAA": _bar()})
+    assert len(broker.submits) == 2
+    assert broker.submits[1] == broker.submits[0] + "-r1"
+    assert ledger.selection_gap().decisions == 1
+    assert ledger.selection_gap().executed_notional == 2000
+    assert ledger.selection_gap().executed_pnl == 80
+
+
+def test_decreasing_fill_or_missing_accepted_order_query_preserves_unknown(tmp_path):
+    from sharpearena.counterfactual import CounterfactualError
+
+    ledger = CounterfactualLedger()
+    broker = ReceiptBroker(
+        _guard(), receipts=[{"status": "partially_filled", "filled_qty": 3}]
+    )
+    session = _session(broker, tmp_path, counterfactual=ledger)
+    session.execute_decision(DECISION, ["AAA"], _account(), {"AAA": _bar()})
+    before = ledger.selection_gap().as_record()
+    broker.found = {"status": "partially_filled", "filled_qty": 2}
+    with pytest.raises(CounterfactualError, match="must not decrease"):
+        session.refresh_execution()
+    assert ledger.selection_gap().as_record() == before
+    broker.found = None
+    with pytest.raises(PaperTradingError, match="execution remains unresolved"):
+        session.refresh_execution()
+    assert ledger.selection_gap().as_record() == before
+    assert (
+        session.execute_decision(DECISION, ["AAA"], _account(), {"AAA": _bar()}) == []
+    )
+    assert len(broker.submits) == 1
+
+
+def test_losing_lifecycle_state_cannot_turn_an_unknown_receipt_into_a_new_order(
+    tmp_path,
+):
+    ledger = CounterfactualLedger()
+    session = _session(UnqueryableBroker(_guard()), tmp_path, counterfactual=ledger)
+    with pytest.raises(PaperTradingError):
+        session.execute_decision(DECISION, ["AAA"], _account(), {"AAA": _bar()})
+    before = ledger.selection_gap().as_record()
+    session.lifecycles = LifecycleStore()
+    with pytest.raises(LifecycleError, match="missing lifecycle"):
+        session.execute_decision(DECISION, ["AAA"], _account(), {"AAA": _bar()})
+    assert ledger.selection_gap().as_record() == before
+    assert len(session.broker.submits) == 1
+
+
+@pytest.mark.parametrize(
+    "status,disposition",
+    [
+        ("rejected", "broker_rejected"),
+        ("canceled", "broker_canceled"),
+        ("expired", "broker_expired"),
+    ],
+)
+def test_terminal_zero_fill_receipt_is_known_nonexecution(
+    tmp_path, status, disposition
+):
+    ledger = CounterfactualLedger()
+    broker = ReceiptBroker(_guard(), receipts=[{"status": status, "filled_qty": 0}])
+    session = _session(broker, tmp_path, counterfactual=ledger)
+    session.execute_decision(
+        DECISION, ["AAA"], _account(), {"AAA": _bar()}, settlement_prices={"AAA": 104}
+    )
+    assert ledger.records[-1].orders[0].disposition == disposition
+    gap = ledger.selection_gap()
+    assert (gap.acted_decisions, gap.unacted_decisions, gap.unknown_decisions) == (
+        0,
+        1,
+        0,
+    )
+    assert gap.executed_notional == 0
+    assert gap.executed_pnl == 0
+    assert gap.foregone_pnl == 80
 
 
 # -- the remote-submit gate ---------------------------------------------------
