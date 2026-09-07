@@ -52,8 +52,8 @@
 //! results and the cross-runtime golden hashes are pinned to the point-estimate dynamics,
 //! so the default path is never allowed to move.
 //!
-//! See [`EllipticUncertaintySet`] for the geometry, the closed-form worst case, and why an
-//! ellipse rather than a box is the right shape for two correlated impact coefficients.
+//! See [`EllipticUncertaintySet`] for the constrained geometry, the closed-form worst
+//! case, and the assumptions encoded by the supplied coefficient correlation.
 //!
 //! ## Concave permanent impact: an optional impact exponent
 //!
@@ -88,7 +88,7 @@
 //! holds only returns from past cleared bars, and `vol_scale = 0` multiplies the impact
 //! term by an exact `1.0`, so the default path is bit-for-bit the pre-vol-scaling fill.
 //! Aggregation folds the per-agent sizes in canonical (sorted) agent order, so the parallel
-//! collection of actions cannot perturb `Q_t`. The one square root in the crate, in
+//! collection of actions cannot perturb `Q_t`. The square roots used by
 //! [`EllipticUncertaintySet::worst_case`], is admitted deliberately: IEEE 754 mandates that
 //! `sqrt` be **correctly rounded**, so unlike `ln` / `exp` it is not an implementation-
 //! defined libm approximation and reproduces bit-for-bit on every target. There is still no
@@ -178,10 +178,11 @@ pub struct ImpactCoefficients {
 ///
 /// # The geometry, and why an ellipse rather than a box
 ///
-/// The set is the unit level set of a covariance `S` centred on the point estimate:
+/// The set is an ellipse centred on a nonnegative point estimate, intersected with
+/// the nonnegative coefficient quadrant:
 ///
 /// ```text
-/// U = { theta : (theta - theta_hat)^T S^-1 (theta - theta_hat) <= 1 }
+/// U = { theta >= 0 : (theta - theta_hat)^T S^-1 (theta - theta_hat) <= 1 }
 /// S = [[ a^2,      rho*a*b ],
 ///      [ rho*a*b,  b^2     ]]
 /// ```
@@ -190,32 +191,26 @@ pub struct ImpactCoefficients {
 /// half-widths of the plausible range of each coefficient on its own; `rho` says how their
 /// errors move together.
 ///
-/// A box (an independent interval per coefficient) would be the wrong shape here, for two
-/// reasons. The first is statistical: `lambda` and `eta` are not measured separately. They
-/// are two coefficients of one fit to one set of executed trades, so their estimation
-/// errors are coupled, and a fit that attributes more of the observed slippage to the
-/// permanent component necessarily attributes less to the temporary one. A box asserts the
-/// two vary independently and therefore admits its corners, `(lambda_max, eta_max)` in
-/// particular, which under any nonzero correlation is a combination the data never
-/// supports. Robustness bought against a corner nobody can occupy is paid for in
-/// conservatism and returned as nothing. An ellipse is the level set of the estimator's own
-/// covariance, so it encodes the coupling directly and excludes exactly those corners.
+/// A fitted covariance can motivate an ellipse when estimation errors are coupled;
+/// the supplied radii and correlation here are modelling inputs, not estimates this
+/// engine validates. A containing box admits combinations excluded by the ellipse,
+/// including some corners even at zero correlation. Choosing either set expresses
+/// a robustness assumption, not a claim about empirically impossible coefficients.
 ///
 /// The second reason is that it makes the worst case a closed form. Impact cost is linear
 /// in `theta` (see [`worst_case`](Self::worst_case)), and the maximum of a linear function
-/// over an ellipse is the classical second-order-cone expression: one matrix-vector product
-/// and one square root, no search, no iteration, no sampling. The uncertainty set therefore
-/// costs a handful of flops per symbol per bar and introduces no RNG, which is what lets it
-/// sit on a determinism-critical clearing path at all.
+/// over an ellipse has a support-function solution. If that solution violates a
+/// nonnegativity constraint, the constrained maximum is on that axis's ellipse
+/// cross-section. Both cases have closed forms with no search or sampling.
 ///
 /// # Sign convention
 ///
 /// Worst case means **most expensive for the traders**, so the set is resolved in the
 /// direction that maximises the bar's aggregate impact cost. A negative `correlation` can
 /// therefore push one coefficient below its point estimate while the other rises: that is
-/// the ellipse doing its job, and it is precisely the behaviour a box cannot express. Both
-/// resolved coefficients are floored at zero, since a negative impact coefficient would
-/// turn execution into a rebate, which is not a market this model describes.
+/// the ellipse encoding the supplied coupling. Negative coefficients are excluded
+/// from the feasible set because they would turn impact into a rebate. Independently
+/// flooring the unconstrained answer is not valid: it can leave the ellipse.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EllipticUncertaintySet {
@@ -231,12 +226,15 @@ pub struct EllipticUncertaintySet {
 impl EllipticUncertaintySet {
     /// Build a set from the two half-widths and their correlation.
     ///
-    /// Panics on a negative radius or a `correlation` outside `[-1, 1]`, either of which
+    /// Panics on a nonfinite or negative radius or a `correlation` outside `[-1, 1]`, which
     /// would describe a matrix that is not a covariance.
     pub fn new(lambda_radius: f64, eta_radius: f64, correlation: f64) -> Self {
         assert!(
-            lambda_radius >= 0.0 && eta_radius >= 0.0,
-            "uncertainty radii must be non-negative"
+            lambda_radius.is_finite()
+                && eta_radius.is_finite()
+                && lambda_radius >= 0.0
+                && eta_radius >= 0.0,
+            "uncertainty radii must be finite and non-negative"
         );
         assert!(
             (-1.0..=1.0).contains(&correlation),
@@ -265,18 +263,28 @@ impl EllipticUncertaintySet {
     /// cost(theta)  ~  lambda * cost_lambda + eta * cost_eta  =  c^T theta
     /// ```
     ///
-    /// so [`clear_bar_robust`] passes `cost_lambda = Q^2` and `cost_eta = sum_i q_i^2` for
+    /// Requires finite nonnegative point coefficients and cost components, and
+    /// representable intermediate arithmetic. [`clear_bar_robust`] passes
+    /// `cost_lambda = Q^2` and `cost_eta = sum_i q_i^2` for
     /// the symbol (both non-negative, both in the units of the cost the agents actually
-    /// pay). Maximising `c^T theta` over `U` has the standard solution
+    /// pay). Maximising `c^T theta` over the unconstrained ellipse gives
     ///
     /// ```text
     /// theta_wc = theta_hat + S c / sqrt(c^T S c)
     /// ```
     ///
-    /// whose attained cost is `c^T theta_hat + sqrt(c^T S c)`: the point estimate plus the
+    /// When this point is nonnegative, its attained cost is
+    /// `c^T theta_hat + sqrt(c^T S c)`: the point estimate plus the
     /// support function of the ellipse in the cost direction. `c^T S c >= 0` for any `c`
     /// because `|correlation| <= 1` makes `S` positive semidefinite, and the answer depends
     /// on `c` only through its direction, so the units chosen for the cost do not matter.
+    ///
+    /// Otherwise, the violated axis is active at the constrained maximum. For
+    /// `lambda = 0`, put `u = -theta_hat.lambda / a`; the upper cross-section is
+    /// `eta = theta_hat.eta + b * (rho*u + sqrt((1-rho^2)*(1-u^2)))`.
+    /// The other axis is symmetric. For a feasible nonnegative centre and a
+    /// nonnegative objective, both axes cannot be violated at once. This also
+    /// handles `|rho| = 1` without breaking the line segment's coupling.
     ///
     /// A degenerate direction (`c^T S c == 0`: no flow at all, a zero-radius set, or a
     /// fully degenerate ellipse orthogonal to the cost) has no interior maximiser and falls
@@ -304,10 +312,28 @@ impl EllipticUncertaintySet {
             return point;
         }
         let norm = quad.sqrt();
-        ImpactCoefficients {
-            lambda: floor_at_zero(point.lambda + sc_lambda / norm),
-            eta: floor_at_zero(point.eta + sc_eta / norm),
+        let support = ImpactCoefficients {
+            lambda: point.lambda + sc_lambda / norm,
+            eta: point.eta + sc_eta / norm,
+        };
+        if support.lambda < 0.0 {
+            // The violated axis implies a > 0 and |point.lambda/a| <= 1.
+            let u = -point.lambda / a;
+            let remainder = ((1.0 - self.correlation * self.correlation) * (1.0 - u * u)).max(0.0);
+            return ImpactCoefficients {
+                lambda: 0.0,
+                eta: point.eta + b * (self.correlation * u + remainder.sqrt()),
+            };
         }
+        if support.eta < 0.0 {
+            let v = -point.eta / b;
+            let remainder = ((1.0 - self.correlation * self.correlation) * (1.0 - v * v)).max(0.0);
+            return ImpactCoefficients {
+                lambda: point.lambda + a * (self.correlation * v + remainder.sqrt()),
+                eta: 0.0,
+            };
+        }
+        support
     }
 }
 
@@ -327,17 +353,6 @@ fn signed_pow(q: f64, exponent: f64) -> f64 {
         q.powf(exponent)
     } else {
         -((-q).powf(exponent))
-    }
-}
-
-/// Clamp a resolved impact coefficient at zero. A negative coefficient would pay traders to
-/// execute, which is outside the Kyle / Almgren-Chriss model, so the floor is a modelling
-/// statement rather than numerical hygiene.
-fn floor_at_zero(x: f64) -> f64 {
-    if x > 0.0 {
-        x
-    } else {
-        0.0
     }
 }
 
@@ -1848,6 +1863,99 @@ mod tests {
     }
 
     #[test]
+    fn uncertainty_radii_must_be_finite_and_nonnegative() {
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -0.01] {
+            assert!(
+                std::panic::catch_unwind(|| EllipticUncertaintySet::new(bad, 0.1, 0.0)).is_err()
+            );
+            assert!(
+                std::panic::catch_unwind(|| EllipticUncertaintySet::new(0.1, bad, 0.0)).is_err()
+            );
+        }
+        let zero = EllipticUncertaintySet::new(0.0, 0.0, -1.0);
+        assert_eq!(zero.lambda_radius, 0.0);
+        assert_eq!(zero.eta_radius, 0.0);
+    }
+
+    #[test]
+    fn constrained_worst_case_stays_in_the_ellipse_instead_of_clipping() {
+        let params = MarketParams::default(); // (0.1, 0.05)
+        let set = EllipticUncertaintySet::new(0.2, 0.1, -0.9);
+        let wc = set.worst_case(&params, 0.0, 2.0);
+        let x = (wc.lambda - params.lambda) / set.lambda_radius;
+        let y = (wc.eta - params.eta) / set.eta_radius;
+        let quadratic = (x * x - 2.0 * set.correlation * x * y + y * y)
+            / (1.0 - set.correlation * set.correlation);
+        assert!(
+            quadratic <= 1.0 + 1e-12,
+            "outside declared set: {quadratic}"
+        );
+        assert_eq!(wc.lambda, 0.0);
+        let expected_eta = 0.05 + 0.1 * (0.45 + (0.19_f64 * 0.75).sqrt());
+        assert!((wc.eta - expected_eta).abs() < 1e-14);
+
+        // The mirrored axis must obey the same constraint, not just this one case.
+        let mirrored = MarketParams {
+            lambda: 0.05,
+            eta: 0.1,
+            ..params
+        };
+        let other = EllipticUncertaintySet::new(0.1, 0.2, -0.9).worst_case(&mirrored, 2.0, 0.0);
+        assert_eq!(other.eta, 0.0);
+        assert_eq!(other.lambda, wc.eta);
+    }
+
+    #[test]
+    fn constrained_support_dominates_every_feasible_sample() {
+        let params = MarketParams::default();
+        for rho in [-0.99_f64, -0.9, -0.3, 0.0, 0.9] {
+            let set = EllipticUncertaintySet::new(0.4, 0.3, rho);
+            for (cl, ce) in [(0.0, 2.0), (2.0, 0.0), (1.0, 0.3), (0.3, 1.0)] {
+                let wc = set.worst_case(&params, cl, ce);
+                let (x, y) = (
+                    (wc.lambda - params.lambda) / set.lambda_radius,
+                    (wc.eta - params.eta) / set.eta_radius,
+                );
+                let q = (x * x - 2.0 * rho * x * y + y * y) / (1.0 - rho * rho);
+                assert!(
+                    q <= 1.0 + 1e-10 && wc.lambda >= 0.0 && wc.eta >= 0.0,
+                    "infeasible rho={rho}, c=({cl},{ce}): {wc:?}, q={q}"
+                );
+                let attained = cl * wc.lambda + ce * wc.eta;
+                assert!(attained + 1e-14 >= cl * params.lambda + ce * params.eta);
+                let mut checked = 0;
+                for k in -1000..=1000 {
+                    let t = f64::from(k) / 100.0;
+                    let u = (1.0 - t * t) / (1.0 + t * t);
+                    let v = 2.0 * t / (1.0 + t * t);
+                    let lambda = params.lambda + set.lambda_radius * u;
+                    let eta =
+                        params.eta + set.eta_radius * (rho * u + (1.0 - rho * rho).sqrt() * v);
+                    if lambda >= 0.0 && eta >= 0.0 {
+                        checked += 1;
+                        assert!(cl * lambda + ce * eta <= attained + 1e-12);
+                    }
+                }
+                assert!(
+                    checked > 0,
+                    "the optimality check must exercise feasible points"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn constrained_degenerate_line_preserves_its_coupling() {
+        let params = MarketParams::default();
+        let wc = EllipticUncertaintySet::new(0.2, 0.1, -1.0).worst_case(&params, 0.0, 2.0);
+        assert_eq!(wc.lambda, 0.0);
+        assert_eq!(wc.eta, 0.1); // x/a == -y/b, not the clipped (0, 0.15)
+        let zero_axis = EllipticUncertaintySet::new(0.0, 0.1, -1.0).worst_case(&params, 0.0, 2.0);
+        assert_eq!(zero_axis.lambda, params.lambda);
+        assert!((zero_axis.eta - 0.15).abs() < 1e-14);
+    }
+
+    #[test]
     fn a_set_makes_the_market_strictly_more_expensive_to_trade() {
         // The evaluation claim: an agent facing an uncertainty set is charged the worst
         // case, so its aggregate execution cost on a trading bar is strictly higher than
@@ -1980,7 +2088,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "radii must be non-negative")]
+    #[should_panic(expected = "radii must be finite and non-negative")]
     fn a_negative_radius_is_rejected() {
         EllipticUncertaintySet::new(-0.1, 0.1, 0.0);
     }
