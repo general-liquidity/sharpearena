@@ -6,8 +6,9 @@ or the rank key. Every scheme is a pure, bounded function of ``state['returns']`
 ``state['events']`` (already point-in-time, leak-free) so it is GRPO-safe.
 
 ``build_scheme_rubric(scheme, ...)`` composes a chosen primary reward (weight 1.0) with the
-real deflated Sharpe (0.5) and the per-scenario mandate (0.5) — the same 3-func shape the
-hardcoded rubric used. ``"default"`` reproduces the original realized-return scheme exactly.
+real deflated Sharpe (0.5) and the per-scenario mandate (0.5). Its eligibility gate gives
+failed or incomplete episodes a composite reward of -1, preserving their partial trace
+for diagnosis. The raw functions alone describe returns; they do not certify completion.
 
 The flagship scheme is :func:`differential_sharpe` — an online Moody-Saffell differential
 Sharpe ratio that aligns the *training* signal with the deflated-Sharpe *scoring* objective
@@ -26,6 +27,7 @@ from typing import Any, Optional
 import numpy as np
 
 from .decision_parser import format_reward
+from .episode_outcomes import eligible_reward
 from .verifiers_env import (
     _HAS_VERIFIERS,
     _returns_from_state,
@@ -70,7 +72,7 @@ def differential_sharpe(
         d_b = r * r - b
         var = b - a * a
         if i >= _DSR_WARMUP and var > 1e-9:
-            dt = (b * d_a - 0.5 * a * d_b) / (var ** 1.5)
+            dt = (b * d_a - 0.5 * a * d_b) / (var**1.5)
             total += max(-_DSR_CLIP, min(_DSR_CLIP, dt))
             n += 1
         a += _DSR_ETA * d_a
@@ -291,7 +293,9 @@ def time_aversion_schedule(
     time dependence is checkable rather than buried inside a loop.
     """
     if shape not in _AVERSION_SHAPES:
-        raise ValueError(f"unknown shape {shape!r}; choose from {list(_AVERSION_SHAPES)}")
+        raise ValueError(
+            f"unknown shape {shape!r}; choose from {list(_AVERSION_SHAPES)}"
+        )
     count = max(int(n), 1)
     lo = float(lam_start)
     hi = float(lam_end)
@@ -348,6 +352,8 @@ def time_inhomogeneous_vol_aversion(
     rets = _returns_from_state(state)
     if not rets:
         return 0.0
+    if horizon is None:
+        horizon = (state or {}).get("episode", {}).get("planned_bars")
     n = len(rets) if horizon is None else max(int(horizon), len(rets))
     lam = time_aversion_schedule(
         n, lam_start=lam_start, lam_end=lam_end, shape=shape, curvature=curvature
@@ -374,11 +380,15 @@ def list_reward_schemes() -> list[str]:
     return sorted(REWARD_SCHEMES)
 
 
-def build_scheme_rubric(scheme: str = "default", *, parser: Any = None, mandate: bool = True):
+def build_scheme_rubric(
+    scheme: str = "default", *, parser: Any = None, mandate: bool = True
+):
     """A ``vf.Rubric`` composing the chosen primary reward (1.0) + deflated Sharpe (0.5) +
     mandate (0.5 if enabled), matching the original 3-func shape. ``pass^k`` / process / format
-    stay zero-weight diagnostics. ``scheme="default"`` is the original realized-return rubric.
-    Raises if ``verifiers`` is unavailable or the scheme is unknown."""
+    stay zero-weight diagnostics. All weighted rewards require a complete, process-clean
+    episode record. Failed/incomplete episodes receive -1 in total, not reward for their
+    profitable prefix. Raises if ``verifiers`` is unavailable or the scheme is unknown.
+    """
     if not _HAS_VERIFIERS:
         raise RuntimeError("verifiers is not installed; cannot build a Rubric")
     primary = REWARD_SCHEMES.get(scheme)
@@ -386,13 +396,16 @@ def build_scheme_rubric(scheme: str = "default", *, parser: Any = None, mandate:
         raise ValueError(
             f"unknown reward_scheme {scheme!r}; choose from {list_reward_schemes()}"
         )
-    funcs = [primary, deflated_sharpe_reward]
+    funcs = [
+        eligible_reward(primary, floor=-1.0),
+        eligible_reward(deflated_sharpe_reward, floor=0.0),
+    ]
     weights = [1.0, 0.5]
     if mandate:
-        funcs.append(mandate_reward)
+        funcs.append(eligible_reward(mandate_reward, floor=0.0))
         weights.append(0.5)
     rubric = vf.Rubric(funcs=funcs, weights=weights, parser=parser)
-    rubric.add_metric(pass_k_reward)
+    rubric.add_metric(eligible_reward(pass_k_reward, floor=0.0))
     rubric.add_metric(process_check_reward)
     rubric.add_metric(format_reward)
     return rubric

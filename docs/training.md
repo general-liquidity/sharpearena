@@ -68,6 +68,32 @@ The rubric's dense `realized_return_reward` is the GRPO objective; the real
 `deflated_sharpe_reward` is a secondary objective; `pass_k_reward`,
 `process_check_reward`, and `format_reward` are zero-weight diagnostics.
 
+### Episode eligibility and failed rollouts
+
+The weighted rubric first checks the runner-owned `state["episode"]` record.
+It records the requested cap, available native window, planned horizon
+(`min(requested_bars, available_bars)`), realized bars, terminal status and reason.
+The available window is read back from the environment that consumes it.
+
+Only a complete, process-clean episode earns the configured rewards. Protocol
+errors, bankruptcy, block-severity process events, incomplete horizons, framework
+cutoffs and inconsistent evidence receive a composite reward of **-1** under
+all eight schemes. The primary contribution is -1; Sharpe and mandate
+contributions are zero. Zeroing the whole reward instead would allow an abort
+to beat a valid losing episode. Raw return/event traces remain available for
+diagnosis; the runner does not fabricate holds or unobserved returns.
+
+The environment closes once on completion, failure or framework cleanup. A
+terminal state cannot start a fresh market, and the final observation does not
+request another model response. Raw helpers such as `realized_return_reward`
+still describe partial traces, but are not substitutes for the gated training
+rubric. Hand-built rubric inputs without episode accounting now receive the
+failure floor. Time-varying volatility aversion uses the recorded planned
+horizon unless an explicit diagnostic horizon is supplied.
+
+These rules constrain reward accounting. They do not establish training
+convergence, positive within-group variance or resistance to every reward exploit.
+
 ## v1 taskset and the subprocess runtime
 
 Under the verifiers v1 contract the env is a **taskset** (`taskset = { id = "sharpearena" }`)

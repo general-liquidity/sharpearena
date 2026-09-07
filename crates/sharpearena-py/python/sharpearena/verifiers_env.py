@@ -10,10 +10,10 @@ and **appends the realized bar return to ``state['returns']`` and any ``info['ev
 to ``state['events']``** — so the SharpeBench-calibrated rewards score REAL data instead
 of the empty arrays a ``SingleTurnEnv`` (which never steps a market) leaves behind.
 
-Reward shaping is GRPO-safe: a dense, bounded ``tanh``-squashed realized-return reward
-gives gradient on short/sparse episodes and varies across decision paths, with the real
-deflated Sharpe as a secondary objective and ``pass^k`` / process discipline kept as
-zero-weight diagnostic metrics.
+Completed, process-clean episodes receive a bounded primary reward, with the real
+deflated Sharpe as a secondary objective. Failed or incomplete episodes receive a
+composite reward of -1, never credit for a favorable prefix. Their observed returns
+remain in the trace; no replacement decisions or unobserved bars are fabricated.
 
 Verified against ``verifiers`` 0.1.14: ``MultiTurnEnv.env_response(messages, state) ->
 Messages`` (mutating ``state`` in place), ``is_completed`` is ``@final`` (terminate via a
@@ -24,6 +24,7 @@ signature.
 from __future__ import annotations
 
 import json
+import math
 from typing import Any, Optional, Sequence
 
 import numpy as np
@@ -36,6 +37,8 @@ from .decision_parser import (
     portfolio_weights,
 )
 from .gym import SharpeArenaEnv
+from .effective_config import env_effective_config
+from .episode_outcomes import is_process_block
 from .mandate import mandate_breach, sample_mandate, validate_mandate
 from .sharpearena_py import score_run  # the real SharpeBench scorer (pyo3)
 
@@ -74,9 +77,9 @@ def realized_return_reward(
 ) -> float:
     """Dense, bounded episodic reward: ``tanh`` of the summed realized bar returns.
 
-    This is the GRPO workhorse — it is non-zero on short/sparse episodes and differs
-    across decision paths (the deflated Sharpe collapses to 0 for <2 bars and is flat
-    for many distinct-but-similar paths), so the within-group variance never vanishes.
+    This raw helper describes the observed trace, even if it is partial. The training
+    rubric separately gates episode eligibility. Distinct returns can give distinct
+    rewards, but identical or saturated outcomes can still have zero group variance.
     """
     rets = _returns_from_state(state)
     if not rets:
@@ -121,12 +124,7 @@ def process_check_reward(
     """Penalize block-severity events surfaced in the env's per-bar ``info`` (the
     sim-exploitation guard, e.g. a manipulative order). 1.0 = clean."""
     events: Sequence[dict] = (state or {}).get("events", []) if state else []
-    bad = sum(
-        1
-        for e in events
-        if "manipulative" in str(e.get("event", "")).lower()
-        or str(e.get("event", "")).lower() == "protocol_error"
-    )
+    bad = sum(1 for e in events if is_process_block(e))
     return 1.0 if bad == 0 else max(0.0, 1.0 - 0.25 * bad)
 
 
@@ -153,7 +151,8 @@ def mandate_reward(
 
     A scenario with no mandate is vacuously satisfied (1.0). Wrong-objective behavior — a
     short under a long-only mandate, a blown drawdown cap — drives this below 1, so the
-    agent is rewarded for satisfying the per-scenario objective rather than a fixed one."""
+    agent is rewarded for satisfying the per-scenario objective rather than a fixed one.
+    """
     m = _mandate_from_state(state)
     if m is None:
         return 1.0
@@ -170,7 +169,8 @@ def build_rubric(
     Sharpe is a secondary objective; the **mandate** is a weighted reward (not a metric) — the
     episode is graded on satisfying *its* per-scenario objective, so wrong-objective behavior
     has to bite the gradient, which a zero-weight metric would not do. ``pass^k`` / process
-    discipline / format stay zero-weight diagnostics (gates, not gradient). Raises if
+    discipline / format stay zero-weight diagnostics. A separate eligibility check on
+    every weighted function enforces completion and process discipline. Raises if
     ``verifiers`` is unavailable."""
     from .rewards import build_scheme_rubric
 
@@ -216,7 +216,7 @@ def render_observation(
         p = float(positions[i]) if positions is not None else 0.0
         rows.append(f"{s}: close={c:.4f} pos={p:.4f}")
     cash_v = float(cash[0]) if cash is not None and len(cash) else 0.0
-    head = "Final bar — episode complete." if final else "Market update."
+    head = "Final observation: episode ended." if final else "Market update."
     tail = (
         ""
         if final
@@ -241,6 +241,8 @@ if _HAS_VERIFIERS:
             allow_short: bool = True,
             **kwargs: Any,
         ) -> None:
+            if int(max_episode_bars) <= 0:
+                raise ValueError("max_episode_bars must be positive")
             super().__init__(**kwargs)
             self._n_symbols = int(n_symbols)
             self._n_days = int(n_days)
@@ -261,8 +263,31 @@ if _HAS_VERIFIERS:
 
         def _ensure_env(self, state: dict) -> None:
             """Instantiate + reset the market on first use; seed the recorded arrays."""
+            if state.get("_oo_done", False):
+                raise RuntimeError("cannot restart a terminal episode")
             if state.get("_oo_env") is not None:
                 return
+            if "episode" in state:
+                raise RuntimeError("episode market is unavailable; cannot restart it")
+            state["episode"] = {
+                "schema_version": 1,
+                "requested_bars": self._max_episode_bars,
+                "available_bars": 0,
+                "planned_bars": 0,
+                "realized_bars": 0,
+                "status": "running",
+                "reason": None,
+            }
+            state["returns"] = []
+            state["events"] = []
+            state["protocol_failures"] = 0
+            try:
+                self._open_env(state)
+            except Exception as error:
+                self._finish_episode(state, "failed", "setup_error")
+                raise vf.InfraError("market setup failed") from error
+
+        def _open_env(self, state: dict) -> None:
             info = state.get("info") if isinstance(state.get("info"), dict) else {}
             seed = self._scenario_seed(state)
             env = SharpeArenaEnv(
@@ -272,13 +297,19 @@ if _HAS_VERIFIERS:
                 max_weight=self._max_weight,
                 allow_short=self._allow_short,
             )
-            obs, _ = env.reset(seed=seed)
             state["_oo_env"] = env
+            obs, _ = env.reset(seed=seed)
+            # Read the consumed window, not the requested n_days label. The native
+            # cursor advances once per bar, including the window's first bar.
+            config = env_effective_config(env)
+            start, end = config["window_start"], config["window_end"]
+            if type(start) is not int or type(end) is not int or not 0 <= start < end:
+                raise ValueError("market window must have positive integer extent")
+            available = end - start
+            state["episode"]["available_bars"] = available
+            state["episode"]["planned_bars"] = min(self._max_episode_bars, available)
             state["_oo_symbols"] = env.symbols
             state["_oo_done"] = False
-            state["returns"] = []
-            state["events"] = []
-            state["protocol_failures"] = 0
             state["_oo_last_obs"] = obs
             # Thread the scenario mandate into state so mandate_reward can read it.
             # Prefer the dataset row's mandate; fall back to the (leak-free) seed-derived
@@ -300,6 +331,13 @@ if _HAS_VERIFIERS:
                 except Exception:  # noqa: BLE001 - close is best-effort
                     pass
 
+        def _finish_episode(self, state: dict, status: str, reason: str) -> None:
+            state["episode"].update(
+                status=status, reason=reason, realized_bars=len(state["returns"])
+            )
+            state["_oo_done"] = True
+            self._close_env(state)
+
         # -- MultiTurnEnv contract ----------------------------------------
 
         async def setup_state(self, state) -> None:
@@ -308,6 +346,16 @@ if _HAS_VERIFIERS:
         @vf.stop
         async def episode_terminated(self, state, **kwargs) -> bool:
             return bool(state.get("_oo_done", False))
+
+        @vf.cleanup
+        async def finalize_episode(self, state, **kwargs) -> None:
+            """Framework cutoffs and cancellation must not strand a running market."""
+            if state.get("episode", {}).get("status") == "running":
+                reason = state.get("stop_condition") or "rollout_interrupted"
+                status = "failed" if state.get("error") is not None else "incomplete"
+                self._finish_episode(state, status, str(reason))
+            else:
+                self._close_env(state)
 
         async def env_response(self, messages, state, **kwargs):
             self._ensure_env(state)
@@ -329,9 +377,8 @@ if _HAS_VERIFIERS:
                 state["events"].append(
                     {"event": "protocol_error", "detail": str(error)}
                 )
-                state["_oo_done"] = True
-                self._close_env(state)
-                return [
+                self._finish_episode(state, "failed", "protocol_error")
+                response = [
                     vf.UserMessage(
                         role="user",
                         content=(
@@ -340,6 +387,8 @@ if _HAS_VERIFIERS:
                         ),
                     )
                 ]
+                state["final_env_response"] = response
+                return response
             # Record the chosen target weights as an event so the mandate breach checker
             # can see the structural decision (a short under long_only, net exposure under
             # market_neutral) — the env's own events only carry market-side facts.
@@ -349,23 +398,40 @@ if _HAS_VERIFIERS:
                     "weights": [float(x) for x in action.tolist()],
                 }
             )
-            obs, reward, terminated, truncated, info = env.step(action)
-            state["returns"].append(float(reward))
+            try:
+                obs, reward, terminated, truncated, info = env.step(action)
+                reward = float(reward)
+            except Exception as error:
+                self._finish_episode(state, "failed", "engine_error")
+                raise vf.InfraError("market step failed") from error
+            if not math.isfinite(reward):
+                self._finish_episode(state, "failed", "nonfinite_return")
+                raise vf.InfraError("market step returned a nonfinite reward")
+            state["returns"].append(reward)
             for e in info.get("events", []) or []:
                 state["events"].append(e)
             state["_oo_last_obs"] = obs
-            done = (
-                bool(terminated or truncated)
-                or len(state["returns"]) >= self._max_episode_bars
-            )
-            if done:
-                state["_oo_done"] = True
-                self._close_env(state)
-            return [
+            episode = state["episode"]
+            episode["realized_bars"] = len(state["returns"])
+            if terminated:
+                self._finish_episode(state, "failed", "bankruptcy")
+            elif any(is_process_block(e) for e in state["events"]):
+                self._finish_episode(state, "failed", "process_block")
+            elif episode["realized_bars"] == episode["planned_bars"]:
+                self._finish_episode(state, "completed", "horizon_reached")
+            elif truncated:
+                self._finish_episode(state, "incomplete", "early_truncation")
+            done = state["_oo_done"]
+            response = [
                 vf.UserMessage(
                     role="user", content=render_observation(obs, symbols, final=done)
                 )
             ]
+            if done:
+                # MultiTurnEnv otherwise asks the model once more before checking
+                # stop handlers. This is its supported no-extra-turn terminal path.
+                state["final_env_response"] = response
+            return response
 
 else:  # pragma: no cover - placeholder so the symbol exists without verifiers
 
