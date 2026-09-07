@@ -71,9 +71,10 @@ def candidate_states_from_unit(unit: float) -> tuple[int, ...]:
     """
     if not 0.0 <= float(unit) < 1.0:
         raise ValueError("unit must lie in [0, 1)")
-    top53 = int(float(unit) * (1 << 53))
-    if not 0 <= top53 < (1 << 53):
+    scaled = float(unit) * (1 << 53)
+    if not scaled.is_integer():
         raise ValueError("unit is not a representable SplitMix64 next_unit value")
+    top53 = int(scaled)
     return tuple(unmix64((top53 << 11) | low) for low in range(1 << 11))
 
 
