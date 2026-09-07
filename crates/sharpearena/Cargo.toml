@@ -20,8 +20,12 @@ serde = { version = "1", features = ["derive"] }
 rayon = "1"
 
 [dev-dependencies]
+toml = "0.8"
 serde_json = "1"
 sharpebench-attest = "=0.15.0"
+
+[build-dependencies]
+toml = "0.8"
 
 [lints]
 workspace = true

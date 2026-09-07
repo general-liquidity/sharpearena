@@ -60,7 +60,7 @@ mod tests {
         // so the record documents the real provenance of the value.
         assert_eq!(
             doc["epoch"].as_str(),
-            Some("spec-epoch-1"),
+            Some("spec-epoch-2"),
             "epoch drifted from build.rs SPEC_EPOCH"
         );
         let build_rs = include_str!("../build.rs");
@@ -81,24 +81,29 @@ mod tests {
     #[test]
     fn suite_dependencies_that_feed_tape_semantics_are_exact_pinned() {
         let manifest = include_str!("../Cargo.toml");
+        let manifest: toml::Value = manifest.parse().unwrap();
         for dependency in [
             "sharpebench-sim",
             "sharpebench-protocol",
             "sharpebench-core",
             "sharpebench-attest",
         ] {
-            let line = manifest
-                .lines()
-                .find(|line| line.starts_with(&format!("{dependency} = ")))
-                .unwrap_or_else(|| panic!("{dependency} is missing from Cargo.toml"));
-            let requirement = line
-                .split_once('=')
-                .expect("a dependency line has an equals sign")
-                .1
-                .trim();
+            let entry = manifest
+                .get("dependencies")
+                .and_then(|table| table.get(dependency))
+                .or_else(|| {
+                    manifest
+                        .get("dev-dependencies")
+                        .and_then(|table| table.get(dependency))
+                })
+                .unwrap_or_else(|| panic!("missing {dependency}"));
+            let requirement = entry
+                .as_str()
+                .or_else(|| entry.get("version").and_then(toml::Value::as_str))
+                .unwrap();
             assert!(
-                requirement.starts_with("\"="),
-                "{dependency} must be exact-pinned because Cargo.toml, not the resolved registry \
+                requirement.starts_with('='),
+                "{dependency} must be exact-pinned because the manifest's dependency contract, not the resolved registry \
                  source, is the dependency input bound into SPEC_HASH; found {requirement}"
             );
         }

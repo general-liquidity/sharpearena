@@ -104,6 +104,9 @@ jobs:
         run: cargo doc --workspace --no-deps
       - name: Test
         run: cargo test --workspace
+      - name: Packaged Rust crate preserves the source SPEC_HASH
+        if: matrix.os == 'ubuntu-latest'
+        run: python scripts/check-packaged-spec.py
       # One wasm build is enough to prove the target compiles; keep it off the
       # slower macOS/Windows runners.
       - name: WASM target builds
