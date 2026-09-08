@@ -69,7 +69,7 @@ shape optimization only; published ranking remains the SharpeBench kernel.
 
 The effective-configuration gate reads dimensions, windows, seeds, and scenario
 fingerprints back from the environment that consumed them. This prevents a
-driver from labelling one arm while silently running another—a failure that
+driver from labelling one arm while silently running another, a failure that
 output hashes alone cannot detect.
 
 ## Release topology

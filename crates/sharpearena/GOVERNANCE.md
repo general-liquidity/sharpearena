@@ -1,4 +1,4 @@
-# SharpeArena Agent Interface — Governance
+# SharpeArena Agent Interface: Governance
 
 The contract is the product. Agents are **external** programs in any language that
 read a `MarketObservation` (JSON) and reply with a `Decision` (JSON). The whole
@@ -8,16 +8,16 @@ backs that.
 
 The authoritative artifacts are:
 
-- `contract/observation.schema.json` and `contract/decision.schema.json` — JSON
+- `contract/observation.schema.json` and `contract/decision.schema.json`: JSON
   Schema (draft 2020-12) that non-Rust implementers validate against.
-- `src/contract.rs` — `CONTRACT_VERSION`, the single source of truth for the wire
+- `src/contract.rs`: `CONTRACT_VERSION`, the single source of truth for the wire
   version.
-- `contract/conformance/*.json` + `tests/conformance.rs` — the conformance kit.
+- `contract/conformance/*.json` + `tests/conformance.rs`: the conformance kit.
 
 ## 1. Additive-only evolution
 
 The contract evolves **additively**. The only backwards-compatible change is adding
-a **new field that is optional with a default** — every field a producer may omit
+a **new field that is optional with a default**: every field a producer may omit
 must deserialize on the consumer to a sensible default, so an agent written against
 an older version keeps parsing newer observations and the harness keeps parsing
 older decisions.
@@ -37,8 +37,8 @@ The following are **breaking** and are forbidden on the v1 surface:
 - removing or renaming an `action` enum value.
 
 A breaking change does not mutate `MarketObservation` / `Decision` in place. It ships
-a **parallel namespace** — `ObservationV2` / `DecisionV2` with their own schemas and
-their own `CONTRACT_VERSION` major — and the two run side by side through the
+a **parallel namespace**: `ObservationV2` / `DecisionV2` with their own schemas and
+their own `CONTRACT_VERSION` major, and the two run side by side through the
 deprecation window below. Adding a *new* `action` variant is itself breaking for
 consumers that exhaustively match, so it also goes through V2, not an additive bump.
 
@@ -50,7 +50,7 @@ versions, which move on their own release cadence.
 
 - **Major** (`1.0` → `2.0`): a breaking change shipped as a parallel `…V2` namespace.
 - **Minor** (`1.0` → `1.1`): reserved for a *batch* of additive fields significant
-  enough to advertise. A single additive field needs no bump at all — existing agents
+  enough to advertise. A single additive field needs no bump at all; existing agents
   are unaffected by definition, and the conformance badge stays valid.
 
 A package release never, on its own, bumps `CONTRACT_VERSION`. Bug fixes, new baseline
@@ -68,7 +68,7 @@ window:
    in the schema `description`, and
 3. the changelog states the removal release up front.
 
-Only after the window closes may the old namespace be removed — and that removal is
+Only after the window closes may the old namespace be removed, and that removal is
 itself a major package release.
 
 ## 4. Conformance badge
@@ -82,7 +82,7 @@ validation against the published JSON Schemas) may state:
 To earn it, an agent must, for every observation in the kit:
 
 1. parse the `MarketObservation` against `observation.schema.json`,
-2. emit a `Decision` that validates against `decision.schema.json` — every `action`
+2. emit a `Decision` that validates against `decision.schema.json`: every `action`
    in the enum, every `target_weight` finite, and every order `symbol` a subset of
    the observed symbols, and
 3. round-trip the legacy decision shape (no `confidence` / `rationale` / `reasoning`)
