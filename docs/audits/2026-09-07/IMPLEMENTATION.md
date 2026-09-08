@@ -5,7 +5,7 @@ review of progress against both repositories. The overall goal remains
 unfinished. This file is mirrored byte-for-byte in the Bench and Arena
 repositories; edit both or neither.
 
-Status: 100 checklist rows, 63 closed and 37 open. The restructured plan
+Status: 100 checklist rows, 64 closed and 36 open. The restructured plan
 opened at 39 closed. Batch A and Batch B are now complete except for the final
 paper rebuild and provenance rebind, and Batch D's two Arena producer rows and
 Batch E's two propagation rows also close. Their work is on the
@@ -177,7 +177,7 @@ papers.
 - [ ] BP5: collision-resistant model artifact identifiers.
 - [ ] BP7: strict JSONL and complete figure/summary support.
 - [ ] AP1: oracle/causal equal bars, warmup and costs.
-- [ ] AP2: provenance includes the actual JS producer and manifest dependencies.
+- [x] AP2: `make-throughput.py` runs `node bench/throughput.js` and folds its JSON into the evidence, but the source scope covered only Rust, Python, TeX and selected root configuration, so the WebAssembly throughput producer could change without moving `source_snapshot_sha256`. That is exactly the not-yet-committed working-tree case the snapshot claims to bind. The script and the package manifest that pins what it runs against are now in scope, taking the manifest from 144 sources to 146. Arena `a42c47c`.
 - [ ] AP4: persist pre-execution commitment separately from reveal; witness limits explicit.
 - [ ] AP6: complete frozen-input figure renderer registry.
 
