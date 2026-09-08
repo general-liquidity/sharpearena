@@ -1,0 +1,20 @@
+{
+  "note": "Versioned index of the cross-language conformance kit. The fixtures under conformance/ and the two JSON Schemas beside this file are the shared wire contract; Rust (tests/conformance_manifest.rs), Python (crates/sharpearena-py/tests/test_wire_conformance.py) and npm (npm/sharpearena/test/conformance.test.js) each read this same file by repository path. None of the three depends on either of the others as a package, so checking the same kit everywhere adds no dependency edge in any direction. The kit_version below moves when the fixture set changes; contract_version is the wire version the kit certifies and follows GOVERNANCE.md, not the package versions.",
+  "contract_version": "1.0",
+  "kit_version": 1,
+  "schemas": {
+    "observation": "observation.schema.json",
+    "decision": "decision.schema.json"
+  },
+  "fixtures": [
+    "empty-portfolio-start.json",
+    "legacy-decision-shape.json",
+    "normal-multi-symbol.json",
+    "signed-weight-short.json",
+    "single-symbol.json"
+  ],
+  "legacy_decision_fixtures": [
+    "legacy-decision-shape.json",
+    "signed-weight-short.json"
+  ]
+}
