@@ -105,7 +105,8 @@ pub use sharpebench_sim::{
     CostModel,
     CostProfile,
     Dataset,
-    // O(1) environment snapshot (clone_state / restore_state).
+    // Replay-free environment snapshot (clone_state / restore_state). The copy
+    // is not constant time: it grows with holdings, pending orders and trace.
     EnvState,
     // External transports — a conforming agent is just a program that reads observations
     // (stdin / `POST /decide`) and writes decisions. The diagnostics types travel with

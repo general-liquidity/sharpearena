@@ -326,7 +326,7 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ### Added
 - market: deterministic integer-tick limit-order-book matching engine (price-time priority, market/limit/cancel/modify, depth ladder, microprice, queue imbalance) with `PyOrderBook` and the PettingZoo `LOBMarketEnv` ([affe9cf](https://github.com/general-liquidity/sharpearena/commit/affe9cf), [30c8f1a](https://github.com/general-liquidity/sharpearena/commit/30c8f1a)).
-- env: sharpebench-sim 0.0.8 consumed; `clone_state` / `restore_state` give `CheckpointableEnv` an O(1) native fast path that agrees byte-for-byte with replay ([e23f155](https://github.com/general-liquidity/sharpearena/commit/e23f155)).
+- env: sharpebench-sim 0.0.8 consumed; `clone_state` / `restore_state` give `CheckpointableEnv` a replay-free native fast path that agrees byte-for-byte with replay ([e23f155](https://github.com/general-liquidity/sharpearena/commit/e23f155)).
 
 ## [0.5.0] - 2026-06-26
 
