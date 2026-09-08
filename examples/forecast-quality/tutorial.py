@@ -3,6 +3,13 @@
 
 The example uses logical clocks and synthetic outcomes. It demonstrates the
 artifact boundary between the products; it is not an empirical agent result.
+
+Two fields are written. The supported field spans six resolution-time blocks,
+enough for the consumer's block-resampling law to resolve the default
+familywise level, so its comparison reports an interval and a p-value. The
+withheld field is the first eight questions of the same forecasts in two
+blocks, and its comparison records the reason inference is withheld. The two
+fields share every forecast they have in common.
 """
 
 from __future__ import annotations
@@ -26,9 +33,17 @@ from sharpearena import (
 )
 
 
-OUTCOMES = (1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0)
-ALPHA_PREDICTIONS = (0.82, 0.18, 0.76, 0.71, 0.24, 0.31, 0.68, 0.27)
-BETA_PREDICTIONS = (0.58, 0.61, 0.47, 0.55, 0.63, 0.44, 0.52, 0.57)
+OUTCOMES = (1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0)
+ALPHA_PREDICTIONS = (0.82, 0.18, 0.76, 0.71, 0.24, 0.31, 0.68, 0.27, 0.42, 0.44, 0.29, 0.66)
+BETA_PREDICTIONS = (0.58, 0.61, 0.47, 0.55, 0.63, 0.44, 0.52, 0.57, 0.72, 0.36, 0.53, 0.45)
+
+# (subdirectory, contracts, contracts per resolution block). The supported field
+# resolves two questions at each of six clocks; the withheld field is its first
+# eight questions at two clocks, four per block.
+FIELDS = (
+    (".", 12, 2),
+    ("withheld", 8, 4),
+)
 
 
 def _digest(label: str) -> str:
@@ -48,8 +63,12 @@ def _identity(agent_id: str) -> ForecastRunIdentity:
     )
 
 
-def _contract(index: int) -> ForecastContract:
-    resolves_at = 30 if index < 4 else 40
+def _resolves_at(index: int, per_block: int) -> int:
+    return 30 + 10 * (index // per_block)
+
+
+def _contract(index: int, per_block: int) -> ForecastContract:
+    resolves_at = _resolves_at(index, per_block)
     return ForecastContract(
         contract_id=f"tutorial-binary-{index + 1:02d}",
         question=f"Will synthetic instrument {index + 1:02d} close above its frozen reference?",
@@ -92,9 +111,10 @@ def _submit_initial(
     *,
     agent_id: str,
     index: int,
+    per_block: int,
     prediction: float,
 ) -> None:
-    contract = _contract(index)
+    contract = _contract(index, per_block)
     claim_id = f"claim-{index + 1:02d}"
     if agent_id == "agent-beta" and index == 4:
         ledger.submit(
@@ -159,14 +179,15 @@ def _submit_initial(
         )
 
 
-def build_evidence(output_dir: Path) -> tuple[Path, Path, Path]:
+def build_field(output_dir: Path, contracts: int, per_block: int) -> tuple[Path, Path, Path]:
     """Write two complete ledgers and their content-address manifest."""
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    generated_at = _resolves_at(contracts - 1, per_block) + 1
     paths: list[Path] = []
     for agent_id, predictions in (
-        ("agent-alpha", ALPHA_PREDICTIONS),
-        ("agent-beta", BETA_PREDICTIONS),
+        ("agent-alpha", ALPHA_PREDICTIONS[:contracts]),
+        ("agent-beta", BETA_PREDICTIONS[:contracts]),
     ):
         ledger = ForecastLedger(_identity(agent_id))
         for index, prediction in enumerate(predictions):
@@ -174,18 +195,19 @@ def build_evidence(output_dir: Path) -> tuple[Path, Path, Path]:
                 ledger,
                 agent_id=agent_id,
                 index=index,
+                per_block=per_block,
                 prediction=prediction,
             )
         outcomes = [
             Outcome(
                 claim_id=f"claim-{index + 1:02d}",
                 value=outcome,
-                available_at=_contract(index).resolves_at,
+                available_at=_resolves_at(index, per_block),
             )
-            for index, outcome in enumerate(OUTCOMES)
+            for index, outcome in enumerate(OUTCOMES[:contracts])
         ]
         path = output_dir / f"{agent_id}.json"
-        write_forecast_evidence(path, ledger.evidence(outcomes, generated_at=41))
+        write_forecast_evidence(path, ledger.evidence(outcomes, generated_at=generated_at))
         paths.append(path)
 
     manifest = {
@@ -202,6 +224,15 @@ def build_evidence(output_dir: Path) -> tuple[Path, Path, Path]:
         newline="\n",
     )
     return paths[0], paths[1], manifest_path
+
+
+def build_evidence(output_dir: Path) -> list[tuple[Path, Path, Path]]:
+    """Write the supported field and the withheld field under `output_dir`."""
+
+    return [
+        build_field(output_dir / subdirectory, contracts, per_block)
+        for subdirectory, contracts, per_block in FIELDS
+    ]
 
 
 def run_sharpebench(
@@ -248,29 +279,23 @@ def _parse_args() -> argparse.Namespace:
         "--output-dir",
         type=Path,
         default=Path(__file__).with_name("fixtures"),
-        help="directory for the two evidence files and manifest",
+        help="directory for the evidence files and manifests of both fields",
     )
     parser.add_argument(
         "--sharpebench-dir",
         type=Path,
         help="optional SharpeBench checkout to run as the independent consumer",
     )
-    parser.add_argument(
-        "--report",
-        type=Path,
-        help="report path used with --sharpebench-dir (default: OUTPUT/report.json)",
-    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = _parse_args()
-    agent_alpha, agent_beta, _ = build_evidence(args.output_dir)
+    fields = build_evidence(args.output_dir)
     if args.sharpebench_dir is not None:
-        report = args.report or args.output_dir / "report.json"
-        run_sharpebench(args.sharpebench_dir, (agent_alpha, agent_beta), report)
-    elif args.report is not None:
-        raise SystemExit("--report requires --sharpebench-dir")
+        for agent_alpha, agent_beta, manifest in fields:
+            report = manifest.with_name("report.json")
+            run_sharpebench(args.sharpebench_dir, (agent_alpha, agent_beta), report)
     return 0
 
 
