@@ -18,9 +18,28 @@ The authoritative artifacts are:
 
 The contract evolves **additively**. The only backwards-compatible change is adding
 a **new field that is optional with a default**: every field a producer may omit
-must deserialize on the consumer to a sensible default, so an agent written against
-an older version keeps parsing newer observations and the harness keeps parsing
-older decisions.
+must deserialize on the consumer to a sensible default.
+
+The compatibility that buys is **one-directional, and the direction matters**. An
+optional default lets a reader accept a message written against an *older* version,
+because the absent field takes its default. It does not let a reader accept a message
+written against a *newer* version. The published schemas set
+`additionalProperties: false`, so a consumer validating against the schema it was
+written for **rejects** a newer message carrying the new field.
+
+Apply that to the two message directions:
+
+- **Decisions** travel agent to harness. The harness is always the newer reader, so an
+  added optional decision field is genuinely safe without coordination.
+- **Observations** travel harness to agent. The agent is the older reader, so an added
+  optional observation field is **not** transparent to an agent validating against the
+  published schema it already has. It needs the same announcement and deprecation
+  treatment as any other change an agent must act on.
+
+Before adding an observation field under the additive promise, pick one and say which:
+version negotiation at the handshake, a parallel namespace as for a breaking change, or
+a deliberately open extension envelope whose contents are declared unvalidated. Do not
+rely on the field being optional alone.
 
 Concretely, in Rust this means the field carries `#[serde(default)]` (or
 `#[serde(default = "…")]`). Today's optional-with-default fields are `fundamentals`
@@ -50,8 +69,11 @@ versions, which move on their own release cadence.
 
 - **Major** (`1.0` → `2.0`): a breaking change shipped as a parallel `…V2` namespace.
 - **Minor** (`1.0` → `1.1`): reserved for a *batch* of additive fields significant
-  enough to advertise. A single additive field needs no bump at all; existing agents
-  are unaffected by definition, and the conformance badge stays valid.
+  enough to advertise. A single additive **decision** field needs no bump: the harness
+  is the newer reader and existing agents are unaffected. A single additive
+  **observation** field does need the bump, because an agent validating against the
+  older schema rejects it; the conformance badge stays valid only for the schema
+  version it was issued against.
 
 A package release never, on its own, bumps `CONTRACT_VERSION`. Bug fixes, new baseline
 agents, docs, and extra re-exports change the package version and leave the contract
