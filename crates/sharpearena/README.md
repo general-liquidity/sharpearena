@@ -44,7 +44,9 @@ loop {
 ```
 
 `TradingEnv` and `run_backtest` share one step implementation. The
-`env_step_matches_run_backtest` test pins equivalent native runs to the same output.
+`env_step_matches_run_backtest` test pins equivalent native runs to the same
+output, but it lives on that shared implementation in `sharpebench-sim`, the
+pinned upstream dependency, so `cargo test -p sharpearena` does not run it.
 
 ## Connect an external agent
 
