@@ -18,7 +18,7 @@ from dataclasses import asdict, dataclass, field, fields
 from hashlib import sha256
 from importlib.metadata import PackageNotFoundError, version as package_version
 from pathlib import Path
-from typing import Any, Optional, Protocol, Sequence
+from typing import Any, Callable, Optional, Protocol, Sequence
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -30,7 +30,7 @@ from .decision_parser import (
 )
 from .sharpearena_py import VecTradingEnv, decision_schema_json, score_run
 
-EVIDENCE_SCHEMA_VERSION = 2
+EVIDENCE_SCHEMA_VERSION = 3
 LOCAL_EVIDENCE_CLASS = "retrospective_local_model"
 # Every recorded duration states the clock it came from. A measurement without a
 # declared source is not a comparable quantity, so there is no default label.
@@ -545,10 +545,56 @@ class InferenceOutcome:
     error_type: Optional[str] = None
     error: Optional[str] = None
     raw_response_sha256: Optional[str] = None
+    # Host-observed elapsed time for this attempt, successful or not. ``None``
+    # means the client reported no observation; an unobserved attempt is never
+    # summed as zero cost, because a failed request that took ten seconds and a
+    # failed request that took none are not the same operational fact.
+    attempt_duration_ns: Optional[int] = None
+
+    def __post_init__(self) -> None:
+        if self.attempt_duration_ns is not None and (
+            isinstance(self.attempt_duration_ns, bool)
+            or not isinstance(self.attempt_duration_ns, int)
+            or self.attempt_duration_ns < 0
+        ):
+            raise LocalAgentError(
+                "attempt_duration_ns must be a nonnegative integer or None when "
+                "the client observed no elapsed time"
+            )
 
     @property
     def ok(self) -> bool:
         return self.result is not None
+
+
+def _timed_attempt(
+    decide: Callable[..., InferenceResult],
+    observation: dict[str, Any],
+    model: "ModelRunConfig",
+    renderer: "PromptRenderer",
+    sampling_seed: int,
+) -> InferenceOutcome:
+    """Run one request and record the host-observed elapsed time either way.
+
+    A request that fails still consumes real wall-clock time on the serving
+    host. Returning a failure with no duration is what let expensive failures
+    leave operational totals untouched, so a slow, error-prone backend looked
+    cheaper than a reliable one.
+    """
+
+    started_ns = time.perf_counter_ns()
+    try:
+        result = decide(observation, model, renderer, sampling_seed=sampling_seed)
+    except Exception as error:  # noqa: BLE001 - cell failure is evidence
+        return InferenceOutcome(
+            error_type=type(error).__name__,
+            error=str(error),
+            raw_response_sha256=getattr(error, "raw_response_sha256", None),
+            attempt_duration_ns=time.perf_counter_ns() - started_ns,
+        )
+    return InferenceOutcome(
+        result=result, attempt_duration_ns=time.perf_counter_ns() - started_ns
+    )
 
 
 class PromptRenderer:
@@ -833,26 +879,17 @@ class OllamaClient:
         ) as pool:
             futures = {
                 pool.submit(
+                    _timed_attempt,
                     self.decide,
                     observation,
                     model,
                     renderer,
-                    sampling_seed=int(sampling_seeds[index]),
+                    int(sampling_seeds[index]),
                 ): index
                 for index, observation in enumerate(observations)
             }
             for future in as_completed(futures):
-                index = futures[future]
-                try:
-                    outcomes[index] = InferenceOutcome(result=future.result())
-                except Exception as error:  # noqa: BLE001 - cell failure is evidence
-                    outcomes[index] = InferenceOutcome(
-                        error_type=type(error).__name__,
-                        error=str(error),
-                        raw_response_sha256=getattr(
-                            error, "raw_response_sha256", None
-                        ),
-                    )
+                outcomes[futures[future]] = future.result()
         return [outcome for outcome in outcomes if outcome is not None]
 
 
@@ -1106,26 +1143,17 @@ class OpenAICompatibleClient:
         ) as pool:
             futures = {
                 pool.submit(
+                    _timed_attempt,
                     self.decide,
                     observation,
                     model,
                     renderer,
-                    sampling_seed=int(sampling_seeds[index]),
+                    int(sampling_seeds[index]),
                 ): index
                 for index, observation in enumerate(observations)
             }
             for future in as_completed(futures):
-                index = futures[future]
-                try:
-                    outcomes[index] = InferenceOutcome(result=future.result())
-                except Exception as error:  # noqa: BLE001 - cell failure is evidence
-                    outcomes[index] = InferenceOutcome(
-                        error_type=type(error).__name__,
-                        error=str(error),
-                        raw_response_sha256=getattr(
-                            error, "raw_response_sha256", None
-                        ),
-                    )
+                outcomes[futures[future]] = future.result()
         return [outcome for outcome in outcomes if outcome is not None]
 
 
@@ -1308,6 +1336,10 @@ class LocalFieldRunner:
         retry_counts = [0] * len(cells)
         inference_ns = [0] * len(cells)
         inference_durations: list[list[dict[str, Any]]] = [[] for _ in cells]
+        # Append-only per lane: one entry per attempted request that produced no
+        # usable result, carrying the host-observed elapsed time when the client
+        # reported one and ``None`` when it did not.
+        failed_request_durations: list[list[Optional[int]]] = [[] for _ in cells]
         termination: list[Optional[str]] = [None] * len(cells)
         last_decisions: list[dict[str, Any]] = [
             {"orders": [], "reasoning": "initial hold before first model decision"}
@@ -1339,6 +1371,9 @@ class LocalFieldRunner:
                     )
                 for lane, outcome in zip(infer_indices, inference_outcomes):
                     if not outcome.ok:
+                        failed_request_durations[lane].append(
+                            outcome.attempt_duration_ns
+                        )
                         failed[lane] = {
                             "type": outcome.error_type or "InferenceError",
                             "detail": outcome.error or "unknown inference failure",
@@ -1375,6 +1410,12 @@ class LocalFieldRunner:
                         )
                         or result.duration_source not in DURATION_SOURCES
                     ):
+                        # The provider's own accounting is unusable, which makes
+                        # this a failed request. The host clock still observed how
+                        # long it took, so that cost is recorded rather than lost.
+                        failed_request_durations[lane].append(
+                            outcome.attempt_duration_ns
+                        )
                         failed[lane] = {
                             "type": "InvalidInferenceAccounting",
                             "detail": "inference accounting must contain nonnegative integers and a declared duration source",
@@ -1525,6 +1566,33 @@ class LocalFieldRunner:
                 ),
                 "retry_count": retry_counts[index],
                 "inference_duration_ns": inference_ns[index],
+                # Failed requests are recorded rather than dropped. Their cost is
+                # excluded from the successful-request percentiles above, which
+                # are defined over completed calls, and preserved here so a
+                # resumed cell cannot lose what its failed attempt spent.
+                "failed_requests": len(failed_request_durations[index]),
+                "failed_request_duration_observations": failed_request_durations[
+                    index
+                ],
+                "failed_request_duration_ns": sum(
+                    value
+                    for value in failed_request_durations[index]
+                    if value is not None
+                ),
+                "failed_request_duration_source": (
+                    HOST_DURATION_SOURCE
+                    if failed_request_durations[index]
+                    and all(
+                        value is not None
+                        for value in failed_request_durations[index]
+                    )
+                    else "unavailable"
+                    if not any(
+                        value is not None
+                        for value in failed_request_durations[index]
+                    )
+                    else "mixed"
+                ),
                 # Ordered, one entry per model request, each carrying its own
                 # value, unit and observing clock. A per-cell source summary
                 # cannot attribute an individual percentile sample.

@@ -100,6 +100,35 @@ class BrokenModel(FixedModel):
         ]
 
 
+class FlakyModel(FixedModel):
+    """Answer the first round, then fail every later request with a real cost."""
+
+    def __init__(self, failing_duration_ns=10_000):
+        self._calls = 0
+        self._failing_duration_ns = failing_duration_ns
+
+    def decide_many(
+        self, observations, model, renderer, *, max_workers, sampling_seeds=None
+    ):
+        self._calls += 1
+        if self._calls == 1:
+            return super().decide_many(
+                observations,
+                model,
+                renderer,
+                max_workers=max_workers,
+                sampling_seeds=sampling_seeds,
+            )
+        return [
+            InferenceOutcome(
+                error_type="ModelTransportError",
+                error="backend stalled",
+                attempt_duration_ns=self._failing_duration_ns,
+            )
+            for _ in observations
+        ]
+
+
 class NoConfidenceModel(FixedModel):
     def decide_many(
         self, observations, model, renderer, *, max_workers, sampling_seeds=None
@@ -173,8 +202,17 @@ def test_field_runner_batches_scores_and_records_repetition_seed(tmp_path):
     )
     assert all(record["reasoning_tokens_source"] == "unavailable" for record in records)
     assert all(record["retry_count"] == 0 for record in records)
-    assert all(record["schema_version"] == 2 for record in records)
+    assert all(record["schema_version"] == 3 for record in records)
     assert all(record["inference_duration_ns"] == 300 for record in records)
+    assert all(record["failed_requests"] == 0 for record in records)
+    assert all(
+        record["failed_request_duration_observations"] == [] for record in records
+    )
+    assert all(record["failed_request_duration_ns"] == 0 for record in records)
+    assert all(
+        record["failed_request_duration_source"] == "unavailable"
+        for record in records
+    )
     assert all(
         record["inference_durations"]
         == [
@@ -944,6 +982,20 @@ def test_bench_bridge_compiles_complete_shards_and_preserves_frequency(tmp_path)
         "reasoning_token_sources": ["unavailable"],
         "retry_count_total": 0,
         "cells": 4,
+        "attempt_ledger": {
+            "attempts": 4,
+            "completed_attempts": 4,
+            "failed_attempts": 0,
+            "inference_calls": 12,
+            "inference_duration_ns_total": 78,
+            "failed_requests": 0,
+            "failed_request_duration_ns_total": 0,
+            "failed_request_duration_source": "unavailable",
+            "tokens_in_total": 120,
+            "tokens_out_total": 60,
+            "reasoning_tokens_total": 0,
+            "retry_count_total": 0,
+        },
     }
 
 
@@ -1012,6 +1064,98 @@ def test_bench_bridge_accepts_a_failed_attempt_followed_by_one_completion(tmp_pa
     assert len(journal.read_text().splitlines()) == 4
     result = compile_benchmark_evidence([journal], tmp_path / "compiled")
     assert result["field_shape"]["total_cells"] == 2
+
+
+def test_a_resumed_cell_keeps_the_cost_and_timing_of_its_failed_attempt(tmp_path):
+    """AR2: a completion must not erase what the attempt it resumed spent.
+
+    The first attempt makes one successful model call and then fails on a request
+    that itself took time. Scoring keeps only the completion, so aggregating cost
+    from retained records alone deletes both, and an error-prone backend reports
+    as cheap and fast as a reliable one.
+    """
+
+    journal = tmp_path / "resumed.jsonl"
+    plan = _plan(repetitions=1)
+    assert LocalFieldRunner(FlakyModel()).run(plan, EvidenceJournal(journal)) == {
+        "completed": 0,
+        "failed": 2,
+        "skipped": 0,
+    }
+    attempts = [json.loads(line) for line in journal.read_text().splitlines()]
+    assert all(record["failed_requests"] == 1 for record in attempts)
+    assert all(
+        record["failed_request_duration_observations"] == [10_000]
+        for record in attempts
+    )
+    assert all(
+        record["failed_request_duration_source"] == "host-monotonic-request"
+        for record in attempts
+    )
+    LocalFieldRunner(FixedModel()).run(plan, EvidenceJournal(journal))
+
+    result = compile_benchmark_evidence([journal], tmp_path / "compiled")
+    profile = result["outputs"][0]["models"][0]["operational_profile"]
+    # The retained completions alone: three successful calls per cell.
+    assert profile["inference_calls"] == 6
+    assert profile["inference_duration_ns_total"] == 600
+    ledger = profile["attempt_ledger"]
+    assert ledger["attempts"] == 4
+    assert ledger["failed_attempts"] == 2
+    assert ledger["inference_calls"] == 8
+    assert ledger["inference_duration_ns_total"] == 800
+    assert ledger["failed_requests"] == 2
+    assert ledger["failed_request_duration_ns_total"] == 20_000
+    assert ledger["failed_request_duration_source"] == "host-monotonic-request"
+    # Retained completions alone report 60; the failed attempts spent 20 more.
+    assert profile["tokens_in_total"] == 60
+    assert ledger["tokens_in_total"] == 80
+
+
+def test_an_unobserved_failed_request_is_unavailable_not_a_zero(tmp_path):
+    """AR2: a client that reports no elapsed time must not read as free.
+
+    An attempt whose duration nobody observed is typed unavailable rather than
+    coerced to the favourable value, exactly as an unreported token count is.
+    """
+
+    journal = tmp_path / "unobserved.jsonl"
+    plan = _plan(repetitions=1)
+    LocalFieldRunner(BrokenModel()).run(plan, EvidenceJournal(journal))
+    attempts = [json.loads(line) for line in journal.read_text().splitlines()]
+    assert all(record["failed_requests"] == 1 for record in attempts)
+    assert all(
+        record["failed_request_duration_observations"] == [None]
+        for record in attempts
+    )
+    assert all(record["failed_request_duration_ns"] == 0 for record in attempts)
+    assert all(
+        record["failed_request_duration_source"] == "unavailable"
+        for record in attempts
+    )
+    LocalFieldRunner(FixedModel()).run(plan, EvidenceJournal(journal))
+    result = compile_benchmark_evidence([journal], tmp_path / "compiled")
+    ledger = result["outputs"][0]["models"][0]["operational_profile"]["attempt_ledger"]
+    assert ledger["failed_requests"] == 2
+    assert ledger["failed_request_duration_ns_total"] == 0
+    assert ledger["failed_request_duration_source"] == "unavailable"
+
+
+def test_bench_bridge_refuses_a_failed_request_count_without_its_durations(tmp_path):
+    """AR2: the attempt ledger fails closed rather than silently under-counting."""
+
+    journal = tmp_path / "tampered.jsonl"
+    plan = _plan(repetitions=1)
+    LocalFieldRunner(FlakyModel()).run(plan, EvidenceJournal(journal))
+    LocalFieldRunner(FixedModel()).run(plan, EvidenceJournal(journal))
+    records = [json.loads(line) for line in journal.read_text().splitlines()]
+    records[0]["failed_request_duration_observations"] = []
+    journal.write_text(
+        "".join(json.dumps(record) + "\n" for record in records),
+        encoding="utf-8",
+    )
+    with pytest.raises(BenchBridgeError, match="one entry per"):
+        compile_benchmark_evidence([journal], tmp_path / "compiled")
 
 
 class _AccountingOllama(OllamaClient):
@@ -1130,6 +1274,40 @@ def test_null_reasoning_count_is_unavailable_not_provider_reported(monkeypatch):
         "unit": "ns",
         "source": "backend-reported-total-duration",
     }
+
+
+def test_a_failed_request_carries_the_time_it_actually_spent(monkeypatch):
+    """AR2: the client's failure path must not report a costless request.
+
+    A request that raises still occupied the serving host. Handing the runner a
+    failure with no observed duration is what made expensive failures invisible
+    in operational totals.
+    """
+
+    monkeypatch.setattr("sharpearena.local_agents._local_gpu_identity", lambda: {})
+    monkeypatch.setattr("sharpearena.local_agents._wrapper_version", lambda: "0.0-test")
+    config = ModelRunConfig("test-fixture:synthetic", SamplingConfig(seed=4))
+
+    working = _AccountingOllama(
+        {"prompt_eval_count": 12, "eval_count": 7, "total_duration": 123}
+    )
+    working.identity(config)
+    [success] = working.decide_many(
+        [_ACCOUNTING_OBSERVATION], config, PromptRenderer(), max_workers=1
+    )
+    assert success.ok
+    assert isinstance(success.attempt_duration_ns, int)
+    assert success.attempt_duration_ns >= 0
+
+    stalling = _AccountingOllama({"eval_count": 7, "total_duration": 123})
+    stalling.identity(config)
+    [failure] = stalling.decide_many(
+        [_ACCOUNTING_OBSERVATION], config, PromptRenderer(), max_workers=1
+    )
+    assert not failure.ok
+    assert failure.error_type == "ModelResponseError"
+    assert isinstance(failure.attempt_duration_ns, int)
+    assert failure.attempt_duration_ns >= 0
 
 
 def test_openai_compatible_usage_must_be_reported():
