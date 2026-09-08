@@ -88,6 +88,25 @@ python scripts/release.py execute patch    # creates and publishes v0.19.1
 Do not tag or publish while reviewing this change. The command above is the operator
 path once main is green and a patch release is desired.
 
+## Which historical tags `verify-tag` is expected to reject
+
+`verify_tag` compares a tag's recorded manifest rule against the canonical rule as it
+stands today, so widening a scope makes every earlier tag fail on the rule comparison
+alone. That is the intended trust policy: the current rule is the one that decides, and
+a manifest cannot redefine it. It does mean the expected-fail set grows whenever a scope
+changes, and an expected failure must never be able to hide a real one.
+
+| Tag | Expected result | Reason |
+|---|---|---|
+| `v0.19.0` | fails | tag points at the version bump, not a provenance-only rebind |
+| `v0.22.0` | fails | `artifact_scope` widened after it was cut, by `a4d6fb8` |
+| `v0.23.0` | fails | same widening |
+| `v0.24.0` and later | passes | cut under the current rule |
+
+Any tag not in this table must pass. A tag in it that fails for a *different* reason than
+the one listed is a real finding: read the message rather than the exit code. When a scope
+changes again, add the tags it retires to this table in the same commit.
+
 Never hand-edit a version. `Cargo.toml` is the only place one is authored: the npm
 `package.json` and the two `crates/sharpearena-py` manifests (that crate is excluded from
 the Cargo workspace) are rewritten from the workspace version by `pre-release-replacements`

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
 import pytest
@@ -236,3 +237,82 @@ def test_field_phases_refuse_early_resolution_and_publish_complete_evidence(
         )
         assert document["resolutions"][0]["status"] == "resolved"
         assert document["resolutions"][0]["outcome"] == 1.0
+
+
+class TestLogitRuntimeValidation:
+    """Drive the logit validator away from its fixed point.
+
+    At `true_logit == false_logit` the delta is zero, both sigmoid branches
+    agree, and the probability is 0.5 whichever way the arithmetic is written.
+    A suite that only ever validates that point cannot tell a correct
+    implementation from an inverted sigmoid, a swapped class-token order, or a
+    changed clip bound. These cases are asymmetric, so each of those mutations
+    moves a number the assertions read. Real evidence carries logits of this
+    shape: `inference/phi-4.json` records a true_logit of 27.046875.
+    """
+
+    @staticmethod
+    def _runtime(false_logit: float, true_logit: float) -> tuple[dict, dict]:
+        delta = true_logit - false_logit
+        if delta >= 0.0:
+            unclipped = 1.0 / (1.0 + math.exp(-delta))
+        else:
+            exp_delta = math.exp(delta)
+            unclipped = exp_delta / (1.0 + exp_delta)
+        probability = min(0.99, max(0.01, unclipped))
+        record = {
+            "false_logit": false_logit,
+            "true_logit": true_logit,
+            "unclipped_probability": unclipped,
+            "probability": probability,
+        }
+        runtime = {
+            "method": "binary_next_token_logit",
+            "class_token_ids": {"false": 15, "true": 16},
+            "logits": {"contract-1": record},
+            "contract_count": 1,
+        }
+        return runtime, {"contract-1": probability}
+
+    @pytest.mark.parametrize(
+        "false_logit,true_logit",
+        [
+            (0.0, 2.0),
+            (2.0, 0.0),
+            (-1.5, 3.25),
+            (0.0, 27.046875),
+            (27.046875, 0.0),
+        ],
+    )
+    def test_a_consistent_asymmetric_record_is_accepted(
+        self, false_logit: float, true_logit: float
+    ) -> None:
+        runtime, parsed = self._runtime(false_logit, true_logit)
+        prospective_field._validate_logit_runtime(runtime, parsed)
+
+    def test_an_inverted_sigmoid_is_rejected(self) -> None:
+        runtime, parsed = self._runtime(0.0, 2.0)
+        record = runtime["logits"]["contract-1"]
+        flipped = 1.0 - record["unclipped_probability"]
+        record["unclipped_probability"] = flipped
+        record["probability"] = flipped
+        with pytest.raises(ProspectiveFieldError):
+            prospective_field._validate_logit_runtime(runtime, {"contract-1": flipped})
+
+    def test_swapped_class_tokens_are_rejected(self) -> None:
+        runtime, parsed = self._runtime(0.0, 2.0)
+        record = runtime["logits"]["contract-1"]
+        record["false_logit"], record["true_logit"] = (
+            record["true_logit"],
+            record["false_logit"],
+        )
+        with pytest.raises(ProspectiveFieldError):
+            prospective_field._validate_logit_runtime(runtime, parsed)
+
+    def test_a_clip_bound_that_moved_is_rejected(self) -> None:
+        runtime, parsed = self._runtime(0.0, 27.046875)
+        record = runtime["logits"]["contract-1"]
+        assert record["probability"] == 0.99
+        record["probability"] = 0.995
+        with pytest.raises(ProspectiveFieldError):
+            prospective_field._validate_logit_runtime(runtime, {"contract-1": 0.995})
