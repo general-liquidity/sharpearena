@@ -216,7 +216,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "7b13ae2fd8a25c8528146e963deb6159476a97ab",
+  "generated_at_head": "12c30fdaf5054b8d98775dba141a1ab2b9ea202a",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -661,6 +661,14 @@
       "sha256": "e9e88b39b4539fbe81879909f4dc1634f62c2cfb6ba50f3ef0624815eba4d651"
     },
     {
+      "path": "npm/sharpearena/bench/throughput.js",
+      "sha256": "3fa996e825e1b593c182dca0868d9d58e340093a9019966fce61700b26212c3c"
+    },
+    {
+      "path": "npm/sharpearena/package.json",
+      "sha256": "cd559c47576f2de076bacea05c3d0e4d5f7f6d4435a43ef02690673f5ef0fbd3"
+    },
+    {
       "path": "paper/main.tex",
       "sha256": "1e1d14baaa61ecbc65604fdb9e06cab3d6c2d2ef1fa4a6a915a3a1e08c0b8b9f"
     },
@@ -786,7 +794,7 @@
     },
     {
       "path": "paper/src/provenance_common.py",
-      "sha256": "a073144f957ca46e6f4007ee1f7f29cd46c94b61f7a08663e29917a3817af8ac"
+      "sha256": "0778307d521eece49524386925f6640cbda4b3f45f2b8027eb3adf8df56fd57f"
     },
     {
       "path": "paper/src/test_producer_replay_and_reference.py",
@@ -825,6 +833,8 @@
     "crates/**/*.toml",
     "crates/**/*.rs",
     "crates/sharpearena-py/python/**/*.py",
+    "npm/sharpearena/bench/*.js",
+    "npm/sharpearena/package.json",
     "scripts/*.py",
     "paper/src/*.py",
     "paper/main.tex",
@@ -832,6 +842,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "cfc6299daadad199d3cd2a7de8d98e2af98f8c79c953a42e8f21365c98f5b6ea",
+  "source_snapshot_sha256": "fea12c2cec32522118485da293275a3583d3b9b35943b5a485919e2e6500515d",
   "validator": "paper/src/check-provenance.py"
 }
