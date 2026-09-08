@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from pathlib import Path
 
 import pytest
 from sharpearena import prospective_field
+from sharpearena.forecast_contract import ForecastContract
+from sharpearena.forecast_evidence import forecast_evidence_from_json
 from sharpearena.prospective_field import (
     LocalModelSpec,
     ProspectiveFieldError,
@@ -20,6 +23,7 @@ from sharpearena.prospective_field import (
     resolve_field,
     seal_forecasts,
     snapshot_digest,
+    verify_field_settlement,
 )
 
 
@@ -237,6 +241,147 @@ def test_field_phases_refuse_early_resolution_and_publish_complete_evidence(
         )
         assert document["resolutions"][0]["status"] == "resolved"
         assert document["resolutions"][0]["outcome"] == 1.0
+
+
+def _sealed_two_agent_field(tmp_path):
+    """Prepare, forecast and seal a minimal honest field, ready to resolve."""
+
+    revision_a = "a" * 40
+    revision_b = "b" * 40
+    model_a = tmp_path / revision_a
+    model_b = tmp_path / revision_b
+    model_a.mkdir()
+    model_b.mkdir()
+    (model_a / "weights.bin").write_bytes(b"a")
+    (model_b / "weights.bin").write_bytes(b"b")
+    specs = [
+        LocalModelSpec("agent-a", "fixture/a", revision_a, model_a),
+        LocalModelSpec("agent-b", "fixture/b", revision_b, model_b),
+    ]
+    clock = {"now": 1_000_000}
+
+    def fetch(path, params):
+        if path == "/api/v3/time":
+            return {"serverTime": clock["now"]}
+        if "startTime" in params:
+            opened = params["startTime"]
+            return [_row(opened)]
+        return [_row(opened) for opened in (720_000, 780_000, 840_000, 900_000)]
+
+    def infer(_path, prompts):
+        return (
+            json.dumps({"forecasts": {key: 0.5 for key in prompts}}),
+            {
+                "method": "binary_next_token_logit",
+                "class_token_ids": {"false": 15, "true": 16},
+                "logits": {
+                    key: {
+                        "false_logit": 0.0,
+                        "true_logit": 0.0,
+                        "unclipped_probability": 0.5,
+                        "probability": 0.5,
+                    }
+                    for key in prompts
+                },
+                "contract_count": len(prompts),
+            },
+        )
+
+    field = tmp_path / "field"
+    prepare_field(
+        field,
+        specs,
+        deadline_delay_minutes=10,
+        symbols=("BTCUSDT", "ETHUSDT"),
+        target_offsets_minutes=(1,),
+        lookback_bars=2,
+        fetch=fetch,
+    )
+    clock["now"] = 1_100_000
+    for spec in specs:
+        forecast_agent(field, spec, infer=infer, fetch=fetch)
+    return field, specs, clock, fetch
+
+
+def _row(opened):
+    return [
+        opened,
+        "10.0",
+        "11.0",
+        "9.0",
+        "10.5",
+        "2.0",
+        opened + 59_999,
+        "20.0",
+        4,
+        "1.0",
+        "10.0",
+        "0",
+    ]
+
+
+def test_sealing_refuses_a_forecast_bound_outside_the_frozen_contracts(tmp_path):
+    """AI1: a committed forecast may not name a frozen ID over other bytes.
+
+    The pending document stays internally valid, keeps the frozen contract ID,
+    and rebinds it to a different instrument. Checking contract IDs alone would
+    accept it and later attach the BTC outcome to an ETH question.
+    """
+
+    field, _specs, clock, fetch = _sealed_two_agent_field(tmp_path)
+    pending_path = field / "pending" / "agent-a.json"
+    document = json.loads(pending_path.read_text(encoding="utf-8"))
+    swapped = dict(document["contracts"][0])
+    swapped["instrument"] = "ETHUSDT"
+    swapped["question"] = "Will ETHUSDT close above its open?"
+    document["contracts"][0] = swapped
+    digest = ForecastContract.from_dict(swapped).sha256
+    assert digest != document["revisions"][0]["contract_sha256"]
+    document["revisions"][0]["contract_sha256"] = digest
+    pending_path.write_text(json.dumps(document), encoding="utf-8")
+    # The tampered document is still a valid v1 evidence document on its own.
+    forecast_evidence_from_json(pending_path.read_text(encoding="utf-8"))
+    clock["now"] = 1_200_000
+    with pytest.raises(ProspectiveFieldError, match="not the frozen contract"):
+        seal_forecasts(field, fetch=fetch)
+
+
+def test_every_agent_is_settled_from_one_canonical_settlement_record(tmp_path):
+    """R06 (Arena half): contract equality has to mean outcome equality.
+
+    Two agents holding the identical frozen contract must carry the identical
+    outcome. A resolved document that disagrees is refused even when it is a
+    well-formed evidence document and the manifest digests are consistent.
+    """
+
+    field, specs, clock, fetch = _sealed_two_agent_field(tmp_path)
+    clock["now"] = 1_200_000
+    seal_forecasts(field, fetch=fetch)
+    clock["now"] = 1_800_000
+    resolve_field(field, fetch=fetch)
+    report = verify_field_settlement(field)
+    assert report["agents"] == ["agent-a", "agent-b"]
+    assert len(report["contracts"]) == 2
+
+    resolved_path = field / "resolved" / "agent-b.json"
+    document = json.loads(resolved_path.read_text(encoding="utf-8"))
+    resolution = document["resolutions"][0]
+    assert resolution["outcome"] == 1.0
+    resolution["outcome"] = 0.0
+    payload = json.dumps(document, indent=2, sort_keys=True) + "\n"
+    resolved_path.write_text(payload, encoding="utf-8")
+    # Keep the manifest self-consistent so the settlement check, not the digest
+    # check, is what refuses the disagreement.
+    manifest_path = field / "resolution-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["files"]["resolved/agent-b.json"] = hashlib.sha256(
+        resolved_path.read_bytes()
+    ).hexdigest()
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    with pytest.raises(ProspectiveFieldError, match="canonical settlement record"):
+        verify_field_settlement(field)
 
 
 class TestLogitRuntimeValidation:

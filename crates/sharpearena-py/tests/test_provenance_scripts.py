@@ -94,6 +94,7 @@ def tree(tmp_path: Path) -> Path:
         root / ".github" / "workflows",
         root / "crates" / "demo" / "src",
         root / "crates" / "sharpearena-py" / "python" / "sharpearena",
+        root / "npm" / "sharpearena" / "bench",
         root / "scripts",
         root / "paper" / "src",
         root / "paper" / "sections",
@@ -118,6 +119,10 @@ def tree(tmp_path: Path) -> Path:
         "paper/main.tex": b"\\documentclass{article}\n",
         "paper/sections/intro.tex": b"intro\n",
         "paper/refs.bib": b"@misc{a}\n",
+        # The throughput evidence is produced by running this script, so the
+        # script and the manifest pinning it are inside the source scope (AP2).
+        "npm/sharpearena/bench/throughput.js": b"console.log(1);\n",
+        "npm/sharpearena/package.json": b'{"name": "demo"}\n',
     }.items():
         (root / relative).write_bytes(content)
     (root / "paper" / "evidence" / "f1.json").write_bytes(b'{"result": 1}\n')
@@ -239,6 +244,8 @@ def test_writer_output_validates_and_records_the_tree(tree: Path) -> None:
         "paper/main.tex",
         "paper/refs.bib",
         "paper/sections/intro.tex",
+        "npm/sharpearena/bench/throughput.js",
+        "npm/sharpearena/package.json",
         "paper/src/make-demo.py",
         "release.toml",
         "scripts/release.py",

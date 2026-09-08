@@ -59,6 +59,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import sys
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
@@ -68,15 +69,20 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from sharpearena import (
-    SharpeArenaEnv,
-    check_env_effective_config,
-    merge_effective_configs,
-    score_run,
-)
-from sharpearena.baselines import BASELINE_POLICIES
-from sharpearena.confidence import deflated_sharpe_ci
-from sharpearena.generalization import train_test_seeds
+try:
+    from sharpearena import (
+        SharpeArenaEnv,
+        check_env_effective_config,
+        merge_effective_configs,
+        score_run,
+    )
+    from sharpearena.baselines import BASELINE_POLICIES
+    from sharpearena.confidence import deflated_sharpe_ci
+    from sharpearena.generalization import train_test_seeds
+except ImportError:  # --figures-only reads the committed JSON and needs no bindings
+    SharpeArenaEnv = check_env_effective_config = merge_effective_configs = None
+    score_run = deflated_sharpe_ci = train_test_seeds = None
+    BASELINE_POLICIES = ()
 
 PAPER = Path(__file__).resolve().parents[1]
 EVIDENCE = PAPER / "evidence"
@@ -114,7 +120,13 @@ ORACLE_DISCLOSURE = (
     "strength so the acceptance region's boundary can be located."
 )
 
-TRAIN_SEEDS, HELD_OUT_SEEDS = train_test_seeds(N_SEEDS, N_SEEDS, 0, SEED_GAP)
+# Empty without the bindings: the seed bands drive the run, not the figure, which
+# reads the band names back out of the committed JSON.
+TRAIN_SEEDS, HELD_OUT_SEEDS = (
+    train_test_seeds(N_SEEDS, N_SEEDS, 0, SEED_GAP)
+    if train_test_seeds is not None
+    else ((), ())
+)
 BANDS = {"held_out": HELD_OUT_SEEDS, "f1_table": TRAIN_SEEDS}
 # Policy variants: (deadband on |signal|, hold previous position below the deadband).
 VARIANTS = {"sign_follow": (0.0, False), "deadband_hold": (1.0, True)}
@@ -528,6 +540,18 @@ def main() -> None:
     (EVIDENCE / "witness.json").write_text(json.dumps(out, indent=2))
     print(f"wrote {EVIDENCE / 'witness.json'}")
 
+    make_figure(out)
+
+
+def make_figure(out: dict) -> None:
+    """Render witness.pdf from the evidence dict, which is the committed JSON shape.
+
+    Takes the record rather than the live run so the central renderer can rebuild
+    this figure from paper/evidence/witness.json with no bindings and no rollouts.
+    """
+    FIGURES.mkdir(parents=True, exist_ok=True)
+    results = out["results"]
+    noise_replicates = out["noise_replicates"]
     # Figure: held-out band, one row per policy variant. Left, pooled DSR with CI against
     # s (filled markers where eligible, boundary marked). Right, pass^k rate against s.
     # The shaded band and the horizontal error bar are the min..max crossing range over
@@ -589,7 +613,12 @@ def main() -> None:
     fig.tight_layout()
     fig.savefig(FIGURES / "witness.pdf")
     print(f"wrote {FIGURES / 'witness.pdf'}")
+    plt.close(fig)
 
 
 if __name__ == "__main__":
-    main()
+    if "--figures-only" in sys.argv:
+        data = json.loads((EVIDENCE / "witness.json").read_text())
+        make_figure(data)
+    else:
+        main()

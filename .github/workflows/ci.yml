@@ -244,6 +244,27 @@ jobs:
   # These two do, on every pull request rather than only at a tag, so a package that
   # cannot be installed is caught before it is published rather than after.
 
+  packaged-crate-consumer:
+    name: cargo package, fresh consumer crate, run
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Rust 1.96.0
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.96.0"
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      # check-packaged-spec.py runs one of the crate's own tests inside the package tree.
+      # This builds a crate that has never seen the repository against the extracted
+      # archive, and replays the conformance kit out of that archive, so a release that
+      # ships the engine without the wire contract fails here rather than at an integrator.
+      - name: Build a throwaway crate against the packaged archive and run it
+        run: python scripts/check-packaged-consumer.py
+
   npm-pack-install:
     name: npm pack, offline install, require
     runs-on: ubuntu-latest

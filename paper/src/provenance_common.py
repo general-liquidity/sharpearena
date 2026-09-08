@@ -102,6 +102,14 @@ SOURCE_SCOPE = (
     "crates/**/*.toml",
     "crates/**/*.rs",
     "crates/sharpearena-py/python/**/*.py",
+    # An executed producer, not packaging: make-throughput.py runs
+    # `node bench/throughput.js` and folds its JSON into the evidence. Leaving
+    # the JavaScript out let the WebAssembly throughput producer change without
+    # moving source_snapshot_sha256, which is exactly the dirty-working-tree
+    # case that snapshot claims to bind. The package manifest travels with it
+    # because it pins what the script runs against.
+    "npm/sharpearena/bench/*.js",
+    "npm/sharpearena/package.json",
     "scripts/*.py",
     "paper/src/*.py",
     "paper/main.tex",

@@ -17,15 +17,26 @@ through the clearing engine's permanent-impact law (``EndogenousImpact``): the
 same 24 paired episodes are rerun with the price path exogenous and endogenous,
 per-episode vectors and t-based 95% CIs are serialized for maker markout levels,
 the informed-uninformed gap and toxic-fill rates under both arms, plus a
-``kyle_lambda`` sweep at the longest horizon. The pre-existing keys are produced
-by the unchanged code above it and are byte-identical to the previous run; the
-script asserts that the comparison's exogenous arm reproduces the committed
-per-episode vectors exactly. Writes ``f6-endogenous.pdf``.
+``kyle_lambda`` sweep at the longest horizon.
+
+Two distinct checks run, and they are not interchangeable:
+
+* a fresh-path consistency gate, which asserts that the exogenous arm of
+  ``compare_endogenous_arms`` reproduces the vectors this same run computed via
+  ``_episode_per_unit``. Both sides are current code; the gate proves the two
+  current paths agree and says nothing about the previous artifact.
+* a frozen-reference comparison against the committed
+  ``paper/evidence/f6-adverse-selection.json`` read before it is overwritten.
+  This is the only check here that touches a historical reference. Its status is
+  reported (``compared``/``absent``/``unreadable``) rather than assumed.
+
+Writes ``f6-endogenous.pdf``.
 """
 from __future__ import annotations
 
 import json
 import math
+import sys
 from dataclasses import asdict, replace
 from pathlib import Path
 
@@ -34,12 +45,16 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from sharpearena import (
-    AdverseSelectionParams,
-    compare_informed_vs_uninformed,
-    run_adverse_selection,
-)
-from sharpearena.adverse_selection import EndogenousImpact, compare_endogenous_arms
+try:
+    from sharpearena import (
+        AdverseSelectionParams,
+        compare_informed_vs_uninformed,
+        run_adverse_selection,
+    )
+    from sharpearena.adverse_selection import EndogenousImpact, compare_endogenous_arms
+except ImportError:  # --figures-only reads the committed JSON and needs no bindings
+    AdverseSelectionParams = compare_informed_vs_uninformed = None
+    run_adverse_selection = EndogenousImpact = compare_endogenous_arms = None
 
 PAPER = Path(__file__).resolve().parents[1]
 EVIDENCE = PAPER / "evidence"
@@ -52,7 +67,11 @@ DETAIL_SEED = 0
 # Endogenous arm: the engine's default Kyle coefficient over one episode's realized taker
 # volume (see EndogenousImpact), plus a sweep that brackets where the informed-flow
 # markout level changes sign.
-IMPACT = EndogenousImpact(kyle_lambda=0.1, volume_scale=240.0)
+IMPACT = (
+    EndogenousImpact(kyle_lambda=0.1, volume_scale=240.0)
+    if EndogenousImpact is not None
+    else None
+)
 LAMBDA_SWEEP = (0.0, 0.05, 0.1, 0.2, 0.3, 0.4)
 
 
@@ -83,21 +102,69 @@ def _stats_t(values: list[float]) -> dict:
     }
 
 
-def endogenous_block(params: AdverseSelectionParams, committed: dict) -> dict:
-    """Both arms of the paired control, per horizon, with CIs, plus the lambda sweep."""
+FROZEN_REFERENCE = EVIDENCE / "f6-adverse-selection.json"
+
+
+def frozen_reference_comparison(
+    current: dict, horizons: list[int], path: Path | None = None
+) -> dict:
+    """Compare this run's per-episode vectors against the committed evidence artifact.
+
+    This is the only historical-reference check in this producer. It must be called
+    before the new JSON is written, since it reads the artifact it will replace.
+    """
+    path = FROZEN_REFERENCE if path is None else path
+    if not path.exists():
+        return {"status": "absent", "matches": None, "reference": str(path)}
+    try:
+        prior = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {"status": "unreadable", "matches": None, "reference": str(path)}
+    frozen = prior.get("per_episode_markout_per_unit")
+    if not isinstance(frozen, dict) or not {"informed", "uninformed"} <= set(frozen):
+        return {"status": "unreadable", "matches": None, "reference": str(path)}
+
+    mismatches = []
+    for leg in ("informed", "uninformed"):
+        got, want = current[leg], frozen[leg]
+        if len(got) != len(want):
+            mismatches.append(f"{leg}: {len(got)} episodes now, {len(want)} frozen")
+            continue
+        for i, (g, w) in enumerate(zip(got, want)):
+            for h in horizons:
+                if g[str(h)] != w.get(str(h)):
+                    mismatches.append(f"{leg}[{i}] h={h}: {g[str(h)]} vs {w.get(str(h))}")
+    return {
+        "status": "compared",
+        "matches": not mismatches,
+        "reference": str(path),
+        "n_mismatches": len(mismatches),
+        "first_mismatches": mismatches[:5],
+    }
+
+
+def endogenous_block(params: AdverseSelectionParams, current_run_vectors: dict) -> dict:
+    """Both arms of the paired control, per horizon, with CIs, plus the lambda sweep.
+
+    ``current_run_vectors`` are this run's ``_episode_per_unit`` results, not the
+    committed artifact. The gate below is a fresh-path consistency check.
+    """
     horizons = list(params.markout_horizons)
     result = compare_endogenous_arms(
         params=params, impact=IMPACT, n_episodes=N_EPISODES, seed_base=SEED_BASE
     )
     per = result["per_episode"]
 
-    # Gate: the comparison's exogenous arm is the committed scenario, episode for episode.
+    # Fresh-path gate: two current code paths, not a historical reference. See
+    # frozen_reference_comparison for the check against the committed artifact.
     for leg in ("informed", "uninformed"):
         for h in horizons:
             got = per["exogenous"][leg]["markout_per_unit"][h]
-            want = [row[str(h)] for row in committed[leg]]
+            want = [row[str(h)] for row in current_run_vectors[leg]]
             if got != want:
-                raise SystemExit(f"exogenous arm drifted from committed vectors: {leg} h={h}")
+                raise SystemExit(
+                    f"exogenous arm disagrees with this run's own vectors: {leg} h={h}"
+                )
 
     arms = {}
     for arm in ("exogenous", "endogenous"):
@@ -174,7 +241,8 @@ def endogenous_block(params: AdverseSelectionParams, committed: dict) -> dict:
     return {
         "design": (
             "Same 24 paired episodes (seeds 0-23), informed vs uninformed, run with the "
-            "price path exogenous (the committed F6 scenario) and endogenous: the bar's "
+            "price path exogenous (the same F6 scenario as the keys above) and "
+            "endogenous: the bar's "
             "filled taker flow Q_t updates the clearing engine's permanent-impact "
             "multiplier M_{t+1} = M_t (1 + lambda Q_t / V) and makers quote around "
             "mid_t = S_t M_t, S_t the efficient path shared by both legs and both arms. "
@@ -203,7 +271,13 @@ def endogenous_block(params: AdverseSelectionParams, committed: dict) -> dict:
         },
         "lambda_sweep": sweep,
         "paired_endogenous_minus_exogenous": paired_endogenous_minus_exogenous,
-        "exogenous_arm_matches_committed_vectors": True,
+        "exogenous_arm_matches_current_run_vectors": True,
+        "exogenous_arm_gate_scope": (
+            "compare_endogenous_arms' exogenous arm against this run's own "
+            "_episode_per_unit vectors; both sides are current code. Agreement with "
+            "the previously committed artifact is reported separately under "
+            "frozen_reference_comparison."
+        ),
         "ci_convention": (
             "t-based 95% over 24 per-episode values (df=23) for every cell; gap CIs over "
             "per-episode paired gaps. Lambda-sweep intervals are descriptive pointwise intervals."
@@ -214,6 +288,7 @@ def endogenous_block(params: AdverseSelectionParams, committed: dict) -> dict:
 def endogenous_figure(block: dict) -> None:
     """Left: markout per filled unit by horizon, both legs, both arms (hatched is the
     endogenous path), with 95% CIs. Right: the lambda sweep at the longest horizon."""
+    FIGURES.mkdir(parents=True, exist_ok=True)
     horizons = [str(h) for h in block["horizons"]]
     arms = block["arms"]
     fig, (ax, bx) = plt.subplots(1, 2, figsize=(10, 4))
@@ -352,8 +427,10 @@ def main() -> None:
             "episode filled quantity), df=23"
         ),
     }
+    # Read the committed artifact before it is overwritten below.
+    out["frozen_reference_comparison"] = frozen_reference_comparison(per_episode, horizons)
     out["endogenous"] = endogenous_block(params, per_episode)
-    (EVIDENCE / "f6-adverse-selection.json").write_text(json.dumps(out, indent=2, default=str))
+    FROZEN_REFERENCE.write_text(json.dumps(out, indent=2, default=str))
     endogenous_figure(out["endogenous"])
 
     # Figure: markout per filled unit by horizon, informed vs uninformed legs.
@@ -377,4 +454,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    if "--figures-only" in sys.argv:
+        data = json.loads(FROZEN_REFERENCE.read_text())
+        endogenous_figure(data["endogenous"])
+        print(f"wrote {FIGURES / 'f6-endogenous.pdf'}")
+    else:
+        main()

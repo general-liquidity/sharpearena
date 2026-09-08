@@ -171,6 +171,10 @@ def _write_remaining_source_scope(root: Path) -> None:
         "paper/main.tex": "\\documentclass{article}\n",
         "paper/sections/intro.tex": "intro\n",
         "paper/refs.bib": "@misc{a}\n",
+        # The throughput evidence is produced by running this script, so the
+        # script and the manifest pinning it are inside the source scope (AP2).
+        "npm/sharpearena/bench/throughput.js": "console.log(1);\n",
+        "npm/sharpearena/package.json": '{"name": "demo"}\n',
     }
     for relative, content in files.items():
         path = root / relative

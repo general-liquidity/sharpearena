@@ -33,6 +33,7 @@ from .forecast_contract import (
     canonical_json,
 )
 from .forecast_evidence import (
+    RESOLVED,
     ForecastLedger,
     ForecastRunIdentity,
     InformationExposure,
@@ -43,6 +44,7 @@ from .forecast_evidence import (
 FIELD_PLAN_SCHEMA = "sharpearena.prospective-forecast-field-plan.v1"
 FORECAST_COMMIT_SCHEMA = "sharpearena.prospective-forecast-commit.v1"
 RESOLUTION_SCHEMA = "sharpearena.prospective-forecast-resolution.v1"
+RESOLUTION_MANIFEST_SCHEMA = "sharpearena.prospective-forecast-resolution-manifest.v1"
 MARKET_BASE_URL = "https://data-api.binance.vision"
 MARKET_SOURCE_ID = "binance-spot-public-klines-v3"
 DEFAULT_SYMBOLS = ("BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT")
@@ -454,6 +456,51 @@ def _contract_from_plan(raw: Mapping[str, object]) -> ForecastContract:
     return contract
 
 
+def _frozen_contracts(plan: Mapping[str, object]) -> dict[str, ForecastContract]:
+    """The frozen contracts in plan order, keyed by contract ID."""
+
+    frozen: dict[str, ForecastContract] = {}
+    for raw in plan["contracts"]:
+        contract = _contract_from_plan(raw)
+        if contract.contract_id in frozen:
+            raise ProspectiveFieldError(
+                f"field plan repeats contract {contract.contract_id!r}"
+            )
+        frozen[contract.contract_id] = contract
+    return frozen
+
+
+def _bind_frozen_contracts(
+    document: Mapping[str, object], frozen: Mapping[str, ForecastContract], label: str
+) -> None:
+    """Refuse a forecast document whose contracts are not the frozen bytes.
+
+    Contract identity is the contract's canonical bytes, not its ID. Checking IDs
+    alone lets a document carrying a different instrument, target or resolution
+    clock be settled against the frozen plan's outcome, so the same ID would name
+    two different questions and contract equality would not be outcome equality.
+    """
+
+    contracts = document["contracts"]
+    if [raw["contract_id"] for raw in contracts] != list(frozen):
+        raise ProspectiveFieldError(
+            f"{label} does not carry exactly the frozen contract support"
+        )
+    for raw in contracts:
+        contract = frozen[raw["contract_id"]]
+        if raw != contract.to_dict():
+            raise ProspectiveFieldError(
+                f"{label} contract {contract.contract_id!r} is not the frozen contract"
+            )
+    for revision in document["revisions"]:
+        contract = frozen.get(revision["claim_id"])
+        if contract is None or revision["contract_sha256"] != contract.sha256:
+            raise ProspectiveFieldError(
+                f"{label} revision {revision['claim_id']!r} is bound to a contract "
+                "that is not the frozen one"
+            )
+
+
 def _validated_plan(field_dir: Path) -> dict[str, object]:
     plan = _read_json(field_dir / "field-plan.json")
     if not isinstance(plan, dict) or plan.get("schema_version") != FIELD_PLAN_SCHEMA:
@@ -856,7 +903,9 @@ def _validate_agent_artifacts(
         raise ProspectiveFieldError(
             f"{agent_id} pending identity differs from the plan"
         )
-    expected_contract_ids = [raw["contract_id"] for raw in plan["contracts"]]
+    frozen = _frozen_contracts(plan)
+    _bind_frozen_contracts(document, frozen, agent_id)
+    expected_contract_ids = list(frozen)
     revisions = document["revisions"]
     if len(revisions) != len(expected_contract_ids):
         raise ProspectiveFieldError(
@@ -996,6 +1045,70 @@ def _target_candle(
     }
 
 
+def _canonical_settlements(
+    plan: Mapping[str, object], candles: Sequence[Mapping[str, object]]
+) -> dict[str, dict[str, object]]:
+    """One settlement record per frozen contract, bound to the contract digest.
+
+    Every agent in the field is settled from this single record. Binding the
+    outcome to the contract's digest rather than to its ID alone is what makes
+    contract equality mean outcome equality when two agents are compared.
+    """
+
+    frozen = _frozen_contracts(plan)
+    raw_by_id = {raw["contract_id"]: raw for raw in plan["contracts"]}
+    candle_by_key: dict[tuple[str, int], Mapping[str, object]] = {}
+    for candle in candles:
+        key = (str(candle["symbol"]), int(candle["open_time_ms"]))
+        if key in candle_by_key:
+            raise ProspectiveFieldError(
+                f"the resolution carries two candles for {key[0]} at {key[1]}"
+            )
+        candle_by_key[key] = candle
+    settlements: dict[str, dict[str, object]] = {}
+    for contract_id, contract in frozen.items():
+        target_open_ms = int(raw_by_id[contract_id]["target_open_ms"])
+        candle = candle_by_key.get((contract.instrument, target_open_ms))
+        if candle is None:
+            raise ProspectiveFieldError(
+                f"the resolution has no candle for contract {contract_id!r}"
+            )
+        settlements[contract_id] = {
+            "contract_id": contract_id,
+            "contract_sha256": contract.sha256,
+            "outcome": candle["outcome"],
+            "available_at": (target_open_ms + 60_000) // 1_000,
+            "candle_sha256": candle["raw_sha256"],
+        }
+    return settlements
+
+
+def _check_settlement_agreement(
+    document: Mapping[str, object],
+    settlements: Mapping[str, Mapping[str, object]],
+    label: str,
+) -> None:
+    records = {raw["claim_id"]: raw for raw in document["resolutions"]}
+    if set(records) != set(settlements):
+        raise ProspectiveFieldError(
+            f"{label} does not settle exactly the frozen contracts"
+        )
+    for contract_id, settlement in settlements.items():
+        record = records[contract_id]
+        if record["status"] != RESOLVED:
+            raise ProspectiveFieldError(
+                f"{label} leaves contract {contract_id!r} unresolved: {record['status']}"
+            )
+        if (
+            record["outcome"] != settlement["outcome"]
+            or record["available_at"] != settlement["available_at"]
+        ):
+            raise ProspectiveFieldError(
+                f"{label} settles contract {contract_id!r} against a value that is not "
+                "the canonical settlement record"
+            )
+
+
 def _ledger_from_pending(document: Mapping[str, object]) -> ForecastLedger:
     identity = ForecastRunIdentity(**document["identity"])
     contracts = {
@@ -1090,12 +1203,10 @@ def resolve_field(
         raise ProspectiveFieldError(
             f"resolution is early: serverTime={now_ms}, required>{last_resolution_ms}"
         )
-    candles = []
-    outcomes = {}
-    for raw in plan["contracts"]:
-        candle = _target_candle(raw["instrument"], raw["target_open_ms"], fetch=fetch)
-        candles.append(candle)
-        outcomes[raw["contract_id"]] = candle["outcome"]
+    candles = [
+        _target_candle(raw["instrument"], raw["target_open_ms"], fetch=fetch)
+        for raw in plan["contracts"]
+    ]
     resolution_snapshot = {
         "schema_version": RESOLUTION_SCHEMA,
         "resolved_at_server_ms": now_ms,
@@ -1106,40 +1217,99 @@ def resolve_field(
         "candles": candles,
     }
     _write_json(field_dir / "resolution.json", resolution_snapshot)
+    frozen = _frozen_contracts(plan)
+    settlements = _canonical_settlements(plan, candles)
+    # One settlement list, shared by every agent, rather than a per-document
+    # outcome derived from whatever contracts that document happens to carry.
+    resolved = [
+        Outcome(
+            claim_id=settlement["contract_id"],
+            value=settlement["outcome"],
+            available_at=settlement["available_at"],
+        )
+        for settlement in settlements.values()
+    ]
     final_paths = []
     for pending_path in sorted((field_dir / "pending").glob("*.json")):
         document = forecast_evidence_from_json(pending_path.read_text(encoding="utf-8"))
+        _bind_frozen_contracts(document, frozen, pending_path.stem)
         ledger = _ledger_from_pending(document)
-        resolved = [
-            Outcome(
-                claim_id=contract_id,
-                value=outcome,
-                available_at=(
-                    next(
-                        raw["target_open_ms"]
-                        for raw in plan["contracts"]
-                        if raw["contract_id"] == contract_id
-                    )
-                    + 60_000
-                )
-                // 1_000,
-            )
-            for contract_id, outcome in outcomes.items()
-        ]
         final_path = field_dir / "resolved" / pending_path.name
         write_forecast_evidence(
             final_path, ledger.evidence(resolved, generated_at=now_ms // 1_000)
         )
         final_paths.append(final_path)
     resolution_manifest = {
-        "schema_version": "sharpearena.prospective-forecast-resolution-manifest.v1",
+        "schema_version": RESOLUTION_MANIFEST_SCHEMA,
         "files": {
             path.relative_to(field_dir).as_posix(): _sha256_bytes(path.read_bytes())
             for path in [field_dir / "resolution.json", *final_paths]
         },
     }
     _write_json(field_dir / "resolution-manifest.json", resolution_manifest)
+    verify_field_settlement(field_dir)
     return resolution_manifest
+
+
+def verify_field_settlement(field_dir: Path) -> dict[str, object]:
+    """Check a published field the way an independent consumer has to.
+
+    Re-derives the one canonical settlement record per frozen contract and
+    requires every resolved document to carry the frozen contract bytes and that
+    exact outcome. Agents are comparable because they were settled identically,
+    which the digests alone do not establish.
+    """
+
+    plan = _validated_plan(field_dir)
+    _validated_forecast_commit(field_dir, plan)
+    manifest = _read_json(field_dir / "resolution-manifest.json")
+    if (
+        not isinstance(manifest, dict)
+        or set(manifest) != {"schema_version", "files"}
+        or manifest["schema_version"] != RESOLUTION_MANIFEST_SCHEMA
+        or not isinstance(manifest["files"], dict)
+    ):
+        raise ProspectiveFieldError("resolution manifest has the wrong shape")
+    expected_agents = sorted(record["agent_id"] for record in plan["models"])
+    if set(manifest["files"]) != {
+        "resolution.json",
+        *(f"resolved/{agent_id}.json" for agent_id in expected_agents),
+    }:
+        raise ProspectiveFieldError(
+            "resolution manifest file set differs from the frozen plan"
+        )
+    for relative, expected in manifest["files"].items():
+        if not isinstance(expected, str) or not _SHA256.fullmatch(expected):
+            raise ProspectiveFieldError(
+                f"resolution manifest digest is invalid: {relative}"
+            )
+        path = field_dir / relative
+        if not path.is_file() or _sha256_bytes(path.read_bytes()) != expected:
+            raise ProspectiveFieldError(f"resolution manifest file changed: {relative}")
+    resolution = _read_json(field_dir / "resolution.json")
+    if (
+        not isinstance(resolution, dict)
+        or resolution.get("schema_version") != RESOLUTION_SCHEMA
+        or resolution.get("field_plan_sha256") != _sha256_json(plan)
+        or resolution.get("forecast_commit_sha256")
+        != _sha256_bytes((field_dir / "forecast-commit.json").read_bytes())
+        or not isinstance(resolution.get("candles"), list)
+    ):
+        raise ProspectiveFieldError(
+            "resolution does not bind the frozen plan and forecast commit"
+        )
+    frozen = _frozen_contracts(plan)
+    settlements = _canonical_settlements(plan, resolution["candles"])
+    for agent_id in expected_agents:
+        path = field_dir / "resolved" / f"{agent_id}.json"
+        document = forecast_evidence_from_json(path.read_text(encoding="utf-8"))
+        _bind_frozen_contracts(document, frozen, agent_id)
+        _check_settlement_agreement(document, settlements, agent_id)
+    return {
+        "agents": expected_agents,
+        "contracts": list(settlements),
+        "settlement_sha256": _sha256_json(list(settlements.values())),
+    }
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -1156,6 +1326,8 @@ def _parser() -> argparse.ArgumentParser:
     seal.add_argument("--field-dir", type=Path, required=True)
     resolve = subparsers.add_parser("resolve")
     resolve.add_argument("--field-dir", type=Path, required=True)
+    verify = subparsers.add_parser("verify-settlement")
+    verify.add_argument("--field-dir", type=Path, required=True)
     return parser
 
 
@@ -1173,6 +1345,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         seal_forecasts(args.field_dir)
     elif args.command == "resolve":
         resolve_field(args.field_dir)
+    elif args.command == "verify-settlement":
+        print(canonical_json(verify_field_settlement(args.field_dir)))
     else:  # pragma: no cover
         raise AssertionError(args.command)
     return 0

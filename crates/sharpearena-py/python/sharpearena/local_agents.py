@@ -18,7 +18,7 @@ from dataclasses import asdict, dataclass, field, fields
 from hashlib import sha256
 from importlib.metadata import PackageNotFoundError, version as package_version
 from pathlib import Path
-from typing import Any, Optional, Protocol, Sequence
+from typing import Any, Callable, Optional, Protocol, Sequence
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -30,8 +30,14 @@ from .decision_parser import (
 )
 from .sharpearena_py import VecTradingEnv, decision_schema_json, score_run
 
-EVIDENCE_SCHEMA_VERSION = 2
+EVIDENCE_SCHEMA_VERSION = 3
 LOCAL_EVIDENCE_CLASS = "retrospective_local_model"
+# Every recorded duration states the clock it came from. A measurement without a
+# declared source is not a comparable quantity, so there is no default label.
+DURATION_UNIT_NS = "ns"
+BACKEND_DURATION_SOURCE = "backend-reported-total-duration"
+HOST_DURATION_SOURCE = "host-monotonic-request"
+DURATION_SOURCES = frozenset({BACKEND_DURATION_SOURCE, HOST_DURATION_SOURCE})
 
 
 class LocalAgentError(RuntimeError):
@@ -73,6 +79,39 @@ def _canonical_bytes(value: Any) -> bytes:
 
 def _digest(value: Any) -> str:
     return sha256(_canonical_bytes(value)).hexdigest()
+
+
+def _reported_count(
+    payload: dict[str, Any], key: str, field_name: str
+) -> Optional[int]:
+    """Read an optional provider count without inventing a measured zero.
+
+    A missing key and an explicit null both mean "not reported". A present value
+    that is not a nonnegative integer is a provider contract violation, not an
+    observation of zero work: ``int(-0.5)`` would otherwise truncate to zero and
+    survive every later nonnegative-integer check.
+    """
+
+    if key not in payload:
+        return None
+    value = payload[key]
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ModelResponseError(
+            f"{field_name} was reported as {value!r}; a reported count must be a "
+            "nonnegative integer"
+        )
+    return value
+
+
+def _required_count(payload: dict[str, Any], key: str, field_name: str) -> int:
+    value = _reported_count(payload, key, field_name)
+    if value is None:
+        raise ModelResponseError(
+            f"{field_name} was not reported; unknown accounting is not a measured zero"
+        )
+    return value
 
 
 @dataclass(frozen=True)
@@ -449,14 +488,55 @@ class InferenceResult:
     raw_response_sha256: str
     prompt_tokens: int
     output_tokens: int
-    reasoning_tokens: int
+    # ``None`` means the backend reported no reasoning count for this request.
+    # An unreported count is never summed as zero reasoning work.
+    reasoning_tokens: Optional[int]
     total_duration_ns: int
-    # How ``total_duration_ns`` was observed. This is diagnostic provenance,
-    # not a rank input.
-    duration_source: str = "unspecified"
-    reasoning_tokens_available: bool = False
+    # Which clock produced ``total_duration_ns``. This is diagnostic provenance,
+    # not a rank input, and it has no default: an unlabelled duration cannot be
+    # compared with a backend compute time.
+    duration_source: str
     raw_response: Optional[str] = None
     retry_count: int = 0
+
+    def __post_init__(self) -> None:
+        for name in (
+            "prompt_tokens",
+            "output_tokens",
+            "total_duration_ns",
+            "retry_count",
+        ):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise LocalAgentError(f"{name} must be a nonnegative integer")
+        if self.reasoning_tokens is not None and (
+            isinstance(self.reasoning_tokens, bool)
+            or not isinstance(self.reasoning_tokens, int)
+            or self.reasoning_tokens < 0
+        ):
+            raise LocalAgentError(
+                "reasoning_tokens must be a nonnegative integer or None when unreported"
+            )
+        if self.duration_source not in DURATION_SOURCES:
+            raise LocalAgentError(
+                f"duration_source {self.duration_source!r} is not one of "
+                f"{sorted(DURATION_SOURCES)}"
+            )
+
+    @property
+    def reasoning_tokens_available(self) -> bool:
+        """Availability is the presence of a count, never a separate flag."""
+
+        return self.reasoning_tokens is not None
+
+    def duration_measurement(self) -> dict[str, Any]:
+        """One ordered per-measurement duration record: value, unit, and source."""
+
+        return {
+            "value": self.total_duration_ns,
+            "unit": DURATION_UNIT_NS,
+            "source": self.duration_source,
+        }
 
 
 @dataclass(frozen=True)
@@ -465,10 +545,56 @@ class InferenceOutcome:
     error_type: Optional[str] = None
     error: Optional[str] = None
     raw_response_sha256: Optional[str] = None
+    # Host-observed elapsed time for this attempt, successful or not. ``None``
+    # means the client reported no observation; an unobserved attempt is never
+    # summed as zero cost, because a failed request that took ten seconds and a
+    # failed request that took none are not the same operational fact.
+    attempt_duration_ns: Optional[int] = None
+
+    def __post_init__(self) -> None:
+        if self.attempt_duration_ns is not None and (
+            isinstance(self.attempt_duration_ns, bool)
+            or not isinstance(self.attempt_duration_ns, int)
+            or self.attempt_duration_ns < 0
+        ):
+            raise LocalAgentError(
+                "attempt_duration_ns must be a nonnegative integer or None when "
+                "the client observed no elapsed time"
+            )
 
     @property
     def ok(self) -> bool:
         return self.result is not None
+
+
+def _timed_attempt(
+    decide: Callable[..., InferenceResult],
+    observation: dict[str, Any],
+    model: "ModelRunConfig",
+    renderer: "PromptRenderer",
+    sampling_seed: int,
+) -> InferenceOutcome:
+    """Run one request and record the host-observed elapsed time either way.
+
+    A request that fails still consumes real wall-clock time on the serving
+    host. Returning a failure with no duration is what let expensive failures
+    leave operational totals untouched, so a slow, error-prone backend looked
+    cheaper than a reliable one.
+    """
+
+    started_ns = time.perf_counter_ns()
+    try:
+        result = decide(observation, model, renderer, sampling_seed=sampling_seed)
+    except Exception as error:  # noqa: BLE001 - cell failure is evidence
+        return InferenceOutcome(
+            error_type=type(error).__name__,
+            error=str(error),
+            raw_response_sha256=getattr(error, "raw_response_sha256", None),
+            attempt_duration_ns=time.perf_counter_ns() - started_ns,
+        )
+    return InferenceOutcome(
+        result=result, attempt_duration_ns=time.perf_counter_ns() - started_ns
+    )
 
 
 class PromptRenderer:
@@ -707,15 +833,21 @@ class OllamaClient:
                 f"model emitted an invalid Decision: {error}",
                 sha256(raw.encode("utf-8")).hexdigest(),
             ) from error
-        prompt_tokens = int(response.get("prompt_eval_count", 0) or 0)
-        output_tokens = int(response.get("eval_count", 0) or 0)
-        reasoning_tokens_available = "reasoning_count" in response
-        reasoning_tokens = int(response.get("reasoning_count", 0) or 0)
+        prompt_tokens = _required_count(
+            response, "prompt_eval_count", "prompt_eval_count"
+        )
+        output_tokens = _required_count(response, "eval_count", "eval_count")
+        reasoning_tokens = _reported_count(
+            response, "reasoning_count", "reasoning_count"
+        )
+        total_duration_ns = _required_count(
+            response, "total_duration", "total_duration"
+        )
         decision["cost"] = {
             "cost_usd": 0.0,
             "tokens_in": prompt_tokens,
             "tokens_out": output_tokens,
-            "reasoning_tokens": reasoning_tokens,
+            "reasoning_tokens": reasoning_tokens if reasoning_tokens is not None else 0,
         }
         return InferenceResult(
             decision=decision,
@@ -723,9 +855,8 @@ class OllamaClient:
             prompt_tokens=prompt_tokens,
             output_tokens=output_tokens,
             reasoning_tokens=reasoning_tokens,
-            total_duration_ns=int(response.get("total_duration", 0) or 0),
-            duration_source="backend-reported-total-duration",
-            reasoning_tokens_available=reasoning_tokens_available,
+            total_duration_ns=total_duration_ns,
+            duration_source=BACKEND_DURATION_SOURCE,
             raw_response=raw,
         )
 
@@ -748,26 +879,17 @@ class OllamaClient:
         ) as pool:
             futures = {
                 pool.submit(
+                    _timed_attempt,
                     self.decide,
                     observation,
                     model,
                     renderer,
-                    sampling_seed=int(sampling_seeds[index]),
+                    int(sampling_seeds[index]),
                 ): index
                 for index, observation in enumerate(observations)
             }
             for future in as_completed(futures):
-                index = futures[future]
-                try:
-                    outcomes[index] = InferenceOutcome(result=future.result())
-                except Exception as error:  # noqa: BLE001 - cell failure is evidence
-                    outcomes[index] = InferenceOutcome(
-                        error_type=type(error).__name__,
-                        error=str(error),
-                        raw_response_sha256=getattr(
-                            error, "raw_response_sha256", None
-                        ),
-                    )
+                outcomes[futures[future]] = future.result()
         return [outcome for outcome in outcomes if outcome is not None]
 
 
@@ -963,23 +1085,33 @@ class OpenAICompatibleClient:
             ) from error
         usage = response.get("usage")
         if not isinstance(usage, dict):
-            usage = {}
-        prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
-        output_tokens = int(usage.get("completion_tokens", 0) or 0)
-        details = usage.get("completion_tokens_details")
-        reasoning_tokens_available = isinstance(details, dict) and (
-            "reasoning_tokens" in details
+            raise ModelResponseError(
+                "OpenAI-compatible response has no usage object; unknown accounting "
+                "is not a measured zero"
+            )
+        prompt_tokens = _required_count(usage, "prompt_tokens", "usage.prompt_tokens")
+        output_tokens = _required_count(
+            usage, "completion_tokens", "usage.completion_tokens"
         )
+        details = usage.get("completion_tokens_details")
+        if details is not None and not isinstance(details, dict):
+            raise ModelResponseError(
+                "usage.completion_tokens_details must be an object when present"
+            )
         reasoning_tokens = (
-            int(details.get("reasoning_tokens", 0) or 0)
+            _reported_count(
+                details,
+                "reasoning_tokens",
+                "usage.completion_tokens_details.reasoning_tokens",
+            )
             if isinstance(details, dict)
-            else 0
+            else None
         )
         decision["cost"] = {
             "cost_usd": 0.0,
             "tokens_in": prompt_tokens,
             "tokens_out": output_tokens,
-            "reasoning_tokens": reasoning_tokens,
+            "reasoning_tokens": reasoning_tokens if reasoning_tokens is not None else 0,
         }
         return InferenceResult(
             decision=decision,
@@ -988,8 +1120,7 @@ class OpenAICompatibleClient:
             output_tokens=output_tokens,
             reasoning_tokens=reasoning_tokens,
             total_duration_ns=elapsed,
-            duration_source="host-monotonic-request",
-            reasoning_tokens_available=reasoning_tokens_available,
+            duration_source=HOST_DURATION_SOURCE,
             raw_response=raw,
         )
 
@@ -1012,26 +1143,17 @@ class OpenAICompatibleClient:
         ) as pool:
             futures = {
                 pool.submit(
+                    _timed_attempt,
                     self.decide,
                     observation,
                     model,
                     renderer,
-                    sampling_seed=int(sampling_seeds[index]),
+                    int(sampling_seeds[index]),
                 ): index
                 for index, observation in enumerate(observations)
             }
             for future in as_completed(futures):
-                index = futures[future]
-                try:
-                    outcomes[index] = InferenceOutcome(result=future.result())
-                except Exception as error:  # noqa: BLE001 - cell failure is evidence
-                    outcomes[index] = InferenceOutcome(
-                        error_type=type(error).__name__,
-                        error=str(error),
-                        raw_response_sha256=getattr(
-                            error, "raw_response_sha256", None
-                        ),
-                    )
+                outcomes[futures[future]] = future.result()
         return [outcome for outcome in outcomes if outcome is not None]
 
 
@@ -1213,8 +1335,11 @@ class LocalFieldRunner:
         ]
         retry_counts = [0] * len(cells)
         inference_ns = [0] * len(cells)
-        inference_duration_samples_ns: list[list[int]] = [[] for _ in cells]
-        inference_duration_sources: list[set[str]] = [set() for _ in cells]
+        inference_durations: list[list[dict[str, Any]]] = [[] for _ in cells]
+        # Append-only per lane: one entry per attempted request that produced no
+        # usable result, carrying the host-observed elapsed time when the client
+        # reported one and ``None`` when it did not.
+        failed_request_durations: list[list[Optional[int]]] = [[] for _ in cells]
         termination: list[Optional[str]] = [None] * len(cells)
         last_decisions: list[dict[str, Any]] = [
             {"orders": [], "reasoning": "initial hold before first model decision"}
@@ -1246,6 +1371,9 @@ class LocalFieldRunner:
                     )
                 for lane, outcome in zip(infer_indices, inference_outcomes):
                     if not outcome.ok:
+                        failed_request_durations[lane].append(
+                            outcome.attempt_duration_ns
+                        )
                         failed[lane] = {
                             "type": outcome.error_type or "InferenceError",
                             "detail": outcome.error or "unknown inference failure",
@@ -1262,7 +1390,6 @@ class LocalFieldRunner:
                     accounting = (
                         result.prompt_tokens,
                         result.output_tokens,
-                        result.reasoning_tokens,
                         result.retry_count,
                         result.total_duration_ns,
                     )
@@ -1273,11 +1400,25 @@ class LocalFieldRunner:
                             or value < 0
                             for value in accounting
                         )
-                        or not result.duration_source.strip()
+                        or (
+                            result.reasoning_tokens is not None
+                            and (
+                                isinstance(result.reasoning_tokens, bool)
+                                or not isinstance(result.reasoning_tokens, int)
+                                or result.reasoning_tokens < 0
+                            )
+                        )
+                        or result.duration_source not in DURATION_SOURCES
                     ):
+                        # The provider's own accounting is unusable, which makes
+                        # this a failed request. The host clock still observed how
+                        # long it took, so that cost is recorded rather than lost.
+                        failed_request_durations[lane].append(
+                            outcome.attempt_duration_ns
+                        )
                         failed[lane] = {
                             "type": "InvalidInferenceAccounting",
-                            "detail": "inference accounting must contain nonnegative integers and a duration source",
+                            "detail": "inference accounting must contain nonnegative integers and a declared duration source",
                         }
                         active[lane] = False
                         continue
@@ -1287,16 +1428,11 @@ class LocalFieldRunner:
                     response_hashes[lane].append(result.raw_response_sha256)
                     tokens_in[lane] += result.prompt_tokens
                     tokens_out[lane] += result.output_tokens
-                    reasoning_tokens[lane] += result.reasoning_tokens
-                    reasoning_token_observations[lane].append(
-                        result.reasoning_tokens
-                        if result.reasoning_tokens_available
-                        else None
-                    )
+                    reasoning_tokens[lane] += result.reasoning_tokens or 0
+                    reasoning_token_observations[lane].append(result.reasoning_tokens)
                     retry_counts[lane] += result.retry_count
                     inference_ns[lane] += result.total_duration_ns
-                    inference_duration_samples_ns[lane].append(result.total_duration_ns)
-                    inference_duration_sources[lane].add(result.duration_source)
+                    inference_durations[lane].append(result.duration_measurement())
 
             decisions = []
             infer_index_set = set(infer_indices)
@@ -1430,14 +1566,37 @@ class LocalFieldRunner:
                 ),
                 "retry_count": retry_counts[index],
                 "inference_duration_ns": inference_ns[index],
-                "inference_duration_samples_ns": inference_duration_samples_ns[index],
-                "inference_duration_source": (
-                    next(iter(inference_duration_sources[index]))
-                    if len(inference_duration_sources[index]) == 1
-                    else "mixed"
-                    if inference_duration_sources[index]
-                    else "unavailable"
+                # Failed requests are recorded rather than dropped. Their cost is
+                # excluded from the successful-request percentiles above, which
+                # are defined over completed calls, and preserved here so a
+                # resumed cell cannot lose what its failed attempt spent.
+                "failed_requests": len(failed_request_durations[index]),
+                "failed_request_duration_observations": failed_request_durations[
+                    index
+                ],
+                "failed_request_duration_ns": sum(
+                    value
+                    for value in failed_request_durations[index]
+                    if value is not None
                 ),
+                "failed_request_duration_source": (
+                    HOST_DURATION_SOURCE
+                    if failed_request_durations[index]
+                    and all(
+                        value is not None
+                        for value in failed_request_durations[index]
+                    )
+                    else "unavailable"
+                    if not any(
+                        value is not None
+                        for value in failed_request_durations[index]
+                    )
+                    else "mixed"
+                ),
+                # Ordered, one entry per model request, each carrying its own
+                # value, unit and observing clock. A per-cell source summary
+                # cannot attribute an individual percentile sample.
+                "inference_durations": inference_durations[index],
                 "raw_responses": raw_responses[index],
                 "response_sha256": response_hashes[index],
                 "observation_sha256": observation_hashes[index],
@@ -1501,6 +1660,8 @@ class LocalFieldRunner:
 
 
 __all__ = [
+    "DURATION_SOURCES",
+    "DURATION_UNIT_NS",
     "DatasetSpec",
     "DecisionResponseError",
     "DecisionModel",
