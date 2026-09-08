@@ -116,6 +116,7 @@ def test_decide_many_preserves_lane_order_and_captures_one_lane_fault():
                 output_tokens=1,
                 reasoning_tokens=0,
                 total_duration_ns=1,
+                duration_source="backend-reported-total-duration",
                 raw_response=str(lane),
             )
 

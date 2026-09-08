@@ -17,7 +17,12 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any, Optional, Sequence
 
-from .local_agents import EVIDENCE_SCHEMA_VERSION, LOCAL_EVIDENCE_CLASS
+from .local_agents import (
+    DURATION_SOURCES,
+    DURATION_UNIT_NS,
+    EVIDENCE_SCHEMA_VERSION,
+    LOCAL_EVIDENCE_CLASS,
+)
 
 BRIDGE_SCHEMA_VERSION = 2
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
@@ -52,14 +57,26 @@ def _nearest_rank(values: Sequence[int], percentile: int) -> int:
 def _operational_profile(records: Sequence[dict[str, Any]]) -> dict[str, Any]:
     """Aggregate rank-neutral inference accounting from completed field cells."""
 
-    durations = [
-        duration
+    measurements = [
+        measurement
         for record in records
-        for duration in record["inference_duration_samples_ns"]
+        for measurement in record["inference_durations"]
     ]
-    duration_sources = sorted(
-        {str(record["inference_duration_source"]) for record in records}
-    )
+    durations = [int(measurement["value"]) for measurement in measurements]
+    duration_sources = sorted({str(m["source"]) for m in measurements})
+    # A pooled percentile over two different clocks is not one comparable
+    # quantity, so each observing clock also reports its own profile.
+    by_source = {}
+    for source in duration_sources:
+        source_durations = [
+            int(m["value"]) for m in measurements if str(m["source"]) == source
+        ]
+        by_source[source] = {
+            "inference_calls": len(source_durations),
+            "inference_duration_ns_total": sum(source_durations),
+            "inference_duration_ns_p50": _nearest_rank(source_durations, 50),
+            "inference_duration_ns_p95": _nearest_rank(source_durations, 95),
+        }
     reasoning_sources = sorted(
         {str(record["reasoning_tokens_source"]) for record in records}
     )
@@ -67,10 +84,12 @@ def _operational_profile(records: Sequence[dict[str, Any]]) -> dict[str, Any]:
         "rank_input": False,
         "latency_definition": "one model request, nearest-rank percentile",
         "inference_calls": len(durations),
+        "duration_unit": DURATION_UNIT_NS,
         "inference_duration_ns_total": sum(durations),
         "inference_duration_ns_p50": _nearest_rank(durations, 50),
         "inference_duration_ns_p95": _nearest_rank(durations, 95),
         "duration_sources": duration_sources,
+        "duration_profile_by_source": by_source,
         "tokens_in_total": sum(int(record["tokens_in"]) for record in records),
         "tokens_out_total": sum(int(record["tokens_out"]) for record in records),
         "reasoning_tokens_total": sum(
@@ -269,18 +288,37 @@ def _validate_field(records: Sequence[dict[str, Any]]) -> dict[str, Any]:
             raise BenchBridgeError(
                 "completed cell contains invalid inference accounting"
             )
-        samples = record.get("inference_duration_samples_ns")
-        if (
-            not isinstance(samples, list)
-            or not samples
-            or any(
-                isinstance(value, bool) or not isinstance(value, int) or value < 0
-                for value in samples
-            )
-        ):
+        measurements = record.get("inference_durations")
+        if not isinstance(measurements, list) or not measurements:
             raise BenchBridgeError(
-                "completed cell contains invalid inference duration samples"
+                "completed cell contains no ordered inference duration measurements"
             )
+        samples = []
+        for measurement in measurements:
+            if not isinstance(measurement, dict) or set(measurement) != {
+                "value",
+                "unit",
+                "source",
+            }:
+                raise BenchBridgeError(
+                    "each inference duration measurement must carry exactly a value, "
+                    "unit, and source"
+                )
+            value = measurement["value"]
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise BenchBridgeError(
+                    "an inference duration value must be a nonnegative integer"
+                )
+            if measurement["unit"] != DURATION_UNIT_NS:
+                raise BenchBridgeError(
+                    f"inference duration unit must be {DURATION_UNIT_NS!r}"
+                )
+            if measurement["source"] not in DURATION_SOURCES:
+                raise BenchBridgeError(
+                    "an inference duration measurement declares an unknown observing "
+                    f"clock: {measurement['source']!r}"
+                )
+            samples.append(value)
         if sum(samples) != record["inference_duration_ns"]:
             raise BenchBridgeError(
                 "inference duration samples do not sum to inference_duration_ns"
@@ -291,18 +329,47 @@ def _validate_field(records: Sequence[dict[str, Any]]) -> dict[str, Any]:
             raise BenchBridgeError(
                 "completed cell has invalid steps or decision cadence"
             )
+        if steps != len(returns):
+            raise BenchBridgeError(
+                "declared steps disagree with the realized return count"
+            )
         expected_calls = math.ceil(steps / cadence)
         if len(samples) != expected_calls:
             raise BenchBridgeError(
                 "inference duration sample count disagrees with steps and decision cadence"
             )
-        duration_source = record.get("inference_duration_source")
-        if not isinstance(duration_source, str) or not duration_source.strip():
-            raise BenchBridgeError("completed cell has no inference duration source")
-        reasoning_source = record.get("reasoning_tokens_source")
-        if reasoning_source not in {"provider-reported", "unavailable", "mixed"}:
+        observations = record.get("reasoning_token_observations")
+        if not isinstance(observations, list) or len(observations) != expected_calls:
             raise BenchBridgeError(
-                "completed cell has an invalid reasoning token source"
+                "reasoning token observations must carry one entry per model request"
+            )
+        if any(
+            observation is not None
+            and (
+                isinstance(observation, bool)
+                or not isinstance(observation, int)
+                or observation < 0
+            )
+            for observation in observations
+        ):
+            raise BenchBridgeError(
+                "a reasoning token observation must be a nonnegative integer or null"
+            )
+        reported = [value for value in observations if value is not None]
+        if sum(reported) != record["reasoning_tokens"]:
+            raise BenchBridgeError(
+                "reasoning token observations do not sum to reasoning_tokens"
+            )
+        expected_reasoning_source = (
+            "provider-reported"
+            if len(reported) == len(observations)
+            else "unavailable"
+            if not reported
+            else "mixed"
+        )
+        if record.get("reasoning_tokens_source") != expected_reasoning_source:
+            raise BenchBridgeError(
+                "reasoning_tokens_source disagrees with the recorded observations"
             )
     if seen_ordinals != set(range(expected_total)):
         raise BenchBridgeError(

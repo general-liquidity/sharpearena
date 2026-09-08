@@ -19,6 +19,7 @@ from sharpearena.local_agents import (
     LocalAgentError,
     LocalFieldRunner,
     ModelIdentity,
+    ModelResponseError,
     ModelRunConfig,
     OllamaClient,
     OpenAICompatibleClient,
@@ -79,9 +80,9 @@ class FixedModel:
                     raw_response_sha256=f"response-{seed}",
                     prompt_tokens=10,
                     output_tokens=5,
-                    reasoning_tokens=0,
+                    reasoning_tokens=None,
                     total_duration_ns=100,
-                    reasoning_tokens_available=False,
+                    duration_source="host-monotonic-request",
                     raw_response=f"raw-{seed}",
                 )
             )
@@ -175,10 +176,16 @@ def test_field_runner_batches_scores_and_records_repetition_seed(tmp_path):
     assert all(record["schema_version"] == 2 for record in records)
     assert all(record["inference_duration_ns"] == 300 for record in records)
     assert all(
-        record["inference_duration_samples_ns"] == [100, 100, 100] for record in records
+        record["inference_durations"]
+        == [
+            {"value": 100, "unit": "ns", "source": "host-monotonic-request"}
+            for _ in range(3)
+        ]
+        for record in records
     )
     assert all(
-        record["inference_duration_source"] == "unspecified" for record in records
+        record["reasoning_token_observations"] == [None, None, None]
+        for record in records
     )
     assert all(record["raw_responses"] for record in records)
     assert {record["cell_ordinal"] for record in records} == {0, 1, 2, 3}
@@ -727,8 +734,9 @@ def test_stdio_shim_emits_one_decision_per_observation_and_fails_closed(tmp_path
                 raw_response_sha256="response",
                 prompt_tokens=1,
                 output_tokens=1,
-                reasoning_tokens=0,
+                reasoning_tokens=None,
                 total_duration_ns=1,
+                duration_source="host-monotonic-request",
             )
 
     observation = json.dumps(
@@ -878,11 +886,17 @@ def test_bench_bridge_compiles_complete_shards_and_preserves_frequency(tmp_path)
     records = [json.loads(line) for line in journal.read_text().splitlines()]
     for record_index, record in enumerate(records):
         first = record_index * 3 + 1
-        record["inference_duration_samples_ns"] = [first, first + 1, first + 2]
+        record["inference_durations"] = [
+            {
+                "value": first + offset,
+                "unit": "ns",
+                "source": "host-monotonic-request",
+            }
+            for offset in range(3)
+        ]
         record["inference_duration_ns"] = sum(
-            record["inference_duration_samples_ns"]
+            measurement["value"] for measurement in record["inference_durations"]
         )
-        record["inference_duration_source"] = "fixture-monotonic"
     journal.write_text(
         "".join(json.dumps(record) + "\n" for record in records),
         encoding="utf-8",
@@ -911,10 +925,19 @@ def test_bench_bridge_compiles_complete_shards_and_preserves_frequency(tmp_path)
         "rank_input": False,
         "latency_definition": "one model request, nearest-rank percentile",
         "inference_calls": 12,
+        "duration_unit": "ns",
         "inference_duration_ns_total": 78,
         "inference_duration_ns_p50": 6,
         "inference_duration_ns_p95": 12,
-        "duration_sources": ["fixture-monotonic"],
+        "duration_sources": ["host-monotonic-request"],
+        "duration_profile_by_source": {
+            "host-monotonic-request": {
+                "inference_calls": 12,
+                "inference_duration_ns_total": 78,
+                "inference_duration_ns_p50": 6,
+                "inference_duration_ns_p95": 12,
+            }
+        },
         "tokens_in_total": 120,
         "tokens_out_total": 60,
         "reasoning_tokens_total": 0,
@@ -928,7 +951,7 @@ def test_bench_bridge_refuses_inconsistent_inference_accounting(tmp_path):
     journal = tmp_path / "field.jsonl"
     LocalFieldRunner(FixedModel()).run(_plan(repetitions=1), EvidenceJournal(journal))
     records = [json.loads(line) for line in journal.read_text().splitlines()]
-    records[0]["inference_duration_samples_ns"][0] += 1
+    records[0]["inference_durations"][0]["value"] += 1
     journal.write_text(
         "".join(json.dumps(record) + "\n" for record in records),
         encoding="utf-8",
@@ -989,3 +1012,317 @@ def test_bench_bridge_accepts_a_failed_attempt_followed_by_one_completion(tmp_pa
     assert len(journal.read_text().splitlines()) == 4
     result = compile_benchmark_evidence([journal], tmp_path / "compiled")
     assert result["field_shape"]["total_cells"] == 2
+
+
+class _AccountingOllama(OllamaClient):
+    """Ollama stub whose chat response carries a chosen accounting block."""
+
+    def __init__(self, accounting):
+        super().__init__()
+        self._accounting = accounting
+
+    def _request(self, method, path, payload=None):
+        if path == "/api/tags":
+            return {
+                "models": [
+                    {
+                        "name": "test-fixture:synthetic",
+                        "digest": "sha256:model",
+                        "details": {
+                            "family": "fixture",
+                            "parameter_size": "1B",
+                            "quantization_level": "Q4_K_M",
+                        },
+                    }
+                ]
+            }
+        if path == "/api/show":
+            return {"model_info": {"fixture.context_length": 8192}}
+        if path == "/api/version":
+            return {"version": "9.9.9"}
+        if path == "/api/ps":
+            return {"models": []}
+        assert path == "/api/chat"
+        return {
+            "message": {
+                "content": json.dumps(
+                    {
+                        "orders": [
+                            {"symbol": "AAA", "action": "buy", "target_weight": 0.2}
+                        ],
+                        "reasoning": "fixture",
+                    }
+                )
+            },
+            **self._accounting,
+        }
+
+
+_ACCOUNTING_OBSERVATION = {
+    "date": "2026-01-01",
+    "cash": 1000.0,
+    "symbols": [{"symbol": "AAA", "close_history": [100.0]}],
+    "portfolio": [],
+}
+
+
+@pytest.mark.parametrize(
+    ("accounting", "message"),
+    [
+        (
+            {"eval_count": 7, "total_duration": 123},
+            "prompt_eval_count was not reported",
+        ),
+        (
+            {"prompt_eval_count": 12, "eval_count": 7},
+            "total_duration was not reported",
+        ),
+        (
+            {"prompt_eval_count": 12, "eval_count": None, "total_duration": 123},
+            "eval_count was not reported",
+        ),
+        (
+            {"prompt_eval_count": 12, "eval_count": -0.5, "total_duration": 123},
+            "nonnegative integer",
+        ),
+        (
+            {
+                "prompt_eval_count": 12,
+                "eval_count": 7,
+                "total_duration": 123,
+                "reasoning_count": -0.5,
+            },
+            "nonnegative integer",
+        ),
+    ],
+)
+def test_unreported_provider_accounting_is_refused_not_measured_as_zero(
+    monkeypatch, accounting, message
+):
+    monkeypatch.setattr("sharpearena.local_agents._local_gpu_identity", lambda: {})
+    monkeypatch.setattr("sharpearena.local_agents._wrapper_version", lambda: "0.0-test")
+    client = _AccountingOllama(accounting)
+    config = ModelRunConfig("test-fixture:synthetic", SamplingConfig(seed=4))
+    client.identity(config)
+    with pytest.raises(ModelResponseError, match=message):
+        client.decide(_ACCOUNTING_OBSERVATION, config, PromptRenderer())
+
+
+def test_null_reasoning_count_is_unavailable_not_provider_reported(monkeypatch):
+    monkeypatch.setattr("sharpearena.local_agents._local_gpu_identity", lambda: {})
+    monkeypatch.setattr("sharpearena.local_agents._wrapper_version", lambda: "0.0-test")
+    client = _AccountingOllama(
+        {
+            "prompt_eval_count": 12,
+            "eval_count": 7,
+            "total_duration": 123,
+            "reasoning_count": None,
+        }
+    )
+    config = ModelRunConfig("test-fixture:synthetic", SamplingConfig(seed=4))
+    client.identity(config)
+    result = client.decide(_ACCOUNTING_OBSERVATION, config, PromptRenderer())
+    assert result.reasoning_tokens is None
+    assert result.reasoning_tokens_available is False
+    assert result.duration_source == "backend-reported-total-duration"
+    assert result.duration_measurement() == {
+        "value": 123,
+        "unit": "ns",
+        "source": "backend-reported-total-duration",
+    }
+
+
+def test_openai_compatible_usage_must_be_reported():
+    identity = ModelIdentity(
+        model="frontier-fixture",
+        digest="sha256:" + "c" * 64,
+        parameter_size="27B",
+        quantization="Q4_K_M",
+        offload="full CUDA",
+        server="sglang",
+        server_version="0.5.5",
+    )
+
+    class NoUsageClient(OpenAICompatibleClient):
+        def __init__(self):
+            super().__init__((identity,))
+
+        def _request(self, method, path, payload=None):
+            if path == "/models":
+                return {"data": [{"id": "frontier-fixture"}]}
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "orders": [
+                                        {
+                                            "symbol": "AAA",
+                                            "action": "buy",
+                                            "target_weight": 0.2,
+                                        }
+                                    ]
+                                }
+                            )
+                        }
+                    }
+                ]
+            }
+
+    client = NoUsageClient()
+    config = ModelRunConfig("frontier-fixture")
+    client.identity(config)
+    with pytest.raises(ModelResponseError, match="no usage object"):
+        client.decide(_ACCOUNTING_OBSERVATION, config, PromptRenderer())
+
+
+def test_inference_result_requires_a_declared_duration_source():
+    common = {
+        "decision": {"orders": []},
+        "raw_response_sha256": "abc",
+        "prompt_tokens": 1,
+        "output_tokens": 1,
+        "reasoning_tokens": None,
+        "total_duration_ns": 5,
+    }
+    with pytest.raises(TypeError):
+        InferenceResult(**common)
+    with pytest.raises(LocalAgentError, match="duration_source"):
+        InferenceResult(**common, duration_source="unspecified")
+    with pytest.raises(LocalAgentError, match="nonnegative integer"):
+        InferenceResult(
+            **{**common, "total_duration_ns": -1},
+            duration_source="host-monotonic-request",
+        )
+
+
+def _completed_records(tmp_path, name="field.jsonl"):
+    journal = tmp_path / name
+    plan = _plan(repetitions=1)
+    assert (
+        LocalFieldRunner(FixedModel()).run(plan, EvidenceJournal(journal))["failed"] == 0
+    )
+    return journal, [json.loads(line) for line in journal.read_text().splitlines()]
+
+
+def _rewrite(journal, records):
+    journal.write_text(
+        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+    )
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (
+            lambda record: record.__setitem__("steps", record["steps"] + 1),
+            "realized return count",
+        ),
+        (
+            lambda record: record.__setitem__("reasoning_tokens", 999),
+            "do not sum to reasoning_tokens",
+        ),
+        (
+            lambda record: record.__setitem__(
+                "reasoning_tokens_source", "provider-reported"
+            ),
+            "disagrees with the recorded observations",
+        ),
+        (
+            lambda record: record.__setitem__(
+                "reasoning_token_observations",
+                record["reasoning_token_observations"][:-1],
+            ),
+            "one entry per model request",
+        ),
+        (
+            lambda record: record.__setitem__(
+                "reasoning_token_observations",
+                [-1] + record["reasoning_token_observations"][1:],
+            ),
+            "nonnegative integer or null",
+        ),
+    ],
+)
+def test_bench_bridge_reconciles_reasoning_observations_and_realized_steps(
+    tmp_path, mutate, message
+):
+    journal, records = _completed_records(tmp_path)
+    mutate(records[0])
+    _rewrite(journal, records)
+    with pytest.raises(BenchBridgeError, match=message):
+        compile_benchmark_evidence([journal], tmp_path / "compiled")
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (
+            lambda record: record["inference_durations"][0].pop("source"),
+            "exactly a value, unit, and source",
+        ),
+        (
+            lambda record: record["inference_durations"][0].__setitem__(
+                "source", "unspecified"
+            ),
+            "unknown observing",
+        ),
+        (
+            lambda record: record["inference_durations"][0].__setitem__("unit", "us"),
+            "unit must be",
+        ),
+        (
+            lambda record: record.__setitem__(
+                "inference_durations",
+                [measurement["value"] for measurement in record["inference_durations"]],
+            ),
+            "exactly a value, unit, and source",
+        ),
+    ],
+)
+def test_bench_bridge_requires_per_measurement_duration_provenance(
+    tmp_path, mutate, message
+):
+    journal, records = _completed_records(tmp_path)
+    mutate(records[0])
+    _rewrite(journal, records)
+    with pytest.raises(BenchBridgeError, match=message):
+        compile_benchmark_evidence([journal], tmp_path / "compiled")
+
+
+def test_operational_profile_attributes_percentiles_to_each_observing_clock(tmp_path):
+    journal, records = _completed_records(tmp_path)
+    for record in records:
+        for index, measurement in enumerate(record["inference_durations"]):
+            measurement["value"] = 10 if index == 0 else 1000
+            measurement["source"] = (
+                "backend-reported-total-duration"
+                if index == 0
+                else "host-monotonic-request"
+            )
+        record["inference_duration_ns"] = sum(
+            measurement["value"] for measurement in record["inference_durations"]
+        )
+    _rewrite(journal, records)
+    result = compile_benchmark_evidence([journal], tmp_path / "compiled")
+    profile = result["outputs"][0]["models"][0]["operational_profile"]
+    assert profile["duration_unit"] == "ns"
+    assert profile["duration_sources"] == [
+        "backend-reported-total-duration",
+        "host-monotonic-request",
+    ]
+    assert profile["duration_profile_by_source"] == {
+        "backend-reported-total-duration": {
+            "inference_calls": 2,
+            "inference_duration_ns_total": 20,
+            "inference_duration_ns_p50": 10,
+            "inference_duration_ns_p95": 10,
+        },
+        "host-monotonic-request": {
+            "inference_calls": 4,
+            "inference_duration_ns_total": 4000,
+            "inference_duration_ns_p50": 1000,
+            "inference_duration_ns_p95": 1000,
+        },
+    }
