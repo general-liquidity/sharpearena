@@ -89,10 +89,16 @@ The bridge refuses incomplete grids, failed cells, coordinate collisions, confli
 duplicates, bad return hashes, or misaligned confidence/outcome sequences. A failed
 attempt followed by one completed retry is valid; the source-journal hash commits to
 both attempts. A completion followed by another conflicting record is not valid.
-Raw-field schema 2 also requires nonnegative inference accounting, one duration sample
-per scheduled model call, exact agreement between the samples and total duration, and
-an observation source. Bridge schema 2 publishes nearest-rank p50/p95 duration, token
-totals, reasoning-token provenance, and retries for each model with `rank_input: false`.
+Raw-field schema 2 also requires nonnegative inference accounting, one duration
+measurement per scheduled model call carrying its own value, unit and source, exact
+agreement between those measurements and the total duration, and one reasoning
+observation per model request whose entries sum to the reported total. An unreported
+provider count stays unreported: it is not read as a measured zero, and a duration
+source outside the declared set is refused rather than recorded as unspecified. Bridge
+schema 2 publishes nearest-rank p50/p95 duration for each observing clock separately,
+so a percentile in a mixed cell is attributable to backend compute time or host elapsed
+time, alongside token totals, reasoning-token provenance, and retries for each model
+with `rank_input: false`.
 These fields support operational diagnosis and capacity planning; they cannot alter the
 score submission emitted beside the manifest.
 
