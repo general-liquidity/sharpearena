@@ -216,7 +216,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "c402592d33c515cf5a3649257c4a851d8a852960",
+  "generated_at_head": "ca1531dd92c990cbf6387c382db3ea83abf1726c",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -282,7 +282,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/bench_bridge.py",
-      "sha256": "450695b00b1ceb339e3fe90e5709ffe49237e20047d1dd7893660e20007ee104"
+      "sha256": "d13e3bc3174576f6d58a6f87cb9d6803c4c339eec45bc8c15ccfa09c3efedddc"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/cascade.py",
@@ -398,7 +398,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/local_agents.py",
-      "sha256": "16a2f3751dd912837d447040616ed07e64264c9724a7e70d027d5d7183139048"
+      "sha256": "0d503ba62d1ef73d028a22a7969952e5ac220055f65cc1b5a8a5b9363ef0445f"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/local_field_cli.py",
@@ -482,7 +482,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/prospective_field.py",
-      "sha256": "7b15d246a43d5596d7d5855171dfdfe0236f1c3a0bf90f11bf06f979d0a8f505"
+      "sha256": "68d0da43da792d53fd19303cfd24ec5e3f907bd070009c221598471ed444b464"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/realism.py",
@@ -758,7 +758,7 @@
     },
     {
       "path": "paper/src/make-f6-adverse-selection.py",
-      "sha256": "3dbe21825b96c010f277c6b1796c6b6633ea3916937fb1b14b80a82e1c3fd9b4"
+      "sha256": "6b72495b23cf1c800a8eec245f3c7444b412e587ae36c822f99c110ce95b37de"
     },
     {
       "path": "paper/src/make-f7-failures.py",
@@ -770,11 +770,11 @@
     },
     {
       "path": "paper/src/make-figures.py",
-      "sha256": "3b7c683bd6153e685c320d82a693c173f0fa20acb50777ab4ebc1926c5f189fc"
+      "sha256": "498f37cb420535ba966bde30fa1b3a43637f0532031627391a981402e37172be"
     },
     {
       "path": "paper/src/make-predictability.py",
-      "sha256": "1fd95384cb0895002fc9cd6a297b109f4e08586486d092fbb74d0e61d8d61f09"
+      "sha256": "39e2798d4bc45ec9bd7dfd2812d7ab09e0f57392024cf0484dbb28f2c3e568f3"
     },
     {
       "path": "paper/src/make-provenance.py",
@@ -782,7 +782,7 @@
     },
     {
       "path": "paper/src/make-sealed-seeds.py",
-      "sha256": "4369ca708b74a66645df885a7610a0cf92882ac663d324364ce1dbb10856bb99"
+      "sha256": "bd997c514970cc79ff090f81c7b4c44e6c8e0acf1bd97d48b82acf366a91ab3c"
     },
     {
       "path": "paper/src/make-throughput.py",
@@ -790,7 +790,7 @@
     },
     {
       "path": "paper/src/make-witness.py",
-      "sha256": "910f1ecb54087350763eba0256fae34bcc3129e565108c14533ce9eb4be79ba1"
+      "sha256": "d53fead7efd35335d8876b3728232253e6ec9f94017b7fb926071798c569ec6c"
     },
     {
       "path": "paper/src/provenance_common.py",
@@ -799,6 +799,10 @@
     {
       "path": "paper/src/test_producer_replay_and_reference.py",
       "sha256": "bf9f6aba4b813dc533cdbf454a4811151cb4106f40597bb754d79033b1456d5a"
+    },
+    {
+      "path": "paper/src/test_producer_support_commitment_and_registry.py",
+      "sha256": "d96524483221d67e7bb4a687df4a121cbaa64a35fbd295938275ff86b17ae89d"
     },
     {
       "path": "release.toml",
@@ -842,6 +846,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "fea12c2cec32522118485da293275a3583d3b9b35943b5a485919e2e6500515d",
+  "source_snapshot_sha256": "55f9f7b2fdb704d19a6808e8610a08152d80d1e05f7436915ed8a07b53aca8b0",
   "validator": "paper/src/check-provenance.py"
 }
