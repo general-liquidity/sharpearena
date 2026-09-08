@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import json
 import math
+import sys
 from dataclasses import asdict, replace
 from pathlib import Path
 
@@ -44,12 +45,16 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from sharpearena import (
-    AdverseSelectionParams,
-    compare_informed_vs_uninformed,
-    run_adverse_selection,
-)
-from sharpearena.adverse_selection import EndogenousImpact, compare_endogenous_arms
+try:
+    from sharpearena import (
+        AdverseSelectionParams,
+        compare_informed_vs_uninformed,
+        run_adverse_selection,
+    )
+    from sharpearena.adverse_selection import EndogenousImpact, compare_endogenous_arms
+except ImportError:  # --figures-only reads the committed JSON and needs no bindings
+    AdverseSelectionParams = compare_informed_vs_uninformed = None
+    run_adverse_selection = EndogenousImpact = compare_endogenous_arms = None
 
 PAPER = Path(__file__).resolve().parents[1]
 EVIDENCE = PAPER / "evidence"
@@ -62,7 +67,11 @@ DETAIL_SEED = 0
 # Endogenous arm: the engine's default Kyle coefficient over one episode's realized taker
 # volume (see EndogenousImpact), plus a sweep that brackets where the informed-flow
 # markout level changes sign.
-IMPACT = EndogenousImpact(kyle_lambda=0.1, volume_scale=240.0)
+IMPACT = (
+    EndogenousImpact(kyle_lambda=0.1, volume_scale=240.0)
+    if EndogenousImpact is not None
+    else None
+)
 LAMBDA_SWEEP = (0.0, 0.05, 0.1, 0.2, 0.3, 0.4)
 
 
@@ -279,6 +288,7 @@ def endogenous_block(params: AdverseSelectionParams, current_run_vectors: dict) 
 def endogenous_figure(block: dict) -> None:
     """Left: markout per filled unit by horizon, both legs, both arms (hatched is the
     endogenous path), with 95% CIs. Right: the lambda sweep at the longest horizon."""
+    FIGURES.mkdir(parents=True, exist_ok=True)
     horizons = [str(h) for h in block["horizons"]]
     arms = block["arms"]
     fig, (ax, bx) = plt.subplots(1, 2, figsize=(10, 4))
@@ -444,4 +454,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    if "--figures-only" in sys.argv:
+        data = json.loads(FROZEN_REFERENCE.read_text())
+        endogenous_figure(data["endogenous"])
+        print(f"wrote {FIGURES / 'f6-endogenous.pdf'}")
+    else:
+        main()

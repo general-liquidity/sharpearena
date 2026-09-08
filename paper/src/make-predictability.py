@@ -23,8 +23,21 @@ from a causal prefix, across the three volatility tiers, 16 seeds each:
 
 Metrics: directional accuracy and MSE against the unconditional baseline, plus
 the trading value of each predictor as a frictionless sign-following long/short
-policy scored through the public ``score_run`` kernel (deflated Sharpe). Writes
-``paper/evidence/predictability.json`` and ``paper/figures/predictability.pdf``.
+policy scored through the public ``score_run`` kernel (deflated Sharpe).
+
+Every adversary is scored on the same bars and under the same costs. The causal
+predictors have no prediction before ``WARMUP``, so the oracle is masked to the
+same window rather than scored on the full tape: otherwise the oracle would
+receive T scored observations against the others' T - WARMUP, and would also
+trade a prefix during which the others are flat, so the reported DSR gap would
+mix predictive power with a longer scoring window. The scored window and the
+cost model are serialized next to the numbers, and a run whose three
+adversaries do not share a support fails rather than reporting the gap. Costs
+are zero for all three: the policy charges no fee, spread or borrow, which
+flatters every adversary equally and flatters the highest-turnover one most.
+
+Writes ``paper/evidence/predictability.json`` and
+``paper/figures/predictability.pdf``.
 """
 from __future__ import annotations
 
@@ -154,6 +167,19 @@ def prefix_mean_predictions(rets: np.ndarray) -> np.ndarray:
     return preds
 
 
+def oracle_predictions(rets: np.ndarray) -> np.ndarray:
+    """The known-seed adversary's predictions, on the causal predictors' window.
+
+    With the seed in hand the next bar is known exactly, so the prediction is the
+    realized return. It is masked before WARMUP anyway: the oracle is an upper
+    bound on inversion, not on scoring-window length, and the comparison is only
+    informative if every adversary is scored on the same bars.
+    """
+    preds = np.full(rets.shape, np.nan)
+    preds[WARMUP:] = rets[WARMUP:]
+    return preds
+
+
 def evaluate(preds: np.ndarray, rets: np.ndarray) -> dict:
     """Directional accuracy, MSE, and the sign-following policy return series."""
     mask = ~np.isnan(preds[:, 0])
@@ -161,7 +187,13 @@ def evaluate(preds: np.ndarray, rets: np.ndarray) -> dict:
     acc = float(np.mean(np.sign(p) == np.sign(a)))
     mse = float(np.mean((p - a) ** 2))
     policy_rets = np.mean(np.where(p >= 0.0, 1.0, -1.0) * a, axis=1)
-    return {"accuracy": acc, "mse": mse, "policy_returns": policy_rets}
+    return {
+        "accuracy": acc,
+        "mse": mse,
+        "policy_returns": policy_rets,
+        "scored_bars": int(mask.sum()),
+        "first_scored_bar": int(np.argmax(mask)) if mask.any() else -1,
+    }
 
 
 def dsr(returns: np.ndarray) -> float:
@@ -210,6 +242,7 @@ def main() -> None:
             for name in ("baseline", "honest", "oracle")
         }
         verified = 0
+        scoring: list[dict] = []
         for i, seed in enumerate(SEEDS):
             closes = extract_closes(seed, tier)
             rets = closes[1:] / closes[:-1] - 1.0  # rets[t] = bar t+1 return
@@ -223,7 +256,22 @@ def main() -> None:
                 replay = extract_closes(search_results[i]["matches"][0], tier)
                 if np.max(np.abs(replay[:WARMUP] - closes[:WARMUP])) < MATCH_TOL:
                     verified += 1
-            oracle = evaluate(rets.copy(), rets)
+            oracle = evaluate(oracle_predictions(rets), rets)
+
+            support = {ev["scored_bars"] for ev in (base, honest, oracle)}
+            starts = {ev["first_scored_bar"] for ev in (base, honest, oracle)}
+            assert len(support) == 1 and len(starts) == 1, (
+                f"{tier}/{seed}: adversaries scored on different bars "
+                f"(bars={sorted(support)}, first={sorted(starts)})"
+            )
+            scoring.append(
+                {
+                    "seed": seed,
+                    "return_rows": int(rets.shape[0]),
+                    "scored_bars": support.pop(),
+                    "first_scored_bar": starts.pop(),
+                }
+            )
 
             for name, ev in (("baseline", base), ("honest", honest), ("oracle", oracle)):
                 rows[name]["accuracy"].append(ev["accuracy"])
@@ -232,6 +280,20 @@ def main() -> None:
 
         per_tier[tier] = {
             "prefix_verified_recoveries": verified,
+            "scoring_window": {
+                "warmup_bars": WARMUP,
+                "return_rows": sorted({s["return_rows"] for s in scoring}),
+                "scored_bars": sorted({s["scored_bars"] for s in scoring}),
+                "first_scored_bar": sorted({s["first_scored_bar"] for s in scoring}),
+                "common_support": (
+                    "every adversary, including the oracle, is scored on the same "
+                    "bars of the same seed; the oracle is masked before warmup"
+                ),
+                "costs": (
+                    "zero for every adversary: no fee, spread or borrow is charged "
+                    "on any of the three sign-following policies"
+                ),
+            },
             "adversaries": {
                 name: {
                     "accuracy_mean": float(np.mean(v["accuracy"])),
@@ -259,6 +321,8 @@ def main() -> None:
             "match_tolerance": MATCH_TOL,
             "policy": "frictionless unit-gross long/short sign following, "
             "equal weight across symbols, scored via score_run deflated_sharpe",
+            "costs": "none; identical for all three adversaries",
+            "scoring_window": "bars WARMUP..T for every adversary, oracle included",
         },
         "effective_config": {
             "opening_bar_probe": merge_effective_configs(_OPENING_READBACK),

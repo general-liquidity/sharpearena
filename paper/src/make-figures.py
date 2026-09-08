@@ -1,15 +1,27 @@
 #!/usr/bin/env python3
 """Re-render every paper figure from the committed evidence JSON.
 
-Reads paper/evidence/f*.json and reproduces the figures the make-f* scripts
-emit, without re-running any experiment. Every bar and point is a reduction
-over the committed records; no number is typed into this script. Evidence
-files that do not exist yet are skipped with a notice.
+Reads paper/evidence/*.json and reproduces the figures the make-* scripts emit,
+without re-running any experiment. Every bar and point is a reduction over the
+committed records; no number is typed into this script.
+
+The dispatch is an explicit registry: one entry per renderer, naming the
+evidence file it reads and every PDF it writes. Figures whose layout already
+lives in a producer are rendered by calling that producer's own figure function
+on the committed record, so the extension plots cannot drift from the base ones
+and no layout is maintained twice. ``main`` closes the registry against the
+figure directory and prints an omission notice naming any committed PDF no
+entry claims, so an incomplete rebuild says so instead of quietly leaving stale
+plots in place. Evidence files that do not exist yet are skipped with a notice
+that names the figures they would have produced.
 """
 from __future__ import annotations
 
+import importlib.util
 import json
+import sys
 from pathlib import Path
+from typing import Callable, NamedTuple
 
 import matplotlib
 
@@ -19,6 +31,7 @@ import numpy as np
 from confidence_support import require_scoring_intervals
 
 PAPER = Path(__file__).resolve().parents[1]
+SRC = Path(__file__).resolve().parent
 EVIDENCE = PAPER / "evidence"
 FIGURES = PAPER / "figures"
 
@@ -33,10 +46,24 @@ def _load(name: str) -> dict | None:
     return json.loads(path.read_text())
 
 
-def f1() -> None:
-    data = _load("f1-baselines.json")
-    if data is None:
-        return
+def producer(stem: str):
+    """Import a hyphenated producer module by path, once.
+
+    The producers guard their ``sharpearena`` import so this stays a
+    frozen-input path: importing one to reach its figure function does not
+    require the native bindings, only the committed JSON it is handed.
+    """
+    name = stem.replace("-", "_")
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, SRC / f"{stem}.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def f1(data: dict) -> None:
     tiers = data["tiers"]
     for tier in TIERS:
         require_scoring_intervals(tiers[tier]["rows"])
@@ -61,10 +88,7 @@ def f1() -> None:
     plt.close(fig)
 
 
-def f2() -> None:
-    data = _load("f2-regret.json")
-    if data is None:
-        return
+def f2(data: dict) -> None:
     fixed = data["fixed_spread_regret"]
     disp = data.get("regret_dispersion", {})
     xs = [float(k) for k in fixed]
@@ -97,10 +121,7 @@ def f2() -> None:
     plt.close(fig)
 
 
-def f3() -> None:
-    data = _load("f3-generalization.json")
-    if data is None:
-        return
+def f3(data: dict) -> None:
     matrix = data["cross_regime_transfer"]
     grid = [
         [matrix[f"{a}->{b}"]["transfer_gap_deflated_sharpe"] for b in TIERS]
@@ -121,10 +142,7 @@ def f3() -> None:
     plt.close(fig)
 
 
-def f4() -> None:
-    data = _load("f4-realism.json")
-    if data is None:
-        return
+def f4(data: dict) -> None:
     tiers = data["tiers"]
     fact_names = sorted(tiers[TIERS[0]]["mean_facts"])
     fig, ax = plt.subplots(figsize=(8, 4))
@@ -143,41 +161,7 @@ def f4() -> None:
     plt.close(fig)
 
 
-def f5() -> None:
-    data = _load("f5-manipulation.json")
-    if data is None:
-        return
-    boundaries = data["boundaries"]
-    fig, axes = plt.subplots(1, len(boundaries), figsize=(10, 3.2), sharey=True)
-    for ax, (axis, rep) in zip(np.atleast_1d(axes), boundaries.items()):
-        ax.plot(rep["values"], rep["impact_pnl"], marker="o")
-        ax.axhline(0.0, color="black", linewidth=0.8)
-        if rep["boundary"] is not None:
-            ax.axvline(rep["boundary"], linestyle="--", color="red", linewidth=0.8)
-        ax.set_xlabel(axis)
-    np.atleast_1d(axes)[0].set_ylabel("impact P&L")
-    fig.tight_layout()
-    fig.savefig(FIGURES / "f5-boundaries.pdf")
-    plt.close(fig)
-
-    size = data["size_response"]
-    fig, ax = plt.subplots(figsize=(5, 3.5))
-    ax.plot(size["push_weights"], size["impact_pnl"], marker="o")
-    ax.axhline(0.0, color="black", linewidth=0.8)
-    ax.axvline(size["peak_push_weight"], linestyle="--", color="red", linewidth=0.8)
-    verdict = "bounded" if size["bounded"] else "UNBOUNDED"
-    ax.set_title(f"size response ({verdict})", fontsize=10)
-    ax.set_xlabel("push weight")
-    ax.set_ylabel("impact P&L")
-    fig.tight_layout()
-    fig.savefig(FIGURES / "f5-size-response.pdf")
-    plt.close(fig)
-
-
-def f6() -> None:
-    data = _load("f6-adverse-selection.json")
-    if data is None:
-        return
+def f6(data: dict) -> None:
     comp = data["comparison"]
     horizons = [str(h) for h in comp["horizons"]]
     informed = [comp["informed_markout_per_unit"][h] for h in horizons]
@@ -198,10 +182,7 @@ def f6() -> None:
     plt.close(fig)
 
 
-def f7() -> None:
-    data = _load("f7-failures.json")
-    if data is None:
-        return
+def f7(data: dict) -> None:
     rollups = data["rollup_by_tier"]
     mode_names = list(rollups[TIERS[0]]["counts"])
     fig, ax = plt.subplots(figsize=(8, 4))
@@ -219,10 +200,7 @@ def f7() -> None:
     plt.close(fig)
 
 
-def f8() -> None:
-    data = _load("f8-ecology.json")
-    if data is None:
-        return
+def f8(data: dict) -> None:
     for key, title, name in (
         ("control", "steady control", "f8-ecology-control.pdf"),
         ("shocked", "regime shocks (calm/hard/extreme)", "f8-ecology-shocked.pdf"),
@@ -242,10 +220,99 @@ def f8() -> None:
         plt.close(fig)
 
 
+def f4_calm_calibration(data: dict) -> None:
+    producer("make-f4-realism")._plot_calm_calibration(data["calm_calibration"])
+
+
+def f5(data: dict) -> None:
+    producer("make-f5-manipulation").make_figures(data)
+
+
+def f6_endogenous(data: dict) -> None:
+    producer("make-f6-adverse-selection").endogenous_figure(data["endogenous"])
+
+
+def predictability(data: dict) -> None:
+    producer("make-predictability").make_figure(data["tiers"])
+
+
+def witness(data: dict) -> None:
+    producer("make-witness").make_figure(data)
+
+
+class Renderer(NamedTuple):
+    """One dispatch entry: the record it reads and every PDF it writes.
+
+    ``figures`` is the claim this registry is checked against, so an entry that
+    silently stops writing one of its plots is a defect the coverage check can
+    name, not a gap the reader has to notice.
+    """
+
+    evidence: str
+    figures: tuple[str, ...]
+    render: Callable[[dict], None]
+
+
+REGISTRY: tuple[Renderer, ...] = (
+    Renderer("f1-baselines.json", ("f1-baselines.pdf",), f1),
+    Renderer("f2-regret.json", ("f2-regret.pdf",), f2),
+    Renderer("f3-generalization.json", ("f3-transfer-matrix.pdf",), f3),
+    Renderer("f4-realism.json", ("f4-realism.pdf",), f4),
+    Renderer("f4-realism.json", ("f4-calm-calibration.pdf",), f4_calm_calibration),
+    Renderer(
+        "f5-manipulation.json",
+        (
+            "f5-boundaries.pdf",
+            "f5-size-response.pdf",
+            "f5-concave.pdf",
+            "f5-positive-control.pdf",
+            "f5-extended-sweeps.pdf",
+        ),
+        f5,
+    ),
+    Renderer("f6-adverse-selection.json", ("f6-markouts.pdf",), f6),
+    Renderer("f6-adverse-selection.json", ("f6-endogenous.pdf",), f6_endogenous),
+    Renderer("f7-failures.json", ("f7-failures.pdf",), f7),
+    Renderer(
+        "f8-ecology.json", ("f8-ecology-control.pdf", "f8-ecology-shocked.pdf"), f8
+    ),
+    Renderer("predictability.json", ("predictability.pdf",), predictability),
+    Renderer("witness.json", ("witness.pdf",), witness),
+)
+
+REGISTERED_FIGURES: frozenset[str] = frozenset(
+    name for entry in REGISTRY for name in entry.figures
+)
+
+
+def unregistered_figures() -> list[str]:
+    """Committed PDFs that no registry entry claims to rebuild.
+
+    Reported rather than raised: a figure this script cannot regenerate is a
+    fact about the registry that the operator needs told, and the rebuild of
+    everything else is still worth doing.
+    """
+    return sorted({p.name for p in FIGURES.glob("*.pdf")} - REGISTERED_FIGURES)
+
+
 def main() -> None:
     FIGURES.mkdir(parents=True, exist_ok=True)
-    for fn in (f1, f2, f3, f4, f5, f6, f7, f8):
-        fn()
+    for entry in REGISTRY:
+        data = _load(entry.evidence)
+        if data is None:
+            print(f"  not rendered: {', '.join(entry.figures)}")
+            continue
+        entry.render(data)
+        print(f"wrote {', '.join(entry.figures)} from {entry.evidence}")
+    missing = unregistered_figures()
+    if missing:
+        print(
+            "omission: no registry entry rebuilds "
+            + ", ".join(missing)
+            + "; those files were left as they were"
+        )
+    else:
+        print(f"registry covers every PDF in {FIGURES} ({len(REGISTERED_FIGURES)})")
 
 
 if __name__ == "__main__":
