@@ -24,7 +24,10 @@ the 2^16 candidates at the band start, match the single observed opening bar
 against it, and verify any match against a 30-bar prefix on the deployed tier.
 The commit-reveal half of the workflow is also exercised: the salt commitment
 (SHA-256) is recorded before the run, the salt is revealed at the end, and the
-revealed salt is shown to replay every sealed scenario. Writes
+revealed salt is shown to replay every sealed scenario. The reveal check is a
+full trajectory replay: for each slot it regenerates the complete N_DAYS close
+tape on the deployed tier from the revealed salt and requires equality on every
+bar, not on the opening bar of a shorter calm environment. Writes
 ``paper/evidence/sealed-seeds.json``.
 """
 from __future__ import annotations
@@ -113,6 +116,36 @@ def scan(observed_first: np.ndarray, band: range, table: np.ndarray) -> dict:
     return {"matches": matches, "candidates_checked": len(band), "elapsed_s": time.time() - t0}
 
 
+def reveal_replay(revealed: dict[str, int], sealed: dict[str, int]) -> dict:
+    """Replay every sealed slot from the revealed salt on the deployed tier.
+
+    The reported quantity is full-trajectory equality: for each slot both seeds are
+    run for the declared ``N_DAYS`` under ``TIER`` and every bar of the close tape
+    must agree. An opening-bar comparison on a shorter calm environment would not
+    detect divergence after bar 0 or in the deployed-tier transformation, so it is
+    not what this verification counts.
+    """
+    verified = 0
+    bars_compared = 0
+    slots = []
+    for name in sealed:
+        got = extract_closes(revealed[name], TIER)
+        want = extract_closes(sealed[name], TIER)
+        ok = got.shape == want.shape and bool(np.max(np.abs(got - want)) < MATCH_TOL)
+        bars_compared = max(bars_compared, int(want.shape[0]))
+        verified += int(ok)
+        slots.append({"slot": name, "bars": int(want.shape[0]), "replayed": ok})
+    return {
+        "verified": verified,
+        "n_slots": len(sealed),
+        "bars_compared": bars_compared,
+        "n_days": N_DAYS,
+        "distribution_mode": TIER,
+        "comparison": "every bar of the deployed-tier close tape, all symbols",
+        "slots": slots,
+    }
+
+
 def attack(seeds: dict[str, int], band: range, table: np.ndarray) -> dict:
     trials = []
     for name, seed in seeds.items():
@@ -165,12 +198,8 @@ def main() -> None:
 
     # Reveal: with the salt, anyone recomputes the seeds and replays the scenarios.
     revealed = sealed_eval_seeds(salt, names=SLOTS)
-    replay_ok = int(
-        sum(
-            np.max(np.abs(first_closes(revealed[n]) - first_closes(sealed_seeds[n]))) < MATCH_TOL
-            for n in SLOTS
-        )
-    )
+    replay = reveal_replay(revealed, sealed_seeds)
+    replay_ok = replay["verified"]
     assert revealed == sealed_seeds and hashlib.sha256(salt).hexdigest() == commitment
 
     band_span = 2**64 - EVAL_SEED_BASE
@@ -210,6 +239,7 @@ def main() -> None:
             "seeds": sealed_seeds,
             **{k: v for k, v in sealed.items() if k != "trials"},
             "reveal_replay_verified": replay_ok,
+            "reveal_replay_scope": {k: v for k, v in replay.items() if k != "verified"},
             "scan_coverage_of_band": BAND_WIDTH / band_span,
             "expected_recoveries_at_this_budget": N_SLOTS * BAND_WIDTH / band_span,
             "trials": sealed["trials"],
@@ -219,7 +249,7 @@ def main() -> None:
             "disjoint from train by construction) but the concrete seeds are a keyed "
             "function of a salt the adversary does not hold; the same scan that recovers "
             "every public seed recovers none of the sealed ones, and revealing the salt "
-            "afterwards replays the sealed evaluation exactly"
+            "afterwards replays every bar of every sealed deployed-tier scenario"
         ),
     }
     out = EVIDENCE / "sealed-seeds.json"
