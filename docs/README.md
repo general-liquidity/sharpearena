@@ -3,6 +3,12 @@
 The root [`README`](../README.md) is the product entry point. Start here when a task
 needs more detail.
 
+**Current engineering goal.** The active work is the 2026-09-07 audit repair
+checklist at [`audits/2026-09-07/IMPLEMENTATION.md`](audits/2026-09-07/IMPLEMENTATION.md),
+shared with SharpeBench and mirrored byte-for-byte there: 100 rows, 39 closed,
+ordered into batches A to I. [`AGENTS.md`](../AGENTS.md) carries the goal rules,
+including no release, tag or force push and no new experiments.
+
 ## Use the product
 
 | I want to | Read |
