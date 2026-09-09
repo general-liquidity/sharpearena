@@ -791,7 +791,8 @@ fn bootstrap_dsr_ci(
         n_boot,
         resample_seed,
         alpha,
-    ).map_err(|e| engine_err(CODE_INVALID_ARGUMENT, e))?;
+    )
+    .map_err(|e| engine_err(CODE_INVALID_ARGUMENT, e))?;
     serde_json::to_string(&ci).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))
 }
 
@@ -820,7 +821,8 @@ fn paired_dsr_diff(
         n_boot,
         resample_seed,
         alpha,
-    ).map_err(|e| engine_err(CODE_INVALID_ARGUMENT, e))?;
+    )
+    .map_err(|e| engine_err(CODE_INVALID_ARGUMENT, e))?;
     serde_json::to_string(&diff).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))
 }
 
