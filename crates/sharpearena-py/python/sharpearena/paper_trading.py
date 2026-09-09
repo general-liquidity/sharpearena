@@ -1245,25 +1245,32 @@ class ForwardEvidenceJournal:
             os.fsync(handle.fileno())
 
 
+_COMMITMENT_DOMAIN = "sharpebench-attest/commitment/v2"
+
+
 def make_forward_commitment(
     agent_id: str, target_window: str, artifact_digest: str, salt: str
 ) -> dict[str, str]:
-    """Match ``sharpebench_attest::make_commitment`` byte for byte."""
+    """Match ``sharpebench_attest::make_commitment`` byte for byte.
 
-    for name, value in (
-        ("agent_id", agent_id),
-        ("target_window", target_window),
-        ("artifact_digest", artifact_digest),
-        ("salt", salt),
-    ):
-        if not value or "|" in value or "\n" in value or "\r" in value:
-            raise ValueError(
-                f"{name} must be non-empty and contain no commitment delimiter or newline"
-            )
+    The pre-image is the ``sharpebench-attest/commitment/v2`` framing: domain, NUL,
+    big-endian u64 field count, then each field as big-endian u64 byte length plus
+    bytes. Length framing is what stops a value borrowing bytes from its neighbour;
+    a v1 ``|``-delimited commitment does not verify under it and must be recomputed.
+    """
+
+    fields = (agent_id, target_window, artifact_digest, salt)
+    for name, value in zip(("agent_id", "target_window", "artifact_digest", "salt"), fields):
+        if not value or "\n" in value or "\r" in value:
+            raise ValueError(f"{name} must be non-empty and contain no newline")
     digest = sha256()
-    for part in (agent_id, target_window, artifact_digest, salt):
-        digest.update(part.encode("utf-8"))
-        digest.update(b"|")
+    digest.update(_COMMITMENT_DOMAIN.encode("utf-8"))
+    digest.update(b"\x00")
+    digest.update(len(fields).to_bytes(8, "big"))
+    for part in fields:
+        encoded = part.encode("utf-8")
+        digest.update(len(encoded).to_bytes(8, "big"))
+        digest.update(encoded)
     return {
         "agent_id": agent_id,
         "target_window": target_window,

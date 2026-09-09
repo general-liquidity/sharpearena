@@ -340,8 +340,14 @@ def test_forward_commitment_matches_the_rust_wire_primitive():
         "target_window": fixture["target_window"],
         "commit_hash": fixture["commit_hash"],
     }
-    with pytest.raises(ValueError, match="delimiter"):
-        make_forward_commitment("gor|don", "2025-Q4", "deadbeef", "salt")
+    # v2 length framing: a field cannot borrow bytes from its neighbour, so the
+    # v1 delimiter ambiguity is gone and "|" no longer needs refusing.
+    assert (
+        make_forward_commitment("a|b", "c", "deadbeef", "salt")["commit_hash"]
+        != make_forward_commitment("a", "b|c", "deadbeef", "salt")["commit_hash"]
+    )
+    with pytest.raises(ValueError, match="newline"):
+        make_forward_commitment("agent\n", "2025-Q4", "deadbeef", "salt")
 
 
 def test_forward_commitment_bridge_separates_public_hash_from_private_preimage(
