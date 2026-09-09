@@ -90,9 +90,15 @@ cargo fmt --all --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --workspace
 python scripts/check-packaged-spec.py
+python scripts/check-lean-scope.py       # every Lean module declares Covers/Assumes
 python -m pytest -q                      # needs maturin develop in a venv
 python paper/src/check-provenance.py
 ```
+
+`cargo test --workspace` includes the seeded kernel properties in
+`crates/sharpearena/tests/kernel_properties.rs` (reset, step, terminal, fill
+and accounting transitions executed against the shipped functions); the Lean
+model in `formal/` covers the forecast protocol only.
 
 Cross-platform Rust, the installed wheel, the offline npm consumer, wasm-pack,
 `cargo deny` and provenance run in CI; a local pass is necessary, not

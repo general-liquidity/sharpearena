@@ -31,6 +31,15 @@ provenance manifest live under [`paper/`](../paper/).
 - Native, WebAssembly, npm, and Python golden legs execute the shared engine;
   canonical pre-hash JSON and `SPEC_HASH` make drift both readable and
   fail-closed.
+- The kernel's state transitions are checked as seeded properties against the
+  shipped functions, not restated on labels: reset determinism and idempotence,
+  step determinism and one-bar time advance, terminal absorption, limit-order-book
+  fill conservation with price-time priority, and exact per-agent cash, share,
+  NAV and reward identities (`crates/sharpearena/tests/kernel_properties.rs`;
+  Python LOB accounts in
+  `crates/sharpearena-py/tests/test_lob_accounting_properties.py`). The Lean
+  model covers the forecast protocol only and says so in a checked `## Scope`
+  block (`formal/README.md`); it does not model the kernel.
 - Generated-strategy evidence counts raw proposals before validation or
   deduplication and binds host-derived family identity, exact generator identity,
   earlier-candidate ancestry, and operator-registered idea sources. Family
