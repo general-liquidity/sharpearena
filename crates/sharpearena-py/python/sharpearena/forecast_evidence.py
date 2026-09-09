@@ -8,6 +8,7 @@ forecast score independently.
 
 from __future__ import annotations
 
+import json
 import math
 import os
 import re
@@ -19,7 +20,11 @@ from typing import Any, Iterable, Mapping, Optional, Sequence
 
 from .deferred import Claim, ClaimRejected, Outcome, score_claim
 from .forecast_contract import (
+    CONTRACT_DIGEST_ENCODING_LEGACY,
+    CONTRACT_DIGEST_ENCODING_V1,
+    CONTRACT_DIGEST_ENCODINGS,
     FORECAST_EVIDENCE_SCHEMA_VERSION,
+    FORECAST_EVIDENCE_SCHEMA_VERSION_V1,
     ForecastContract,
     ForecastContractError,
     canonical_json,
@@ -37,7 +42,7 @@ _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 class ForecastEvidenceError(ValueError):
-    """The append-only ledger or its exported evidence violates the v1 contract."""
+    """The append-only ledger or its exported evidence violates the envelope contract."""
 
 
 def _nonempty(value: object, field: str) -> str:
@@ -147,6 +152,9 @@ class ForecastRevision:
     ordinal: int
     supersedes: Optional[str]
     contract_sha256: str
+    # The encoding `contract_sha256` was computed under; SharpeBench verifies a
+    # v2 revision under this label only and never infers it.
+    contract_digest_encoding: str
     prediction: tuple[float, ...]
     confidence: float
     rationale: str
@@ -165,6 +173,7 @@ class ForecastRevision:
             "ordinal": self.ordinal,
             "supersedes": self.supersedes,
             "contract_sha256": self.contract_sha256,
+            "contract_digest_encoding": self.contract_digest_encoding,
             "prediction": list(self.prediction),
             "confidence": self.confidence,
             "rationale": self.rationale,
@@ -225,7 +234,7 @@ class ForecastEvidence:
 def write_forecast_evidence(
     path: str | os.PathLike[str], evidence: ForecastEvidence
 ) -> str:
-    """Atomically publish a validated v1 evidence document and return its digest.
+    """Atomically publish a validated v2 evidence document and return its digest.
 
     The temporary file is created exclusively in the destination directory, then
     flushed, synced, and replaced.  On POSIX the containing directory is synced as
@@ -418,6 +427,7 @@ class ForecastLedger:
             ordinal=ordinal,
             supersedes=supersedes,
             contract_sha256=contract.sha256,
+            contract_digest_encoding=CONTRACT_DIGEST_ENCODING_V1,
             prediction=checked.prediction,
             confidence=checked.confidence,
             rationale=checked.rationale,
@@ -552,15 +562,46 @@ class ForecastLedger:
         )
 
 
+def _resolve_declared_contract(
+    revision_id: str,
+    contract_digest: str,
+    label: object,
+    recomputed: Optional[tuple[ForecastContract, str]],
+) -> ForecastContract:
+    """Resolve a v2 revision's contract under the encoding it declares, and nothing else.
+
+    A digest that recomputes under the other encoding, or under neither, is refused
+    with the declared and the recomputed encoding named, in SharpeBench's words.
+    """
+
+    if not isinstance(label, str) or label not in CONTRACT_DIGEST_ENCODINGS:
+        raise ForecastEvidenceError(
+            f"unknown contract_digest_encoding {json.dumps(label)}; expected "
+            f"{CONTRACT_DIGEST_ENCODING_V1} or {CONTRACT_DIGEST_ENCODING_LEGACY}"
+        )
+    if recomputed is not None and recomputed[1] == label:
+        return recomputed[0]
+    actual = (
+        f"neither {CONTRACT_DIGEST_ENCODING_V1} nor the {CONTRACT_DIGEST_ENCODING_LEGACY} "
+        "encoding of any contract"
+        if recomputed is None
+        else recomputed[1]
+    )
+    raise ForecastEvidenceError(
+        f"revision {revision_id} declares contract digest {contract_digest} under {label}, "
+        f"but it recomputes under {actual}"
+    )
+
+
 def forecast_evidence_from_json(payload: str) -> dict[str, Any]:
-    """Strict shape check for a v1 evidence document before cross-product transfer.
+    """Strict shape check for a v1 or v2 evidence document before cross-product transfer.
 
     SharpeBench remains the authoritative semantic consumer.  This local check makes
     accidental extension, truncation, and non-finite JSON fail before the file leaves
-    SharpeArena.
+    SharpeArena.  A v2 revision must declare, in ``contract_digest_encoding``, the
+    encoding its ``contract_sha256`` actually recomputes under; a v1 revision must
+    not carry the field.  The error texts mirror SharpeBench's.
     """
-
-    import json
 
     try:
         document = json.loads(
@@ -580,7 +621,11 @@ def forecast_evidence_from_json(payload: str) -> dict[str, Any]:
     }
     if not isinstance(document, dict) or set(document) != top:
         raise ForecastEvidenceError("forecast evidence top-level fields do not match v1")
-    if document["schema_version"] != FORECAST_EVIDENCE_SCHEMA_VERSION:
+    if document["schema_version"] == FORECAST_EVIDENCE_SCHEMA_VERSION:
+        declares_encoding = True
+    elif document["schema_version"] == FORECAST_EVIDENCE_SCHEMA_VERSION_V1:
+        declares_encoding = False
+    else:
         raise ForecastEvidenceError("unsupported forecast evidence schema_version")
     if document["producer"] != {"name": "sharpearena", "contract": "native"}:
         raise ForecastEvidenceError("producer must identify the native SharpeArena contract")
@@ -607,7 +652,7 @@ def forecast_evidence_from_json(payload: str) -> dict[str, Any]:
         raise ForecastEvidenceError("resolutions must be a non-empty array")
 
     contracts: dict[str, ForecastContract] = {}
-    contract_by_digest: dict[str, ForecastContract] = {}
+    contract_by_digest: dict[str, tuple[ForecastContract, str]] = {}
     for index, raw in enumerate(document["contracts"]):
         try:
             contract = ForecastContract.from_dict(raw)
@@ -618,8 +663,10 @@ def forecast_evidence_from_json(payload: str) -> dict[str, Any]:
         contracts[contract.contract_id] = contract
         # Both digests, so a document produced before the canonical-json/v1
         # migration still binds its revisions; SharpeBench dual-accepts the same.
-        for digest in contract.digests:
-            contract_by_digest[digest] = contract
+        # A v1 revision is resolved by recomputation under either; a v2 revision
+        # is resolved under the encoding it declares only.
+        contract_by_digest[contract.sha256] = (contract, CONTRACT_DIGEST_ENCODING_V1)
+        contract_by_digest[contract.legacy_sha256] = (contract, CONTRACT_DIGEST_ENCODING_LEGACY)
 
     revision_fields = {
         "revision_id",
@@ -650,9 +697,25 @@ def forecast_evidence_from_json(payload: str) -> dict[str, Any]:
     claim_revisions: dict[str, list[dict[str, Any]]] = {}
     checked_claims: dict[str, Claim] = {}
     claim_contract_digests: dict[str, str] = {}
+    if declares_encoding:
+        revision_fields.add("contract_digest_encoding")
     for index, raw in enumerate(document["revisions"]):
-        if not isinstance(raw, dict) or set(raw) != revision_fields:
+        if not isinstance(raw, dict):
             raise ForecastEvidenceError(f"revisions[{index}] fields do not match v1")
+        if "contract_digest_encoding" in raw and not declares_encoding:
+            raise ForecastEvidenceError(
+                f"contract_digest_encoding is not a field of {FORECAST_EVIDENCE_SCHEMA_VERSION_V1}; "
+                f"a document that declares it must be {FORECAST_EVIDENCE_SCHEMA_VERSION}"
+            )
+        if "contract_digest_encoding" not in raw and declares_encoding:
+            raise ForecastEvidenceError(
+                f"{FORECAST_EVIDENCE_SCHEMA_VERSION} requires contract_digest_encoding "
+                "on every revision"
+            )
+        if set(raw) != revision_fields:
+            raise ForecastEvidenceError(
+                f"revisions[{index}] fields do not match {document['schema_version']}"
+            )
         revision_id = _nonempty(raw["revision_id"], f"revisions[{index}].revision_id")
         claim_id = _nonempty(raw["claim_id"], f"revisions[{index}].claim_id")
         ordinal = _clock(raw["ordinal"], f"revisions[{index}].ordinal")
@@ -660,9 +723,15 @@ def forecast_evidence_from_json(payload: str) -> dict[str, Any]:
         contract_digest = _digest(
             raw["contract_sha256"], f"revisions[{index}].contract_sha256"
         )
-        contract = contract_by_digest.get(contract_digest)
-        if contract is None:
+        recomputed = contract_by_digest.get(contract_digest)
+        if declares_encoding:
+            contract = _resolve_declared_contract(
+                revision_id, contract_digest, raw["contract_digest_encoding"], recomputed
+            )
+        elif recomputed is None:
             raise ForecastEvidenceError(f"revisions[{index}] names an unknown contract digest")
+        else:
+            contract = recomputed[0]
         prior_digest = claim_contract_digests.setdefault(claim_id, contract_digest)
         if prior_digest != contract_digest:
             raise ForecastEvidenceError(f"claim {claim_id!r} changes contract across revisions")
