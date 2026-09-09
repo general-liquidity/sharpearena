@@ -37,7 +37,7 @@ python examples/forecast-quality/tutorial.py \
   --output-dir /tmp/sharpe-forecast-tutorial \
   --sharpebench-dir ../sharpebench
 \end{verbatim}
-The deterministic tutorial writes two strict forecast ledgers and a digest manifest, asks the sibling SharpeBench checkout to score their exact common support, and compares the result with the committed fixture. Its eight synthetic questions span two resolution-time blocks and include an effective revision, a late attempt that cannot replace it, a pre-open rejection, and blind and consensus-visible information exposures. It is a conformance example, not an empirical model run. The separate prospective runner has prepare, forecast, seal and resolve phases, but no invocation of it contributes a result to this paper.
+The deterministic tutorial writes two fields of strict forecast ledgers with a digest manifest each, asks the sibling SharpeBench checkout to score their exact common support, and compares each result with the committed fixture. The supported field's twelve synthetic questions span six resolution-time blocks and the withheld field's first eight of them span two; both include an effective revision, a late attempt that cannot replace it, a pre-open rejection, and blind and consensus-visible information exposures. It is a conformance example, not an empirical model run. The separate prospective runner has prepare, forecast, seal and resolve phases, but no invocation of it contributes a result to this paper.
 
 \paragraph{F1: baseline leaderboard (\cref{sec:f1}).}
 \begin{verbatim}
