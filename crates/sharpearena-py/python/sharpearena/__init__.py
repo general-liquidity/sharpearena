@@ -182,6 +182,15 @@ from .generalization import (
 )
 from .gym import SharpeArenaEnv
 from .indicators import DEFAULT_INDICATORS, INDICATORS, CausalIndicatorObservation
+from .kernel_score import (
+    KernelScoreUnavailable,
+    is_kernel_score_unavailable,
+    kernel_deflated_sharpe,
+    kernel_errors,
+    kernel_psr,
+    kernel_score_difference,
+    kernel_score_or_unavailable,
+)
 from .lob_env import LOBMarketEnv, noise_trader_policy, symmetric_quote_policy
 from .local_agents import (
     DatasetSpec,
@@ -383,6 +392,13 @@ __all__ = [
     "EXPECTED_SPEC_HASH",
     "check_spec_hash",
     "score_run",
+    "KernelScoreUnavailable",
+    "is_kernel_score_unavailable",
+    "kernel_deflated_sharpe",
+    "kernel_errors",
+    "kernel_psr",
+    "kernel_score_difference",
+    "kernel_score_or_unavailable",
     "decision_schema_json",
     "validate_decision_json",
     "BenchBridgeError",
