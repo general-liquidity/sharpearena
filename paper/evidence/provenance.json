@@ -216,7 +216,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "5cb134b8ffa6313db6202dc42430f544bf65bf9d",
+  "generated_at_head": "2b113b22a417cb739c59a3757caabf352e455e39",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -238,7 +238,7 @@
     },
     {
       "path": ".github/workflows/ci.yml",
-      "sha256": "e7592a63e5d4137b05c870ba054d9ec253f624f4b111bf77b6fc2e539ccb9e0d"
+      "sha256": "0760af6429f8c25d84fd85a27529934fca3a94e4c5a6cf7be6df0f9b99a3d6f1"
     },
     {
       "path": ".github/workflows/release.yml",
@@ -653,6 +653,10 @@
       "sha256": "83ab08992a7301673cb42f1e1c153c540179e14c46c3a8f73c78211b0e8121dd"
     },
     {
+      "path": "crates/sharpearena/tests/kernel_properties.rs",
+      "sha256": "faafeb10508ecd21439795f6d49c7af0b7e34df622d1621a4d8985bfe154b70e"
+    },
+    {
       "path": "crates/sharpearena/tests/numeric_json.rs",
       "sha256": "ff39654f010e94463ea2423235fbcd9040b8c0016cebf0add9bb9d8454e78e01"
     },
@@ -813,6 +817,10 @@
       "sha256": "d3dbfeaad16745ce33bc518d7f22f32ace3ec3a6d83a407ae91a2bd9f9bdcf8a"
     },
     {
+      "path": "scripts/check-lean-scope.py",
+      "sha256": "edd59b2053747a52607fe3b44bcb081a71074471b79721bfc3ef272d4abf28d1"
+    },
+    {
       "path": "scripts/check-packaged-consumer.py",
       "sha256": "e67782dca6b0d6d98dcbccadd9ec23f90d7e339d1c87081a4faa25b7ef75b2ae"
     },
@@ -850,6 +858,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "7fcfab6494dd07940c236975c483b11e2b11422fc7d2c1c3855249ab7a448ee9",
+  "source_snapshot_sha256": "2a37254995d81aa2bf3824a5bb44b4c67ff4d69e8f8bfa4e3a448361d08cbbeb",
   "validator": "paper/src/check-provenance.py"
 }
