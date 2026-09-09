@@ -96,7 +96,7 @@ def deflated_sharpe_reward(
     **kwargs: Any,
 ) -> float:
     """The **real** deflated Sharpe (SharpeBench kernel), deflated for ``n_trials`` of
-    declared in-sample search — the metric the benchmark ranks on.
+    declared in-sample search, the metric the benchmark ranks on.
 
     Fewer than two recorded bars score ``0.0`` (nothing was sent to the kernel). A
     composite the kernel withheld with a typed error raises

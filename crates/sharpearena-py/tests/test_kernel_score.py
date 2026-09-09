@@ -355,3 +355,20 @@ def test_strategy_selection_refuses_a_withheld_validation_score(tmp_path, monkey
     assert rows[-1]["status"] == "failed"
     assert rows[-1]["failure"]["type"] == "KernelScoreUnavailable"
     assert "deflation_error" in rows[-1]["failure"]["detail"]
+
+
+def test_forecast_curve_refuses_a_withheld_kernel_score(monkeypatch):
+    from sharpearena import forecast as forecast_mod
+    from sharpearena.kernel_score import KernelScoreUnavailable
+
+    reason = "unavailable_scoring_kernel_error: deflation_error: observation 1 must be finite"
+    monkeypatch.setattr(
+        forecast_mod,
+        "evaluate_seeds",
+        lambda *a, **k: {"deflated_sharpe": reason, "passed_k": False, "mean_return": 0.0},
+    )
+    import pytest
+
+    with pytest.raises(KernelScoreUnavailable) as caught:
+        forecast_mod.forecast_skill_curve(lambda s: None, [1], None, r2_grid=(0.5,))
+    assert caught.value.reason == reason
