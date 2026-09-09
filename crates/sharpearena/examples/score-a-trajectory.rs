@@ -26,6 +26,10 @@ fn main() {
     let (_run, run_traj) = run_backtest_capture(&data, &mut BuyAndHold, window, 1, costs);
     let trajectory = AgentTrajectory {
         agent_id: "buy-and-hold".to_string(),
+        // Library capture is deliberately unbound: the dataset/cost/engine digests are
+        // bound by the SharpeBench harness, and this example replays in-process
+        // against the same frozen data it captured from.
+        contract: None,
         runs: vec![run_traj],
         in_sample_trials: 0,
         declared_mandate: None,
