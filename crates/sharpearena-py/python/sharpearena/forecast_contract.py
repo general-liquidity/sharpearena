@@ -17,12 +17,22 @@ import math
 from dataclasses import dataclass
 from typing import Any, Mapping, Optional, Sequence
 
-from .canonical_json import canonical_sha256_v1
+from .canonical_json import CANONICAL_JSON_VERSION, canonical_sha256_v1
 
 
 FORECAST_CONTRACT_SCHEMA_VERSION = "sharpearena.forecast-contract.v1"
 CLAIMS_SCHEMA_VERSION = "sharpearena.deferred-claims.v1"
-FORECAST_EVIDENCE_SCHEMA_VERSION = "sharpe.forecast-evidence.v1"
+# The envelope a producer writes: v1 plus `contract_digest_encoding` on every
+# revision.  Readers still accept v1, which carries no such field.
+FORECAST_EVIDENCE_SCHEMA_VERSION = "sharpe.forecast-evidence.v2"
+FORECAST_EVIDENCE_SCHEMA_VERSION_V1 = "sharpe.forecast-evidence.v1"
+
+# The two labels `contract_digest_encoding` may carry: the encoding a revision's
+# `contract_sha256` was computed under.  SharpeBench verifies a v2 revision under
+# the declared encoding only.
+CONTRACT_DIGEST_ENCODING_V1 = CANONICAL_JSON_VERSION
+CONTRACT_DIGEST_ENCODING_LEGACY = "legacy"
+CONTRACT_DIGEST_ENCODINGS = (CONTRACT_DIGEST_ENCODING_V1, CONTRACT_DIGEST_ENCODING_LEGACY)
 
 POINT = "point"
 PROBABILITY = "probability"
@@ -349,6 +359,10 @@ __all__ = [
     "FORECAST_CONTRACT_SCHEMA_VERSION",
     "CLAIMS_SCHEMA_VERSION",
     "FORECAST_EVIDENCE_SCHEMA_VERSION",
+    "FORECAST_EVIDENCE_SCHEMA_VERSION_V1",
+    "CONTRACT_DIGEST_ENCODING_V1",
+    "CONTRACT_DIGEST_ENCODING_LEGACY",
+    "CONTRACT_DIGEST_ENCODINGS",
     "POINT",
     "PROBABILITY",
     "CATEGORICAL",

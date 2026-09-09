@@ -204,9 +204,145 @@ def test_export_contains_raw_outcome_but_no_producer_score():
         [Outcome("claim-es", 1.0, available_at=30)], generated_at=31
     )
     document = forecast_evidence_from_json(evidence.to_json())
-    assert document["schema_version"] == "sharpe.forecast-evidence.v1"
+    assert document["schema_version"] == "sharpe.forecast-evidence.v2"
     assert document["resolutions"][0]["outcome"] == 1.0
     assert "score" not in evidence.to_json()
+
+
+def _v2_document() -> dict:
+    ledger = ForecastLedger(identity())
+    submit_first(ledger)
+    submit_first(
+        ledger,
+        prediction=0.7,
+        confidence=0.7,
+        submitted_at=15,
+        idempotency_key="request-2",
+        expected_revision=0,
+        revision_reason="public update",
+    )
+    evidence = ledger.evidence([Outcome("claim-es", 1.0, available_at=30)], generated_at=31)
+    return json.loads(evidence.to_json())
+
+
+def _as_v1(document: dict) -> dict:
+    v1 = json.loads(json.dumps(document))
+    v1["schema_version"] = "sharpe.forecast-evidence.v1"
+    for revision in v1["revisions"]:
+        del revision["contract_digest_encoding"]
+    return v1
+
+
+def test_v2_round_trip_declares_the_v1_encoding_on_every_revision(tmp_path):
+    document = _v2_document()
+    assert document["schema_version"] == "sharpe.forecast-evidence.v2"
+    assert len(document["revisions"]) == 2
+    for revision in document["revisions"]:
+        assert revision["contract_sha256"] == contract().sha256
+        assert revision["contract_digest_encoding"] == "sharpebench/canonical-json/v1"
+    assert set(document["contracts"][0]) == set(contract().to_dict())
+    assert document["contracts"][0]["schema_version"] == "sharpearena.forecast-contract.v1"
+
+    ledger = ForecastLedger(identity())
+    submit_first(ledger)
+    destination = tmp_path / "evidence.json"
+    write_forecast_evidence(
+        destination, ledger.evidence([Outcome("claim-es", 1.0, available_at=30)], generated_at=31)
+    )
+    stored = forecast_evidence_from_json(destination.read_text(encoding="utf-8"))
+    assert stored["schema_version"] == "sharpe.forecast-evidence.v2"
+    assert stored["revisions"][0]["contract_digest_encoding"] == "sharpebench/canonical-json/v1"
+
+
+def test_v1_document_without_the_declaration_still_parses():
+    v1 = _as_v1(_v2_document())
+    parsed = forecast_evidence_from_json(json.dumps(v1))
+    assert parsed["schema_version"] == "sharpe.forecast-evidence.v1"
+    assert all("contract_digest_encoding" not in revision for revision in parsed["revisions"])
+
+    legacy = json.loads(json.dumps(v1))
+    legacy["revisions"][0]["contract_sha256"] = contract().legacy_sha256
+    legacy["revisions"][1]["contract_sha256"] = contract().legacy_sha256
+    assert forecast_evidence_from_json(json.dumps(legacy))["revisions"][0][
+        "contract_sha256"
+    ] == contract().legacy_sha256
+
+
+def test_v1_document_carrying_the_declaration_is_refused():
+    v1 = _as_v1(_v2_document())
+    v1["revisions"][1]["contract_digest_encoding"] = "sharpebench/canonical-json/v1"
+    with pytest.raises(ForecastEvidenceError) as error:
+        forecast_evidence_from_json(json.dumps(v1))
+    assert str(error.value) == (
+        "contract_digest_encoding is not a field of sharpe.forecast-evidence.v1; "
+        "a document that declares it must be sharpe.forecast-evidence.v2"
+    )
+
+
+def test_v2_document_missing_the_declaration_on_any_revision_is_refused():
+    document = _v2_document()
+    del document["revisions"][1]["contract_digest_encoding"]
+    with pytest.raises(ForecastEvidenceError) as error:
+        forecast_evidence_from_json(json.dumps(document))
+    assert str(error.value) == (
+        "sharpe.forecast-evidence.v2 requires contract_digest_encoding on every revision"
+    )
+
+
+@pytest.mark.parametrize("label", ["sharpebench/canonical-json/v2", "", None, 1, "Legacy"])
+def test_v2_document_with_an_unknown_encoding_label_is_refused(label):
+    document = _v2_document()
+    document["revisions"][0]["contract_digest_encoding"] = label
+    with pytest.raises(ForecastEvidenceError) as error:
+        forecast_evidence_from_json(json.dumps(document))
+    assert str(error.value) == (
+        f"unknown contract_digest_encoding {json.dumps(label)}; expected "
+        "sharpebench/canonical-json/v1 or legacy"
+    )
+
+
+def test_v2_declaration_inconsistent_with_the_digest_is_refused_naming_both():
+    v1_digest = contract().sha256
+    legacy_digest = contract().legacy_sha256
+    assert v1_digest != legacy_digest
+
+    # A v1 digest labelled legacy.
+    document = _v2_document()
+    document["revisions"][1]["contract_digest_encoding"] = "legacy"
+    with pytest.raises(ForecastEvidenceError) as error:
+        forecast_evidence_from_json(json.dumps(document))
+    assert str(error.value) == (
+        f"revision claim-es:r1 declares contract digest {v1_digest} under legacy, "
+        "but it recomputes under sharpebench/canonical-json/v1"
+    )
+
+    # A legacy digest labelled v1: a v1 document would accept it by inference.
+    document = _v2_document()
+    for revision in document["revisions"]:
+        revision["contract_sha256"] = legacy_digest
+    with pytest.raises(ForecastEvidenceError) as error:
+        forecast_evidence_from_json(json.dumps(document))
+    assert str(error.value) == (
+        f"revision claim-es:r0 declares contract digest {legacy_digest} under "
+        "sharpebench/canonical-json/v1, but it recomputes under legacy"
+    )
+
+    # The same legacy digests correctly declared are accepted.
+    for revision in document["revisions"]:
+        revision["contract_digest_encoding"] = "legacy"
+    assert forecast_evidence_from_json(json.dumps(document))["revisions"][1][
+        "contract_digest_encoding"
+    ] == "legacy"
+
+    # A digest matching no contract names neither encoding.
+    document["revisions"][0]["contract_sha256"] = "f" * 64
+    with pytest.raises(ForecastEvidenceError) as error:
+        forecast_evidence_from_json(json.dumps(document))
+    assert str(error.value) == (
+        f"revision claim-es:r0 declares contract digest {'f' * 64} under legacy, "
+        "but it recomputes under neither sharpebench/canonical-json/v1 nor the "
+        "legacy encoding of any contract"
+    )
 
 
 def test_file_export_is_atomic_valid_and_content_addressed(tmp_path):
@@ -238,6 +374,10 @@ def test_closed_export_rejects_unknown_fields_broken_links_and_nonfinite_json():
 
     broken = json.loads(json.dumps(document))
     broken["revisions"][0]["contract_sha256"] = "f" * 64
+    with pytest.raises(ForecastEvidenceError, match="recomputes under neither"):
+        forecast_evidence_from_json(json.dumps(broken))
+    broken["schema_version"] = "sharpe.forecast-evidence.v1"
+    del broken["revisions"][0]["contract_digest_encoding"]
     with pytest.raises(ForecastEvidenceError, match="unknown contract digest"):
         forecast_evidence_from_json(json.dumps(broken))
 

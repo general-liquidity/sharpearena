@@ -26,6 +26,25 @@ still serialized with `canonical_json`, so only the `contract_sha256` strings
 moved. A field is produced under one encoding: a pending field sealed under
 legacy digests is refused at resolution rather than rebound.
 
+Since `sharpe.forecast-evidence.v2`, every revision declares that encoding
+beside its digest:
+
+```json
+"contract_sha256": "0eb3250f...",
+"contract_digest_encoding": "sharpebench/canonical-json/v1"
+```
+
+`contract_digest_encoding` is a string and exactly one of
+`sharpebench/canonical-json/v1` (the digest is `ForecastContract.sha256`) or
+`legacy` (the digest is `ForecastContract.legacy_sha256`). `ForecastLedger`
+computes every digest under v1, so it declares `sharpebench/canonical-json/v1`
+on every revision; no producer path writes a legacy digest. SharpeBench
+verifies a v2 revision under the declared encoding only and never infers it,
+so a digest that recomputes under the other encoding, or under neither, is
+refused with the declared and the recomputed encoding named.
+`forecast_evidence_from_json` applies the same rule with the same error texts,
+and it still reads v1 documents, which must not carry the field.
+
 The supported forecast forms are:
 
 | Kind | Prediction | Proper score |
@@ -66,9 +85,12 @@ digest = write_forecast_evidence(Path("forecast-evidence.json"), evidence)
 ```
 
 `write_forecast_evidence` validates the closed
-`sharpe.forecast-evidence.v1` envelope, writes through an exclusive temporary
+`sharpe.forecast-evidence.v2` envelope, writes through an exclusive temporary
 file, fsyncs it, atomically replaces the destination, and returns the SHA-256 of
-the stored bytes. On POSIX it also fsyncs the parent directory.
+the stored bytes. On POSIX it also fsyncs the parent directory. v2 is the v1
+envelope plus `contract_digest_encoding` on every revision; nothing else in the
+document changed, and contract records keep
+`sharpearena.forecast-contract.v1`.
 
 SharpeBench consumes this file without importing SharpeArena. It validates the
 contract and revision graph again and recomputes every diagnostic from the raw

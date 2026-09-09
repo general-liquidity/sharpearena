@@ -317,10 +317,20 @@ def test_a_producer_writes_v1_and_a_reader_accepts_either_encoding():
     document = _evidence_document()
     contract = _contract(0.0)
     assert document["revisions"][0]["contract_sha256"] == contract.sha256
+    assert document["revisions"][0]["contract_digest_encoding"] == "sharpebench/canonical-json/v1"
 
+    # A v2 revision is read under the encoding it declares, so a legacy digest
+    # must say so; the v1 envelope carries no declaration and is inferred.
     legacy = json.loads(json.dumps(document))
     legacy["revisions"][0]["contract_sha256"] = contract.legacy_sha256
+    legacy["revisions"][0]["contract_digest_encoding"] = "legacy"
     assert forecast_evidence_from_json(json.dumps(legacy))["revisions"][0][
+        "contract_sha256"
+    ] == contract.legacy_sha256
+    legacy_v1 = json.loads(json.dumps(legacy))
+    legacy_v1["schema_version"] = "sharpe.forecast-evidence.v1"
+    del legacy_v1["revisions"][0]["contract_digest_encoding"]
+    assert forecast_evidence_from_json(json.dumps(legacy_v1))["revisions"][0][
         "contract_sha256"
     ] == contract.legacy_sha256
 
@@ -330,7 +340,7 @@ def test_a_producer_writes_v1_and_a_reader_accepts_either_encoding():
     neither["revisions"][0]["contract_sha256"] = hashlib.sha256(
         canonical_json(contract.to_dict()).replace('"neutral_threshold":0.0,', '"neutral_threshold":0,').encode("utf-8")
     ).hexdigest()
-    with pytest.raises(ForecastEvidenceError, match="unknown contract digest"):
+    with pytest.raises(ForecastEvidenceError, match="recomputes under neither"):
         forecast_evidence_from_json(json.dumps(neither))
 
 
