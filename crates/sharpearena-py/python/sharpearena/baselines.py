@@ -491,14 +491,17 @@ def run_baselines(
     ``n_trials`` defaults to the number of baseline policies — the honest declared
     in-sample search breadth, which deflates the Sharpe for multiple-comparison luck.
 
-    With ``confidence=True``, retain the per-seed returns and the corrected Arena
-    estimate as ``arena_deflated_sharpe_ci``. The packaged scorer still pins Bench
-    0.15.0, whose standardized-moment convention differs. Consequently the official
-    row's ``deflated_sharpe_ci`` is ``None`` and ``confidence_status`` records the
-    incompatibility. Even coincident point estimates would not establish estimator
-    compatibility. A coordinated dependency upgrade is required before attaching
-    that interval to the scoring-kernel value. The standalone Arena diagnostic is
-    not used to alter this row's score or pass rate.
+    With ``confidence=True``, retain the per-seed returns and the Arena estimate as
+    ``arena_deflated_sharpe_ci``. The packaged scorer pins SharpeBench 0.19.0, which
+    carries the same n-normalized standardized moments as the Arena estimator, so the
+    interval is attached to the official row as ``deflated_sharpe_ci`` only when the
+    kernel reproduces the Arena point estimate bit for bit on this row's pooled
+    returns (``confidence_status`` ``scoring_kernel_reproduced``). Any disagreement
+    withholds it (``unavailable_scoring_kernel_mismatch``), and a kernel that scored
+    the row at its no-skill floor with a typed ``deflation_error`` or
+    ``bootstrap_error`` withholds it naming that error
+    (``unavailable_scoring_kernel_error: ...``); a withheld interval is never replaced
+    by a substitute. The Arena diagnostic never alters this row's score or pass rate.
 
     Pass a dict as ``readback`` to collect the per-seed effective configuration read back
     out of each environment this function builds (see
@@ -508,8 +511,9 @@ def run_baselines(
     scored rather than after it is published.
 
     Returns one row per policy: ``{policy, deflated_sharpe, passed_k_rate, mean_return}``
-    With confidence enabled, also returns ``deflated_sharpe_ci`` (unavailable),
-    ``confidence_status``, ``arena_deflated_sharpe_ci`` and ``per_seed_returns``.
+    With confidence enabled, also returns ``deflated_sharpe_ci`` (the interval or
+    ``None``), ``confidence_status``, ``arena_deflated_sharpe_ci`` and
+    ``per_seed_returns``.
     """
     seeds = list(seeds)
     trials = len(BASELINE_POLICIES) if n_trials is None else int(n_trials)
@@ -546,15 +550,30 @@ def run_baselines(
             "mean_return": float(np.mean(pooled)) if pooled else 0.0,
         }
         if confidence:
-            row["arena_deflated_sharpe_ci"] = deflated_sharpe_ci(
+            arena_ci = deflated_sharpe_ci(
                 per_seed,
                 trials,
                 n_boot=n_boot,
                 resample_seed=resample_seed,
                 alpha=alpha,
             )
-            row["deflated_sharpe_ci"] = None
-            row["confidence_status"] = "unavailable_scoring_kernel_mismatch"
+            row["arena_deflated_sharpe_ci"] = arena_ci
+            kernel_error = composite.get("deflation_error") or composite.get(
+                "bootstrap_error"
+            )
+            if kernel_error:
+                # The kernel scored this row at its no-skill floor and said why; a
+                # floor is not an estimate an interval can bracket.
+                row["deflated_sharpe_ci"] = None
+                row["confidence_status"] = (
+                    f"unavailable_scoring_kernel_error: {kernel_error}"
+                )
+            elif composite and arena_ci["point"] == row["deflated_sharpe"]:
+                row["deflated_sharpe_ci"] = arena_ci
+                row["confidence_status"] = "scoring_kernel_reproduced"
+            else:
+                row["deflated_sharpe_ci"] = None
+                row["confidence_status"] = "unavailable_scoring_kernel_mismatch"
             row["per_seed_returns"] = per_seed
         rows.append(row)
     return rows
