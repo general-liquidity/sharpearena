@@ -168,9 +168,36 @@ def test_run_baselines_withholds_confidence_when_the_kernel_reports_a_typed_erro
     for r in rows:
         assert r["deflated_sharpe_ci"] is None
         assert r["confidence_status"] == (
-            "unavailable_scoring_kernel_error: observation 1 must be finite"
+            "unavailable_scoring_kernel_error: deflation_error: observation 1 must be finite"
         )
-    assert leaderboard_markdown(rows, show_ci=True).count("unavailable") == len(rows)
+    assert all(line.startswith("| - |") for line in leaderboard_markdown(rows, show_ci=True).splitlines()[2:])
+
+
+@pytest.mark.parametrize("confidence", [False, True])
+@pytest.mark.parametrize("error", ["deflation_error", "bootstrap_error", "selection_error"])
+def test_unavailable_baselines_keep_the_reason_without_a_numeric_rank(monkeypatch, confidence, error):
+    import json
+    from sharpearena.confidence import pairwise_significance
+
+    real = baselines.score_run
+
+    def unavailable(returns, n_trials):
+        composite = json.loads(real(returns, n_trials))
+        composite[error] = "test computation unavailable"
+        composite["deflated_sharpe"] = 0.0
+        return json.dumps(composite)
+
+    monkeypatch.setattr(baselines, "score_run", unavailable)
+    rows = run_baselines(n_symbols=2, n_days=12, seeds=[0, 1], confidence=confidence)
+    for row in rows:
+        assert error in row["deflated_sharpe"]
+        assert error in row["passed_k_rate"]
+    scored = {"policy": "measured", "deflated_sharpe": 0.0}
+    table = leaderboard_markdown([*rows, scored], show_ci=confidence)
+    assert table.splitlines()[2].startswith("| 1 | measured | 0.0000 |")
+    assert all(line.startswith("| - |") for line in table.splitlines()[3:])
+    assert error in table
+    assert pairwise_significance(rows) == []
 
 
 def test_absent_confidence_is_not_rendered_as_a_zero_width_interval():

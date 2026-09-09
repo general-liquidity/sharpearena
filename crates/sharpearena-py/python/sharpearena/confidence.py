@@ -36,6 +36,7 @@ from typing import Sequence
 
 from .sharpearena_py import bootstrap_dsr_ci as _bootstrap_dsr_ci
 from .sharpearena_py import paired_dsr_diff as _paired_dsr_diff
+from .kernel_score import is_kernel_score_unavailable, kernel_score_or_unavailable
 
 # The scoring kernel's own bootstrap seed (``ScoreConfig::default().bootstrap_seed``), reused
 # so the confidence layer's resampling shares the benchmark's canonical seed by default.
@@ -110,10 +111,12 @@ def pairwise_significance(
     Sharpe (desc) and each neighbouring pair ``(A, B)`` is tested; ``A`` is the higher-ranked
     entry under that displayed estimator. The paired diagnostic can point in either
     direction; ``tied`` means the difference was not established, not equivalence.
-    Rows without ``"per_seed_returns"`` are skipped. These adjacent comparisons are
+    Rows without ``"per_seed_returns"`` or a usable kernel score are skipped.
+    These adjacent comparisons are
     exploratory and not multiplicity-adjusted.
     """
-    usable = [r for r in rows if r.get("per_seed_returns")]
+    usable = [r for r in rows if r.get("per_seed_returns")
+              and not is_kernel_score_unavailable(kernel_score_or_unavailable(r))]
     ordered = sorted(usable, key=lambda r: r.get("deflated_sharpe", 0.0), reverse=True)
     out: list[dict] = []
     for higher, lower in zip(ordered, ordered[1:]):
