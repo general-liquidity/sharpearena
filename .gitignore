@@ -29,3 +29,6 @@ paper/build.log
 # Python bytecode from the evidence scripts
 __pycache__/
 *.pyc
+
+# Claude Code agent worktrees
+.claude/worktrees/
