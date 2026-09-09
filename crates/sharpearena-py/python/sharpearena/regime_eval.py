@@ -26,6 +26,7 @@ from typing import Callable, Optional, Sequence
 
 import numpy as np
 
+from .kernel_score import kernel_score_or_unavailable
 from .sharpearena_py import score_run
 
 MakeEnv = Callable[[int], object]
@@ -81,7 +82,9 @@ def evaluate_per_regime(
     determinism: repeated calls return identical results.
 
     Returns ``{"per_regime": {regime: {deflated_sharpe, passed_k, n_bars, mean_return}},
-    "overall": {...}}``.
+    "overall": {...}}``. A bucket the kernel withheld with a typed error carries the
+    ``unavailable_scoring_kernel_error: ...`` reason string in ``deflated_sharpe``;
+    :func:`radar_score` then refuses that panel rather than anchoring on a floor.
     """
     buckets: dict[str, list[float]] = {r: [] for r in REGIMES}
     pooled: list[float] = []
@@ -114,7 +117,7 @@ def _score_bucket(returns: Sequence[float], n_trials: int) -> dict:
         }
     comp = json.loads(score_run(rets, n_trials))
     return {
-        "deflated_sharpe": float(comp.get("deflated_sharpe", 0.0)),
+        "deflated_sharpe": kernel_score_or_unavailable(comp),
         "passed_k": bool(comp.get("passed_k", False)),
         "n_bars": len(rets),
         "mean_return": float(np.mean(rets)),
@@ -128,7 +131,10 @@ _RISK_KEY = "max_drawdown"
 
 
 def _profitability_raw(metrics: dict) -> float:
-    return float(metrics.get(_PROFIT_KEY, metrics.get("mean_return", 0.0)))
+    value = metrics.get(_PROFIT_KEY, metrics.get("mean_return", 0.0))
+    if isinstance(value, str):
+        raise ValueError(f"radar profitability is unavailable: {value}")
+    return float(value)
 
 
 def _drawdown(metrics: dict) -> float:

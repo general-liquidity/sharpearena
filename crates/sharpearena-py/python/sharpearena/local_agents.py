@@ -28,6 +28,7 @@ from .decision_parser import (
     decision_to_weights,
     parse_decision_payload,
 )
+from .kernel_score import kernel_score_or_unavailable
 from .sharpearena_py import VecTradingEnv, decision_schema_json, score_run
 
 EVIDENCE_SCHEMA_VERSION = 3
@@ -1637,6 +1638,13 @@ class LocalFieldRunner:
                 )
                 counts["failed"] += 1
             else:
+                score = json.loads(
+                    score_run(
+                        returns[index],
+                        model.precommitted_n_trials,
+                        dataset.periods_per_year,
+                    )
+                )
                 base.update(
                     {
                         "status": "completed",
@@ -1645,13 +1653,11 @@ class LocalFieldRunner:
                         "returns_sha256": _digest(returns[index]),
                         "n_trials": model.precommitted_n_trials,
                         "n_trials_source": "precommitted-model-entry",
-                        "score": json.loads(
-                            score_run(
-                                returns[index],
-                                model.precommitted_n_trials,
-                                dataset.periods_per_year,
-                            )
-                        ),
+                        "score": score,
+                        # The ranked number read through the kernel's typed
+                        # unavailability: a composite carrying deflation_error /
+                        # bootstrap_error records the reason here, never its floor.
+                        "deflated_sharpe": kernel_score_or_unavailable(score),
                     }
                 )
                 counts["completed"] += 1

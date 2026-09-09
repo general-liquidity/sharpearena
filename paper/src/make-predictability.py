@@ -56,11 +56,13 @@ try:
     from sharpearena import (
         TradingEnv,
         check_env_effective_config,
+        kernel_deflated_sharpe,
         merge_effective_configs,
         score_run,
     )
 except ImportError:  # --figures-only reads the committed JSON and needs no bindings
     TradingEnv = check_env_effective_config = merge_effective_configs = score_run = None
+    kernel_deflated_sharpe = None
 
 PAPER = Path(__file__).resolve().parents[1]
 EVIDENCE = PAPER / "evidence"
@@ -197,7 +199,9 @@ def evaluate(preds: np.ndarray, rets: np.ndarray) -> dict:
 
 
 def dsr(returns: np.ndarray) -> float:
-    return float(json.loads(score_run(returns.tolist()))["deflated_sharpe"])
+    # A producer that cannot score stops (KernelScoreUnavailable) instead of writing
+    # the kernel's no-skill floor into the evidence file.
+    return kernel_deflated_sharpe(json.loads(score_run(returns.tolist())))
 
 
 def seed_search(observed_first: np.ndarray, band: range) -> dict:

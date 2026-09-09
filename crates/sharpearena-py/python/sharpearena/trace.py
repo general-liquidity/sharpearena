@@ -25,6 +25,8 @@ from typing import Any, Optional, Sequence
 
 import numpy as np
 
+from .kernel_score import kernel_score_or_unavailable
+
 # PUBLIC contract — bump on any breaking change to the record/meta shape.
 SCHEMA_VERSION = "sharpearena.trace/1.0.0"
 
@@ -141,8 +143,15 @@ class RolloutTraceWriter:
         return trace_to_returns(self._records)
 
     def finalize(self, meta_extra: Optional[dict] = None) -> dict:
-        """Write and return the run ``meta`` record (config + seeds + SharpeBench scores)."""
+        """Write and return the run ``meta`` record (config + seeds + SharpeBench scores).
+
+        ``scores`` is the kernel's full composite; ``deflated_sharpe`` beside it is the
+        ranked number read through the kernel's typed unavailability (the
+        ``unavailable_scoring_kernel_error: ...`` reason when withheld), or ``None``
+        when fewer than two bars were recorded and nothing was scored.
+        """
         returns = self.returns()
+        scores = _composite(returns, self._n_trials)
         meta = {
             "kind": _META,
             "schema_version": SCHEMA_VERSION,
@@ -150,7 +159,8 @@ class RolloutTraceWriter:
             "n_trials": self._n_trials,
             "n_steps": len(self._records),
             "scenario_seeds": sorted(self._seeds),
-            "scores": _composite(returns, self._n_trials),
+            "scores": scores,
+            "deflated_sharpe": kernel_score_or_unavailable(scores) if scores else None,
         }
         if meta_extra:
             meta.update(meta_extra)
