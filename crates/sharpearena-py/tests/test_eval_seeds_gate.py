@@ -2,7 +2,7 @@
 
 The committed snapshot at ``tests/data/eval_seeds_reference.json`` pins the scored
 outcome of the frozen reference policy on every named held-out seed, per tier, under
-the sharpebench 0.5.0 kernel. Any generator, env, or kernel change that moves a
+the pinned SharpeBench kernel its ``config`` block names. Any generator, env, or kernel change that moves a
 pinned number fails here, which is the CI gate ``eval_seeds`` promised but never
 armed. Regenerate the snapshot deliberately (scratch script mirrored in the file's
 ``config`` block) when a change is meant to move the numbers, and say why in the
