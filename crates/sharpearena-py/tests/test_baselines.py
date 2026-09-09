@@ -107,27 +107,70 @@ def test_run_baselines_returns_scored_rows():
 
 
 @requires_binding
-def test_run_baselines_withholds_incompatible_kernel_confidence():
+def test_run_baselines_attaches_confidence_the_kernel_reproduces_bit_for_bit():
     rows = run_baselines(n_symbols=3, n_days=40, seeds=range(4))
-    disagrees = []
     for r in rows:
-        assert r["deflated_sharpe_ci"] is None
-        assert r["confidence_status"] == "unavailable_scoring_kernel_mismatch"
         assert "per_seed_returns" in r
         ci = r["arena_deflated_sharpe_ci"]
         from sharpearena.confidence import deflated_sharpe_ci
         assert ci == deflated_sharpe_ci(r["per_seed_returns"], len(BASELINE_POLICIES))
-        # Do not widen the former parity tolerance: prove these are currently
-        # different estimators and retain, but do not mislabel, the diagnostic.
-        disagrees.append(not np.isclose(ci["point"], r["deflated_sharpe"]))
+        # SharpeBench 0.19.0 and the Arena estimator share the n-normalized moment
+        # convention: exact equality, not a tolerance, is the parity witness.
+        assert ci["point"] == r["deflated_sharpe"]
+        assert r["deflated_sharpe_ci"] == ci
+        assert r["confidence_status"] == "scoring_kernel_reproduced"
         assert ci["lo"] - 1e-9 <= ci["point"] <= ci["hi"] + 1e-9
         assert ci["width"] >= 0.0
         # One return series per seed was retained for the paired test.
         assert len(r["per_seed_returns"]) == 4
-    assert any(disagrees), "the fixture must actually expose the estimator mismatch"
+    rendered = leaderboard_markdown(rows, show_ci=True)
+    assert "unavailable" not in rendered
+    for r in rows:
+        assert "[{:.4f}, {:.4f}]".format(r["deflated_sharpe_ci"]["lo"], r["deflated_sharpe_ci"]["hi"]) in rendered
+
+
+@requires_binding
+def test_run_baselines_withholds_confidence_when_the_kernel_disagrees(monkeypatch):
+    import json
+
+    real = baselines.score_run
+
+    def shifted(returns, n_trials):
+        comp = json.loads(real(returns, n_trials))
+        comp["deflated_sharpe"] = float(comp["deflated_sharpe"]) + 1e-12
+        return json.dumps(comp)
+
+    monkeypatch.setattr(baselines, "score_run", shifted)
+    rows = baselines.run_baselines(n_symbols=3, n_days=40, seeds=range(2))
+    for r in rows:
+        assert r["deflated_sharpe_ci"] is None
+        assert r["confidence_status"] == "unavailable_scoring_kernel_mismatch"
+        assert r["arena_deflated_sharpe_ci"]["width"] >= 0.0
     rendered = leaderboard_markdown(rows, show_ci=True)
     assert rendered.count("unavailable") == len(rows)
     assert "[0.0000, 0.0000]" not in rendered
+
+
+@requires_binding
+def test_run_baselines_withholds_confidence_when_the_kernel_reports_a_typed_error(monkeypatch):
+    import json
+
+    real = baselines.score_run
+
+    def erring(returns, n_trials):
+        comp = json.loads(real(returns, n_trials))
+        comp["deflation_error"] = "observation 1 must be finite"
+        comp["deflated_sharpe"] = 0.0
+        return json.dumps(comp)
+
+    monkeypatch.setattr(baselines, "score_run", erring)
+    rows = baselines.run_baselines(n_symbols=3, n_days=40, seeds=range(2))
+    for r in rows:
+        assert r["deflated_sharpe_ci"] is None
+        assert r["confidence_status"] == (
+            "unavailable_scoring_kernel_error: observation 1 must be finite"
+        )
+    assert leaderboard_markdown(rows, show_ci=True).count("unavailable") == len(rows)
 
 
 def test_absent_confidence_is_not_rendered_as_a_zero_width_interval():

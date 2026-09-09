@@ -18,19 +18,20 @@
 //!    equivalence. Multiple pairwise comparisons here are not multiplicity-adjusted.
 //!
 //! The deflated-Sharpe math is the Bailey & López de Prado estimator, ported here
-//! self-contained (no `sharpebench-stats` dependency). Its corrected empirical moments
-//! currently differ from the exact-pinned Bench 0.15.0 scoring kernel: these intervals
-//! are Arena diagnostics, not confidence intervals for that older scorer. The resample
-//! RNG is a fixed-seed SplitMix64, so a
-//! confidence report replays bit-for-bit from its resample seed.
+//! self-contained (no `sharpebench-stats` dependency). Its empirical moments use the
+//! n-normalized second moment the exact-pinned SharpeBench 0.19.0 scoring kernel also
+//! uses; the Python `run_baselines` still attaches an interval to a kernel row only
+//! where the kernel reproduces this estimator's point bit-for-bit. The resample RNG is
+//! a fixed-seed SplitMix64, so a confidence report replays bit-for-bit from its
+//! resample seed.
 
 use serde::{Deserialize, Serialize};
 
 /// **Annualized** cross-trial Sharpe dispersion the deflation assumes, mirroring
 /// `sharpebench_core::ScoreConfig::default().trials_sr_std`. Matching configuration alone
-/// does not establish estimator parity with the older pinned kernel. Like the kernel,
-/// every public entry point here takes this in annualized units and converts it per
-/// period exactly once (dividing by `sqrt(PERIODS_PER_YEAR)`).
+/// does not establish estimator parity; the per-row bit-for-bit witness does. Like the
+/// kernel, every public entry point here takes this in annualized units and converts it
+/// per period exactly once (dividing by `sqrt(PERIODS_PER_YEAR)`).
 pub const TRIALS_SR_STD_DEFAULT: f64 = 0.5;
 
 /// Bars per year on SharpeArena scenarios (daily bars), mirroring
@@ -45,7 +46,7 @@ pub const PERIODS_PER_YEAR: f64 = 252.0;
 /// leaderboard number must deflate against `KERNEL_BASE_TRIALS + declared`.
 pub const KERNEL_BASE_TRIALS: u32 = 50;
 
-// --- self-contained statistics (corrected moments; see compatibility note above) -------
+// --- self-contained statistics (n-normalized moments; see the module note above) --------
 
 fn mean(xs: &[f64]) -> f64 {
     if xs.is_empty() {

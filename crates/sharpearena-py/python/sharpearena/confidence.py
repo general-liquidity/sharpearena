@@ -18,12 +18,13 @@ Machine Learning, Ch. 19, A/B testing under sampling uncertainty):
   intervals do not establish a simultaneous ranking guarantee or official eligibility.
 
 The heavy lifting is the self-contained Rust core (no ``sharpebench-stats`` dependency).
-It uses corrected empirical population standardized moments. The packaged ``score_run``
-still consumes Bench 0.15.0 with an older convention: these intervals must not be
-presented as confidence intervals for that scorer, even where rounded point estimates
-coincide. ``run_baselines`` retains them as separately named Arena diagnostics and
-withholds the scoring-kernel interval pending a coordinated dependency upgrade.
-Everything is deterministic in ``resample_seed``.
+It uses empirical population standardized moments with an n-normalized second moment,
+the convention the packaged ``score_run`` kernel has carried since SharpeBench 0.19.0.
+``run_baselines`` keeps the interval under its own name as an Arena diagnostic and
+attaches it to the scoring-kernel row only where the kernel reproduces the point
+estimate bit for bit; a disagreeing or erring kernel withholds it rather than
+presenting an interval for a value it did not bracket. Everything is deterministic in
+``resample_seed``.
 """
 
 from __future__ import annotations

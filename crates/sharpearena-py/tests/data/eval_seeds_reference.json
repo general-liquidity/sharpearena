@@ -1,6 +1,6 @@
 {
   "config": {
-    "kernel": "sharpebench-core 0.5.0",
+    "kernel": "sharpebench-core 0.19.0",
     "max_steps": 512,
     "n_days": 120,
     "n_symbols": 4,
@@ -12,127 +12,127 @@
   "tiers": {
     "calm": {
       "held_out_00": {
-        "deflated_sharpe": 0.9949092866837939,
-        "mean_return": 0.0005679339414326106,
+        "deflated_sharpe": 0.9948917284589764,
+        "mean_return": 0.0005678261544840348,
         "passed_k": true
       },
       "held_out_01": {
-        "deflated_sharpe": 0.9989508815928553,
-        "mean_return": 0.0006682456060890888,
+        "deflated_sharpe": 0.9989320304268645,
+        "mean_return": 0.0006681521788374898,
         "passed_k": true
       },
       "held_out_02": {
-        "deflated_sharpe": 0.9735588143438401,
-        "mean_return": 0.0004595664818851708,
+        "deflated_sharpe": 0.9734878214730027,
+        "mean_return": 0.0004594524678392396,
         "passed_k": true
       },
       "held_out_03": {
-        "deflated_sharpe": 0.5832060174194457,
-        "mean_return": 0.00016964426764419597,
+        "deflated_sharpe": 0.5828653401262787,
+        "mean_return": 0.00016951711970921896,
         "passed_k": false
       },
       "held_out_04": {
-        "deflated_sharpe": 0.757943158113743,
-        "mean_return": 0.00028418435611659855,
+        "deflated_sharpe": 0.7577793671039197,
+        "mean_return": 0.00028411110382259573,
         "passed_k": true
       },
       "held_out_05": {
-        "deflated_sharpe": 0.17390120896300865,
-        "mean_return": -2.1362163587324937e-05,
+        "deflated_sharpe": 0.17369478236851776,
+        "mean_return": -2.149139507987378e-05,
         "passed_k": false
       },
       "held_out_06": {
-        "deflated_sharpe": 0.9396761130645914,
-        "mean_return": 0.0004068319754406802,
+        "deflated_sharpe": 0.9394960863377654,
+        "mean_return": 0.0004066772707674101,
         "passed_k": true
       },
       "held_out_07": {
-        "deflated_sharpe": 0.9958374671447452,
-        "mean_return": 0.0005482165663621761,
+        "deflated_sharpe": 0.99579484571847,
+        "mean_return": 0.0005480813075402481,
         "passed_k": true
       }
     },
     "extreme": {
       "held_out_00": {
-        "deflated_sharpe": 0.0683124648602812,
-        "mean_return": -0.0013471910369178737,
+        "deflated_sharpe": 0.0683572231210956,
+        "mean_return": -0.0013473637752403956,
         "passed_k": false
       },
       "held_out_01": {
-        "deflated_sharpe": 0.38982724034553223,
-        "mean_return": 0.0006518262917821186,
+        "deflated_sharpe": 0.38978160704729486,
+        "mean_return": 0.0006516642548528424,
         "passed_k": false
       },
       "held_out_02": {
-        "deflated_sharpe": 0.49424734210687765,
-        "mean_return": 0.0009846337239634666,
+        "deflated_sharpe": 0.49418979739266194,
+        "mean_return": 0.0009844788948060142,
         "passed_k": false
       },
       "held_out_03": {
-        "deflated_sharpe": 0.10587545037521223,
-        "mean_return": -0.0006588004146771085,
+        "deflated_sharpe": 0.10580620810084385,
+        "mean_return": -0.0006590611639780493,
         "passed_k": false
       },
       "held_out_04": {
-        "deflated_sharpe": 0.07166174815177995,
-        "mean_return": -0.0010864183237289668,
+        "deflated_sharpe": 0.0717587006838426,
+        "mean_return": -0.0010856680038429055,
         "passed_k": false
       },
       "held_out_05": {
-        "deflated_sharpe": 0.3809052526191591,
-        "mean_return": 0.0007729707910305371,
+        "deflated_sharpe": 0.38083900012593136,
+        "mean_return": 0.0007727362530387805,
         "passed_k": false
       },
       "held_out_06": {
-        "deflated_sharpe": 0.036795129479042676,
-        "mean_return": -0.0012325121073324201,
+        "deflated_sharpe": 0.03672301008056905,
+        "mean_return": -0.001232800016300654,
         "passed_k": false
       },
       "held_out_07": {
-        "deflated_sharpe": 0.2628567754392695,
-        "mean_return": 0.00025816926496069205,
+        "deflated_sharpe": 0.26279729401699403,
+        "mean_return": 0.00025788902344896317,
         "passed_k": false
       }
     },
     "hard": {
       "held_out_00": {
-        "deflated_sharpe": 0.18092334023329992,
-        "mean_return": -6.100036018189074e-05,
+        "deflated_sharpe": 0.18086128022616044,
+        "mean_return": -6.11189116989319e-05,
         "passed_k": false
       },
       "held_out_01": {
-        "deflated_sharpe": 0.7732963090992632,
-        "mean_return": 0.0007897867118360713,
+        "deflated_sharpe": 0.7731702898917596,
+        "mean_return": 0.0007896825511533802,
         "passed_k": true
       },
       "held_out_02": {
-        "deflated_sharpe": 0.03212575446562976,
-        "mean_return": -0.0005445031034573047,
+        "deflated_sharpe": 0.03201996210363278,
+        "mean_return": -0.000544641588912841,
         "passed_k": false
       },
       "held_out_03": {
-        "deflated_sharpe": 0.2433261298490319,
-        "mean_return": 4.197942580396556e-05,
+        "deflated_sharpe": 0.24349038476177443,
+        "mean_return": 4.219986677184151e-05,
         "passed_k": false
       },
       "held_out_04": {
-        "deflated_sharpe": 0.3374190886744359,
-        "mean_return": 0.0001561623082651888,
+        "deflated_sharpe": 0.33736655065978727,
+        "mean_return": 0.00015610764695548802,
         "passed_k": false
       },
       "held_out_05": {
-        "deflated_sharpe": 0.12863991129361602,
-        "mean_return": -0.00014936948647353287,
+        "deflated_sharpe": 0.12857861529701103,
+        "mean_return": -0.0001495225124317425,
         "passed_k": false
       },
       "held_out_06": {
-        "deflated_sharpe": 0.2263998554002934,
-        "mean_return": 2.7609644208546428e-05,
+        "deflated_sharpe": 0.22649631735967224,
+        "mean_return": 2.7784017373140104e-05,
         "passed_k": false
       },
       "held_out_07": {
-        "deflated_sharpe": 0.5190994718168191,
-        "mean_return": 0.0005433996955090984,
+        "deflated_sharpe": 0.5189832045843589,
+        "mean_return": 0.0005432270879910596,
         "passed_k": false
       }
     }

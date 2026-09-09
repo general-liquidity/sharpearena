@@ -76,9 +76,12 @@ convenience:
   clock, fixed reduction order. `SPEC_HASH` identity must survive Cargo
   packaging; run the packaged-spec check after touching the manifest or
   build script.
-- Arena consumes an exact-pinned registry SharpeBench. A local Bench repair
-  does not reach Arena without a Bench release, which this goal does not
-  authorize; record the pending propagation instead of claiming parity.
+- Arena consumes an exact-pinned registry SharpeBench: `sharpebench-core`,
+  `sharpebench-sim`, `sharpebench-protocol` and `sharpebench-attest` at
+  `=0.19.0` (the pin is an input to `SPEC_HASH`, so moving it rebinds the
+  attestation record and every wrapper pin). A local Bench repair does not
+  reach Arena without a Bench release and a pin bump here; record the pending
+  propagation instead of claiming parity.
 - Bind provenance on a clean candidate before pushing: `python
   paper/src/check-provenance.py`. The clean-tree check intentionally counts the
   modified manifest, so bind after committing.
