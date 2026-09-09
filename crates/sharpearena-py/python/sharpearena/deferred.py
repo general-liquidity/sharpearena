@@ -375,7 +375,7 @@ def claims_from_json(payload: str) -> list[Claim]:
             contract = ForecastContract.from_dict(raw["contract"])
         except (ForecastContractError, TypeError, ValueError) as error:
             raise ClaimRejected(f"claims[{index}].contract: {error}") from error
-        if raw["contract_sha256"] != contract.sha256:
+        if raw["contract_sha256"] not in contract.digests:
             raise ClaimRejected(f"claims[{index}] contract_sha256 does not match contract")
         if isinstance(raw["committed_at"], bool) or not isinstance(raw["committed_at"], int):
             raise ClaimRejected(f"claims[{index}].committed_at must be an integer")
