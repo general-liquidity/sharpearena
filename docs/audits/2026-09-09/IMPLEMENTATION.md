@@ -31,7 +31,7 @@ it; do not overwrite the historical audit diary.
 | G03 | Reconcile original porting recommendations | Open | Trace candidate mechanisms through both products before declaring a gap; no unsupported completeness claims. |
 | G04 | Finish PR #39 compatibility pins | Open | Review assertions and measurement claims, test exact head, resolve or merge without losing history. |
 | G05 | Repair verified analysis and evidence defects | In progress | Reproduce each defect and add a regression that fails without its fix; record individual rows below. |
-| G06 | Resume runtime-exhausted cells explicitly | Open | Opt-in, infrastructure-only retry; preserve cumulative attempt/cost history and contract identity; no result shopping. |
+| G06 | Resume runtime-exhausted cells explicitly | Implemented locally | Opt-in runtime-only recovery, three extra rounds per cell, durable per-round budgets and fresh attempt append. Completed/agent-fault cells and the contract are unchanged. Tests and six isolated mutations pass; CI/merge pending. |
 | G07 | Entrant artifact contamination preflight | Open | Bounded known-content detection with explicit scan scope and incomplete-scan refusal; never claim arbitrary contamination is excluded. |
 | G08 | Frozen token rate card | Open | Versioned model/rate identity, validated units and missing-usage handling; cost stays rank-neutral. |
 | G09 | Publish attempt summaries | Partially implemented | CLI successes and incomplete-sweep errors expose observed attempts and host time without changing scoring. Monetary usage remains unavailable, pending G08/G11. |
@@ -62,12 +62,15 @@ not a completed delivery: package and CI checks still apply to every row.
 | F09 | Canonicalize internal numeric settlement identity | Local tests pass |
 | F10 | Add statistical disqualification reasons and rollup labels | Local tests pass |
 | F11 | Preserve statistical error fields and nullable diagnostics in npm | Wrapper and installed-tarball tests pass |
-| F12 | Rebuild stale committed WASM and pin methodology through the installed package | Rebuilt locally; final artifact and CI pending numerical follow-ups |
+| F12 | Rebuild stale committed WASM and pin methodology through the installed package | Rebuilt after F13; installed-package verification and fresh CI required |
+| F13 | Validate computed quantities in Result-returning deflation before flooring or CDF saturation | Four local regression functions pass; valid-input bit compatibility retained |
 
 Arena repairs F02/F05/F06 merged through PR #35 as main `f7614dc`.
 The merge tree equals tested head `f5939a9`; post-merge CI passed. Bench PR #40
 is still open: ten SPA arithmetic mutants survived its first mutation run.
-Additional numerical checks are in progress, not waived.
+Three new SPA regression functions, checked against a standalone rational
+reference, catch all ten exact mutations in an isolated tree. The control
+passes; fresh CI remains required. This is not a nominal coverage proof.
 
 ## Execution policy
 
