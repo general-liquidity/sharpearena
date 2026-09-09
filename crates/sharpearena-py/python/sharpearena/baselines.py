@@ -36,6 +36,7 @@ from .confidence import (
 )
 from .effective_config import check_env_effective_config
 from .gym import SharpeArenaEnv
+from .kernel_score import is_kernel_score_unavailable, kernel_score_or_unavailable
 from .sharpearena_py import score_run
 
 Policy = Callable[[dict], np.ndarray]
@@ -516,11 +517,13 @@ def run_baselines(
     ``per_seed_returns``.
     """
     seeds = list(seeds)
+    if len(set(seeds)) != len(seeds):
+        raise ValueError("baseline seed IDs must be unique")
     trials = len(BASELINE_POLICIES) if n_trials is None else int(n_trials)
     rows: list[dict] = []
     for name, factory in BASELINE_POLICIES:
         pooled: list[float] = []
-        passed: list[float] = []
+        passed: list[float | str] = []
         per_seed: list[list[float]] = []
         for s in seeds:
             policy = factory()
@@ -539,35 +542,42 @@ def run_baselines(
             returns = _rollout_returns(env, policy, max_steps)
             per_seed.append(returns)
             pooled.extend(returns)
-            if len(returns) >= 2:
-                comp = json.loads(score_run(returns, trials))
-                passed.append(1.0 if comp.get("passed_k", False) else 0.0)
+            comp = json.loads(score_run(returns, trials)) if len(returns) >= 2 else {}
+            seed_score = kernel_score_or_unavailable(comp)
+            passed.append(seed_score if is_kernel_score_unavailable(seed_score)
+                          else float(bool(comp.get("passed_k", False))))
         composite = json.loads(score_run(pooled, trials)) if len(pooled) >= 2 else {}
+        passed_error = next((v for v in passed if is_kernel_score_unavailable(v)), None)
         row = {
             "policy": name,
-            "deflated_sharpe": float(composite.get("deflated_sharpe", 0.0)),
-            "passed_k_rate": float(np.mean(passed)) if passed else 0.0,
+            "deflated_sharpe": kernel_score_or_unavailable(composite),
+            "passed_k_rate": passed_error if passed_error is not None else (
+                float(np.mean(passed)) if passed else "unavailable: no seed observations"
+            ),
             "mean_return": float(np.mean(pooled)) if pooled else 0.0,
         }
         if confidence:
-            arena_ci = deflated_sharpe_ci(
-                per_seed,
-                trials,
-                n_boot=n_boot,
-                resample_seed=resample_seed,
-                alpha=alpha,
-            )
+            try:
+                arena_ci = deflated_sharpe_ci(
+                    per_seed,
+                    trials,
+                    n_boot=n_boot,
+                    resample_seed=resample_seed,
+                    alpha=alpha,
+                )
+                interval_error = None
+            except ValueError as error:
+                arena_ci = None
+                interval_error = f"unavailable_seed_bootstrap: {error}"
             row["arena_deflated_sharpe_ci"] = arena_ci
-            kernel_error = composite.get("deflation_error") or composite.get(
-                "bootstrap_error"
-            )
-            if kernel_error:
+            if is_kernel_score_unavailable(row["deflated_sharpe"]):
                 # The kernel scored this row at its no-skill floor and said why; a
                 # floor is not an estimate an interval can bracket.
                 row["deflated_sharpe_ci"] = None
-                row["confidence_status"] = (
-                    f"unavailable_scoring_kernel_error: {kernel_error}"
-                )
+                row["confidence_status"] = row["deflated_sharpe"]
+            elif arena_ci is None:
+                row["deflated_sharpe_ci"] = None
+                row["confidence_status"] = interval_error
             elif composite and arena_ci["point"] == row["deflated_sharpe"]:
                 row["deflated_sharpe_ci"] = arena_ci
                 row["confidence_status"] = "scoring_kernel_reproduced"
@@ -591,7 +601,14 @@ def leaderboard_markdown(rows: Sequence[dict], *, show_ci: bool = False) -> str:
     ranked number but how firmly the seeds support it. Default off, so the canonical baseline
     tables reproduce byte-identically.
     """
-    ordered = sorted(rows, key=lambda r: r.get("deflated_sharpe", 0.0), reverse=True)
+    def score(row: dict) -> float | str:
+        value = row.get("deflated_sharpe")
+        return value if is_kernel_score_unavailable(value) else kernel_score_or_unavailable(row)
+
+    ordered = sorted(rows, key=lambda r: (
+        is_kernel_score_unavailable(score(r)),
+        0.0 if is_kernel_score_unavailable(score(r)) else -float(score(r)),
+    ))
     if show_ci:
         header = "| Rank | Policy | Deflated Sharpe | Bootstrap CI | pass^k rate | Mean return |"
         sep = "|---|---|---|---|---|---|"
@@ -600,13 +617,15 @@ def leaderboard_markdown(rows: Sequence[dict], *, show_ci: bool = False) -> str:
         sep = "|---|---|---|---|---|"
     lines = [header, sep]
     for i, r in enumerate(ordered, start=1):
+        value = score(r)
+        unavailable = is_kernel_score_unavailable(value)
         cells = [
-            str(i),
+            "-" if unavailable else str(i),
             str(r.get("policy", "?")),
-            "{:.4f}".format(float(r.get("deflated_sharpe", 0.0))),
+            str(value) if unavailable else f"{value:.4f}",
         ]
         if show_ci:
-            ci = r.get("deflated_sharpe_ci")
+            ci = None if unavailable else r.get("deflated_sharpe_ci")
             if ci is None:
                 cells.append("unavailable")
             else:
@@ -614,7 +633,8 @@ def leaderboard_markdown(rows: Sequence[dict], *, show_ci: bool = False) -> str:
                 if not 0.0 <= lo <= hi <= 1.0:
                     raise ValueError("deflated-Sharpe interval bounds must lie in [0, 1]")
                 cells.append(f"{100 * confidence:.6g}% [{lo:.4f}, {hi:.4f}]")
-        cells.append("{:.2f}".format(float(r.get("passed_k_rate", 0.0))))
+        rate = r.get("passed_k_rate", 0.0)
+        cells.append(rate if isinstance(rate, str) else f"{float(rate):.2f}")
         cells.append("{:.6f}".format(float(r.get("mean_return", 0.0))))
         lines.append("| " + " | ".join(cells) + " |")
     return "\n".join(lines)

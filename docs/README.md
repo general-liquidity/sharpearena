@@ -3,12 +3,10 @@
 The root [`README`](../README.md) is the product entry point. Start here when a task
 needs more detail.
 
-**Current engineering goal.** The active work is the 2026-09-07 audit repair
-checklist at [`audits/2026-09-07/IMPLEMENTATION.md`](audits/2026-09-07/IMPLEMENTATION.md),
-shared with SharpeBench and mirrored byte-for-byte there: 100 rows in batches A
-to I, 69 of them closed as of 2026-09-08, with batches A, B, C, D and G
-complete. [`AGENTS.md`](../AGENTS.md) carries the goal rules,
-including no release, tag or force push and no new experiments.
+**Current engineering goal.** The [verification and completion checklist](audits/2026-09-09/IMPLEMENTATION.md)
+is shared with SharpeBench. It records new findings, remaining implementations
+and delivery checks. The 2026-09-07 audit is a completed historical checkpoint.
+[`AGENTS.md`](../AGENTS.md) carries the working rules.
 
 ## Use the product
 
@@ -21,6 +19,7 @@ including no release, tag or force push and no new experiments.
 | Run the local open-weight field | [Local-agent architecture](LOCAL_AGENT_ARCHITECTURE.md) |
 | Compare supported local model runtimes | [Local model matrix](LOCAL_MODEL_MATRIX_2026.md) |
 | Commit forecasts now and score them after resolution | [Prospective forecast evidence](forecast-evidence.md) |
+| Interpret baseline scores, unavailable estimates and intervals | [Statistical confidence](statistical-confidence.md) |
 
 Registry-specific instructions live with the [Rust crate](../crates/sharpearena/),
 [Python distribution](../crates/sharpearena-py/), and

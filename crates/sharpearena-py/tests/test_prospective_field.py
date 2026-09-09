@@ -384,6 +384,43 @@ def test_every_agent_is_settled_from_one_canonical_settlement_record(tmp_path):
         verify_field_settlement(field)
 
 
+@pytest.mark.parametrize("changed", ["prediction", "identity", "rationale", "exposure"])
+def test_settlement_refuses_rewriting_the_sealed_forecast(tmp_path, changed):
+    field, _specs, clock, fetch = _sealed_two_agent_field(tmp_path)
+    clock["now"] = 1_200_000
+    seal_forecasts(field, fetch=fetch)
+    clock["now"] = 1_800_000
+    resolve_field(field, fetch=fetch)
+    assert verify_field_settlement(field)["agents"] == ["agent-a", "agent-b"]
+    sealed_path = field / "pending" / "agent-a.json"
+    sealed_bytes = sealed_path.read_bytes()
+    resolved_path = field / "resolved" / "agent-a.json"
+    document = json.loads(resolved_path.read_text(encoding="utf-8"))
+    if changed == "prediction":
+        # A hindsight-perfect forecast must not become verifiable merely by
+        # updating the final file's hash. The pending forecast is still 0.5.
+        document["revisions"][0]["prediction"] = [1.0]
+    elif changed == "identity":
+        document["identity"]["model_id"] = "different-model"
+    elif changed == "rationale":
+        document["revisions"][0]["rationale"] = "Rewritten after settlement"
+    else:
+        document["revisions"][0]["exposure"]["source_ids"] = ["different-source"]
+    payload = json.dumps(document) + "\n"
+    # Structural validation and final-file integrity still hold in each attack.
+    forecast_evidence_from_json(payload)
+    resolved_path.write_text(payload, encoding="utf-8")
+    manifest_path = field / "resolution-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["files"]["resolved/agent-a.json"] = hashlib.sha256(
+        resolved_path.read_bytes()
+    ).hexdigest()
+    manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
+    assert sealed_path.read_bytes() == sealed_bytes
+    with pytest.raises(ProspectiveFieldError, match="differs from the sealed forecast"):
+        verify_field_settlement(field)
+
+
 class TestLogitRuntimeValidation:
     """Drive the logit validator away from its fixed point.
 

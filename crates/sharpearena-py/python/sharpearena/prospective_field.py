@@ -1268,8 +1268,9 @@ def verify_field_settlement(field_dir: Path) -> dict[str, object]:
 
     Re-derives the one canonical settlement record per frozen contract and
     requires every resolved document to carry the frozen contract bytes and that
-    exact outcome. Agents are comparable because they were settled identically,
-    which the digests alone do not establish.
+    exact outcome. The resolved identity and complete revision history must also
+    equal the pending document bound by the forecast commit. Hashes in a new
+    resolution manifest cannot authorize rewriting a sealed prediction.
     """
 
     plan = _validated_plan(field_dir)
@@ -1315,6 +1316,14 @@ def verify_field_settlement(field_dir: Path) -> dict[str, object]:
     for agent_id in expected_agents:
         path = field_dir / "resolved" / f"{agent_id}.json"
         document = forecast_evidence_from_json(path.read_text(encoding="utf-8"))
+        pending = forecast_evidence_from_json(
+            (field_dir / "pending" / f"{agent_id}.json").read_text(encoding="utf-8")
+        )
+        for immutable in ("identity", "contracts", "revisions"):
+            if document[immutable] != pending[immutable]:
+                raise ProspectiveFieldError(
+                    f"{agent_id} resolved {immutable} differs from the sealed forecast"
+                )
         _bind_frozen_contracts(document, frozen, agent_id)
         _check_settlement_agreement(document, settlements, agent_id)
     return {

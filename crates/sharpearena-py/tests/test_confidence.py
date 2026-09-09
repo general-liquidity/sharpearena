@@ -50,6 +50,40 @@ def _sharpe_series(target: float, n: int, phase: float) -> list[float]:
 
 # -- bootstrap CI -----------------------------------------------------------
 
+@pytest.mark.parametrize("n_boot", [0, 1])
+def test_seed_bootstrap_requires_a_resampling_distribution(n_boot):
+    rows = [[0.01, 0.02], [-0.01, 0.01]]
+    with pytest.raises(ValueError):
+        deflated_sharpe_ci(rows, n_boot=n_boot)
+    with pytest.raises(ValueError):
+        paired_dsr_diff(rows, rows, n_boot=n_boot)
+
+
+@pytest.mark.parametrize("rows", [[], [[0.01, 0.02]], [[], [0.01, 0.02]],
+                                  [[float("nan"), 0.01], [0.01, 0.02]],
+                                  [[1e308, 1e308], [0.01, 0.02]]])
+def test_seed_bootstrap_requires_usable_independent_units(rows):
+    with pytest.raises(ValueError):
+        deflated_sharpe_ci(rows, n_boot=10)
+    with pytest.raises(ValueError):
+        paired_dsr_diff(rows, rows, n_boot=10)
+
+
+def test_paired_seed_bootstrap_refuses_prefix_truncation():
+    rows = [[0.01, 0.02], [-0.01, 0.01]]
+    with pytest.raises(ValueError):
+        paired_dsr_diff(rows, rows + [[0.02, 0.03]], n_boot=10)
+
+
+@pytest.mark.parametrize("kwargs", [{"n_boot": 2.9}, {"n_trials": True},
+                                    {"resample_seed": 1.5}, {"alpha": True},
+                                    {"alpha": 0.0}, {"alpha": 1.0},
+                                    {"alpha": float("nan")}])
+def test_confidence_parameters_are_validated_without_coercion(kwargs):
+    rows = [[0.01, 0.02], [-0.01, 0.01]]
+    with pytest.raises(ValueError):
+        deflated_sharpe_ci(rows, **kwargs)
+
 
 @requires_binding
 def test_strong_positive_fixture_saturates_both_estimators():

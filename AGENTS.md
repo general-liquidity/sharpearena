@@ -7,36 +7,18 @@ PettingZoo, vector and WASM surfaces, scenario generation, market models
 including a price-time-priority limit-order book, capture and replay, and
 checked external-agent execution.
 
-## Current goal: 2026-09-07 audit repair
+## Current goal: verification and completion
 
-**The active engineering goal for this repository is the audit repair
-checklist at [`docs/audits/2026-09-07/IMPLEMENTATION.md`](docs/audits/2026-09-07/IMPLEMENTATION.md).**
-It is shared with SharpeBench and mirrored byte-for-byte there; edit both
-copies together or neither. The chronological repair diary is
-[`VERIFICATION-LOG.md`](docs/audits/2026-09-07/VERIFICATION-LOG.md) beside it.
+The active goal is [the 2026-09-09 checklist](docs/audits/2026-09-09/IMPLEMENTATION.md),
+mirrored across both repositories. It covers independent review of Claude's
+changes, the Hyper-Tau assessment, recoverable pending implementations, verified
+repairs, documentation and delivery. [Findings](docs/audits/2026-09-09/AUDIT.md)
+and [verification](docs/audits/2026-09-09/VERIFICATION.md) are recorded separately.
 
-Work the batches in the order the checklist gives:
-
-| Batch | Scope |
-|---|---|
-| A | Paper pass. Historical-impact caveat, R11/R13/R14 text, snapshot complexity claim. |
-| B | Publication gating. Package consumers exercised in CI; versioned cross-language conformance fixtures. |
-| C | Run identity (BI3, Bench-led): keyed run/window/seed identity. |
-| D | Producer rows that touch existing claims: AP5, AP3. |
-| E | Shared mathematics and contracts: R06/AI1, R03 and R09 propagation through the pinned Bench dependency, R12, AR2. |
-| F | Remaining Bench diagnostics (Bench repository). |
-| G | Remaining Arena telemetry: AR1/AR3 strict optional telemetry, AR4 duration provenance. |
-| H | Producer rows for the next field run: AP1, AP2, AP4, AP6. Not required for the current papers. |
-| I | Bounded probes. One attempt each, then promote to a defect row or delete. |
-
-Batches A and B change what the shipped product claims and come first. Five
-items are explicitly deferred and listed at the end of the checklist; do not
-start them without reopening the decision.
-
-R11 is partly stale: `paper/sections/03-environment.tex` line 104 already
-describes price-time priority and the call-auction uncross, and
-`crates/sharpearena/src/lob_market.rs` implements FIFO per level. The residual
-defect is line 106 contradicting line 104.
+The [2026-09-07 audit](docs/audits/2026-09-07/IMPLEMENTATION.md) is a completed
+historical checkpoint. Its old progress counts and deferred-work list are not
+the active schedule. Follow the new ledger; do not silently reopen or rewrite
+historical evidence.
 
 ## Goal rules
 
@@ -119,5 +101,5 @@ sufficient.
 | Contract governance | `crates/sharpearena/GOVERNANCE.md` |
 | Paper, producers, frozen evidence | `paper/` |
 | Documentation map | `docs/README.md` |
-| Audit goal | `docs/audits/2026-09-07/` |
+| Audit goal | `docs/audits/2026-09-09/` (active), `docs/audits/2026-09-07/` (archive) |
 | Release operations | `RELEASING.md` |
