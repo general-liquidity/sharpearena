@@ -25,6 +25,26 @@ module is not a proof-producing extraction of that Python program.
 - `brierNumerator_decomposition`: expected Brier loss is baseline plus squared regret.
 - `brierNumerator_minimized`: truthful fixed-point probability minimizes expected loss.
 - `brierNumerator_unique`: the minimizer is unique for a positive scale.
+
+## Scope
+
+Covers: the protocol decisions in
+`crates/sharpearena-py/python/sharpearena/forecast_evidence.py`: the submission status
+classification inside `submit` (`classify`), effective-revision selection in
+`effective_claims` (`applyRevision`), the claim-to-contract binding refusal in `submit`
+(`rebind`), and the fixed-point binary Brier loss SharpeBench recomputes from the sealed
+evidence (`brierNumerator`; Arena's descriptive counterpart is the `brier` entry in
+`crates/sharpearena-py/python/sharpearena/deferred.py`).
+
+Assumes: `Nat` timestamps, an integer fixed-point probability `scale > 0`, and no
+floating-point semantics. Executable conformance tests connect the model to the Python
+implementation; this module is not an extraction of it.
+
+Not modelled: the environment kernel in `crates/sharpearena/src/market.rs`,
+`crates/sharpearena/src/lob_market.rs` and `crates/sharpearena/src/vec_env.rs`. Its reset,
+step, terminal, fill and accounting transitions are covered by executable properties
+against the shipped functions in `crates/sharpearena/tests/kernel_properties.rs`, not by
+this model.
 -/
 
 public section
