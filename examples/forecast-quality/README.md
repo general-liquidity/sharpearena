@@ -1,7 +1,7 @@
 # Forecast quality tutorial
 
 This example crosses the product boundary without a package dependency.
-SharpeArena writes strict `sharpe.forecast-evidence.v1` documents, then
+SharpeArena writes strict `sharpe.forecast-evidence.v2` documents, then
 SharpeBench validates and independently scores their raw predictions and
 outcomes.
 
@@ -51,11 +51,16 @@ cannot replace it, a pre-open rejection, and both blind and consensus-visible
 information exposures.
 
 Each revision's `contract_sha256` is the `sharpebench/canonical-json/v1`
-digest of its contract, and the consumer's `report.json` records
+digest of its contract, and each revision declares that in
+`contract_digest_encoding`, as the v2 envelope requires; the consumer verifies
+the digest under the declared encoding only and its `report.json` records
 `sharpebench/canonical-json/v1` for every scored digest under
-`contract_digest_versions`. The fixtures committed before that migration
-carried the `json.dumps` digest; they differed from the current files only in
-those strings, and every other number in the report is unchanged.
+`contract_digest_versions`. The fixtures committed before the digest migration
+carried the `json.dumps` digest; they differed from the following files only
+in those strings. The v1 fixtures that followed differ from the current v2
+files only in `schema_version` and the added `contract_digest_encoding` lines,
+so the manifests changed only in their file digests, and every number in the
+report is unchanged.
 
 To generate only the producer artifacts, omit `--sharpebench-dir`. The files in
 `fixtures/` and `fixtures/withheld/` are committed compatibility fixtures and
