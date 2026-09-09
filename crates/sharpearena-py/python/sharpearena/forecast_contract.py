@@ -17,6 +17,8 @@ import math
 from dataclasses import dataclass
 from typing import Any, Mapping, Optional, Sequence
 
+from .canonical_json import canonical_sha256_v1
+
 
 FORECAST_CONTRACT_SCHEMA_VERSION = "sharpearena.forecast-contract.v1"
 CLAIMS_SCHEMA_VERSION = "sharpearena.deferred-claims.v1"
@@ -102,7 +104,14 @@ def _finite_number(value: object, field: str) -> float:
 
 
 def canonical_json(value: object) -> str:
-    """Canonical UTF-8 JSON used by every contract and evidence digest."""
+    """Sorted, whitespace-free ``json.dumps`` text: the document and file encoding.
+
+    This is the Python convention, not ``sharpebench/canonical-json/v1``: it
+    renders ``1e-05`` where v1 renders ``0.00001`` and ``0.0`` where v1 renders
+    ``0``.  Evidence documents, claims documents, field plans and every
+    file-level digest are still written in this text.  The contract digest that
+    SharpeBench recomputes is not; see :attr:`ForecastContract.sha256`.
+    """
 
     return json.dumps(
         value,
@@ -113,7 +122,14 @@ def canonical_json(value: object) -> str:
     )
 
 
-def canonical_sha256(value: object) -> str:
+def legacy_canonical_sha256(value: object) -> str:
+    """The pre-migration contract digest: SHA-256 over the unframed ``json.dumps`` text.
+
+    Kept because published evidence pins it: the frozen prospective forecast
+    field carries 24 of these, and SharpeBench dual-accepts them as ``legacy``.
+    New contract digests come from :func:`~sharpearena.canonical_json.canonical_sha256_v1`.
+    """
+
     return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
 
 
@@ -303,7 +319,30 @@ class ForecastContract:
 
     @property
     def sha256(self) -> str:
-        return canonical_sha256(self.to_dict())
+        """The contract digest: SHA-256 over the ``sharpebench/canonical-json/v1`` pre-image.
+
+        These are the bytes SharpeBench recomputes and verifies, so a contract
+        written here and one written by a Rust producer digest identically.
+        """
+
+        return canonical_sha256_v1(self.to_dict())
+
+    @property
+    def legacy_sha256(self) -> str:
+        """The pre-migration digest the frozen paper field carries; accepted, never produced."""
+
+        return legacy_canonical_sha256(self.to_dict())
+
+    @property
+    def digests(self) -> tuple[str, str]:
+        """Every digest this contract answers to, current first.
+
+        A reader indexes contracts by all of these so a document produced before
+        the migration still binds its revisions to the contract it names.  A
+        producer writes only :attr:`sha256`.
+        """
+
+        return (self.sha256, self.legacy_sha256)
 
 
 __all__ = [
@@ -330,5 +369,5 @@ __all__ = [
     "ForecastContract",
     "ForecastContractError",
     "canonical_json",
-    "canonical_sha256",
+    "legacy_canonical_sha256",
 ]

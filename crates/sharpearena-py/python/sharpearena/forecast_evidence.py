@@ -616,7 +616,10 @@ def forecast_evidence_from_json(payload: str) -> dict[str, Any]:
         if contract.contract_id in contracts:
             raise ForecastEvidenceError(f"duplicate contract_id {contract.contract_id!r}")
         contracts[contract.contract_id] = contract
-        contract_by_digest[contract.sha256] = contract
+        # Both digests, so a document produced before the canonical-json/v1
+        # migration still binds its revisions; SharpeBench dual-accepts the same.
+        for digest in contract.digests:
+            contract_by_digest[digest] = contract
 
     revision_fields = {
         "revision_id",

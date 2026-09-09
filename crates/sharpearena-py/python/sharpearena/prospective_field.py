@@ -25,6 +25,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
+from .canonical_json import CANONICAL_JSON_VERSION
 from .deferred import Outcome
 from .forecast_contract import (
     BINARY_BRIER,
@@ -449,7 +450,7 @@ def _contract_from_plan(raw: Mapping[str, object]) -> ForecastContract:
         if key not in {"sha256", "target_open_ms"}
     }
     contract = ForecastContract.from_dict(fields)
-    if raw.get("sha256") != contract.sha256:
+    if raw.get("sha256") not in contract.digests:
         raise ProspectiveFieldError(
             f"contract {contract.contract_id!r} digest does not match"
         )
@@ -494,7 +495,7 @@ def _bind_frozen_contracts(
             )
     for revision in document["revisions"]:
         contract = frozen.get(revision["claim_id"])
-        if contract is None or revision["contract_sha256"] != contract.sha256:
+        if contract is None or revision["contract_sha256"] not in contract.digests:
             raise ProspectiveFieldError(
                 f"{label} revision {revision['claim_id']!r} is bound to a contract "
                 "that is not the frozen one"
@@ -1075,7 +1076,9 @@ def _canonical_settlements(
             )
         settlements[contract_id] = {
             "contract_id": contract_id,
-            "contract_sha256": contract.sha256,
+            # The digest the field was frozen under, already checked against the
+            # contract bytes, so a legacy field's settlement record does not move.
+            "contract_sha256": raw_by_id[contract_id]["sha256"],
             "outcome": candle["outcome"],
             "available_at": (target_open_ms + 60_000) // 1_000,
             "candle_sha256": candle["raw_sha256"],
@@ -1118,6 +1121,15 @@ def _ledger_from_pending(document: Mapping[str, object]) -> ForecastLedger:
     ledger = ForecastLedger(identity)
     contract_by_digest = {contract.sha256: contract for contract in contracts.values()}
     for raw in document["revisions"]:
+        contract = contract_by_digest.get(raw["contract_sha256"])
+        if contract is None:
+            # The evidence parser accepted the digest, so it is the legacy one.
+            # Resubmitting would rebind the revisions under v1 and the resolved
+            # document would no longer carry the sealed field's digests.
+            raise ProspectiveFieldError(
+                "pending revisions are bound under the legacy contract digest; "
+                f"a field is resolved under {CANONICAL_JSON_VERSION} only when it was sealed under it"
+            )
         exposure = InformationExposure(
             observed_at=raw["exposure"]["observed_at"],
             market_snapshot_sha256=raw["exposure"]["market_snapshot_sha256"],
@@ -1127,7 +1139,7 @@ def _ledger_from_pending(document: Mapping[str, object]) -> ForecastLedger:
         )
         ledger.submit(
             claim_id=raw["claim_id"],
-            contract=contract_by_digest[raw["contract_sha256"]],
+            contract=contract,
             prediction=raw["prediction"],
             confidence=raw["confidence"],
             rationale=raw["rationale"],
