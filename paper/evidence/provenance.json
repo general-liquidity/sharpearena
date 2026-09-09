@@ -216,7 +216,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "2b113b22a417cb739c59a3757caabf352e455e39",
+  "generated_at_head": "da41ee1fa6c725cd2ad55636ee9634b9a07e5098",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -262,7 +262,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/__init__.py",
-      "sha256": "568ae7278345335f4a1d4c7201cf0b3866549c5144807fae15fa620b7fdc2f57"
+      "sha256": "1b9569b307cbe51020186509f729d65db581693279cb654cd5a00f61422b194b"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/_action_validation.py",
@@ -374,11 +374,11 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/forecast_contract.py",
-      "sha256": "82d80f17b722316f1734572461b6448dfb8ec89887cd1178b02f0cde54d36bd3"
+      "sha256": "a069933ca1b78ff749a837db7271598cfb6c4682a57f63d2e3579746418fd6a0"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/forecast_evidence.py",
-      "sha256": "149fd61a149112242f92fca90b48cd918a089db17c7471c27b103084a1e99459"
+      "sha256": "30a3890c35ffa1ad2a05a62e15ec00d58f061ac8f617f53d1ecdfde64e2865f4"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/functional.py",
@@ -706,7 +706,7 @@
     },
     {
       "path": "paper/sections/05-agentic.tex",
-      "sha256": "033420e4ceb4467c5f04a535c94bf77c84cd0eea1a0532980fcad37a0769c1e2"
+      "sha256": "608efb6f83698ffb2ca220ab9f10fcfb30c0661a09bced3f209d57d6c49cf126"
     },
     {
       "path": "paper/sections/05-protocol.tex",
@@ -858,6 +858,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "2a37254995d81aa2bf3824a5bb44b4c67ff4d69e8f8bfa4e3a448361d08cbbeb",
+  "source_snapshot_sha256": "a5d1fafb46a62e9b282770d6aee5a01ed397a5d2ffe8fdfe462fd2e082cdcbbf",
   "validator": "paper/src/check-provenance.py"
 }
