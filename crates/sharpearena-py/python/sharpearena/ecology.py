@@ -643,9 +643,13 @@ def _episode_fitness(returns: Sequence[float], mode: str, n_trials: int) -> floa
     if mode == "deflated_sharpe":
         if len(series) < 2:
             return 0.0
+        from .kernel_score import kernel_deflated_sharpe
         from .sharpearena_py import score_run
 
-        return float(json.loads(score_run(series, int(n_trials))).get("deflated_sharpe", 0.0))
+        # A seat the kernel cannot score has no fitness for selection to read; the
+        # replicator step refuses (KernelScoreUnavailable) rather than seating a
+        # no-skill floor as a payoff.
+        return kernel_deflated_sharpe(json.loads(score_run(series, int(n_trials))))
     raise ValueError(
         "fitness must be 'compound_return', 'mean_return', or 'deflated_sharpe'"
     )

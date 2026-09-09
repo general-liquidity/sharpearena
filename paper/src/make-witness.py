@@ -73,6 +73,8 @@ try:
     from sharpearena import (
         SharpeArenaEnv,
         check_env_effective_config,
+        kernel_deflated_sharpe,
+        kernel_psr,
         merge_effective_configs,
         score_run,
     )
@@ -82,6 +84,7 @@ try:
 except ImportError:  # --figures-only reads the committed JSON and needs no bindings
     SharpeArenaEnv = check_env_effective_config = merge_effective_configs = None
     score_run = deflated_sharpe_ci = train_test_seeds = None
+    kernel_deflated_sharpe = kernel_psr = None
     BASELINE_POLICIES = ()
 
 PAPER = Path(__file__).resolve().parents[1]
@@ -244,16 +247,20 @@ def score_strength(
         invariant &= ro["tape_invariant"]
         comp = json.loads(score_run(ro["returns"], N_TRIALS))
         per_seed_pass.append(bool(comp["passed_k"]))
-        per_seed_psr.append(float(comp["psr"]))
+        # A producer that cannot score stops (KernelScoreUnavailable) instead of
+        # writing the kernel's no-skill floor into the evidence file.
+        per_seed_psr.append(kernel_psr(comp))
     pooled = [r for series in per_seed for r in series]
     comp = json.loads(score_run(pooled, N_TRIALS))
+    pooled_dsr = kernel_deflated_sharpe(comp)
+    pooled_psr = kernel_psr(comp)
     ci = deflated_sharpe_ci(
         per_seed, N_TRIALS, n_boot=N_BOOT, resample_seed=RESAMPLE_SEED
     )
     pass_rate = float(np.mean(per_seed_pass))
     gates = {
         "per_run_gate_all_seeds": pass_rate == 1.0,
-        "dsr_bar": float(comp["deflated_sharpe"]) >= KERNEL_GATES["dsr_bar"],
+        "dsr_bar": pooled_dsr >= KERNEL_GATES["dsr_bar"],
         "bootstrap_alpha": float(comp["bootstrap_p"]) < KERNEL_GATES["alpha"],
         "process_ok": bool(comp["process_ok"]),
         "mandate_ok": bool(comp["mandate_ok"]),
@@ -270,9 +277,9 @@ def score_strength(
         "per_seed_passed_k": per_seed_pass,
         "per_seed_psr": per_seed_psr,
         "min_seed_psr": float(min(per_seed_psr)),
-        "deflated_sharpe": float(comp["deflated_sharpe"]),
+        "deflated_sharpe": pooled_dsr,
         "deflated_sharpe_ci": ci,
-        "psr": float(comp["psr"]),
+        "psr": pooled_psr,
         "bootstrap_p": float(comp["bootstrap_p"]),
         "mean_return": float(np.mean(pooled)),
         "signal_accuracy": float(np.mean(accuracies)),

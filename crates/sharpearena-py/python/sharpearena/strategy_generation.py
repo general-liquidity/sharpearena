@@ -36,6 +36,7 @@ from .local_agents import (
     ModelRunConfig,
     OllamaClient,
 )
+from .kernel_score import kernel_deflated_sharpe
 from .sharpearena_py import score_run
 
 STRATEGY_EVIDENCE_CLASS = "retrospective_generated_strategy"
@@ -973,8 +974,11 @@ class StrategySearchRunner:
             ranking = []
             for candidate in candidates:
                 scores = validation[candidate.candidate_id]
+                # A seed the kernel withheld has no median to enter; selection
+                # refuses (KernelScoreUnavailable, persisted as a failed search)
+                # rather than ranking a candidate on its no-skill floor.
                 value = median(
-                    float(item["score"]["deflated_sharpe"]) for item in scores
+                    kernel_deflated_sharpe(item["score"]) for item in scores
                 )
                 ranking.append((value, candidate.candidate_id, candidate))
             ranking.sort(key=lambda item: (-item[0], item[1]))

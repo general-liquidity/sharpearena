@@ -17,6 +17,7 @@ from typing import Any, Callable, Optional, Sequence
 
 import numpy as np
 
+from .kernel_score import kernel_score_difference, kernel_score_or_unavailable
 from .sharpearena_py import score_run
 
 MakeEnv = Callable[[int], object]
@@ -74,6 +75,10 @@ def evaluate_seeds(
     episode's return series, score each with the real SharpeBench kernel
     (``passed_k`` → pass rate), and score the pooled series for an aggregate
     deflated Sharpe. ``n_trials`` deflates for declared in-sample search breadth.
+
+    ``deflated_sharpe`` is the kernel's number, or the
+    ``unavailable_scoring_kernel_error: ...`` reason string when the kernel withheld it
+    with a typed error; the row never carries the no-skill floor as a score.
     """
     policy = policy or _equal_weight_policy
     pooled: list[float] = []
@@ -87,7 +92,9 @@ def evaluate_seeds(
     composite = json.loads(score_run(pooled, n_trials)) if len(pooled) >= 2 else {}
     return {
         "n_seeds": len(list(seeds)),
-        "deflated_sharpe": float(composite.get("deflated_sharpe", 0.0)),
+        "deflated_sharpe": (
+            kernel_score_or_unavailable(composite) if composite else 0.0
+        ),
         "passed_k_rate": float(np.mean(passed)) if passed else 0.0,
         "mean_return": float(np.mean(pooled)) if pooled else 0.0,
     }
@@ -107,7 +114,9 @@ def generalization_gap(
     """Headline anti-overfitting metric: train vs. disjoint-test score, differenced.
 
     Returns the per-split aggregates plus ``gap_deflated_sharpe`` (train − test) and
-    ``gap_mean_return``. A large positive gap is overfit; near zero generalizes.
+    ``gap_mean_return``. A large positive gap is overfit; near zero generalizes. When
+    either split's deflated Sharpe is withheld by the kernel, the gap is that split's
+    reason string rather than a difference against a zero.
     """
     train_seeds, test_seeds = train_test_seeds(n_train, n_test, seed_start, gap)
     train = evaluate_seeds(
@@ -119,7 +128,9 @@ def generalization_gap(
     return {
         "train": train,
         "test": test,
-        "gap_deflated_sharpe": train["deflated_sharpe"] - test["deflated_sharpe"],
+        "gap_deflated_sharpe": kernel_score_difference(
+            train["deflated_sharpe"], test["deflated_sharpe"]
+        ),
         "gap_mean_return": train["mean_return"] - test["mean_return"],
     }
 
@@ -169,8 +180,9 @@ def cross_regime_transfer(
         "test_mode": test_mode,
         "in_distribution": in_dist,
         "out_of_distribution": out_dist,
-        "transfer_gap_deflated_sharpe": in_dist["deflated_sharpe"]
-        - out_dist["deflated_sharpe"],
+        "transfer_gap_deflated_sharpe": kernel_score_difference(
+            in_dist["deflated_sharpe"], out_dist["deflated_sharpe"]
+        ),
         "transfer_gap_mean_return": in_dist["mean_return"] - out_dist["mean_return"],
     }
 

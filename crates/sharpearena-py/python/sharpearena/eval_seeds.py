@@ -58,6 +58,7 @@ from typing import Callable, Optional, Sequence, Union
 import numpy as np
 
 from .baselines import EqualWeightLongPolicy, Policy
+from .kernel_score import is_kernel_score_unavailable, kernel_score_or_unavailable
 from .dataset import EVAL_SEED_BASE
 from .gym import SharpeArenaEnv
 from .sharpearena_py import EVAL_SEED_BASE as _NATIVE_EVAL_SEED_BASE
@@ -181,7 +182,10 @@ def evaluate_eval_set(
 
     Returns ``{name: {"deflated_sharpe", "passed_k", "mean_return"}}`` — the pinned
     regression snapshot. The result is byte-identical across calls (the regression-gate
-    property), since the seeds, policy, kernel, and env are all deterministic.
+    property), since the seeds, policy, kernel, and env are all deterministic. A seed
+    the kernel withholds (a typed ``deflation_error`` / ``bootstrap_error`` on the
+    composite) records the ``unavailable_scoring_kernel_error: ...`` reason string in
+    ``deflated_sharpe`` instead of the kernel's no-skill floor.
     """
     factory: PolicyFactory = policy or EqualWeightLongPolicy
     seeds = EVAL_SEEDS if salt is None else sealed_eval_seeds(salt)
@@ -192,7 +196,9 @@ def evaluate_eval_set(
         returns = _rollout_returns(env, factory(), max_steps)
         comp = json.loads(score_run(returns, trials)) if len(returns) >= 2 else {}
         out[name] = {
-            "deflated_sharpe": float(comp.get("deflated_sharpe", 0.0)),
+            "deflated_sharpe": (
+                kernel_score_or_unavailable(comp) if comp else 0.0
+            ),
             "passed_k": bool(comp.get("passed_k", False)),
             "mean_return": float(np.mean(returns)) if returns else 0.0,
         }
@@ -215,6 +221,18 @@ def assert_no_regression(
     for name in reference:
         ref, cur = reference[name], current[name]
         for key in ("deflated_sharpe", "mean_return"):
+            if is_kernel_score_unavailable(ref[key]) or is_kernel_score_unavailable(
+                cur[key]
+            ):
+                # A withheld score is compared as the recorded reason: a snapshot
+                # that moved between a number and an unavailability (or between
+                # two reasons) is a regression, never a zero-distance match.
+                if ref[key] != cur[key]:
+                    raise AssertionError(
+                        f"regression at {name}.{key}: reference={ref[key]!r} "
+                        f"current={cur[key]!r}"
+                    )
+                continue
             delta = abs(float(ref[key]) - float(cur[key]))
             if delta > tol:
                 raise AssertionError(

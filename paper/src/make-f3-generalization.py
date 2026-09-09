@@ -29,6 +29,7 @@ from sharpearena import (
     check_env_effective_config,
     cross_regime_transfer,
     generalization_gap,
+    kernel_deflated_sharpe,
     merge_effective_configs,
     score_run,
 )
@@ -92,8 +93,10 @@ def _rollout(seed: int, mode: str) -> list[float]:
 
 
 def _pooled_dsr(series: list[list[float]]) -> float:
+    # A producer that cannot score stops (KernelScoreUnavailable) instead of writing
+    # the kernel's no-skill floor into the evidence file.
     pooled = [r for s in series for r in s]
-    return float(json.loads(score_run(pooled, 0)).get("deflated_sharpe", 0.0))
+    return kernel_deflated_sharpe(json.loads(score_run(pooled, 0)))
 
 
 def _band_ci(args: tuple[int, list[list[float]]]) -> dict:

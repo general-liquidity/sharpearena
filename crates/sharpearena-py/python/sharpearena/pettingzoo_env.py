@@ -32,6 +32,11 @@ from typing import Any, Optional
 
 import numpy as np
 
+from .kernel_score import (
+    KernelScore,
+    is_kernel_score_unavailable,
+    kernel_score_or_unavailable,
+)
 from .sharpearena_py import score_run  # the real SharpeBench scorer (pyo3)
 from .gym import SharpeArenaEnv
 
@@ -51,11 +56,24 @@ def _agent_ids(n_agents: int) -> list[str]:
     return [f"agent_{i}" for i in range(int(n_agents))]
 
 
-def _deflated_sharpe(returns: list[float], n_trials: int) -> float:
-    """The real SharpeBench deflated Sharpe for a return series, or 0.0 for <2 bars."""
+def _deflated_sharpe(returns: list[float], n_trials: int) -> KernelScore:
+    """The real SharpeBench deflated Sharpe for a return series, or 0.0 for <2 bars.
+
+    A composite the kernel withheld with a typed error yields the
+    ``unavailable_scoring_kernel_error: ...`` reason string instead of the floor.
+    """
     if len(returns) < 2:
         return 0.0
-    return float(json.loads(score_run(returns, n_trials)).get("deflated_sharpe", 0.0))
+    return kernel_score_or_unavailable(json.loads(score_run(returns, n_trials)))
+
+
+def _ranking_key(row: dict[str, Any]) -> tuple[bool, float, str]:
+    """Scored agents by deflated Sharpe descending; unscorable agents after all of
+    them, never interleaved as if they had scored zero; ties on the canonical id."""
+    score = row["deflated_sharpe"]
+    if is_kernel_score_unavailable(score):
+        return (True, 0.0, row["agent"])
+    return (False, -float(score), row["agent"])
 
 
 class MultiAgentSharpeArenaEnv(ParallelEnv):
@@ -143,12 +161,14 @@ class MultiAgentSharpeArenaEnv(ParallelEnv):
 
     def _ranking(self) -> list[dict[str, Any]]:
         """Cross-agent leaderboard by deflated Sharpe, descending. Ties break on the
-        canonical (sorted) agent id so the order is reproducible."""
+        canonical (sorted) agent id so the order is reproducible. An agent whose
+        composite the kernel withheld is placed after every scored agent with the
+        reason string in its ``deflated_sharpe`` cell."""
         scored = [
             {"agent": agent, "deflated_sharpe": _deflated_sharpe(self._returns[agent], self._n_trials)}
             for agent in self.possible_agents
         ]
-        scored.sort(key=lambda r: (-r["deflated_sharpe"], r["agent"]))
+        scored.sort(key=_ranking_key)
         for rank, row in enumerate(scored):
             row["rank"] = rank
         return scored

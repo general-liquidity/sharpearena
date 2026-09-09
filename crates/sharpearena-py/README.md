@@ -64,6 +64,34 @@ The wheel ships `py.typed` and a stub for the compiled extension. Typed boundary
 exceptions distinguish invalid input, invalid JSON, invalid salt, unavailable data,
 and engine failures.
 
+## Scoring and typed unavailability
+
+`score_run(returns, n_trials, periods_per_year)` returns the pinned SharpeBench
+`CompositeScore` as JSON. When the kernel cannot score a series (a non-finite
+observation, fewer than two observations) the composite carries a typed error
+beside a no-skill floor rather than an estimate: `deflation_error` (the deflated
+Sharpe, its bar and its interval are the floor), `bootstrap_error` (the bootstrap
+p-value is the conservative `1.0` sentinel) and `selection_error` (the selection
+diagnostic is absent). Reading `deflated_sharpe` past such a key publishes the
+floor as a score.
+
+`sharpearena.kernel_score` is the one place a consumer reads the ranked numbers:
+
+- `kernel_deflated_sharpe(composite)` and `kernel_psr(composite)` return the
+  finite value or raise `KernelScoreUnavailable(reason, errors)` naming every
+  typed error key present. Selection, ranking inputs and the paper producers use
+  these and stop.
+- `kernel_score_or_unavailable(composite, key="deflated_sharpe")` returns the
+  float or the reason string `unavailable_scoring_kernel_error: <key>: <message>`
+  for rows that must be recorded (eval-seed snapshots, generalization and regime
+  rows, the PettingZoo leaderboard, trace `meta`, the local-field journal).
+  `kernel_score_difference` makes a gap unavailable when either side is;
+  `is_kernel_score_unavailable` tests a recorded cell.
+
+Every `score_run` consumer in this package goes through these helpers; none
+substitutes a default. The multi-agent ranking places an unscorable agent after
+every scored one with the reason in its cell.
+
 ## Other surfaces
 
 | Task | Surface |

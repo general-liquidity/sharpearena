@@ -39,6 +39,7 @@ from .decision_parser import (
 from .gym import SharpeArenaEnv
 from .effective_config import env_effective_config
 from .episode_outcomes import is_process_block
+from .kernel_score import kernel_deflated_sharpe
 from .mandate import mandate_breach, sample_mandate, validate_mandate
 from .sharpearena_py import score_run  # the real SharpeBench scorer (pyo3)
 
@@ -95,10 +96,19 @@ def deflated_sharpe_reward(
     **kwargs: Any,
 ) -> float:
     """The **real** deflated Sharpe (SharpeBench kernel), deflated for ``n_trials`` of
-    declared in-sample search — the metric the benchmark ranks on."""
-    return float(
-        _composite(_returns_from_state(state), n_trials).get("deflated_sharpe", 0.0)
-    )
+    declared in-sample search, the metric the benchmark ranks on.
+
+    Fewer than two recorded bars score ``0.0`` (nothing was sent to the kernel). A
+    composite the kernel withheld with a typed error raises
+    :class:`~sharpearena.kernel_score.KernelScoreUnavailable`: a reward is never the
+    kernel's no-skill floor read as an estimate. The eligibility gate in
+    :func:`~sharpearena.episode_outcomes.eligible_reward` already refuses the
+    non-finite traces that trigger it, so a gated rubric never reaches this raise.
+    """
+    composite = _composite(_returns_from_state(state), n_trials)
+    if not composite:
+        return 0.0
+    return kernel_deflated_sharpe(composite)
 
 
 def pass_k_reward(

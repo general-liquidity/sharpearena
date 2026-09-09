@@ -27,6 +27,7 @@ from typing import Any, Callable, Optional, Sequence
 
 import numpy as np
 
+from .kernel_score import kernel_score_difference, kernel_score_or_unavailable
 from .sharpearena_py import score_run
 
 Policy = Callable[[dict], np.ndarray]
@@ -300,7 +301,11 @@ def _score_policy(
     max_steps: int,
     n_trials: int,
 ) -> dict:
-    """Roll a fresh policy per seed, pool the return series, and score with ``score_run``."""
+    """Roll a fresh policy per seed, pool the return series, and score with ``score_run``.
+
+    ``deflated_sharpe`` is the kernel's number or, when the kernel withheld it with a
+    typed error, the ``unavailable_scoring_kernel_error: ...`` reason string.
+    """
     pooled: list[float] = []
     passed: list[float] = []
     for s in seeds:
@@ -311,7 +316,9 @@ def _score_policy(
             passed.append(1.0 if comp.get("passed_k", False) else 0.0)
     composite = json.loads(score_run(pooled, n_trials)) if len(pooled) >= 2 else {}
     return {
-        "deflated_sharpe": float(composite.get("deflated_sharpe", 0.0)),
+        "deflated_sharpe": (
+            kernel_score_or_unavailable(composite) if composite else 0.0
+        ),
         "passed_k": float(np.mean(passed)) if passed else 0.0,
         "mean_return": float(np.mean(pooled)) if pooled else 0.0,
     }
@@ -352,7 +359,9 @@ def misspecification_gap(
         "flawed_reward": flawed_reward,
         "clean": clean,
         "flawed": flawed,
-        "gap_deflated_sharpe": clean["deflated_sharpe"] - flawed["deflated_sharpe"],
+        "gap_deflated_sharpe": kernel_score_difference(
+            clean["deflated_sharpe"], flawed["deflated_sharpe"]
+        ),
         "gap_mean_return": clean["mean_return"] - flawed["mean_return"],
         "proxy_is_stand_in": True,
         "comparison_kind": "heuristic_policy_comparison",
