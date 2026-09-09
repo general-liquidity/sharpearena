@@ -216,7 +216,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "ce58df8884f4e228ab310a185c8c7a409fb4f556",
+  "generated_at_head": "0376cadbcd7a8a47ad899fa504c5145dcdabfeaf",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -698,7 +698,7 @@
     },
     {
       "path": "paper/sections/05-agentic.tex",
-      "sha256": "e040444c6cd4d58431aadd0b5f7ea12eb80d960c77172ee8fd8b9b48bb826735"
+      "sha256": "033420e4ceb4467c5f04a535c94bf77c84cd0eea1a0532980fcad37a0769c1e2"
     },
     {
       "path": "paper/sections/05-protocol.tex",
@@ -726,7 +726,7 @@
     },
     {
       "path": "paper/sections/A-commands.tex",
-      "sha256": "cf712b65e6b0708d88305e5ee0e2ff3631af97bd0c6b8edf392ff6faeb95c7bd"
+      "sha256": "efcd02aa0e91b3afc2e77f299d591ff31af6ac50966e6ec560bb6efd0d2a76f5"
     },
     {
       "path": "paper/src/check-provenance.py",
@@ -846,6 +846,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "55f9f7b2fdb704d19a6808e8610a08152d80d1e05f7436915ed8a07b53aca8b0",
+  "source_snapshot_sha256": "77a483e1e11b540c8a7ced23dff35b7623c2cece151d32f52ba0b2086e868da8",
   "validator": "paper/src/check-provenance.py"
 }
