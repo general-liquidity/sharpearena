@@ -8,7 +8,23 @@ ledger for independent analysis. The producer never scores its own export.
 `ForecastContract` freezes the question, instrument, target, observation source,
 open and close definitions, submission window, resolution boundary, unit,
 missing-data policy, fallback policy, and scoring rule before a prediction is
-accepted. Its canonical JSON digest binds every revision to those exact bytes.
+accepted. Its digest binds every revision to those exact bytes.
+
+`ForecastContract.sha256` is SHA-256 over the `sharpebench/canonical-json/v1`
+pre-image of the contract (`sharpearena.canonical_json`): one numeric form
+(fixed point while the decimal exponent is inside `-6 < n <= 21`, an unpadded
+exponent outside it, integer-valued floats and signed zero as integers), RFC
+8785 string escaping, members in code-point order, framed under the version
+string and a byte length. These are the bytes SharpeBench recomputes, so a
+contract digested here and one digested by a Rust producer agree.
+
+Documents written before the migration carry the `json.dumps` digest, exposed
+as `ForecastContract.legacy_sha256`. Every reader accepts either digest per
+contract, and SharpeBench reports which encoding each scored digest verified
+under. A producer writes only the v1 digest; the evidence document itself is
+still serialized with `canonical_json`, so only the `contract_sha256` strings
+moved. A field is produced under one encoding: a pending field sealed under
+legacy digests is refused at resolution rather than rebound.
 
 The supported forecast forms are:
 
