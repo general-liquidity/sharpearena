@@ -21,6 +21,7 @@ including no release, tag or force push and no new experiments.
 | Run the local open-weight field | [Local-agent architecture](LOCAL_AGENT_ARCHITECTURE.md) |
 | Compare supported local model runtimes | [Local model matrix](LOCAL_MODEL_MATRIX_2026.md) |
 | Commit forecasts now and score them after resolution | [Prospective forecast evidence](forecast-evidence.md) |
+| Interpret baseline scores, unavailable estimates and intervals | [Statistical confidence](statistical-confidence.md) |
 
 Registry-specific instructions live with the [Rust crate](../crates/sharpearena/),
 [Python distribution](../crates/sharpearena-py/), and

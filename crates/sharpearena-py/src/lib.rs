@@ -791,14 +791,14 @@ fn bootstrap_dsr_ci(
         n_boot,
         resample_seed,
         alpha,
-    );
+    ).map_err(|e| engine_err(CODE_INVALID_ARGUMENT, e))?;
     serde_json::to_string(&ci).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))
 }
 
 /// Paired-difference significance test between two leaderboard entries scored on the **same**
 /// held-out seed band. `a_per_seed_returns[i]` and `b_per_seed_returns[i]` are the two
-/// entries' return series on the *same* seed `i`; the pairing cancels the shared price-path
-/// luck so the bootstrap difference isolates skill. Returns the `PairedDiff`
+/// entries' return series on the *same* seed `i`; pairing retains shared-path
+/// covariance without establishing independence or isolating skill. Returns the `PairedDiff`
 /// (`{point_diff, lo, hi, p_value, confidence, significant, verdict, n_boot}`) as JSON;
 /// `verdict` is `"a_better"`, `"b_better"`, or `"tied"`. Deterministic in `resample_seed`.
 #[pyfunction]
@@ -820,7 +820,7 @@ fn paired_dsr_diff(
         n_boot,
         resample_seed,
         alpha,
-    );
+    ).map_err(|e| engine_err(CODE_INVALID_ARGUMENT, e))?;
     serde_json::to_string(&diff).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))
 }
 

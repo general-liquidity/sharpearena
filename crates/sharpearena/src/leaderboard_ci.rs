@@ -282,6 +282,83 @@ fn pool_selected(per_seed: &[Vec<f64>], idx: &[usize]) -> Vec<f64> {
 
 // --- public results --------------------------------------------------------------------
 
+/// A seed-bootstrap request has no supported confidence estimate.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ConfidenceError(pub &'static str);
+
+impl std::fmt::Display for ConfidenceError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.0)
+    }
+}
+
+impl std::error::Error for ConfidenceError {}
+
+fn validate_seed_bootstrap(
+    per_seed: &[Vec<f64>],
+    trials_sr_std: f64,
+    n_boot: usize,
+    alpha: f64,
+) -> Result<(), ConfidenceError> {
+    if per_seed.len() < 2 {
+        return Err(ConfidenceError(
+            "seed bootstrap requires at least two independent seed units",
+        ));
+    }
+    if n_boot < 2 {
+        return Err(ConfidenceError("n_boot must be at least two"));
+    }
+    if !alpha.is_finite() || alpha <= 0.0 || alpha >= 1.0 {
+        return Err(ConfidenceError(
+            "alpha must be finite and strictly between zero and one",
+        ));
+    }
+    if !trials_sr_std.is_finite() || trials_sr_std < 0.0 {
+        return Err(ConfidenceError(
+            "trials_sr_std must be finite and nonnegative",
+        ));
+    }
+    for row in per_seed {
+        if row.len() < 2 || row.iter().any(|r| !r.is_finite()) {
+            return Err(ConfidenceError(
+                "each seed requires at least two finite returns",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn checked_dsr(
+    returns: &[f64],
+    n_trials: u32,
+    per_period_sr_std: f64,
+) -> Result<f64, ConfidenceError> {
+    // Check before floors or CDF saturation can conceal failed intermediates.
+    let sr = sharpe_ratio(returns);
+    let g3 = skewness(returns);
+    let g4 = kurtosis(returns);
+    let denom = 1.0 - g3 * sr + ((g4 - 1.0) / 4.0) * sr * sr;
+    if [
+        mean(returns),
+        std_dev(returns),
+        sr,
+        g3,
+        g4,
+        denom,
+        expected_max_sharpe(per_period_sr_std, n_trials),
+    ]
+    .iter()
+    .any(|v| !v.is_finite())
+    {
+        return Err(ConfidenceError("seed-bootstrap statistic is not finite"));
+    }
+    let value = deflated_sharpe_per_period(returns, n_trials, per_period_sr_std);
+    if !value.is_finite() {
+        return Err(ConfidenceError("seed-bootstrap estimate is not finite"));
+    }
+    Ok(value)
+}
+
 /// A percentile bootstrap confidence interval on the deflated Sharpe.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DsrCi {
@@ -326,6 +403,9 @@ pub struct PairedDiff {
 /// Each of `n_boot` resamples draws `per_seed.len()` seeds with replacement, pools their
 /// returns, and recomputes the deflated Sharpe; the CI is the `[alpha/2, 1 - alpha/2]`
 /// percentile interval. `resample_seed` fixes the RNG so the report is reproducible.
+/// Requires at least two seed units, two bootstrap draws, finite observations and
+/// a confidence level strictly between zero and one. These are necessary input
+/// conditions, not a guarantee of independence or finite-sample coverage.
 pub fn bootstrap_dsr_ci(
     per_seed: &[Vec<f64>],
     n_trials: u32,
@@ -333,23 +413,13 @@ pub fn bootstrap_dsr_ci(
     n_boot: usize,
     resample_seed: u64,
     alpha: f64,
-) -> DsrCi {
+) -> Result<DsrCi, ConfidenceError> {
+    validate_seed_bootstrap(per_seed, trials_sr_std, n_boot, alpha)?;
     let per_period_sr_std = trials_sr_std / PERIODS_PER_YEAR.sqrt();
     let n = per_seed.len();
     let full: Vec<f64> = per_seed.iter().flatten().copied().collect();
-    let point = deflated_sharpe_per_period(&full, n_trials, per_period_sr_std);
+    let point = checked_dsr(&full, n_trials, per_period_sr_std)?;
     let confidence = 1.0 - alpha;
-
-    if n == 0 || n_boot == 0 {
-        return DsrCi {
-            point,
-            lo: point,
-            hi: point,
-            width: 0.0,
-            confidence,
-            n_boot,
-        };
-    }
 
     let mut rng = SplitMix64(resample_seed);
     let mut samples = Vec::with_capacity(n_boot);
@@ -359,36 +429,34 @@ pub fn bootstrap_dsr_ci(
             *slot = rng.below(n);
         }
         let pooled = pool_selected(per_seed, &idx);
-        samples.push(deflated_sharpe_per_period(
-            &pooled,
-            n_trials,
-            per_period_sr_std,
-        ));
+        samples.push(checked_dsr(&pooled, n_trials, per_period_sr_std)?);
     }
 
     let lo = quantile(&samples, alpha / 2.0);
     let hi = quantile(&samples, 1.0 - alpha / 2.0);
-    DsrCi {
+    Ok(DsrCi {
         point,
         lo,
         hi,
         width: hi - lo,
         confidence,
         n_boot,
-    }
+    })
 }
 
 /// Paired-difference significance test between two entries scored on the **same** held-out
 /// seed band.
 ///
 /// `a_per_seed[i]` and `b_per_seed[i]` must be the two entries' return series on the *same*
-/// seed `i` (the pairing is what cancels the shared price-path luck). Each bootstrap draw
+/// seed `i` (pairing retains shared-path covariance). Each bootstrap draw
 /// picks one resampled set of seed indices and applies it to both entries, forming the
 /// deflated-Sharpe difference `DSR(A) - DSR(B)`. The CI is the percentile interval of that
 /// paired difference; when it excludes zero the entries separate beyond seed noise.
 ///
-/// Only the shared prefix `min(len_a, len_b)` is used, so a caller that accidentally passes
-/// mismatched bands still gets a paired (never a mismatched-index) comparison.
+/// Both bands must contain the same number of seed units and equal per-pair return
+/// lengths. Identity alignment and independence remain caller assumptions; no
+/// implicit shared-prefix truncation is performed. Other input requirements match
+/// [`bootstrap_dsr_ci`].
 pub fn paired_dsr_diff(
     a_per_seed: &[Vec<f64>],
     b_per_seed: &[Vec<f64>],
@@ -397,28 +465,26 @@ pub fn paired_dsr_diff(
     n_boot: usize,
     resample_seed: u64,
     alpha: f64,
-) -> PairedDiff {
+) -> Result<PairedDiff, ConfidenceError> {
+    validate_seed_bootstrap(a_per_seed, trials_sr_std, n_boot, alpha)?;
+    validate_seed_bootstrap(b_per_seed, trials_sr_std, n_boot, alpha)?;
+    if a_per_seed.len() != b_per_seed.len()
+        || a_per_seed
+            .iter()
+            .zip(b_per_seed)
+            .any(|(a, b)| a.len() != b.len())
+    {
+        return Err(ConfidenceError(
+            "paired seed bands and per-pair return lengths must match",
+        ));
+    }
     let per_period_sr_std = trials_sr_std / PERIODS_PER_YEAR.sqrt();
-    let n = a_per_seed.len().min(b_per_seed.len());
+    let n = a_per_seed.len();
     let a_full: Vec<f64> = a_per_seed[..n].iter().flatten().copied().collect();
     let b_full: Vec<f64> = b_per_seed[..n].iter().flatten().copied().collect();
-    let point_diff = deflated_sharpe_per_period(&a_full, n_trials, per_period_sr_std)
-        - deflated_sharpe_per_period(&b_full, n_trials, per_period_sr_std);
+    let point_diff = checked_dsr(&a_full, n_trials, per_period_sr_std)?
+        - checked_dsr(&b_full, n_trials, per_period_sr_std)?;
     let confidence = 1.0 - alpha;
-
-    if n == 0 || n_boot == 0 {
-        let significant = point_diff != 0.0;
-        return PairedDiff {
-            point_diff,
-            lo: point_diff,
-            hi: point_diff,
-            p_value: if significant { 0.0 } else { 1.0 },
-            confidence,
-            significant,
-            verdict: verdict_for(point_diff, significant),
-            n_boot,
-        };
-    }
 
     let mut rng = SplitMix64(resample_seed);
     let mut diffs = Vec::with_capacity(n_boot);
@@ -431,8 +497,8 @@ pub fn paired_dsr_diff(
         }
         let a_pool = pool_selected(&a_per_seed[..n], &idx);
         let b_pool = pool_selected(&b_per_seed[..n], &idx);
-        let d = deflated_sharpe_per_period(&a_pool, n_trials, per_period_sr_std)
-            - deflated_sharpe_per_period(&b_pool, n_trials, per_period_sr_std);
+        let d = checked_dsr(&a_pool, n_trials, per_period_sr_std)?
+            - checked_dsr(&b_pool, n_trials, per_period_sr_std)?;
         if d <= 0.0 {
             n_le += 1;
         }
@@ -448,7 +514,7 @@ pub fn paired_dsr_diff(
     let tail = n_le.min(n_ge) as f64 / n_boot as f64;
     let p_value = (2.0 * tail).min(1.0);
     let significant = lo > 0.0 || hi < 0.0;
-    PairedDiff {
+    Ok(PairedDiff {
         point_diff,
         lo,
         hi,
@@ -457,7 +523,7 @@ pub fn paired_dsr_diff(
         significant,
         verdict: verdict_for(point_diff, significant),
         n_boot,
-    }
+    })
 }
 
 fn verdict_for(point_diff: f64, significant: bool) -> String {
@@ -518,7 +584,36 @@ mod tests {
     }
 
     fn ci_default(per_seed: &[Vec<f64>]) -> DsrCi {
-        bootstrap_dsr_ci(per_seed, 56, TRIALS_SR_STD_DEFAULT, 2000, 0x00C1, 0.05)
+        bootstrap_dsr_ci(per_seed, 56, TRIALS_SR_STD_DEFAULT, 2000, 0x00C1, 0.05).unwrap()
+    }
+
+    #[test]
+    fn confidence_boundaries_refuse_missing_support_and_computed_overflow() {
+        let valid = vec![vec![0.01, 0.02], vec![-0.01, 0.01]];
+        for n_boot in [0, 1] {
+            assert!(bootstrap_dsr_ci(&valid, 56, 0.5, n_boot, 1, 0.05).is_err());
+            assert!(paired_dsr_diff(&valid, &valid, 56, 0.5, n_boot, 1, 0.05).is_err());
+        }
+        for rows in [
+            vec![],
+            vec![vec![0.01, 0.02]],
+            vec![vec![], vec![0.01, 0.02]],
+            vec![vec![f64::NAN, 0.01], vec![0.01, 0.02]],
+            vec![vec![1e308, 1e308], vec![0.01, 0.02]],
+        ] {
+            assert!(bootstrap_dsr_ci(&rows, 56, 0.5, 10, 1, 0.05).is_err());
+            assert!(paired_dsr_diff(&rows, &rows, 56, 0.5, 10, 1, 0.05).is_err());
+        }
+        for alpha in [f64::NAN, 0.0, 1.0] {
+            assert!(bootstrap_dsr_ci(&valid, 56, 0.5, 10, 1, alpha).is_err());
+        }
+        let mut extra = valid.clone();
+        extra.push(vec![0.01, 0.02]);
+        assert!(paired_dsr_diff(&valid, &extra, 56, 0.5, 10, 1, 0.05).is_err());
+        extra = valid.clone();
+        extra[0].push(0.03);
+        assert!(paired_dsr_diff(&valid, &extra, 56, 0.5, 10, 1, 0.05).is_err());
+        assert!(bootstrap_dsr_ci(&valid, 56, 0.5, 2, 1, 0.05).is_ok());
     }
 
     #[test]
@@ -550,8 +645,10 @@ mod tests {
             .enumerate()
             .map(|(s, &t)| seed_with_sharpe(t, 16, s as f64))
             .collect();
-        let stable_ci = bootstrap_dsr_ci(&stable, 3, TRIALS_SR_STD_DEFAULT, 2000, 0x00C1, 0.05);
-        let noisy_ci = bootstrap_dsr_ci(&noisy, 3, TRIALS_SR_STD_DEFAULT, 2000, 0x00C1, 0.05);
+        let stable_ci =
+            bootstrap_dsr_ci(&stable, 3, TRIALS_SR_STD_DEFAULT, 2000, 0x00C1, 0.05).unwrap();
+        let noisy_ci =
+            bootstrap_dsr_ci(&noisy, 3, TRIALS_SR_STD_DEFAULT, 2000, 0x00C1, 0.05).unwrap();
         assert!(
             noisy_ci.width > stable_ci.width,
             "noisy/short width {} should exceed stable/long width {}",
@@ -574,7 +671,7 @@ mod tests {
                     .collect()
             })
             .collect();
-        let d = paired_dsr_diff(&a, &b, 56, TRIALS_SR_STD_DEFAULT, 2000, 0x5EED, 0.05);
+        let d = paired_dsr_diff(&a, &b, 56, TRIALS_SR_STD_DEFAULT, 2000, 0x5EED, 0.05).unwrap();
         assert!(!d.significant, "close entries should be tied, got {d:?}");
         assert_eq!(d.verdict, "tied");
         assert!(d.lo <= 0.0 && d.hi >= 0.0, "tied CI must straddle 0: {d:?}");
@@ -588,7 +685,7 @@ mod tests {
         let b: Vec<Vec<f64>> = (0..8)
             .map(|s| steady_seed(s, 120).iter().map(|r| -r).collect())
             .collect();
-        let d = paired_dsr_diff(&a, &b, 56, TRIALS_SR_STD_DEFAULT, 2000, 0x5EED, 0.05);
+        let d = paired_dsr_diff(&a, &b, 56, TRIALS_SR_STD_DEFAULT, 2000, 0x5EED, 0.05).unwrap();
         assert!(
             d.significant,
             "clear skill gap should be significant: {d:?}"
@@ -604,7 +701,7 @@ mod tests {
     #[test]
     fn identical_entries_are_tied_with_zero_diff() {
         let a: Vec<Vec<f64>> = (0..6).map(|s| steady_seed(s, 90)).collect();
-        let d = paired_dsr_diff(&a, &a, 56, TRIALS_SR_STD_DEFAULT, 500, 0x1234, 0.05);
+        let d = paired_dsr_diff(&a, &a, 56, TRIALS_SR_STD_DEFAULT, 500, 0x1234, 0.05).unwrap();
         assert_eq!(d.point_diff, 0.0);
         assert!(!d.significant);
         assert_eq!(d.verdict, "tied");
@@ -614,8 +711,8 @@ mod tests {
     #[test]
     fn bootstrap_is_deterministic_per_resample_seed() {
         let seeds: Vec<Vec<f64>> = (0..8).map(|s| steady_seed(s, 100)).collect();
-        let a = bootstrap_dsr_ci(&seeds, 56, TRIALS_SR_STD_DEFAULT, 1000, 42, 0.05);
-        let b = bootstrap_dsr_ci(&seeds, 56, TRIALS_SR_STD_DEFAULT, 1000, 42, 0.05);
+        let a = bootstrap_dsr_ci(&seeds, 56, TRIALS_SR_STD_DEFAULT, 1000, 42, 0.05).unwrap();
+        let b = bootstrap_dsr_ci(&seeds, 56, TRIALS_SR_STD_DEFAULT, 1000, 42, 0.05).unwrap();
         assert_eq!(a.lo, b.lo);
         assert_eq!(a.hi, b.hi);
     }

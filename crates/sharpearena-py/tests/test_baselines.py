@@ -209,6 +209,20 @@ def test_absent_confidence_is_not_rendered_as_a_zero_width_interval():
     assert "95%" not in leaderboard_markdown(rows, show_ci=True)
 
 
+def test_a_single_seed_keeps_its_point_but_withholds_between_seed_confidence():
+    rows = run_baselines(n_symbols=2, n_days=12, seeds=[0])
+    for row in rows:
+        assert isinstance(row["deflated_sharpe"], float)
+        assert row["deflated_sharpe_ci"] is None
+        assert row["arena_deflated_sharpe_ci"] is None
+        assert "two independent seed units" in row["confidence_status"]
+
+
+def test_duplicate_seed_ids_do_not_supply_independent_units():
+    with pytest.raises(ValueError, match="unique"):
+        run_baselines(n_symbols=2, n_days=12, seeds=[0, 0])
+
+
 @pytest.mark.parametrize("interval", [
     {"lo": 0.3, "hi": 0.8},
     {"lo": 0.8, "hi": 0.3, "confidence": 0.9},

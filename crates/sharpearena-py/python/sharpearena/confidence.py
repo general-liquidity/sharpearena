@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import json
 import math
-from numbers import Real
+from numbers import Integral, Real
 from typing import Sequence
 
 from .sharpearena_py import bootstrap_dsr_ci as _bootstrap_dsr_ci
@@ -45,6 +45,17 @@ DEFAULT_N_BOOT = 2000
 DEFAULT_ALPHA = 0.05
 
 PerSeedReturns = Sequence[Sequence[float]]
+
+
+def _bootstrap_arguments(n_trials, n_boot, resample_seed, alpha):
+    for name, value, limit in (("n_trials", n_trials, 2**32 - 1),
+                               ("n_boot", n_boot, 2**64 - 1),
+                               ("resample_seed", resample_seed, 2**64 - 1)):
+        if isinstance(value, bool) or not isinstance(value, Integral) or not 0 <= value <= limit:
+            raise ValueError(f"{name} must be an integer in [0, {limit}]")
+    if isinstance(alpha, bool) or not isinstance(alpha, Real) or not 0 < alpha < 1:
+        raise ValueError("alpha must be finite and strictly between zero and one")
+    return int(n_trials), int(n_boot), int(resample_seed), float(alpha)
 
 
 def deflated_sharpe_ci(
@@ -63,9 +74,10 @@ def deflated_sharpe_ci(
     ``score_run`` estimator. Returns
     ``{point, lo, hi, width, confidence, n_boot}``.
     """
+    arguments = _bootstrap_arguments(n_trials, n_boot, resample_seed, alpha)
     rows = [list(map(float, r)) for r in per_seed_returns]
     return json.loads(
-        _bootstrap_dsr_ci(rows, int(n_trials), int(n_boot), int(resample_seed), float(alpha))
+        _bootstrap_dsr_ci(rows, *arguments)
     )
 
 
@@ -87,11 +99,12 @@ def paired_dsr_diff(
     ``verdict`` one of ``"a_better"`` / ``"b_better"`` / ``"tied"``. The legacy wire label
     ``tied`` means only that the interval includes zero, not that equivalence was shown.
     """
+    arguments = _bootstrap_arguments(n_trials, n_boot, resample_seed, alpha)
     a = [list(map(float, r)) for r in a_per_seed_returns]
     b = [list(map(float, r)) for r in b_per_seed_returns]
     return json.loads(
         _paired_dsr_diff(
-            a, b, int(n_trials), int(n_boot), int(resample_seed), float(alpha)
+            a, b, *arguments
         )
     )
 

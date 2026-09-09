@@ -10,6 +10,10 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ## [Unreleased]
 
+### Breaking
+
+- Rust `bootstrap_dsr_ci` and `paired_dsr_diff` return `Result<_, ConfidenceError>` instead of an unconditional report. They require at least two seed units and two resamples, finite usable returns and valid confidence parameters. Paired bands must have equal seed counts and equal per-pair lengths; implicit prefix truncation is removed. Python raises `InvalidArgument` for native refusals and rejects lossy integer-parameter coercion. Baseline tables retain an available point estimate but withhold unsupported intervals with a reason; duplicate seed IDs are refused. These checks do not establish seed independence or empirical interval coverage. See [statistical confidence](docs/statistical-confidence.md).
+
 ### Added
 
 - Production-linked kernel properties. `crates/sharpearena/tests/kernel_properties.rs` executes the shipped `MarketClearing::reset` / `step` / `is_done`, `clear_bar`, `OrderBook::process_limit` / `process_market` / `step` / `uncross` and `VecTradingEnv::reset_batch` / `step_batch` over seeded SplitMix64 cases (64 per property, no new dependency): reset after any number of steps reproduces a fresh market byte-for-byte and is idempotent; equal inputs clear identically and advance the cursor by one bar; a terminal market stays terminal and clamps its mid, while `NextStep` autoreset yields a fresh first observation; limit-order-book fills conserve depth per side and level, stay inside the crossing range, and honor FIFO and price priority; and per agent per bar, cash, shares, NAV and reward satisfy the kernel's accounting identities exactly. `crates/sharpearena-py/tests/test_lob_accounting_properties.py` checks the Python LOB environment's equity, reward and cross-agent inventory/cash conservation after every seeded step, and pins the repaired seeded-reset baseline. Both suites bind each property to the kernel function by file and line.

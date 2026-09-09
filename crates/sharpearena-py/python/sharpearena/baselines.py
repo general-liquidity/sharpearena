@@ -517,6 +517,8 @@ def run_baselines(
     ``per_seed_returns``.
     """
     seeds = list(seeds)
+    if len(set(seeds)) != len(seeds):
+        raise ValueError("baseline seed IDs must be unique")
     trials = len(BASELINE_POLICIES) if n_trials is None else int(n_trials)
     rows: list[dict] = []
     for name, factory in BASELINE_POLICIES:
@@ -555,19 +557,27 @@ def run_baselines(
             "mean_return": float(np.mean(pooled)) if pooled else 0.0,
         }
         if confidence:
-            arena_ci = deflated_sharpe_ci(
-                per_seed,
-                trials,
-                n_boot=n_boot,
-                resample_seed=resample_seed,
-                alpha=alpha,
-            )
+            try:
+                arena_ci = deflated_sharpe_ci(
+                    per_seed,
+                    trials,
+                    n_boot=n_boot,
+                    resample_seed=resample_seed,
+                    alpha=alpha,
+                )
+                interval_error = None
+            except ValueError as error:
+                arena_ci = None
+                interval_error = f"unavailable_seed_bootstrap: {error}"
             row["arena_deflated_sharpe_ci"] = arena_ci
             if is_kernel_score_unavailable(row["deflated_sharpe"]):
                 # The kernel scored this row at its no-skill floor and said why; a
                 # floor is not an estimate an interval can bracket.
                 row["deflated_sharpe_ci"] = None
                 row["confidence_status"] = row["deflated_sharpe"]
+            elif arena_ci is None:
+                row["deflated_sharpe_ci"] = None
+                row["confidence_status"] = interval_error
             elif composite and arena_ci["point"] == row["deflated_sharpe"]:
                 row["deflated_sharpe_ci"] = arena_ci
                 row["confidence_status"] = "scoring_kernel_reproduced"
