@@ -482,7 +482,8 @@ pub fn bootstrap_dsr_ci(
 /// seed `i` (pairing retains shared-path covariance). Each bootstrap draw
 /// picks one resampled set of seed indices and applies it to both entries, forming the
 /// deflated-Sharpe difference `DSR(A) - DSR(B)`. The CI is the percentile interval of that
-/// paired difference; when it excludes zero the entries separate beyond seed noise.
+/// paired difference; when it excludes zero the difference is established under this
+/// resampling for this seed band, which is not a statement that either entry has skill.
 ///
 /// Both bands must contain the same number of seed units and equal per-pair return
 /// lengths. Identity alignment and independence remain caller assumptions; no
