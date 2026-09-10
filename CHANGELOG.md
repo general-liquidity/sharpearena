@@ -10,6 +10,9 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ## [Unreleased]
 
+### Changed
+- docs: the audit records mirrored from SharpeBench now include ledger row G21, the gaps closed after SharpeBench v0.21.0 and this repository's v0.25.0 release.
+
 ## [0.25.0] - 2026-09-10
 
 ### Breaking
