@@ -493,7 +493,7 @@ def run_baselines(
     in-sample search breadth, which deflates the Sharpe for multiple-comparison luck.
 
     With ``confidence=True``, retain the per-seed returns and the Arena estimate as
-    ``arena_deflated_sharpe_ci``. The packaged scorer pins SharpeBench 0.19.0, which
+    ``arena_deflated_sharpe_ci``. The packaged scorer pins SharpeBench 0.20.0, which
     carries the same n-normalized standardized moments as the Arena estimator, so the
     interval is attached to the official row as ``deflated_sharpe_ci`` only when the
     kernel reproduces the Arena point estimate bit for bit on this row's pooled

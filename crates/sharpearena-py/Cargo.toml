@@ -15,12 +15,14 @@ crate-type = ["cdylib"]
 
 [dependencies]
 sharpearena = { path = "../sharpearena", version = "0.24.1" }
-sharpebench-core = "=0.19.0"
+sharpebench-core = "=0.20.0"
 serde_json = { version = "1", features = ["float_roundtrip"] }
 
 [dependencies.pyo3]
 version = "0.29"
 features = ["extension-module"]
 
-# Local-only marker for building inside a nested git worktree; see report.
+# Empty workspace table: this crate is built standalone by maturin, and the table
+# stops Cargo from attaching it to an enclosing workspace (for example a checkout
+# nested inside another repository).
 [workspace]

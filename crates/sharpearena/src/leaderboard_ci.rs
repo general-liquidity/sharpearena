@@ -19,7 +19,7 @@
 //!
 //! The deflated-Sharpe math is the Bailey & López de Prado estimator, ported here
 //! self-contained (no `sharpebench-stats` dependency). Its empirical moments use the
-//! n-normalized second moment the exact-pinned SharpeBench 0.19.0 scoring kernel also
+//! n-normalized second moment the exact-pinned SharpeBench 0.20.0 scoring kernel also
 //! uses; the Python `run_baselines` still attaches an interval to a kernel row only
 //! where the kernel reproduces this estimator's point bit-for-bit. The resample RNG is
 //! a fixed-seed SplitMix64, so a confidence report replays bit-for-bit from its

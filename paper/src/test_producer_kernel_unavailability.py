@@ -1,7 +1,7 @@
 """Producers stop on a withheld kernel score instead of writing its floor.
 
 ``make-f3-generalization.py``, ``make-predictability.py`` and ``make-witness.py``
-regenerate frozen evidence from ``score_run``. Under SharpeBench 0.19.0 a
+regenerate frozen evidence from ``score_run``. Since SharpeBench 0.19.0 a
 composite the kernel could not score carries ``deflation_error`` /
 ``bootstrap_error`` beside a no-skill floor. Each producer's scoring helper is
 exercised here with a monkeypatched ``score_run`` returning that shape and must

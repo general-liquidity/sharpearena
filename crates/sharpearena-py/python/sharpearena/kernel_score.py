@@ -1,6 +1,6 @@
 """Typed unavailability from the SharpeBench scoring kernel.
 
-``score_run`` returns the kernel's ``CompositeScore`` as JSON. Under SharpeBench
+``score_run`` returns the kernel's ``CompositeScore`` as JSON. Since SharpeBench
 0.19.0 a composite that the kernel could not score carries a typed error beside a
 no-skill floor instead of a coerced estimate: ``deflation_error`` (the deflated
 Sharpe, its bar and its interval are the floor), ``bootstrap_error`` (the bootstrap
@@ -52,7 +52,7 @@ def kernel_errors(composite: Mapping[str, Any]) -> dict[str, str]:
     """Every typed error the composite carries, keyed by field name.
 
     Matches any top-level ``*_error`` key with a non-empty value, so the three keys a
-    0.19.0 ``CompositeScore`` can carry (``deflation_error``, ``bootstrap_error``,
+    0.20.0 ``CompositeScore`` can carry (``deflation_error``, ``bootstrap_error``,
     ``selection_error``) and the keys nested reports use elsewhere in SharpeBench
     (``statistics_error``, ``snooping_error``, ``pbo_error``, ``inference_error``)
     are all recognized if a future kernel surfaces them at the top level.
