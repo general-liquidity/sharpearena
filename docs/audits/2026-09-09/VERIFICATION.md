@@ -1,5 +1,61 @@
 # Verification record
 
+## Completion round, 2026-09-10
+
+Eight pull requests merged into SharpeBench, each with its relevant checks green
+on the exact pushed head, its merged tree verified byte-identical to the tested
+tree, and post-main CI green afterwards.
+
+| PR | Row | Main after merge |
+|---|---|---|
+| #45 | G02, G03 | `863b5e2` |
+| #46 | G11, G12 | `0575972` |
+| #44 | G07 | `e293093` |
+| #48 | G05 | `072fdb4` |
+| #47 | G17 | `35f60f5` |
+| #50 | G10 | `3edf6a0` |
+| #51 | G13 | `fde2024` |
+| #52 | G14, G15 | `1dabf2d` |
+
+Verification notes that bear on how much these results establish.
+
+The live Docker preflight could not be exercised locally: the daemon on this
+host answered long enough to measure `Config.Volumes` in its three forms and
+then wedged, so the leg was wired into the live-container CI job by exact test
+name and ran there against the pinned Alpine fixture. Never run all ignored CLI
+tests wholesale, because a subprocess fixture requires an environment mode.
+
+The mutation gate caught two surviving mutants that the authoring work missed,
+one per pull request, and both were killed by tests rather than by weakening the
+gate. In the selection refusal path no test used an alpha exactly equal to the
+recommended floor, so widening the comparison survived; the floor is a minimum,
+so an alpha sitting on it must not warn, now asserted on both the refusal and
+the accepted path. In the lifecycle check no trace recorded an unobserved
+acknowledgment against an order whose acknowledgment had already been observed,
+so dropping the stage guard survived; an acknowledged order has an outcome and
+cannot become ambiguous. Each was verified by mutating in place, observing the
+failure, restoring from the committed tree and comparing byte for byte.
+
+The statrs question was settled by CI rather than by argument. The migration was
+implemented, pushed and tested precisely so the reproducibility claim could be
+falsified: its regenerated goldens pass on Windows, where they were generated,
+and fail on Linux and macOS, while the same three jobs on main with the
+hand-rolled bodies pass everywhere. The accuracy measurement that motivated the
+migration stands and is preserved; only its conclusion changed.
+
+One live-container failure on the parity pull request was a flake in the cgroup
+out-of-memory probe, not a regression: main had passed the same job shortly
+before, and a rerun of the failed job alone passed. A rerun is not a diagnosis,
+so this is recorded as an observed flake in a timing-sensitive live probe rather
+than as an explained one.
+
+Not established by this round: no empirical field was run, because this
+environment holds no provider credentials; mdBook is not installed here, so the
+book was checked by link script and the CI leg remains the real gate; and the
+frozen paper evidence was neither regenerated nor reproduced, since the current
+tree already diverges from that snapshot for reasons that predate this work and
+sit in the simulator rather than in the statistics.
+
 ## Initial review and isolation
 
 - Baselines: Bench `5c4cfb2` (v0.19.0), Arena `4fdf672`.
@@ -160,7 +216,55 @@ The fixture now explicitly resets accepted sockets to blocking mode while
 retaining its read timeout. A third CLI test forces the initial nonblocking
 state; removing the reset in an isolated copy reproduces `WouldBlock`, and
 restoring it passes. All three pricing CLI tests and targeted clippy pass
-locally. The corrected head still requires cross-platform CI.
+locally. The corrected head `d957fe5` passed all PR checks, including macOS
+and Windows. PR #42 merged as `630183a` with an identical tree; post-main
+CI/npm runs 34407524104 and 34407524144 succeeded.
+
+### Raw artifact scan engine: partial G07 implementation
+
+The feature branch adds a streaming byte engine with a validated policy and
+explicit raw-file scope. Nine integration tests and one deadline unit test
+pass. Thirteen isolated mutations are caught: dropping sequence matching,
+dropping whole-file digest matches, bypassing the file-byte limit, accepting an
+empty scope, swallowing read errors, accepting truncated files, ignoring prior
+incompleteness, omitting names from inventory identity, overflowing the match
+list, accepting duplicate entries, resetting match state at chunk boundaries,
+accepting an empty policy, and omitting the final deadline check.
+Restored controls pass; targeted clippy passes with warnings denied.
+The full harness package suite passes 98 tests with two explicitly ignored
+tests (the slow CI leg and the installed sibling shim). Rustdoc with warnings
+denied and workspace formatting also pass.
+
+This does not yet establish pre-launch protection. No artifact enumerator,
+Docker export capture or CLI refusal path is wired to this engine at this
+checkpoint. Its caller must impose blocking-I/O deadlines and report
+enumeration failures. Negative raw-byte matching cannot exclude compressed,
+encoded, transformed or previously memorized content.
+
+### Non-extracting TAR reader: G07 integration in progress
+
+Nine synthetic archive tests and one deadline unit test pass. They cover
+repeated paths, concatenated archives, complete archive hashing, link/header
+content, GNU long names, PAX metadata, unsupported sparse/size forms, malformed
+records, bounded metadata allocation, padding/count limits, truncation, read
+errors, dangling extensions and duplicate pending extensions. No archive is
+extracted and no Docker container is started by these tests.
+
+Thirteen isolated mutations are caught: stopping at zero blocks, removing
+header matching, removing body matching, accepting PAX size overrides,
+ignoring blank PAX records, removing the metadata cap, excluding padding from
+the byte bound, swallowing enumeration errors, replacing the archive digest,
+hiding extension entries, accepting dangling extensions, accepting duplicate
+extensions and ignoring the reader deadline. Restored controls pass and the
+restored source is byte-identical to the feature worktree after formatting.
+The final harness suite passes 108 tests with two explicit ignores. Targeted
+clippy, rustdoc with warnings denied and formatting pass.
+
+The existing byte-engine head `c4d1c29` passed all PR #44 checks. That result
+does not cover this subsequent reader addition; its new dependency and package
+checks must run on the updated head. The dependency is `tar` 0.4.46 with
+default features disabled, adding `filetime` transitively. Docker capture,
+image configuration/volume handling and real launch refusal remain open.
 
 Rates use the legacy entrant-reported token fields. Individual omitted counts
 default to zero in that protocol; neither count completeness nor the declared
