@@ -28,16 +28,24 @@
 use serde::{Deserialize, Serialize};
 
 /// **Annualized** cross-trial Sharpe dispersion the deflation assumes, mirroring
-/// `sharpebench_core::ScoreConfig::default().trials_sr_std`. Matching configuration alone
-/// does not establish estimator parity; the per-row bit-for-bit witness does. Like the
-/// kernel, every public entry point here takes this in annualized units and converts it
-/// per period exactly once (dividing by `sqrt(PERIODS_PER_YEAR)`).
+/// `sharpebench_core::ScoreConfig::default().trials_sr_std`. It is a free modelling
+/// prior, not a value taken from Bailey and López de Prado (2014): their worked example
+/// gives 1/2 as the *variance* of annualized Sharpe ratios, a standard deviation of about
+/// 0.707, so 0.5 is less demanding than that example by a factor of `sqrt(2)`. Matching
+/// configuration alone does not establish estimator parity; the per-row bit-for-bit
+/// witness does. Like the kernel, every public entry point here takes this in annualized
+/// units and converts it per period exactly once, dividing by `sqrt(periods_per_year)`.
 pub const TRIALS_SR_STD_DEFAULT: f64 = 0.5;
 
-/// Bars per year on SharpeArena scenarios (daily bars), mirroring
-/// `sharpebench_core::ScoreConfig::default().periods_per_year`. The deflation prior is
-/// stated annualized; applied per period unconverted it set the expected-maximum bar to
-/// an annualized Sharpe of ~18 on daily bars, which nothing clears.
+/// Bars per year on SharpeArena's daily scenarios, mirroring
+/// `sharpebench_core::ScoreConfig::default().periods_per_year`. Nothing here applies it
+/// implicitly: every public entry point takes `periods_per_year` from its caller, and the
+/// Python binding passes this value by default, as the daily-default `score_run` does.
+/// The deflation prior is stated annualized; applied per period unconverted it set the
+/// expected-maximum bar to an annualized Sharpe of ~18 on daily bars, which nothing
+/// clears. Converting between the two by `sqrt(periods_per_year)` assumes that a Sharpe
+/// ratio scales with the square root of the number of periods, which holds only for
+/// independent, identically distributed returns.
 pub const PERIODS_PER_YEAR: f64 = 252.0;
 
 /// The scoring kernel's own baseline multiple-testing footprint, mirroring
@@ -181,8 +189,10 @@ pub fn sharpe_ratio(returns: &[f64]) -> f64 {
     mean(returns) / s
 }
 
-/// Probabilistic Sharpe Ratio: probability the true Sharpe exceeds `sr_benchmark`,
-/// correcting for track length, skewness and kurtosis. In `[0, 1]`.
+/// Probabilistic Sharpe Ratio against `sr_benchmark`, correcting for track length,
+/// skewness and kurtosis. In `[0, 1]`. It is one minus the p-value of the one-sided test
+/// of `H0: SR <= sr_benchmark`, not the probability that the true Sharpe exceeds the
+/// benchmark; López de Prado, Lipton and Zoonekynd (2026) warn against that reading.
 fn probabilistic_sharpe_ratio(returns: &[f64], sr_benchmark: f64) -> f64 {
     let n = returns.len();
     if n < 2 {
@@ -198,36 +208,63 @@ fn probabilistic_sharpe_ratio(returns: &[f64], sr_benchmark: f64) -> f64 {
     norm_cdf(z)
 }
 
+const DISPERSION_REFUSAL: &str = "trials_sr_std must be finite and nonnegative";
+const TRIALS_REFUSAL: &str = "n_trials must be at least one";
+const PERIODS_REFUSAL: &str = "periods_per_year must be finite and positive";
+
 /// Expected maximum Sharpe under `n_trials` independent trials given cross-trial Sharpe
 /// dispersion `trials_sr_std` (Bailey & López de Prado, E[max SR_N]).
-fn expected_max_sharpe(trials_sr_std: f64, n_trials: u32) -> f64 {
-    let n = n_trials.max(1) as f64;
-    if n <= 1.0 || trials_sr_std <= 0.0 {
-        return 0.0;
+///
+/// A zero dispersion or a single trial leaves nothing to deflate for, so either gives a
+/// zero bar. A negative, NaN or infinite dispersion, or zero trials, is refused instead:
+/// coercing it to the same zero would hand a malformed footprint the most favourable bar
+/// and inflate the deflated Sharpe. SharpeBench refuses the same dispersions (R02).
+fn expected_max_sharpe(trials_sr_std: f64, n_trials: u32) -> Result<f64, ConfidenceError> {
+    if !trials_sr_std.is_finite() || trials_sr_std < 0.0 {
+        return Err(ConfidenceError(DISPERSION_REFUSAL));
+    }
+    if n_trials == 0 {
+        return Err(ConfidenceError(TRIALS_REFUSAL));
+    }
+    let n = n_trials as f64;
+    if n <= 1.0 || trials_sr_std == 0.0 {
+        return Ok(0.0);
     }
     const GAMMA: f64 = 0.577_215_664_901_532_9; // Euler–Mascheroni
     let e = std::f64::consts::E;
     let z1 = norm_ppf(1.0 - 1.0 / n);
     let z2 = norm_ppf(1.0 - 1.0 / (n * e));
-    trials_sr_std * ((1.0 - GAMMA) * z1 + GAMMA * z2)
+    Ok(trials_sr_std * ((1.0 - GAMMA) * z1 + GAMMA * z2))
+}
+
+/// Convert the annualized dispersion prior to per period, exactly once.
+fn per_period_dispersion(
+    trials_sr_std: f64,
+    periods_per_year: f64,
+) -> Result<f64, ConfidenceError> {
+    if !periods_per_year.is_finite() || periods_per_year <= 0.0 {
+        return Err(ConfidenceError(PERIODS_REFUSAL));
+    }
+    Ok(trials_sr_std / periods_per_year.sqrt())
 }
 
 /// Deflated Sharpe Ratio: the PSR against the expected-maximum Sharpe seen by chance
 /// across `n_trials`. Near 1.0 ⇒ the edge is very unlikely to be selection luck; near
 /// 0.0 ⇒ indistinguishable from luck. `trials_sr_std` is **annualized** (like
-/// `ScoreConfig::trials_sr_std`) and converted per period here, so this matches the
-/// scoring kernel given the same `n_trials` / `trials_sr_std` and a bootstrap over it
-/// brackets the leaderboard point.
-pub fn deflated_sharpe(returns: &[f64], n_trials: u32, trials_sr_std: f64) -> f64 {
-    deflated_sharpe_per_period(returns, n_trials, trials_sr_std / PERIODS_PER_YEAR.sqrt())
-}
-
-/// The raw estimator over an already per-period `sr_std` — the unit-conversion-free math
-/// the bootstrap loops call after the public entry points convert the annualized prior
-/// exactly once.
-fn deflated_sharpe_per_period(returns: &[f64], n_trials: u32, per_period_sr_std: f64) -> f64 {
-    let sr_star = expected_max_sharpe(per_period_sr_std, n_trials);
-    probabilistic_sharpe_ratio(returns, sr_star)
+/// `ScoreConfig::trials_sr_std`) and converted per period here at the caller's
+/// `periods_per_year`, so this matches the scoring kernel given the same `n_trials`,
+/// `trials_sr_std` and `periods_per_year`, and a bootstrap over it brackets the
+/// leaderboard point. Refuses a negative or non-finite dispersion, zero trials and a
+/// non-finite or non-positive `periods_per_year`.
+pub fn deflated_sharpe(
+    returns: &[f64],
+    n_trials: u32,
+    trials_sr_std: f64,
+    periods_per_year: f64,
+) -> Result<f64, ConfidenceError> {
+    let per_period_sr_std = per_period_dispersion(trials_sr_std, periods_per_year)?;
+    let sr_star = expected_max_sharpe(per_period_sr_std, n_trials)?;
+    Ok(probabilistic_sharpe_ratio(returns, sr_star))
 }
 
 // --- deterministic resampling ----------------------------------------------------------
@@ -314,9 +351,7 @@ fn validate_seed_bootstrap(
         ));
     }
     if !trials_sr_std.is_finite() || trials_sr_std < 0.0 {
-        return Err(ConfidenceError(
-            "trials_sr_std must be finite and nonnegative",
-        ));
+        return Err(ConfidenceError(DISPERSION_REFUSAL));
     }
     for row in per_seed {
         if row.len() < 2 || row.iter().any(|r| !r.is_finite()) {
@@ -338,21 +373,14 @@ fn checked_dsr(
     let g3 = skewness(returns);
     let g4 = kurtosis(returns);
     let denom = 1.0 - g3 * sr + ((g4 - 1.0) / 4.0) * sr * sr;
-    if [
-        mean(returns),
-        std_dev(returns),
-        sr,
-        g3,
-        g4,
-        denom,
-        expected_max_sharpe(per_period_sr_std, n_trials),
-    ]
-    .iter()
-    .any(|v| !v.is_finite())
+    let sr_star = expected_max_sharpe(per_period_sr_std, n_trials)?;
+    if [mean(returns), std_dev(returns), sr, g3, g4, denom, sr_star]
+        .iter()
+        .any(|v| !v.is_finite())
     {
         return Err(ConfidenceError("seed-bootstrap statistic is not finite"));
     }
-    let value = deflated_sharpe_per_period(returns, n_trials, per_period_sr_std);
+    let value = probabilistic_sharpe_ratio(returns, sr_star);
     if !value.is_finite() {
         return Err(ConfidenceError("seed-bootstrap estimate is not finite"));
     }
@@ -404,18 +432,21 @@ pub struct PairedDiff {
 /// returns, and recomputes the deflated Sharpe; the CI is the `[alpha/2, 1 - alpha/2]`
 /// percentile interval. `resample_seed` fixes the RNG so the report is reproducible.
 /// Requires at least two seed units, two bootstrap draws, finite observations and
-/// a confidence level strictly between zero and one. These are necessary input
-/// conditions, not a guarantee of independence or finite-sample coverage.
+/// a confidence level strictly between zero and one, and it refuses the deflation
+/// inputs [`deflated_sharpe`] refuses. `trials_sr_std` is annualized and converted at
+/// the caller's `periods_per_year`. These are necessary input conditions, not a
+/// guarantee of independence or finite-sample coverage.
 pub fn bootstrap_dsr_ci(
     per_seed: &[Vec<f64>],
     n_trials: u32,
     trials_sr_std: f64,
+    periods_per_year: f64,
     n_boot: usize,
     resample_seed: u64,
     alpha: f64,
 ) -> Result<DsrCi, ConfidenceError> {
     validate_seed_bootstrap(per_seed, trials_sr_std, n_boot, alpha)?;
-    let per_period_sr_std = trials_sr_std / PERIODS_PER_YEAR.sqrt();
+    let per_period_sr_std = per_period_dispersion(trials_sr_std, periods_per_year)?;
     let n = per_seed.len();
     let full: Vec<f64> = per_seed.iter().flatten().copied().collect();
     let point = checked_dsr(&full, n_trials, per_period_sr_std)?;
@@ -457,11 +488,13 @@ pub fn bootstrap_dsr_ci(
 /// lengths. Identity alignment and independence remain caller assumptions; no
 /// implicit shared-prefix truncation is performed. Other input requirements match
 /// [`bootstrap_dsr_ci`].
+#[allow(clippy::too_many_arguments)]
 pub fn paired_dsr_diff(
     a_per_seed: &[Vec<f64>],
     b_per_seed: &[Vec<f64>],
     n_trials: u32,
     trials_sr_std: f64,
+    periods_per_year: f64,
     n_boot: usize,
     resample_seed: u64,
     alpha: f64,
@@ -478,7 +511,7 @@ pub fn paired_dsr_diff(
             "paired seed bands and per-pair return lengths must match",
         ));
     }
-    let per_period_sr_std = trials_sr_std / PERIODS_PER_YEAR.sqrt();
+    let per_period_sr_std = per_period_dispersion(trials_sr_std, periods_per_year)?;
     let n = a_per_seed.len();
     let a_full: Vec<f64> = a_per_seed[..n].iter().flatten().copied().collect();
     let b_full: Vec<f64> = b_per_seed[..n].iter().flatten().copied().collect();
@@ -584,15 +617,27 @@ mod tests {
     }
 
     fn ci_default(per_seed: &[Vec<f64>]) -> DsrCi {
-        bootstrap_dsr_ci(per_seed, 56, TRIALS_SR_STD_DEFAULT, 2000, 0x00C1, 0.05).unwrap()
+        bootstrap_dsr_ci(
+            per_seed,
+            56,
+            TRIALS_SR_STD_DEFAULT,
+            PERIODS_PER_YEAR,
+            2000,
+            0x00C1,
+            0.05,
+        )
+        .unwrap()
     }
 
     #[test]
     fn confidence_boundaries_refuse_missing_support_and_computed_overflow() {
         let valid = vec![vec![0.01, 0.02], vec![-0.01, 0.01]];
         for n_boot in [0, 1] {
-            assert!(bootstrap_dsr_ci(&valid, 56, 0.5, n_boot, 1, 0.05).is_err());
-            assert!(paired_dsr_diff(&valid, &valid, 56, 0.5, n_boot, 1, 0.05).is_err());
+            assert!(bootstrap_dsr_ci(&valid, 56, 0.5, PERIODS_PER_YEAR, n_boot, 1, 0.05).is_err());
+            assert!(
+                paired_dsr_diff(&valid, &valid, 56, 0.5, PERIODS_PER_YEAR, n_boot, 1, 0.05)
+                    .is_err()
+            );
         }
         for rows in [
             vec![],
@@ -601,19 +646,19 @@ mod tests {
             vec![vec![f64::NAN, 0.01], vec![0.01, 0.02]],
             vec![vec![1e308, 1e308], vec![0.01, 0.02]],
         ] {
-            assert!(bootstrap_dsr_ci(&rows, 56, 0.5, 10, 1, 0.05).is_err());
-            assert!(paired_dsr_diff(&rows, &rows, 56, 0.5, 10, 1, 0.05).is_err());
+            assert!(bootstrap_dsr_ci(&rows, 56, 0.5, PERIODS_PER_YEAR, 10, 1, 0.05).is_err());
+            assert!(paired_dsr_diff(&rows, &rows, 56, 0.5, PERIODS_PER_YEAR, 10, 1, 0.05).is_err());
         }
         for alpha in [f64::NAN, 0.0, 1.0] {
-            assert!(bootstrap_dsr_ci(&valid, 56, 0.5, 10, 1, alpha).is_err());
+            assert!(bootstrap_dsr_ci(&valid, 56, 0.5, PERIODS_PER_YEAR, 10, 1, alpha).is_err());
         }
         let mut extra = valid.clone();
         extra.push(vec![0.01, 0.02]);
-        assert!(paired_dsr_diff(&valid, &extra, 56, 0.5, 10, 1, 0.05).is_err());
+        assert!(paired_dsr_diff(&valid, &extra, 56, 0.5, PERIODS_PER_YEAR, 10, 1, 0.05).is_err());
         extra = valid.clone();
         extra[0].push(0.03);
-        assert!(paired_dsr_diff(&valid, &extra, 56, 0.5, 10, 1, 0.05).is_err());
-        assert!(bootstrap_dsr_ci(&valid, 56, 0.5, 2, 1, 0.05).is_ok());
+        assert!(paired_dsr_diff(&valid, &extra, 56, 0.5, PERIODS_PER_YEAR, 10, 1, 0.05).is_err());
+        assert!(bootstrap_dsr_ci(&valid, 56, 0.5, PERIODS_PER_YEAR, 2, 1, 0.05).is_ok());
     }
 
     #[test]
@@ -645,10 +690,26 @@ mod tests {
             .enumerate()
             .map(|(s, &t)| seed_with_sharpe(t, 16, s as f64))
             .collect();
-        let stable_ci =
-            bootstrap_dsr_ci(&stable, 3, TRIALS_SR_STD_DEFAULT, 2000, 0x00C1, 0.05).unwrap();
-        let noisy_ci =
-            bootstrap_dsr_ci(&noisy, 3, TRIALS_SR_STD_DEFAULT, 2000, 0x00C1, 0.05).unwrap();
+        let stable_ci = bootstrap_dsr_ci(
+            &stable,
+            3,
+            TRIALS_SR_STD_DEFAULT,
+            PERIODS_PER_YEAR,
+            2000,
+            0x00C1,
+            0.05,
+        )
+        .unwrap();
+        let noisy_ci = bootstrap_dsr_ci(
+            &noisy,
+            3,
+            TRIALS_SR_STD_DEFAULT,
+            PERIODS_PER_YEAR,
+            2000,
+            0x00C1,
+            0.05,
+        )
+        .unwrap();
         assert!(
             noisy_ci.width > stable_ci.width,
             "noisy/short width {} should exceed stable/long width {}",
@@ -671,7 +732,17 @@ mod tests {
                     .collect()
             })
             .collect();
-        let d = paired_dsr_diff(&a, &b, 56, TRIALS_SR_STD_DEFAULT, 2000, 0x5EED, 0.05).unwrap();
+        let d = paired_dsr_diff(
+            &a,
+            &b,
+            56,
+            TRIALS_SR_STD_DEFAULT,
+            PERIODS_PER_YEAR,
+            2000,
+            0x5EED,
+            0.05,
+        )
+        .unwrap();
         assert!(!d.significant, "close entries should be tied, got {d:?}");
         assert_eq!(d.verdict, "tied");
         assert!(d.lo <= 0.0 && d.hi >= 0.0, "tied CI must straddle 0: {d:?}");
@@ -685,7 +756,17 @@ mod tests {
         let b: Vec<Vec<f64>> = (0..8)
             .map(|s| steady_seed(s, 120).iter().map(|r| -r).collect())
             .collect();
-        let d = paired_dsr_diff(&a, &b, 56, TRIALS_SR_STD_DEFAULT, 2000, 0x5EED, 0.05).unwrap();
+        let d = paired_dsr_diff(
+            &a,
+            &b,
+            56,
+            TRIALS_SR_STD_DEFAULT,
+            PERIODS_PER_YEAR,
+            2000,
+            0x5EED,
+            0.05,
+        )
+        .unwrap();
         assert!(
             d.significant,
             "clear skill gap should be significant: {d:?}"
@@ -701,7 +782,17 @@ mod tests {
     #[test]
     fn identical_entries_are_tied_with_zero_diff() {
         let a: Vec<Vec<f64>> = (0..6).map(|s| steady_seed(s, 90)).collect();
-        let d = paired_dsr_diff(&a, &a, 56, TRIALS_SR_STD_DEFAULT, 500, 0x1234, 0.05).unwrap();
+        let d = paired_dsr_diff(
+            &a,
+            &a,
+            56,
+            TRIALS_SR_STD_DEFAULT,
+            PERIODS_PER_YEAR,
+            500,
+            0x1234,
+            0.05,
+        )
+        .unwrap();
         assert_eq!(d.point_diff, 0.0);
         assert!(!d.significant);
         assert_eq!(d.verdict, "tied");
@@ -711,9 +802,213 @@ mod tests {
     #[test]
     fn bootstrap_is_deterministic_per_resample_seed() {
         let seeds: Vec<Vec<f64>> = (0..8).map(|s| steady_seed(s, 100)).collect();
-        let a = bootstrap_dsr_ci(&seeds, 56, TRIALS_SR_STD_DEFAULT, 1000, 42, 0.05).unwrap();
-        let b = bootstrap_dsr_ci(&seeds, 56, TRIALS_SR_STD_DEFAULT, 1000, 42, 0.05).unwrap();
+        let a = bootstrap_dsr_ci(
+            &seeds,
+            56,
+            TRIALS_SR_STD_DEFAULT,
+            PERIODS_PER_YEAR,
+            1000,
+            42,
+            0.05,
+        )
+        .unwrap();
+        let b = bootstrap_dsr_ci(
+            &seeds,
+            56,
+            TRIALS_SR_STD_DEFAULT,
+            PERIODS_PER_YEAR,
+            1000,
+            42,
+            0.05,
+        )
+        .unwrap();
         assert_eq!(a.lo, b.lo);
         assert_eq!(a.hi, b.hi);
+    }
+
+    // A drifting sine track whose deflated Sharpe sits inside (0, 1) rather than on a rail.
+    fn wobble(k: usize, len: usize) -> Vec<f64> {
+        (0..len)
+            .map(|i| 0.0004 * (k as f64 + 1.0) + 0.01 * ((i * 7 + k * 3) as f64).sin())
+            .collect()
+    }
+
+    fn refused(message: &'static str) -> Result<f64, ConfidenceError> {
+        Err(ConfidenceError(message))
+    }
+
+    #[test]
+    fn expected_max_sharpe_refuses_a_malformed_dispersion_or_trial_count() {
+        for bad in [
+            -0.03,
+            -f64::MIN_POSITIVE,
+            f64::NAN,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+        ] {
+            for n_trials in [0, 1, 2, 56] {
+                assert_eq!(
+                    expected_max_sharpe(bad, n_trials),
+                    refused(DISPERSION_REFUSAL),
+                    "dispersion {bad} with {n_trials} trials"
+                );
+            }
+        }
+        for dispersion in [0.0, 0.03] {
+            assert_eq!(expected_max_sharpe(dispersion, 0), refused(TRIALS_REFUSAL));
+        }
+    }
+
+    #[test]
+    fn zero_dispersion_or_a_single_trial_means_no_deflation() {
+        assert_eq!(expected_max_sharpe(0.0, 1), Ok(0.0));
+        assert_eq!(expected_max_sharpe(0.0, 56), Ok(0.0));
+        assert_eq!(expected_max_sharpe(0.03, 1), Ok(0.0));
+        assert!(expected_max_sharpe(0.03, 56).unwrap() > 0.0);
+        let r = wobble(0, 250);
+        assert_eq!(
+            deflated_sharpe(&r, 1, TRIALS_SR_STD_DEFAULT, PERIODS_PER_YEAR),
+            Ok(probabilistic_sharpe_ratio(&r, 0.0))
+        );
+        assert_eq!(
+            deflated_sharpe(&r, 56, 0.0, PERIODS_PER_YEAR),
+            Ok(probabilistic_sharpe_ratio(&r, 0.0))
+        );
+    }
+
+    #[test]
+    fn every_entry_point_refuses_the_malformed_deflation_inputs() {
+        let r = wobble(1, 250);
+        let seeds: Vec<Vec<f64>> = (0..4).map(|k| wobble(k, 30)).collect();
+        for (n_trials, dispersion, periods, message) in [
+            (56, -0.5, PERIODS_PER_YEAR, DISPERSION_REFUSAL),
+            (56, f64::NAN, PERIODS_PER_YEAR, DISPERSION_REFUSAL),
+            (56, f64::INFINITY, PERIODS_PER_YEAR, DISPERSION_REFUSAL),
+            (0, 0.5, PERIODS_PER_YEAR, TRIALS_REFUSAL),
+            (56, 0.5, 0.0, PERIODS_REFUSAL),
+            (56, 0.5, -252.0, PERIODS_REFUSAL),
+            (56, 0.5, f64::NAN, PERIODS_REFUSAL),
+            (56, 0.5, f64::INFINITY, PERIODS_REFUSAL),
+        ] {
+            let expected = ConfidenceError(message);
+            assert_eq!(
+                deflated_sharpe(&r, n_trials, dispersion, periods),
+                Err(expected)
+            );
+            assert_eq!(
+                bootstrap_dsr_ci(&seeds, n_trials, dispersion, periods, 10, 1, 0.05).unwrap_err(),
+                expected
+            );
+            assert_eq!(
+                paired_dsr_diff(&seeds, &seeds, n_trials, dispersion, periods, 10, 1, 0.05)
+                    .unwrap_err(),
+                expected
+            );
+        }
+    }
+
+    // Recorded from the pre-repair estimator (merge 1380156) on these inputs.
+    const PRE_REPAIR_DSR_BITS: [[u64; 4]; 4] = [
+        [
+            0x3fe9e4475ee60d5f,
+            0x3fe57d7e2a2dec58,
+            0x3fdf85ae4dd7371d,
+            0x3fd420559819191a,
+        ],
+        [
+            0x3fecdf79ecd74410,
+            0x3fe9cb5657a1f5b0,
+            0x3fe4f86e0d74c779,
+            0x3fde53c5688b7087,
+        ],
+        [
+            0x3fefdbb56242dee7,
+            0x3fef8a9d89ca36b2,
+            0x3feea6d23b921f0f,
+            0x3fecb20a9c6c8210,
+        ],
+        [
+            0x3feff85d1285151e,
+            0x3fefe1e5e4e2d40a,
+            0x3fef931ceb3880a4,
+            0x3feeb9f6c51aefd6,
+        ],
+    ];
+
+    #[test]
+    fn valid_inputs_keep_their_bits_and_match_the_pinned_kernel() {
+        use sharpebench_core::deflated_sharpe::deflated_sharpe_ratio;
+        let per_period = TRIALS_SR_STD_DEFAULT / PERIODS_PER_YEAR.sqrt();
+        for (k, row) in PRE_REPAIR_DSR_BITS.iter().enumerate() {
+            let r = wobble(k, 250);
+            for (&n_trials, &bits) in [2u32, 7, 56, 1000].iter().zip(row) {
+                let arena =
+                    deflated_sharpe(&r, n_trials, TRIALS_SR_STD_DEFAULT, PERIODS_PER_YEAR).unwrap();
+                let kernel = deflated_sharpe_ratio(&r, n_trials, per_period).unwrap();
+                assert_eq!(arena.to_bits(), bits, "k={k} n_trials={n_trials}");
+                assert_eq!(
+                    arena.to_bits(),
+                    kernel.to_bits(),
+                    "k={k} n_trials={n_trials}"
+                );
+            }
+        }
+        let seeds: Vec<Vec<f64>> = (0..6).map(|k| wobble(k, 60)).collect();
+        let other: Vec<Vec<f64>> = (0..6).map(|k| wobble(k + 2, 60)).collect();
+        let ci = bootstrap_dsr_ci(&seeds, 56, 0.5, PERIODS_PER_YEAR, 500, 0x00C1, 0.05).unwrap();
+        assert_eq!(
+            [ci.point.to_bits(), ci.lo.to_bits(), ci.hi.to_bits()],
+            [0x3fefb35f82144746, 0x3fea7314cad5fa33, 0x3fefff6f0be1f7f0]
+        );
+        let d =
+            paired_dsr_diff(&seeds, &other, 56, 0.5, PERIODS_PER_YEAR, 500, 0x5EED, 0.05).unwrap();
+        assert_eq!(
+            [
+                d.point_diff.to_bits(),
+                d.lo.to_bits(),
+                d.hi.to_bits(),
+                d.p_value.to_bits()
+            ],
+            [
+                0xbf832657bd83c680,
+                0xbfc79f0a93ff4cfe,
+                0xbf12c5492bcdaccd,
+                0
+            ]
+        );
+    }
+
+    #[test]
+    fn periods_per_year_sets_the_per_period_deflation_bar() {
+        use sharpebench_core::deflated_sharpe::deflated_sharpe_ratio;
+        let r = wobble(1, 250);
+        let daily = deflated_sharpe(&r, 56, 0.5, PERIODS_PER_YEAR).unwrap();
+        for periods in [12.0, 52.0, 252.0 * 6.5] {
+            let per_period = 0.5 / f64::sqrt(periods);
+            let value = deflated_sharpe(&r, 56, 0.5, periods).unwrap();
+            let expected =
+                probabilistic_sharpe_ratio(&r, expected_max_sharpe(per_period, 56).unwrap());
+            assert_eq!(value.to_bits(), expected.to_bits(), "{periods}");
+            let kernel = deflated_sharpe_ratio(&r, 56, per_period).unwrap();
+            assert_eq!(value.to_bits(), kernel.to_bits(), "{periods}");
+            // Fewer periods a year carry more of the annualized dispersion into each
+            // period, raising the bar the same per-period track has to clear.
+            if periods < PERIODS_PER_YEAR {
+                assert!(value < daily, "{periods}: {value} vs daily {daily}");
+            } else {
+                assert!(value > daily, "{periods}: {value} vs daily {daily}");
+            }
+        }
+        let seeds: Vec<Vec<f64>> = (0..4).map(|k| wobble(k, 60)).collect();
+        let pooled: Vec<f64> = seeds.iter().flatten().copied().collect();
+        let weekly = bootstrap_dsr_ci(&seeds, 56, 0.5, 52.0, 10, 1, 0.05).unwrap();
+        assert_eq!(
+            weekly.point,
+            deflated_sharpe(&pooled, 56, 0.5, 52.0).unwrap()
+        );
+        assert_ne!(
+            weekly.point,
+            deflated_sharpe(&pooled, 56, 0.5, PERIODS_PER_YEAR).unwrap()
+        );
     }
 }

@@ -43,11 +43,14 @@ from .kernel_score import is_kernel_score_unavailable, kernel_score_or_unavailab
 DEFAULT_RESAMPLE_SEED = 0x5BA7_2026
 DEFAULT_N_BOOT = 2000
 DEFAULT_ALPHA = 0.05
+# Daily bars, the ``score_run`` default. The annualized deflation prior is converted per
+# period at this rate, so it must match the rate the compared score was produced at.
+DEFAULT_PERIODS_PER_YEAR = 252.0
 
 PerSeedReturns = Sequence[Sequence[float]]
 
 
-def _bootstrap_arguments(n_trials, n_boot, resample_seed, alpha):
+def _bootstrap_arguments(n_trials, n_boot, resample_seed, alpha, periods_per_year):
     for name, value, limit in (("n_trials", n_trials, 2**32 - 1),
                                ("n_boot", n_boot, 2**64 - 1),
                                ("resample_seed", resample_seed, 2**64 - 1)):
@@ -55,7 +58,11 @@ def _bootstrap_arguments(n_trials, n_boot, resample_seed, alpha):
             raise ValueError(f"{name} must be an integer in [0, {limit}]")
     if isinstance(alpha, bool) or not isinstance(alpha, Real) or not 0 < alpha < 1:
         raise ValueError("alpha must be finite and strictly between zero and one")
-    return int(n_trials), int(n_boot), int(resample_seed), float(alpha)
+    if (isinstance(periods_per_year, bool) or not isinstance(periods_per_year, Real)
+            or not math.isfinite(periods_per_year) or periods_per_year <= 0):
+        raise ValueError("periods_per_year must be finite and positive")
+    return (int(n_trials), int(n_boot), int(resample_seed), float(alpha),
+            float(periods_per_year))
 
 
 def deflated_sharpe_ci(
@@ -65,16 +72,24 @@ def deflated_sharpe_ci(
     n_boot: int = DEFAULT_N_BOOT,
     resample_seed: int = DEFAULT_RESAMPLE_SEED,
     alpha: float = DEFAULT_ALPHA,
+    periods_per_year: float = DEFAULT_PERIODS_PER_YEAR,
 ) -> dict:
     """Seed-paired percentile bootstrap CI on an entry's deflated Sharpe.
 
     ``per_seed_returns`` is one per-bar return series per held-out seed. ``n_trials`` is the
-    entry's *declared* in-sample search budget, folded onto the configured baseline
-    footprint Rust-side. This is the corrected Arena estimator, not the older pinned
-    ``score_run`` estimator. Returns
+    entry's *declared* in-sample search budget; the native binding adds the scoring
+    kernel's baseline footprint of 50 trials before deflating, as ``score_run`` does.
+    ``periods_per_year`` converts the annualized dispersion prior to per period and must
+    match the rate the compared score used; the default is ``score_run``'s daily 252.
+    The estimator shares the n-normalized standardized moments of the pinned SharpeBench
+    0.19.0 ``score_run``. That shared convention is not parity by itself:
+    :func:`~sharpearena.baselines.run_baselines` attaches the interval to a kernel row only
+    when the kernel reproduces ``point`` bit for bit. Inputs that support no interval,
+    including an invalid ``periods_per_year``, raise ``ValueError``. Returns
     ``{point, lo, hi, width, confidence, n_boot}``.
     """
-    arguments = _bootstrap_arguments(n_trials, n_boot, resample_seed, alpha)
+    arguments = _bootstrap_arguments(n_trials, n_boot, resample_seed, alpha,
+                                     periods_per_year)
     rows = [list(map(float, r)) for r in per_seed_returns]
     return json.loads(
         _bootstrap_dsr_ci(rows, *arguments)
@@ -89,17 +104,20 @@ def paired_dsr_diff(
     n_boot: int = DEFAULT_N_BOOT,
     resample_seed: int = DEFAULT_RESAMPLE_SEED,
     alpha: float = DEFAULT_ALPHA,
+    periods_per_year: float = DEFAULT_PERIODS_PER_YEAR,
 ) -> dict:
     """Paired-difference significance test between two entries on the **same** seed band.
 
     ``a_per_seed_returns[i]`` and ``b_per_seed_returns[i]`` must be the two entries' return
     series on the *same* seed ``i``. Positional pairing assumes the caller has aligned the
     identities; it does not independently verify them or their statistical independence.
+    ``periods_per_year`` is as in :func:`deflated_sharpe_ci`.
     Returns ``{point_diff, lo, hi, p_value, confidence, significant, verdict, n_boot}`` with
     ``verdict`` one of ``"a_better"`` / ``"b_better"`` / ``"tied"``. The legacy wire label
     ``tied`` means only that the interval includes zero, not that equivalence was shown.
     """
-    arguments = _bootstrap_arguments(n_trials, n_boot, resample_seed, alpha)
+    arguments = _bootstrap_arguments(n_trials, n_boot, resample_seed, alpha,
+                                     periods_per_year)
     a = [list(map(float, r)) for r in a_per_seed_returns]
     b = [list(map(float, r)) for r in b_per_seed_returns]
     return json.loads(
@@ -116,6 +134,7 @@ def pairwise_significance(
     n_boot: int = DEFAULT_N_BOOT,
     resample_seed: int = DEFAULT_RESAMPLE_SEED,
     alpha: float = DEFAULT_ALPHA,
+    periods_per_year: float = DEFAULT_PERIODS_PER_YEAR,
 ) -> list[dict]:
     """Paired significance verdict for each adjacent pair down a ranked leaderboard.
 
@@ -140,6 +159,7 @@ def pairwise_significance(
             n_boot=n_boot,
             resample_seed=resample_seed,
             alpha=alpha,
+            periods_per_year=periods_per_year,
         )
         out.append(
             {
@@ -219,4 +239,5 @@ __all__ = [
     "DEFAULT_RESAMPLE_SEED",
     "DEFAULT_N_BOOT",
     "DEFAULT_ALPHA",
+    "DEFAULT_PERIODS_PER_YEAR",
 ]

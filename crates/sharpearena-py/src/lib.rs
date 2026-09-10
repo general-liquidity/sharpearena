@@ -771,23 +771,26 @@ fn score_run(returns: Vec<f64>, n_trials: u32, periods_per_year: f64) -> PyResul
 /// ranks on. `per_seed_returns` is one per-bar return series per held-out seed (the
 /// independent sampling units). `n_trials` is the agent's *declared* in-sample search
 /// budget; it is folded onto the scoring kernel's baseline footprint (`KERNEL_BASE_TRIALS`)
-/// so the interval brackets the same point deflated Sharpe `score_run` reports. Returns the
+/// so the interval brackets the same point deflated Sharpe `score_run` reports at the same
+/// `periods_per_year`, whose default matches `score_run`'s. Returns the
 /// `DsrCi` (`{point, lo, hi, width, confidence, n_boot}`) as a JSON string. Deterministic in
 /// `resample_seed`, so the report replays bit-for-bit.
 #[pyfunction]
-#[pyo3(signature = (per_seed_returns, n_trials = 0, n_boot = 2000, resample_seed = 0x5BA7_2026, alpha = 0.05))]
+#[pyo3(signature = (per_seed_returns, n_trials = 0, n_boot = 2000, resample_seed = 0x5BA7_2026, alpha = 0.05, periods_per_year = 252.0))]
 fn bootstrap_dsr_ci(
     per_seed_returns: Vec<Vec<f64>>,
     n_trials: u32,
     n_boot: usize,
     resample_seed: u64,
     alpha: f64,
+    periods_per_year: f64,
 ) -> PyResult<String> {
     let effective = KERNEL_BASE_TRIALS.saturating_add(n_trials);
     let ci = core_bootstrap_dsr_ci(
         &per_seed_returns,
         effective,
         TRIALS_SR_STD_DEFAULT,
+        periods_per_year,
         n_boot,
         resample_seed,
         alpha,
@@ -803,7 +806,7 @@ fn bootstrap_dsr_ci(
 /// (`{point_diff, lo, hi, p_value, confidence, significant, verdict, n_boot}`) as JSON;
 /// `verdict` is `"a_better"`, `"b_better"`, or `"tied"`. Deterministic in `resample_seed`.
 #[pyfunction]
-#[pyo3(signature = (a_per_seed_returns, b_per_seed_returns, n_trials = 0, n_boot = 2000, resample_seed = 0x5BA7_2026, alpha = 0.05))]
+#[pyo3(signature = (a_per_seed_returns, b_per_seed_returns, n_trials = 0, n_boot = 2000, resample_seed = 0x5BA7_2026, alpha = 0.05, periods_per_year = 252.0))]
 fn paired_dsr_diff(
     a_per_seed_returns: Vec<Vec<f64>>,
     b_per_seed_returns: Vec<Vec<f64>>,
@@ -811,6 +814,7 @@ fn paired_dsr_diff(
     n_boot: usize,
     resample_seed: u64,
     alpha: f64,
+    periods_per_year: f64,
 ) -> PyResult<String> {
     let effective = KERNEL_BASE_TRIALS.saturating_add(n_trials);
     let diff = core_paired_dsr_diff(
@@ -818,6 +822,7 @@ fn paired_dsr_diff(
         &b_per_seed_returns,
         effective,
         TRIALS_SR_STD_DEFAULT,
+        periods_per_year,
         n_boot,
         resample_seed,
         alpha,
