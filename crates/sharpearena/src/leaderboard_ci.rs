@@ -907,7 +907,22 @@ mod tests {
         }
     }
 
-    // Recorded from the pre-repair estimator (merge 1380156) on these inputs.
+    // Recorded from the pre-repair estimator (merge 1380156) on these inputs,
+    // on Windows. Platform libm results differ in the last few bits (macOS was
+    // observed 2 ULPs away), so recorded constants are compared within
+    // `RECORDED_ULPS`. The comparison against the pinned kernel runs on the
+    // same platform as the code under test and stays exact.
+    const RECORDED_ULPS: u64 = 16;
+
+    fn assert_near_bits(actual: f64, recorded: u64, what: &str) {
+        let distance = actual.to_bits().abs_diff(recorded);
+        assert!(
+            distance <= RECORDED_ULPS,
+            "{what}: {actual:e} is {distance} ULPs from the recorded {:e}",
+            f64::from_bits(recorded)
+        );
+    }
+
     const PRE_REPAIR_DSR_BITS: [[u64; 4]; 4] = [
         [
             0x3fe9e4475ee60d5f,
@@ -945,7 +960,7 @@ mod tests {
                 let arena =
                     deflated_sharpe(&r, n_trials, TRIALS_SR_STD_DEFAULT, PERIODS_PER_YEAR).unwrap();
                 let kernel = deflated_sharpe_ratio(&r, n_trials, per_period).unwrap();
-                assert_eq!(arena.to_bits(), bits, "k={k} n_trials={n_trials}");
+                assert_near_bits(arena, bits, &format!("k={k} n_trials={n_trials}"));
                 assert_eq!(
                     arena.to_bits(),
                     kernel.to_bits(),
@@ -956,26 +971,23 @@ mod tests {
         let seeds: Vec<Vec<f64>> = (0..6).map(|k| wobble(k, 60)).collect();
         let other: Vec<Vec<f64>> = (0..6).map(|k| wobble(k + 2, 60)).collect();
         let ci = bootstrap_dsr_ci(&seeds, 56, 0.5, PERIODS_PER_YEAR, 500, 0x00C1, 0.05).unwrap();
-        assert_eq!(
-            [ci.point.to_bits(), ci.lo.to_bits(), ci.hi.to_bits()],
-            [0x3fefb35f82144746, 0x3fea7314cad5fa33, 0x3fefff6f0be1f7f0]
-        );
+        for (value, recorded, what) in [
+            (ci.point, 0x3fefb35f82144746, "ci.point"),
+            (ci.lo, 0x3fea7314cad5fa33, "ci.lo"),
+            (ci.hi, 0x3fefff6f0be1f7f0, "ci.hi"),
+        ] {
+            assert_near_bits(value, recorded, what);
+        }
         let d =
             paired_dsr_diff(&seeds, &other, 56, 0.5, PERIODS_PER_YEAR, 500, 0x5EED, 0.05).unwrap();
-        assert_eq!(
-            [
-                d.point_diff.to_bits(),
-                d.lo.to_bits(),
-                d.hi.to_bits(),
-                d.p_value.to_bits()
-            ],
-            [
-                0xbf832657bd83c680,
-                0xbfc79f0a93ff4cfe,
-                0xbf12c5492bcdaccd,
-                0
-            ]
-        );
+        for (value, recorded, what) in [
+            (d.point_diff, 0xbf832657bd83c680, "d.point_diff"),
+            (d.lo, 0xbfc79f0a93ff4cfe, "d.lo"),
+            (d.hi, 0xbf12c5492bcdaccd, "d.hi"),
+        ] {
+            assert_near_bits(value, recorded, what);
+        }
+        assert_eq!(d.p_value, 0.0);
     }
 
     #[test]
