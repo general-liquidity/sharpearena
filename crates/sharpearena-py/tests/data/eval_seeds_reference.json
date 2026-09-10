@@ -1,6 +1,6 @@
 {
   "config": {
-    "kernel": "sharpebench-core 0.20.0",
+    "kernel": "sharpebench-core 0.21.0",
     "max_steps": 512,
     "n_days": 120,
     "n_symbols": 4,
