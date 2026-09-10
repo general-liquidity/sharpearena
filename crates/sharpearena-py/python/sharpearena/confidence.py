@@ -82,7 +82,7 @@ def deflated_sharpe_ci(
     ``periods_per_year`` converts the annualized dispersion prior to per period and must
     match the rate the compared score used; the default is ``score_run``'s daily 252.
     The estimator shares the n-normalized standardized moments of the pinned SharpeBench
-    0.20.0 ``score_run``. That shared convention is not parity by itself:
+    0.21.0 ``score_run``. That shared convention is not parity by itself:
     :func:`~sharpearena.baselines.run_baselines` attaches the interval to a kernel row only
     when the kernel reproduces ``point`` bit for bit. Inputs that support no interval,
     including an invalid ``periods_per_year``, raise ``ValueError``. Returns

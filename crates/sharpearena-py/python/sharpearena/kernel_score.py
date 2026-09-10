@@ -52,7 +52,7 @@ def kernel_errors(composite: Mapping[str, Any]) -> dict[str, str]:
     """Every typed error the composite carries, keyed by field name.
 
     Matches any top-level ``*_error`` key with a non-empty value, so the three keys a
-    0.20.0 ``CompositeScore`` can carry (``deflation_error``, ``bootstrap_error``,
+    0.21.0 ``CompositeScore`` can carry (``deflation_error``, ``bootstrap_error``,
     ``selection_error``) and the keys nested reports use elsewhere in SharpeBench
     (``statistics_error``, ``snooping_error``, ``pbo_error``, ``inference_error``)
     are all recognized if a future kernel surfaces them at the top level.

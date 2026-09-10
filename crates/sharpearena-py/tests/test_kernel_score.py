@@ -2,7 +2,7 @@
 
 The helper unit tests need no binding. Each consumer test monkeypatches the module's
 ``score_run`` to return a composite carrying a typed error beside the kernel's
-no-skill floor (the exact shape the pinned SharpeBench 0.20.0 serializes for a
+no-skill floor (the exact shape the pinned SharpeBench 0.21.0 serializes for a
 non-finite observation) and asserts the reason surfaces where the consumer routes it:
 a recorded reason string in row-shaped outputs, ``KernelScoreUnavailable`` from
 selection, ranking-input and producer paths.
@@ -48,7 +48,7 @@ ERROR_KEYS = (
 
 
 def _floored(*keys: str) -> dict:
-    """The 0.20.0 shape: floor values beside the named typed error(s)."""
+    """The 0.21.0 shape: floor values beside the named typed error(s)."""
     comp = {"deflated_sharpe": 0.0, "psr": None, "passed_k": False, "bootstrap_p": 1.0}
     for key in keys:
         comp[key] = REASON

@@ -60,7 +60,7 @@ convenience:
   build script.
 - Arena consumes an exact-pinned registry SharpeBench: `sharpebench-core`,
   `sharpebench-sim`, `sharpebench-protocol` and `sharpebench-attest` at
-  `=0.20.0` (the pin is an input to `SPEC_HASH`, so moving it rebinds the
+  `=0.21.0` (the pin is an input to `SPEC_HASH`, so moving it rebinds the
   attestation record and every wrapper pin). A local Bench repair does not
   reach Arena without a Bench release and a pin bump here; record the pending
   propagation instead of claiming parity.
