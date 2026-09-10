@@ -189,6 +189,7 @@ def bootstrap_dsr_ci(
     n_boot: int = 2000,
     resample_seed: int = 0x5BA7_2026,
     alpha: float = 0.05,
+    periods_per_year: float = 252.0,
 ) -> str: ...
 def paired_dsr_diff(
     a_per_seed_returns: Sequence[Sequence[float]],
@@ -197,6 +198,7 @@ def paired_dsr_diff(
     n_boot: int = 2000,
     resample_seed: int = 0x5BA7_2026,
     alpha: float = 0.05,
+    periods_per_year: float = 252.0,
 ) -> str: ...
 def validate_decision_json(decision_json: str) -> bool: ...
 def decision_schema_json() -> str: ...

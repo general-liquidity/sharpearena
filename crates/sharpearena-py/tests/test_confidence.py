@@ -78,11 +78,46 @@ def test_paired_seed_bootstrap_refuses_prefix_truncation():
 @pytest.mark.parametrize("kwargs", [{"n_boot": 2.9}, {"n_trials": True},
                                     {"resample_seed": 1.5}, {"alpha": True},
                                     {"alpha": 0.0}, {"alpha": 1.0},
-                                    {"alpha": float("nan")}])
+                                    {"alpha": float("nan")},
+                                    {"periods_per_year": 0.0},
+                                    {"periods_per_year": -252.0},
+                                    {"periods_per_year": float("nan")},
+                                    {"periods_per_year": float("inf")},
+                                    {"periods_per_year": True}])
 def test_confidence_parameters_are_validated_without_coercion(kwargs):
     rows = [[0.01, 0.02], [-0.01, 0.01]]
     with pytest.raises(ValueError):
         deflated_sharpe_ci(rows, **kwargs)
+    with pytest.raises(ValueError):
+        paired_dsr_diff(rows, rows, **kwargs)
+
+
+@requires_binding
+@pytest.mark.parametrize("periods_per_year", [0.0, -252.0, float("nan"), float("inf")])
+def test_native_binding_refuses_invalid_periods_per_year(periods_per_year):
+    from sharpearena import sharpearena_py as native
+
+    rows = [[0.01, 0.02], [-0.01, 0.01]]
+    with pytest.raises(ValueError, match="periods_per_year"):
+        native.bootstrap_dsr_ci(rows, 0, 10, 1, 0.05, periods_per_year)
+    with pytest.raises(ValueError, match="periods_per_year"):
+        native.paired_dsr_diff(rows, rows, 0, 10, 1, 0.05, periods_per_year)
+
+
+@requires_binding
+def test_periods_per_year_moves_the_deflation_bar_with_the_kernel():
+    # Per-period Sharpe 0.08 over 480 bars sits between the daily bar (about 0.073 per
+    # period at 56 trials) and the weekly one (about 0.161), so the DSR is unsaturated.
+    per_seed = [_sharpe_series(0.08, 40, s) for s in range(12)]
+    pooled = [x for s in per_seed for x in s]
+    daily = deflated_sharpe_ci(per_seed, 6)
+    assert daily == deflated_sharpe_ci(per_seed, 6, periods_per_year=252.0)
+    weekly = deflated_sharpe_ci(per_seed, 6, periods_per_year=52.0)
+    # The annualized prior carries more dispersion into each weekly period, so the same
+    # per-period track clears a higher bar and deflates harder.
+    assert 0.0 < weekly["point"] < daily["point"] < 1.0
+    for rate, ci in ((252.0, daily), (52.0, weekly)):
+        assert ci["point"] == json.loads(score_run(pooled, 6, rate))["deflated_sharpe"]
 
 
 @requires_binding
