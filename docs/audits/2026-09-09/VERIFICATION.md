@@ -1,10 +1,113 @@
 # Verification record
 
+## Port build and literature corrections, 2026-09-10
+
+Six pull requests merged into SharpeBench and one into SharpeArena. Each had
+every check green on its exact pushed head, main had not moved since that head
+was tested, and the merged tree was compared against the tested tree and found
+identical. A branch that was green on an older main was brought up to date and
+tested again before it merged, rather than merged on its earlier result.
+
+| PR | Row | Main after merge |
+|---|---|---|
+| Bench #58 | G18, fault injection | `c256adc` |
+| Bench #60 | G19, literature corrections | `afd0be4` |
+| Bench #61 | G11, G18, serving loop and image hygiene | `aba678e` |
+| Bench #59 | G18, contract ports | `23efd4c` |
+| Bench #62 | G19, LITE verdict units | `5eb826c` |
+| Bench #63 | G19, remaining unit defaults | `277f733` |
+| Arena #42 | G19, deflation input refusal | `21f9a6d` |
+
+What the gates caught that the authoring work missed.
+
+The mutation gate found nine surviving mutants in the contract ports: the
+visibility audit could return an empty report, the seal report's emptiness
+could ignore two of its three lists, an array that grew an object inside a
+visible field was never tested, and the operation preimage could be replaced by
+any constant because its only pin lived in another crate, which the protocol
+crate's own mutation run does not execute. Tests now kill all nine, confirmed by
+a targeted local run in which all thirteen mutants of those functions were
+caught.
+
+The paired-boundary gate rejected the shared annualized-to-per-period
+conversion, which documents a finite, positive frequency and had no boundary
+test. A test now pins it at one period a year, an infinite frequency (a zero
+dispersion, the most favourable bar, which is why callers must refuse it), zero
+and a negative value.
+
+The macOS build of the Arena correction failed a pin that had been recorded on
+Windows: the old estimator's deflated Sharpe differed by two units in the last
+place between the two platforms' math libraries. The recorded constants are now
+compared within sixteen units, while the comparison against the pinned
+SharpeBench kernel, which runs on the same platform as the code under test,
+stays exact.
+
+The fault injector and the contract ports both rewrote the same retry driver.
+The textual merge interleaved the two loops and was discarded; the driver was
+rebuilt from the backoff version with the fault record added, so each attempt
+carries both its injected faults and its scheduled backoff, and the full suite
+passed on the combined tree before it was pushed.
+
+One live-container run failed on the cgroup out-of-memory probe on a branch
+that does not touch the sandbox, as it did once in the completion round. The
+next run, on the same branch after main was merged in, passed. It is recorded
+again as an observed flake in a timing-sensitive live probe, not as an
+explained one.
+
+Not established by this round: the gateway sandbox launch and the image
+allowlist probe have not run against a live Docker daemon, and the allowlist
+will likely need the files Docker adds to a container once it does; the fault
+plan, backoff schedule and re-execution check are library calls with no CLI
+flag yet; and the paper evidence was not regenerated, so the corrected prior
+and the proposed serial-correlation term have no new measured result.
+
+## Independent verification, 2026-09-10
+
+A separate verification of the completion round confirmed the repository state and
+the green CI, and refuted the claim that every implementation and safety property
+was finished. Each finding below was re-established against source before it was
+accepted, and the lifecycle finding was reproduced against the current library.
+
+| Finding | Disposition |
+|---|---|
+| A keyed retry marked an unresolved write answered, so a later blind retry did not block | Repaired, PR #54, main `fbfd9cf` |
+| The reservation bounded message content, not billed input, and settlement accepted the overshoot | Repaired, PR #55, main `2062444` |
+| Two gateways on one journal each spent the same allowance | Repaired, PR #55 |
+| The broker enforced no deadline and its bounds read as enforced | Late answers now refused; read timeout and byte cap stated as adapter obligations, PR #55 |
+| The gateway reports configuration and nothing serves the entrant pipe | Accepted. G11 is marked partial, not repaired |
+| The hosted field's call ceiling counted cached successes, not dispatches | Repaired, PR #56, main `7fe5a06` |
+| An unknown local dataset selector published an empty field as complete | Repaired, PR #56, main `7fe5a06` |
+| Zero bootstrap draws returned a zero-width interval rather than unavailability | Repaired, PR #56, main `7fe5a06` |
+
+The verification also withdrew two claims made in this record. The tree-equality
+claim was false for PR #50, as recorded above and in G16. And the special-function
+measurement's grid counts, maximum errors and zero-verdict-change figures are
+narrative: the measurement scripts, raw grids and comparison logs were not
+committed, so those numbers are not independently reproducible from this tree. The
+rejection of the migration does not depend on them, since it rests on the
+three-platform CI result, which is reproducible.
+
+Two process facts from the repair work bear on how far local results can be
+trusted. The mutation gate caught a third untested boundary in the ambiguity repair
+itself: resolving one subject's intent would have closed every open chain. It
+caught a fourth in the interval repair, where no test fixed the resampled bounds
+for a known seed, and then a flaw in the first attempt to close it: with seed 42
+the XOR and OR mutants of the stream constant produce the identical stream,
+because 42 shares no set bits with the constant's low byte, so the pin could not
+tell them apart. The committed pin uses a seed that overlaps the constant. And a
+local run reported two false evidence-coverage failures because two worktrees were
+compiling into one shared Cargo target directory at once, a setting introduced that
+day to save disk. With an isolated target the same tree passed all 662 affected
+tests. CI builds fresh and stays authoritative; a local run taken while another
+build shares its cache is not.
+
 ## Completion round, 2026-09-10
 
 Eight pull requests merged into SharpeBench, each with its relevant checks green
-on the exact pushed head, its merged tree verified byte-identical to the tested
-tree, and post-main CI green afterwards.
+on the exact pushed head and post-main CI green afterwards. The merged tree was
+compared against the tested tree for seven of them. The comparison was skipped
+for PR #50, whose merge sits 707 additions away from its tested head; see the
+correction below.
 
 | PR | Row | Main after merge |
 |---|---|---|
