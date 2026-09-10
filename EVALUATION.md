@@ -151,10 +151,15 @@ confidence report replays bit-for-bit.
 
 - **Paired-difference significance test.** `pairwise_significance(rows)` runs `paired_dsr_diff`
   down the ranked board: each bootstrap draw feeds the **same** resampled seeds to both
-  neighbours, so the price-path luck common to both cancels and the difference isolates skill.
-  When the difference CI straddles zero the two entries are **statistically tied**; otherwise
-  the higher-ranked one wins **beyond seed noise**. `significance_markdown` renders one verdict
-  per adjacent pair.
+  neighbours, so the price-path variation the two share is removed from the difference.
+  That narrows the interval; it does not isolate skill, because the part of each entry's
+  result that depends on how its own strategy meets those paths remains, and the estimate
+  is still the deflated Sharpe with its assumptions. When the difference CI straddles zero
+  the verdict is `tied`, which means a difference was **not established** under this
+  resampling, not that the entries are equivalent; otherwise the difference is established
+  at the stated confidence for this seed band. The adjacent comparisons are exploratory
+  and not adjusted for multiple testing. `significance_markdown` renders one verdict per
+  adjacent pair.
 
 Reproduce over the baselines with:
 
