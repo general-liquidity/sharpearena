@@ -41,7 +41,19 @@ impl AdaptiveCurriculum {
     }
 
     /// [`AdaptiveCurriculum::new`] with an explicit unseen-level `prior` in `[0, 1]`.
+    ///
+    /// Panics on a prior outside that domain, in every build profile. The domain is not
+    /// decoration: [`select_next`](Self::select_next) ranks candidates with `>`, which
+    /// discards NaN, so a NaN prior makes every unseen weight NaN and the scan silently
+    /// degenerates to "always the first level"; a prior outside `[0, 1]` makes
+    /// `p * (1 - p)` negative, which the same scan cannot rank against an observed
+    /// weight. A `prior` of exactly `0.0` or `1.0` is in-domain and well defined: every
+    /// unseen level weighs zero and the documented lowest-index tie-break decides.
     pub fn with_prior(levels: impl IntoIterator<Item = u64>, prior: f64) -> Self {
+        assert!(
+            prior.is_finite() && (0.0..=1.0).contains(&prior),
+            "curriculum prior must be a finite rate in [0, 1] (got {prior})"
+        );
         let mut deduped: Vec<u64> = Vec::new();
         for lv in levels {
             if !deduped.contains(&lv) {
@@ -100,15 +112,22 @@ impl AdaptiveCurriculum {
     }
 
     /// Record one episode outcome for `level` (`solved` = the agent met the success
-    /// criterion). Unknown levels are ignored (guarded by a debug assertion).
+    /// criterion).
+    ///
+    /// Panics on a level outside the candidate set, in every build profile. An
+    /// off-schedule record is a caller bug with no correct silent handling: dropping it
+    /// leaves the level on its prior forever while the caller believes the history was
+    /// observed, and the selector is documented as a pure function of the recorded
+    /// history, which a dropped record quietly falsifies. This is the policy the Python
+    /// twin already applies (`AdaptiveScheduler.record` raises `KeyError`); callers that
+    /// schedule over a changing level set should filter against
+    /// [`levels`](Self::levels) rather than rely on a swallowed write.
     pub fn record(&mut self, level: u64, solved: bool) {
-        match self.index_of(level) {
-            Some(i) => {
-                self.attempts[i] += 1;
-                self.solves[i] += u32::from(solved);
-            }
-            None => debug_assert!(false, "recorded outcome for off-schedule level {level}"),
-        }
+        let i = self
+            .index_of(level)
+            .unwrap_or_else(|| panic!("recorded outcome for off-schedule level {level}"));
+        self.attempts[i] += 1;
+        self.solves[i] += u32::from(solved);
     }
 
     /// The next level to replay: the highest-weight (mid-difficulty) candidate, ties
@@ -202,6 +221,27 @@ mod tests {
         };
         let c = AdaptiveCurriculum::from_spec(&spec, 4);
         assert_eq!(c.levels(), &[100, 101, 102, 103]);
+    }
+
+    #[test]
+    #[should_panic(expected = "curriculum prior must be a finite rate in [0, 1]")]
+    fn refuses_a_nan_prior() {
+        // NaN loses every `>` comparison in `select_next`, so an unvalidated NaN prior
+        // pins the schedule to the first level forever.
+        AdaptiveCurriculum::with_prior([5u64, 6, 7], f64::NAN);
+    }
+
+    #[test]
+    #[should_panic(expected = "curriculum prior must be a finite rate in [0, 1]")]
+    fn refuses_an_out_of_range_prior() {
+        AdaptiveCurriculum::with_prior([5u64, 6, 7], 5.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "recorded outcome for off-schedule level 99")]
+    fn refuses_an_off_schedule_record() {
+        let mut c = AdaptiveCurriculum::new([5u64, 6, 7]);
+        c.record(99, true);
     }
 
     #[test]
