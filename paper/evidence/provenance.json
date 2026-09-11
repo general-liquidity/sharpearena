@@ -216,7 +216,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "05714d6e9361ad75487844eb6d818b72e2599596",
+  "generated_at_head": "39746ab8eaa777c786a313407a877920f6b62d9c",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -269,6 +269,10 @@
       "sha256": "e3871f4c80d4d249649ce476cb84c10937388e64fc67dc976025e359b42980f8"
     },
     {
+      "path": "crates/sharpearena-py/python/sharpearena/_seed_bands.py",
+      "sha256": "96442172da50909df5ffc662343e2e545d341b8596e2c04a54d5bfffa9debe02"
+    },
+    {
       "path": "crates/sharpearena-py/python/sharpearena/_spec_hash.py",
       "sha256": "6fa07cb33172a1a81935bd0e23da9956eedc6c2bce9a7503a82ada85f5c2ae32"
     },
@@ -278,7 +282,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/baselines.py",
-      "sha256": "8d644a5229875d13955888cdba122fd9a27caf88551f6b0870175372f40c45d8"
+      "sha256": "1f423ba970738909d47ff7da3b9b60c57a521c4e8627aefbc83e08dcc0473152"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/bench_bridge.py",
@@ -310,7 +314,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/curriculum.py",
-      "sha256": "bbde9aa9cfa99b584f161fab7515994ef11f2fe20bfbfa05e0c1e6ebf46cdec9"
+      "sha256": "4845e8fe82617ffc0d25e895d717ddd922f070155e449bd327c5a5e8e25c9b8f"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/data_blocks.py",
@@ -318,7 +322,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/dataset.py",
-      "sha256": "0c06bbd35cd27fcb3760727056692099baf755e65165ab1d8c9502360a3f8663"
+      "sha256": "3967ce9723ffdb79212a2f35a04692a6a6165ca6f1e4272b9f9563029ae6df69"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/decision_examples.py",
@@ -390,7 +394,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/gym.py",
-      "sha256": "3f0ff9a28e9aba1689ff5dd23a6fa476b341c38555cb0c45bf0af732a006b0a4"
+      "sha256": "c0b4720fa18cda5d35df3a536072dc09f622b4193883a2077d7d773b3ba764b4"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/indicators.py",
@@ -442,7 +446,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/minari_export.py",
-      "sha256": "74c53b07f17e4f700dd88f2d315397da4b7e77a4ff0461b74f4c05d222b9d570"
+      "sha256": "67ec7ac982ed9a2723af6942de481b3c304280a61d2b68d04af3ab67f9a27239"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/news.py",
@@ -542,7 +546,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/vector.py",
-      "sha256": "896d1005b39b7cfd7d9197fcde6f11dfba786a6b5061f30d3e75f3ece55c24b2"
+      "sha256": "21c7d542b3743f52359c23199621291da52a68fc4912b85a199dd3ecdfcc0112"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/verifiers_env.py",
@@ -574,7 +578,7 @@
     },
     {
       "path": "crates/sharpearena/build.rs",
-      "sha256": "71b499998b5cb138bbc98d8473bcfa96b9a6144947c63a5292b76aee9352622d"
+      "sha256": "9a1ee71b6a1db6945e3d329e61a184ae5300a0a81f3d69ce593a915ff017bebd"
     },
     {
       "path": "crates/sharpearena/build_support.rs",
@@ -598,7 +602,7 @@
     },
     {
       "path": "crates/sharpearena/src/curriculum.rs",
-      "sha256": "ab7244e451564e2814a84605a11122f2674457d4815875f8b360942e463378cb"
+      "sha256": "928364643db2f1339a5cba5e78923962484683ead0c94418166ce1bde77dd2fb"
     },
     {
       "path": "crates/sharpearena/src/exec_noise.rs",
@@ -634,7 +638,7 @@
     },
     {
       "path": "crates/sharpearena/src/spec_hash.rs",
-      "sha256": "6eee5dd4b4031cb4211062a3cc519807c9786ee2024d7295499578e497311656"
+      "sha256": "7a718fe2233f69c10b0277c7c72b0c793afc9902ef41c1285734cf27a72b1a20"
     },
     {
       "path": "crates/sharpearena/src/transport_gate.rs",
@@ -658,7 +662,7 @@
     },
     {
       "path": "crates/sharpearena/tests/fail_open_review.rs",
-      "sha256": "2051ce6436300ebfcd1dcaac0e20e2cd908ab0d91135eaf4bd6275dcec96223e"
+      "sha256": "4e8de2dc8271bcf1651a4b72397aad40b76172595b5867612e07bb8a61aa5a23"
     },
     {
       "path": "crates/sharpearena/tests/kernel_properties.rs",
@@ -874,6 +878,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "f25143bfd99393f6dece74faccb0bed494d39d6dfed3efa3888b5abb5dc0269f",
+  "source_snapshot_sha256": "be0a73cfb031c27fb25fc1448b8d4e077ad6dcda26290bafc305cda92aa47d1a",
   "validator": "paper/src/check-provenance.py"
 }
