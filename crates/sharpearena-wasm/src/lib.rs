@@ -369,6 +369,144 @@ mod goldens {
         }
     }
 
+    /// The committed pre-hash canonical JSON per **backtest** golden name. Same role as
+    /// [`pre_hash_fixture`]: a drifted number is diagnosed with a readable string diff
+    /// before the fingerprint comparison reduces it to two hex words.
+    pub fn backtest_pre_hash_fixture(name: &str) -> &'static str {
+        match name {
+            "momentum_2x40_seed3" => include_str!(
+                "../../sharpearena/contract/attestation/pre-hash/run-momentum-2x40-seed3.json"
+            ),
+            "buy_and_hold_2x40_seed1" => include_str!(
+                "../../sharpearena/contract/attestation/pre-hash/run-buy-and-hold-2x40-seed1.json"
+            ),
+            "fixed_weight_2x40_seed7_costed" => include_str!(
+                "../../sharpearena/contract/attestation/pre-hash/replay-fixed-weight-2x40-seed7-costed.json"
+            ),
+            "long_short_rotation_2x40_seed13_frictionless" => include_str!(
+                "../../sharpearena/contract/attestation/pre-hash/replay-long-short-rotation-2x40-seed13-frictionless.json"
+            ),
+            other => panic!("backtest golden {other:?} has no committed pre-hash fixture"),
+        }
+    }
+
+    /// One committed backtest golden, resolved to the exact kernel call it pins.
+    ///
+    /// `Baseline` drives [`super::run_baseline_json`]; `Replay` drives
+    /// [`super::replay_run_json`], whose dataset argument is the kernel's own
+    /// `dataset_synthetic` output for `dataset_params`, passed verbatim. Building the
+    /// panel through the kernel rather than committing it keeps the pin on the replay
+    /// arithmetic instead of on a re-serialization of the price panel, and it makes the
+    /// entry identical work in every runtime that reads this file.
+    pub enum BacktestGolden {
+        Baseline {
+            name: String,
+            config: String,
+            fingerprint: u64,
+        },
+        Replay {
+            name: String,
+            dataset_params: String,
+            trajectory: String,
+            costs: String,
+            fingerprint: u64,
+        },
+    }
+
+    impl BacktestGolden {
+        pub fn name(&self) -> &str {
+            match self {
+                Self::Baseline { name, .. } | Self::Replay { name, .. } => name,
+            }
+        }
+
+        /// Drive the kernel call this golden pins, returning its exact output bytes.
+        /// The wasm32 leg deliberately does not use this: it goes through the
+        /// `#[wasm_bindgen]` exports instead, so the exported surface is what is pinned.
+        #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+        pub fn invoke(&self) -> Result<String, String> {
+            match self {
+                Self::Baseline { config, .. } => super::run_baseline_json(config),
+                Self::Replay {
+                    dataset_params,
+                    trajectory,
+                    costs,
+                    ..
+                } => {
+                    let dataset = super::dataset_synthetic_json(dataset_params)?;
+                    super::replay_run_json(&dataset, trajectory, costs)
+                }
+            }
+        }
+
+        pub fn fingerprint(&self) -> u64 {
+            match self {
+                Self::Baseline { fingerprint, .. } | Self::Replay { fingerprint, .. } => {
+                    *fingerprint
+                }
+            }
+        }
+    }
+
+    /// The committed backtest goldens: the `runs` entries then the `replays` entries, in
+    /// file order.
+    pub fn backtest_committed() -> Vec<BacktestGolden> {
+        const SOURCE: &str =
+            include_str!("../../sharpearena/contract/attestation/backtest-goldens.json");
+        let doc: serde_json::Value =
+            serde_json::from_str(SOURCE).expect("backtest-goldens.json must be valid JSON");
+
+        let hex = |entry: &serde_json::Value| {
+            u64::from_str_radix(
+                entry["fnv1a64"]
+                    .as_str()
+                    .expect("golden needs an fnv1a64 hex string"),
+                16,
+            )
+            .expect("fnv1a64 must be a hex u64")
+        };
+        let name = |entry: &serde_json::Value| {
+            entry["name"]
+                .as_str()
+                .expect("golden needs a name")
+                .to_string()
+        };
+        let json = |entry: &serde_json::Value, key: &str| {
+            serde_json::to_string(&entry[key]).expect("golden field must serialize")
+        };
+
+        let array = |key: &str| {
+            doc[key]
+                .as_array()
+                .unwrap_or_else(|| panic!("backtest-goldens.json needs a `{key}` array"))
+                .clone()
+        };
+
+        let runs = array("runs");
+        let replays = array("replays");
+        assert!(
+            !runs.is_empty() && !replays.is_empty(),
+            "backtest-goldens.json must pin at least one run and at least one replay; \
+             a file with no replay entry leaves the backtest path uncovered, which is \
+             the gap T1 names"
+        );
+
+        runs.iter()
+            .map(|entry| BacktestGolden::Baseline {
+                name: name(entry),
+                config: json(entry, "config"),
+                fingerprint: hex(entry),
+            })
+            .chain(replays.iter().map(|entry| BacktestGolden::Replay {
+                name: name(entry),
+                dataset_params: json(entry, "dataset"),
+                trajectory: json(entry, "trajectory"),
+                costs: json(entry, "costs"),
+                fingerprint: hex(entry),
+            }))
+            .collect()
+    }
+
     /// The committed goldens as `(name, kernel input JSON, expected fingerprint)`.
     pub fn committed() -> Vec<(String, String, u64)> {
         const SOURCE: &str =
@@ -688,6 +826,56 @@ mod tests {
             );
         }
     }
+
+    /// The backtest path's cross-runtime pins, on the host-compiled engine.
+    ///
+    /// The scenario goldens establish that *generation* agrees across runtimes; they say
+    /// nothing about execution or replay, so a native-versus-wasm32 arithmetic difference
+    /// anywhere behind `run_backtest` or `replay_run` was invisible to every gate (T1 in
+    /// the 2026-09-09 Arena review). This is the native leg of the same three-runtime
+    /// comparison: `wasm32_tests` runs the identical entries through the wasm32 build and
+    /// `npm/sharpearena/test/golden.test.js` runs them through the committed `.wasm`, all
+    /// three against this one committed file.
+    #[test]
+    fn backtest_goldens_reproduce_natively() {
+        for golden in goldens::backtest_committed() {
+            let name = golden.name();
+            let out = golden
+                .invoke()
+                .unwrap_or_else(|e| panic!("{name}: the backtest golden failed: {e}"));
+            assert_eq!(
+                out,
+                goldens::backtest_pre_hash_fixture(name),
+                "{name}: the native engine's bytes drifted from the committed pre-hash fixture"
+            );
+            assert_eq!(
+                goldens::fnv1a64(out.as_bytes()),
+                golden.fingerprint(),
+                "{name}: cross-runtime backtest fingerprint drifted from the committed pin"
+            );
+        }
+    }
+
+    /// A backtest golden set with no replay entry would leave the exact gap T1 names while
+    /// reading as covered, so the replay names are required by name the way the scenario
+    /// names are.
+    #[test]
+    fn backtest_goldens_keep_pinning_the_replay_path() {
+        let names: Vec<String> = goldens::backtest_committed()
+            .iter()
+            .map(|g| g.name().to_string())
+            .collect();
+        for required in [
+            "momentum_2x40_seed3",
+            "fixed_weight_2x40_seed7_costed",
+            "long_short_rotation_2x40_seed13_frictionless",
+        ] {
+            assert!(
+                names.iter().any(|n| n == required),
+                "backtest-goldens.json must keep pinning {required}; found {names:?}"
+            );
+        }
+    }
 }
 
 /// The wasm32 execution of the export layer. `wasm-pack test --node crates/sharpearena-wasm`
@@ -720,15 +908,24 @@ mod wasm32_tests {
         }
     }
 
+    /// Within-module reproducibility of the export layer: the same call twice inside one
+    /// wasm module returns the same bytes.
+    ///
+    /// This is a weaker claim than its old name (`..._run_baseline_and_replay_agree_...`)
+    /// advertised. It never called `replay_run`, and comparing a module against itself
+    /// cannot see a native-versus-wasm32 difference at all — every number could be wrong
+    /// in the same way twice and this would stay green. The cross-runtime claim is
+    /// [`exported_backtest_goldens_reproduce_under_wasm32`] below; this one is kept
+    /// because non-determinism inside one module and disagreement between runtimes are
+    /// different faults, and the golden test cannot tell them apart.
     #[wasm_bindgen_test]
-    fn exported_run_baseline_and_replay_agree_under_wasm32() {
+    fn exported_run_baseline_repeats_within_one_wasm_module() {
         let dataset = crate::wasm::dataset_synthetic(r#"{"n_symbols":4,"n_days":120,"seed":11}"#);
         let cfg = r#"{"agent":"momentum","dataset":{"synthetic":{"n_symbols":4,"n_days":120,"seed":11}},"window":{"start":20,"end":120},"seed":3}"#;
         let run = crate::wasm::run_baseline(cfg);
         let value: serde_json::Value = serde_json::from_str(&run).unwrap();
         assert_eq!(value["returns"].as_array().unwrap().len(), 100);
 
-        // The same call inside one wasm module must reproduce byte for byte.
         let again = crate::wasm::run_baseline(cfg);
         assert_eq!(run, again, "the wasm32 baseline run is not reproducible");
         assert_eq!(
@@ -736,6 +933,51 @@ mod wasm32_tests {
             dataset,
             "the wasm32 synthetic dataset is not reproducible"
         );
+    }
+
+    /// The backtest path's cross-runtime pins, executed as WebAssembly through the
+    /// `#[wasm_bindgen]` exports. The native leg is `backtest_goldens_reproduce_natively`
+    /// and the shipped-binary leg is `npm/sharpearena/test/golden.test.js`; all three read
+    /// `contract/attestation/backtest-goldens.json`, so an arithmetic difference between
+    /// the host build and the wasm32 build anywhere behind `run_backtest` or `replay_run`
+    /// turns one of them red instead of shipping (T1).
+    #[wasm_bindgen_test]
+    fn exported_backtest_goldens_reproduce_under_wasm32() {
+        use super::goldens::BacktestGolden;
+
+        for golden in super::goldens::backtest_committed() {
+            let name = golden.name().to_string();
+            let out = match &golden {
+                BacktestGolden::Baseline { config, .. } => crate::wasm::run_baseline(config),
+                BacktestGolden::Replay {
+                    dataset_params,
+                    trajectory,
+                    costs,
+                    ..
+                } => {
+                    let dataset = crate::wasm::dataset_synthetic(dataset_params);
+                    assert!(
+                        !dataset.starts_with("{\"error\""),
+                        "{name}: the wasm32 dataset export failed: {dataset}"
+                    );
+                    crate::wasm::replay_run(&dataset, trajectory, costs)
+                }
+            };
+            assert!(
+                !out.starts_with("{\"error\""),
+                "{name}: the wasm32 export failed: {out}"
+            );
+            assert_eq!(
+                out,
+                super::goldens::backtest_pre_hash_fixture(&name),
+                "{name}: the wasm32 build's bytes drifted from the committed pre-hash fixture"
+            );
+            assert_eq!(
+                super::goldens::fnv1a64(out.as_bytes()),
+                golden.fingerprint(),
+                "{name}: the wasm32 build's backtest bytes drifted from the committed golden"
+            );
+        }
     }
 
     #[wasm_bindgen_test]
