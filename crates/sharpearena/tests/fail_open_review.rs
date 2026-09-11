@@ -4,8 +4,8 @@
 //! code is changed by this file.
 
 use sharpearena::{
-    level_seed, mandate_breach, perturb_action, train_test_split, AdaptiveCurriculum, ExecNoise,
-    ExecNoiseError, Mandate, MandateError, MandateStyle, ScenarioSpec,
+    level_seed, mandate_breach, perturb_action, train_test_split, ExecNoise, ExecNoiseError,
+    Mandate, MandateError, MandateStyle, ScenarioSpec,
 };
 
 fn long_only(max_drawdown: Option<f64>, max_inventory: Option<f64>) -> Mandate {
@@ -189,20 +189,64 @@ fn r2_malformed_execution_noise_is_refused() {
     ));
 }
 
-/// R3. `AdaptiveCurriculum::with_prior` documents `prior` in `[0, 1]` but does not
-/// enforce it. A NaN prior makes every unseen level's ZPD weight NaN, and `select_next`
-/// compares with `>`, so the scan never displaces its seed: the curriculum degenerates to
-/// "always the first level" without complaint. An out-of-range prior yields a negative
-/// weight, which the same scan also cannot rank.
+/// R3. `AdaptiveCurriculum::with_prior` documented `prior` in `[0, 1]` and did not
+/// enforce it. A NaN prior made every unseen level's ZPD weight NaN, and `select_next`
+/// compares with `>`, so the scan never displaced its seed: the curriculum degenerated to
+/// "always the first level" without complaint. An out-of-range prior yielded a negative
+/// weight, which the same scan also cannot rank. Both are now refused by an `assert!`,
+/// which `[profile.release]` keeps, and the companion defect (an off-schedule `record`
+/// dropped by a `debug_assert!` that is absent from every shipped profile) is refused
+/// there too.
+///
+/// Compiled only in the shipped profile, because that is the configuration the defects
+/// lived in; CI runs it via `cargo test --workspace --release`.
+///
+/// The isolation is the panic *message*: no other statement in either constructor or in
+/// `record` panics with these words, so neither assertion can be satisfied by an
+/// unrelated failure. The final leg pins what the refusals buy, on the inputs that
+/// previously produced the degenerate schedule.
+#[cfg(not(debug_assertions))]
 #[test]
-fn r3_curriculum_prior_is_unvalidated() {
-    let nan = AdaptiveCurriculum::with_prior([5u64, 6, 7], f64::NAN);
-    assert!(nan.weight(6).is_nan());
-    assert_eq!(nan.select_next(), 5);
+fn r3_release_build_refuses_an_unrankable_curriculum() {
+    use sharpearena::AdaptiveCurriculum;
 
-    let out_of_range = AdaptiveCurriculum::with_prior([5u64, 6, 7], 5.0);
-    assert_eq!(out_of_range.weight(6), 5.0 * (1.0 - 5.0));
-    assert!(out_of_range.weight(6) < 0.0);
+    fn refusal(call: impl FnOnce() + std::panic::UnwindSafe) -> String {
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let payload = std::panic::catch_unwind(call).expect_err("the call must be refused");
+        std::panic::set_hook(previous);
+        payload
+            .downcast_ref::<String>()
+            .cloned()
+            .or_else(|| payload.downcast_ref::<&str>().map(|s| s.to_string()))
+            .expect("panic payload is a message")
+    }
+
+    for prior in [f64::NAN, 5.0, -0.5, f64::INFINITY] {
+        let message = refusal(move || {
+            AdaptiveCurriculum::with_prior([5u64, 6, 7], prior);
+        });
+        assert!(
+            message.contains("curriculum prior must be a finite rate in [0, 1]"),
+            "an out-of-domain prior must be refused in the shipped profile: {message}"
+        );
+    }
+
+    let message = refusal(|| {
+        let mut curriculum = AdaptiveCurriculum::new([5u64, 6, 7]);
+        curriculum.record(99, true);
+    });
+    assert!(
+        message.contains("recorded outcome for off-schedule level 99"),
+        "an off-schedule record must be refused in the shipped profile: {message}"
+    );
+
+    // In-domain priors still schedule: the boundary values are accepted and the
+    // documented lowest-index tie-break decides when every unseen weight is zero.
+    for prior in [0.0, 0.5, 1.0] {
+        let curriculum = AdaptiveCurriculum::with_prior([5u64, 6, 7], prior);
+        assert_eq!(curriculum.select_next(), 5);
+    }
 }
 
 /// R4. `train_test_split(train, 0, gap)` is documented as carving `n_test` held-out

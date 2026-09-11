@@ -18,10 +18,9 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from ._seed_bands import EVAL_SEED_BASE
 from .decision_examples import render_decision_examples
 from .mandate import mandate_text, sample_mandate
-
-EVAL_SEED_BASE = 1_000_000
 
 
 def _seed_for(mode: str, seed_start: int, i: int) -> int:

@@ -9,7 +9,7 @@ SharpeArena makes several distinct guarantees. Keeping them separate prevents
 | Decision integrity | Raw decisions are journaled and replayed through the frozen engine; transport faults become failed cells rather than empty holds. | A pinned engine, data/config artifact, and trajectory. |
 | Cross-surface semantics | `SPEC_HASH`, exact engine dependency pins, canonical JSON goldens, native/WASM/npm/Python parity tests. | Published wrappers and the engine they load. |
 | Arm identity | Effective configuration is read back from the constructed environment and compared before evidence is written. | Evidence-producing scenario arms. |
-| Seed custody | `SealedSalt` enforces a 16-byte floor, redacts debug output, avoids serialization/display/deref, and derives disjoint held-out seeds. | Commit-reveal protocol; not a certified cryptographic PRF or custody service. |
+| Seed custody | `SealedSalt` enforces a 16-byte floor, redacts debug output, avoids serialization/display/deref, and derives disjoint held-out seeds. | Commit-reveal protocol; not a certified cryptographic PRF or custody service. The floor is a length check and not a measure of entropy: an all-zero or passphrase-derived 16-byte salt is accepted, so secure generation and secrecy stay the operator's obligation (see [training](training.md)). |
 | Input closure | JSON Schemas, `deny_unknown_fields`, path containment, and typed boundary errors. | Caller-controlled configuration and plans. |
 | Artifact integrity | Atomic provenance generation, code-owned scopes, exact artifact hashes, clean-generation Git blob checks, offline pack/import tests. | Repository/release evidence and packages. |
 

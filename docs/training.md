@@ -156,6 +156,17 @@ The repo ships two independent train/eval split conventions; they do not interac
   refuse the inputs that would break disjointness (`ValueError` in Python, a typed
   `SplitError` in Rust) in the configuration that ships, not only in a debug build or an
   unoptimized interpreter.
+
+  **Zero held-out levels is not an empty family in Rust.** The two surfaces spell the
+  count differently and the difference is deliberate. `train_test_seeds(n_train, 0, ...)`
+  in Python returns an empty test list, because the band is materialized as a `range`.
+  `train_test_split(train, 0, gap)` in Rust returns a `ScenarioSpec` with
+  `num_levels == 0`, and `num_levels == 0` is `ScenarioSpec`'s documented Procgen
+  convention for *unlimited*: the held-out family spans `[train_end + gap, u64::MAX)`.
+  That family is still provably disjoint from the train band, which is the guarantee
+  `SplitError` protects, so zero is accepted rather than refused; it just means "every
+  seed above the gap", not "no seeds". Pass the count you want held out. A Rust caller
+  that wants an empty evaluation set should skip the evaluation, not ask for zero levels.
 - **The `EVAL_SEED_BASE = 1_000_000` offset** (`dataset.py`): `mode="eval"` datasets,
   the `-Eval-v1` Gymnasium IDs, and the frozen named seeds in `eval_seeds.py` all live
   at or above `EVAL_SEED_BASE`, provably disjoint from the train band
@@ -180,3 +191,18 @@ publish `sha256(salt)` before the run (for example in the SharpeBench forward
 attestation); evaluate; reveal the salt afterwards so anyone can recompute the seeds
 and replay the run. A revealed salt is spent. The public set and its
 `EVAL_SET_VERSION` are unchanged.
+
+**The 16-byte floor is a length check, not an entropy measurement.** `SealedSalt::new`
+(and every surface that reaches it) refuses fewer than `MIN_SEALED_SALT_BYTES = 16`
+bytes, which rules out the short passphrase that would put the salt back inside an
+enumeration budget. It cannot inspect how those bytes were produced: sixteen zero bytes,
+or sixteen bytes of a memorable phrase, are accepted by the constructor and are worth
+nothing against an adversary who guesses them. Nothing about passing the length check
+establishes that a salt is random. Entropy and secrecy remain the operator's obligation:
+draw the salt from a cryptographic RNG (`os.urandom(32)`, `secrets.token_bytes(32)`),
+never derive it from a passphrase, a timestamp or a run label, keep it out of the
+repository, the agent's reach, logs and evidence artifacts until the reveal, and never
+reuse a revealed salt. Operators who need resistance to salt recovery from disclosed
+seeds should derive the salt per evaluation from a real KDF and treat `sealed_seed` as
+the band-mapping step only; the construction is a keyed PRF-*style* derivation built from
+the primitives the crate already carries, not a certified cryptographic MAC.

@@ -600,6 +600,21 @@ def leaderboard_markdown(rows: Sequence[dict], *, show_ci: bool = False) -> str:
     actual confidence level (from each row's ``deflated_sharpe_ci``), so the table shows the
     ranked number but how firmly the seeds support it. Default off, so the canonical baseline
     tables reproduce byte-identically.
+
+    ``sorted`` is stable, so rows the estimator scores identically would otherwise receive
+    distinct ordinal ranks decided by ``BASELINE_POLICIES`` declaration order, printed with
+    nothing to say the order carries no information. Three different things can make two
+    neighbouring rows look equal, and the rank column tells them apart:
+
+    * ``=`` marks an **exact tie** in the ranked estimator. Tied rows share the lowest
+      ordinal of their group and their order within it is arbitrary.
+    * ``~`` marks rows separated **only beyond the four displayed decimals**. The rank is
+      real; the printed number does not support it.
+    * Neither marker is a claim about **statistical** separation. Two rows with different
+      scores can still be indistinguishable on the seeds, which is what ``show_ci`` and
+      :func:`~sharpearena.confidence.pairwise_significance` answer, not a rank.
+
+    A table with no marked row renders exactly as it did before, legend included.
     """
     def score(row: dict) -> float | str:
         value = row.get("deflated_sharpe")
@@ -616,11 +631,34 @@ def leaderboard_markdown(rows: Sequence[dict], *, show_ci: bool = False) -> str:
         header = "| Rank | Policy | Deflated Sharpe | pass^k rate | Mean return |"
         sep = "|---|---|---|---|---|"
     lines = [header, sep]
+    scores = [
+        None if is_kernel_score_unavailable(score(r)) else float(score(r)) for r in ordered
+    ]
+
+    def rank_cell(index: int) -> str:
+        """The rank of ``ordered[index]``, marked for exact and displayed-only equality."""
+        value = scores[index]
+        if value is None:
+            return "-"
+        neighbours = [j for j in (index - 1, index + 1) if 0 <= j < len(scores)]
+        if any(scores[j] == value for j in neighbours):
+            first = index
+            while first > 0 and scores[first - 1] == value:
+                first -= 1
+            return f"{first + 1}="
+        shown = f"{value:.4f}"
+        if any(scores[j] is not None and f"{scores[j]:.4f}" == shown for j in neighbours):
+            return f"{index + 1}~"
+        return str(index + 1)
+
+    marked = False
     for i, r in enumerate(ordered, start=1):
         value = score(r)
         unavailable = is_kernel_score_unavailable(value)
+        rank = rank_cell(i - 1)
+        marked = marked or rank.endswith(("=", "~"))
         cells = [
-            "-" if unavailable else str(i),
+            rank,
             str(r.get("policy", "?")),
             str(value) if unavailable else f"{value:.4f}",
         ]
@@ -637,6 +675,13 @@ def leaderboard_markdown(rows: Sequence[dict], *, show_ci: bool = False) -> str:
         cells.append(rate if isinstance(rate, str) else f"{float(rate):.2f}")
         cells.append("{:.6f}".format(float(r.get("mean_return", 0.0))))
         lines.append("| " + " | ".join(cells) + " |")
+    if marked:
+        lines.append("")
+        lines.append(
+            "`=` exact tie in the ranked estimator (order within a tie is arbitrary); "
+            "`~` separated only beyond the four displayed decimals. Neither is a claim of "
+            "statistical separation; use `show_ci=True` and `pairwise_significance`."
+        )
     return "\n".join(lines)
 
 

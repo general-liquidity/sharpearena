@@ -80,6 +80,43 @@ def test_leaderboard_renders_sorted_by_deflated_sharpe():
     assert body[-1].split("|")[2].strip() == "a"
 
 
+def test_leaderboard_rank_separates_exact_ties_from_rounded_equality():
+    """Three causes of "these two look equal" get three different rank cells.
+
+    The scores are the committed Calm row values (``paper/evidence/f1-baselines.json``,
+    version 0.9.0): ``kelly_vol_target`` and ``equal_weight_long`` differ in the seventh
+    decimal and both print ``1.0000``, while ``momentum`` and ``max_sharpe`` are an exact
+    ``0.0`` tie whose order is decided by declaration order alone. ``min_variance`` is
+    separated on the printed number and carries no marker, so a renderer that marked
+    everything would fail here too.
+    """
+    rows = [
+        {"policy": "kelly_vol_target", "deflated_sharpe": 0.9999999999259135},
+        {"policy": "equal_weight_long", "deflated_sharpe": 0.9999998622925645},
+        {"policy": "min_variance", "deflated_sharpe": 0.9849005537856994},
+        {"policy": "momentum", "deflated_sharpe": 0.0},
+        {"policy": "max_sharpe", "deflated_sharpe": 0.0},
+    ]
+    table = leaderboard_markdown(rows)
+    ranks = [
+        line.split("|")[1].strip()
+        for line in table.splitlines()
+        if line.startswith("| ") and not line.startswith("| Rank")
+    ]
+    assert ranks == ["1~", "2~", "3", "4=", "4="]
+    assert "exact tie" in table
+
+    # No marked row, no legend: an unambiguous table renders as it always did.
+    plain = leaderboard_markdown(
+        [
+            {"policy": "a", "deflated_sharpe": 0.9},
+            {"policy": "b", "deflated_sharpe": 0.4},
+        ]
+    )
+    assert [line.split("|")[1].strip() for line in plain.splitlines()[2:]] == ["1", "2"]
+    assert "exact tie" not in plain
+
+
 def test_leaderboard_markdown_importable_without_binding():
     # Pure rendering must not require the native kernel.
     from sharpearena.baselines import leaderboard_markdown as render

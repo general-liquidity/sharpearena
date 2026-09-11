@@ -56,25 +56,28 @@ mod tests {
             "spec files changed: rebind spec-hash.json + the npm/python wrapper pins \
              and rebuild the committed wasm bundle"
         );
-        // The recorded file set and epoch must match what build.rs actually hashes,
-        // so the record documents the real provenance of the value.
+        // The recorded inputs and epoch must equal what build.rs actually folded into
+        // the value. Both come from the build script itself: `SHARPEARENA_SPEC_INPUTS`
+        // is accumulated by the hashing loop as each input is hashed, and
+        // `SHARPEARENA_SPEC_EPOCH` is the `SPEC_EPOCH` bytes that seed it. Searching
+        // build.rs's source text instead would accept a name that appears only in a
+        // comment, and a hardcoded count does not move with the array it claims to
+        // track; comparing the declared list to the hashed list, in order, does.
         assert_eq!(
             doc["epoch"].as_str(),
-            Some("spec-epoch-3"),
-            "epoch drifted from build.rs SPEC_EPOCH"
+            Some(env!("SHARPEARENA_SPEC_EPOCH")),
+            "spec-hash.json epoch drifted from the epoch build.rs seeded the hash with"
         );
-        let build_rs = include_str!("../build.rs");
-        for file in doc["files"].as_array().expect("record needs files") {
-            let file = file.as_str().unwrap();
-            assert!(
-                build_rs.contains(&format!("\"{file}\"")),
-                "spec-hash.json lists {file} but build.rs does not hash it"
-            );
-        }
+        let recorded: Vec<&str> = doc["files"]
+            .as_array()
+            .expect("record needs files")
+            .iter()
+            .map(|file| file.as_str().expect("each recorded input is a string"))
+            .collect();
+        let hashed: Vec<&str> = env!("SHARPEARENA_SPEC_INPUTS").split(',').collect();
         assert_eq!(
-            doc["files"].as_array().unwrap().len(),
-            8,
-            "spec-hash.json file count drifted from build.rs SPEC_FILES"
+            recorded, hashed,
+            "spec-hash.json lists inputs build.rs does not hash, in that order"
         );
     }
 
