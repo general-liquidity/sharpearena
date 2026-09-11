@@ -79,6 +79,11 @@ fn canonical_source_bytes(bytes: &[u8]) -> Vec<u8> {
 
 fn main() {
     let mut h = fnv1a(0xcbf2_9ce4_8422_2325, SPEC_EPOCH.iter().copied());
+    // Every input actually folded into `h`, in hashing order, recorded as it is hashed.
+    // `spec_hash.rs` compares the committed record against this list rather than
+    // searching this file's source text, so the record cannot agree with a name that
+    // only appears in a comment, and the list moves with the loop instead of a literal.
+    let mut hashed_inputs: Vec<&str> = Vec::new();
     println!("cargo:rerun-if-changed=Cargo.toml");
     println!("cargo:rerun-if-changed=build_support.rs");
     let manifest = std::fs::read_to_string("Cargo.toml").expect("read manifest");
@@ -87,6 +92,7 @@ fn main() {
         .into_bytes();
     for f in SPEC_FILES {
         println!("cargo:rerun-if-changed={f}");
+        hashed_inputs.push(f);
         let bytes = std::fs::read(f)
             .unwrap_or_else(|e| panic!("spec-hash input {f} must exist and be readable: {e}"));
         let canonical = canonical_source_bytes(&bytes);
@@ -95,8 +101,17 @@ fn main() {
         h = fnv1a(h, canonical);
     }
     // Framed like source files, after the alphabetically sorted source list.
+    hashed_inputs.push(DEPENDENCY_INPUT);
     h = fnv1a(h, DEPENDENCY_INPUT.bytes().chain([0]));
     h = fnv1a(h, (dependency_bytes.len() as u64).to_le_bytes());
     h = fnv1a(h, dependency_bytes);
     println!("cargo:rustc-env=SHARPEARENA_SPEC_HASH={h:016x}");
+    println!(
+        "cargo:rustc-env=SHARPEARENA_SPEC_INPUTS={}",
+        hashed_inputs.join(",")
+    );
+    println!(
+        "cargo:rustc-env=SHARPEARENA_SPEC_EPOCH={}",
+        std::str::from_utf8(SPEC_EPOCH).expect("SPEC_EPOCH is UTF-8")
+    );
 }
