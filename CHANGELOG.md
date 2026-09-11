@@ -11,6 +11,7 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 ## [Unreleased]
 
 ### Changed
+- docs: the mirrored audit records now include the money-accounting repairs, one writer per gateway journal, a settlement that fails closed, and a call ceiling that bounds provider requests.
 - docs: the audit records mirrored from SharpeBench now include ledger row G21, the gaps closed after SharpeBench v0.21.0 and this repository's v0.25.0 release.
 - docs: the mirrored audit records now include the SharpeBench v0.22.0 release and its registry-check fix.
 
