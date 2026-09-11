@@ -216,8 +216,8 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "a533e98ca9b98e541833568644ca24b62e330ae1",
-  "generated_at_head_dirty": false,
+  "generated_at_head": "d5c41528c8cb270e06fc3cf9deda1283a981245d",
+  "generated_at_head_dirty": true,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
   ],
@@ -238,11 +238,11 @@
     },
     {
       "path": ".github/workflows/ci.yml",
-      "sha256": "015f1071d012688b77c86819c7c64c2211f4737650e0df33b0bb7c857020f93a"
+      "sha256": "85f4fcb1056eef935dd5895b9661f6c58b824a55c4895466373fe631656777bf"
     },
     {
       "path": ".github/workflows/release.yml",
-      "sha256": "f39474d7e16c27915f03e97ba4cca92e7651034e8a92728cf18d5d11de219040"
+      "sha256": "0fdadddcc2ecb08f27848a824740cf450dda74357e8ec5cf8e8deb732d156534"
     },
     {
       "path": "Cargo.lock",
@@ -566,7 +566,7 @@
     },
     {
       "path": "crates/sharpearena-wasm/src/lib.rs",
-      "sha256": "374ce10866d31b4628664204848fe63f171f89645385c4c746653dd40bea9e45"
+      "sha256": "4f778e3ed68852923f50437f572bb215fc88621ed83b45f98abd267df82ed5fe"
     },
     {
       "path": "crates/sharpearena/Cargo.toml",
@@ -682,7 +682,7 @@
     },
     {
       "path": "npm/sharpearena/package.json",
-      "sha256": "61f03eb20638c30ee9f328e31d12866e6eec4f4cf92b9851f6dbc7c22c6ddf13"
+      "sha256": "2670f2936fb9e00a0239d0b28a53a06caa0bb377ccc61f30f7f3ecd5a110fb6c"
     },
     {
       "path": "paper/main.tex",
@@ -874,6 +874,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "6914feb1942dd49fb317385cdc6cc55176a0ea21fc6806600aacb6d0afa9ab3e",
+  "source_snapshot_sha256": "bc93bae0cc20fe4901ba9cd7669f3d80eff538f2eccc8f980a5fc01aaba2f9b7",
   "validator": "paper/src/check-provenance.py"
 }

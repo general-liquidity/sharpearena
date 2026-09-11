@@ -66,12 +66,13 @@ test("a stale wrapper is refused with the named mismatch diagnosis", () => {
   }).outputText;
   const mod = { exports: {} };
   new Function("exports", "module", "require", js)(mod.exports, mod, require);
-  const { checkSpecHash } = mod.exports;
+  const { checkSpecHash, compareSpecHash } = mod.exports;
   assert.equal(typeof checkSpecHash, "function");
+  assert.equal(typeof compareSpecHash, "function");
 
   const stale = "00000000deadbeef";
   assert.throws(
-    () => checkSpecHash(kernel.spec_hash(), stale),
+    () => compareSpecHash(kernel.spec_hash(), stale),
     (err) =>
       err.message.includes("SpecHashMismatch") &&
       err.message.includes(`engine spec 0x${kernel.spec_hash()}`) &&
@@ -81,7 +82,7 @@ test("a stale wrapper is refused with the named mismatch diagnosis", () => {
 
   // The lenient leg: an engine with no spec_hash export at all is diagnosed by name.
   assert.throws(
-    () => checkSpecHash(undefined, stale),
+    () => compareSpecHash(undefined, stale),
     (err) =>
       err.message.includes("SpecHashMismatch") &&
       err.message.includes("predates the SPEC_HASH handshake"),
@@ -89,5 +90,28 @@ test("a stale wrapper is refused with the named mismatch diagnosis", () => {
   );
 
   // And the matched pair passes.
-  checkSpecHash(kernel.spec_hash(), kernel.spec_hash());
+  compareSpecHash(kernel.spec_hash(), kernel.spec_hash());
+});
+
+test("the exported handshake takes no caller-supplied pin", () => {
+  // A3: `checkSpecHash(h, h)` passed for any `h` while the pin was a defaulted
+  // parameter, so the exported helper read as "compare these two" rather than
+  // "compare against the pin". The two-sided comparison is now internal.
+  const api = require("../dist/index.js");
+  assert.equal(api.checkSpecHash.length, 1, "checkSpecHash must take exactly the engine hash");
+  assert.equal(
+    api.compareSpecHash,
+    undefined,
+    "the two-sided comparison must not be re-exported from the package entry point",
+  );
+
+  const stale = "00000000deadbeef";
+  assert.throws(
+    () => api.checkSpecHash(stale),
+    (err) =>
+      err.message.includes("SpecHashMismatch") &&
+      err.message.includes(`wrapper built against 0x${api.SPEC_HASH}`),
+    "the exported helper must compare against this wrapper's own pin",
+  );
+  api.checkSpecHash(kernel.spec_hash());
 });

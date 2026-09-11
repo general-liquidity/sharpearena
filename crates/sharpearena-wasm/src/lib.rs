@@ -154,6 +154,22 @@ pub fn spec_hash_json() -> String {
     sharpearena::SPEC_HASH_HEX.to_string()
 }
 
+// --- crate_version ------------------------------------------------------------------------
+
+/// The crate version this module was compiled from, stamped into the binary.
+///
+/// `SPEC_HASH` fingerprints the seven tape-defining sources and the pinned suite
+/// dependencies; it does not cover this crate's own export layer, the baselines or the
+/// replay path. So a committed `pkg/` bundle that has fallen behind source, without any
+/// tape source moving, reports the right spec hash and the wrong arithmetic. Before this
+/// stamp the only version evidence in the package was `pkg/package.json`, a text file
+/// wasm-pack writes beside the binary: the npm version test compared that text to
+/// `Cargo.toml` text, so a stale `.wasm` beside a current `pkg/package.json` passed.
+/// Reading the version out of the binary makes that pairing fail.
+pub fn crate_version_json() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
 // --- run_baseline -------------------------------------------------------------------------
 
 /// Config for [`run_baseline_json`].
@@ -401,6 +417,11 @@ mod wasm {
     #[wasm_bindgen]
     pub fn spec_hash() -> String {
         super::spec_hash_json()
+    }
+
+    #[wasm_bindgen]
+    pub fn crate_version() -> String {
+        super::crate_version_json()
     }
 
     #[wasm_bindgen]

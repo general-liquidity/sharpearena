@@ -20,11 +20,33 @@ export interface Order {
   rationale?: string;
 }
 
+/**
+ * Self-reported compute spend for one decision (`DecisionCost` in
+ * `crates/sharpearena/contract/decision.schema.json`). Every field defaults to zero,
+ * so a partial report is valid. The scoring kernel accumulates it into the run cost
+ * behind the cost-normalized leaderboard columns.
+ */
+export interface DecisionCost {
+  /** Dollar cost of the compute spent on this decision. The preferred unit. */
+  cost_usd?: number;
+  /** Prompt/input tokens consumed. */
+  tokens_in?: number;
+  /** Completion/output tokens produced. */
+  tokens_out?: number;
+  /**
+   * Reasoning tokens, surfaced separately. Providers typically bill these inside
+   * `tokens_out`, so they are not re-added to the token total.
+   */
+  reasoning_tokens?: number;
+}
+
 /** What the agent returns at one decision point. */
 export interface Decision {
   orders: Order[];
   /** Free-text rationale, captured into the trajectory for auditability. */
   reasoning?: string;
+  /** Optional self-reported spend; omit entirely when not reported. */
+  cost?: DecisionCost;
 }
 
 /** Point-in-time data for one instrument (only data at/before `date`). */
@@ -166,4 +188,61 @@ export type Regime = "bull" | "bear" | "chop";
 export interface StressScenario {
   name: string;
   dataset: Dataset;
+}
+
+// --- Procedural scenario generation ----------------------------------------------
+
+/** How adversarial a generated scenario is (`DistributionMode` in the kernel). */
+export type DistributionMode =
+  | "calm"
+  | "hard"
+  | "extreme"
+  | "cointegrated_pairs"
+  | "regime_shift";
+
+/**
+ * How much of the market the agent is shown at each step. The kernel deserializes this
+ * with `deny_unknown_fields` and no per-field defaults, so supplying it at all means
+ * supplying all three.
+ */
+export interface ObservationRichness {
+  /** Trailing closes surfaced per symbol. */
+  lookback: number;
+  /** Populate each snapshot's point-in-time `fundamentals` map. */
+  fundamentals: boolean;
+  /** Populate each snapshot's point-in-time `news` headlines. */
+  news: boolean;
+}
+
+/**
+ * A scenario family: a seed interval plus the panel shape and difficulty tier.
+ *
+ * The five base fields are **required whenever a `spec` is supplied at all**: the kernel
+ * struct carries `deny_unknown_fields` and no `#[serde(default)]` on them, so a partial
+ * spec is refused by name (`missing field 'start_level'`) rather than defaulted. Omit
+ * `spec` entirely for the default 4x120 Calm family. Fields added after the original
+ * contract are `#[serde(default)]` in the kernel and optional here.
+ */
+export interface ScenarioSpec {
+  start_level: number;
+  /** Size of the legal seed interval; `0` means unbounded. */
+  num_levels: number;
+  n_symbols: number;
+  n_days: number;
+  distribution_mode: DistributionMode;
+  obs_richness?: ObservationRichness;
+  /** Opt-in volatility-clustering strength (`0` = off). */
+  vol_clustering?: number;
+  /** Opt-in probability of beginning a deterministic jump burst on a bar. */
+  jump_burst_probability?: number;
+  /** Conditional probability that a jump burst continues one more bar. */
+  jump_burst_persistence?: number;
+  /** Absolute simple-return size of each extra burst jump. */
+  jump_burst_size?: number;
+}
+
+/** Input to {@link generateScenario}: the family plus the level seed to draw. */
+export interface ScenarioInput {
+  spec?: ScenarioSpec;
+  seed?: number;
 }

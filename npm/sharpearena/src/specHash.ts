@@ -13,15 +13,30 @@
 export const SPEC_HASH = "5518afd039aa5317";
 
 /**
- * Compare the engine-reported spec hash against the wrapper's pin, throwing the
+ * Compare an engine-reported spec hash against **this wrapper's pin**, throwing the
  * named mismatch diagnosis on disagreement. `engineHash === undefined` means the
- * loaded engine predates the handshake entirely — the one frame of this exchange
+ * loaded engine predates the handshake entirely, the one frame of this exchange
  * that is decoded leniently, precisely so a stale surface is diagnosed by name
  * rather than dropped as malformed.
+ *
+ * The pin is deliberately not a parameter. An exported `check(a, b)` reads as
+ * "compare these two", not "compare against the pin", and `check(h, h)` passes for
+ * any `h`. This is the only spec-hash entry point the package exposes, so a caller
+ * cannot supply the value it is being checked against.
  */
-export function checkSpecHash(
+export function checkSpecHash(engineHash: string | undefined): void {
+  compareSpecHash(engineHash, SPEC_HASH);
+}
+
+/**
+ * The two-sided comparison behind {@link checkSpecHash}. Internal: it is not
+ * re-exported from the package entry point, because a caller-supplied `wrapperHash`
+ * turns the handshake into a tautology. The stale-surface regression drives this
+ * function directly, which is why it is named rather than inlined.
+ */
+export function compareSpecHash(
   engineHash: string | undefined,
-  wrapperHash: string = SPEC_HASH,
+  wrapperHash: string,
 ): void {
   if (engineHash === wrapperHash) return;
   if (engineHash === undefined) {
