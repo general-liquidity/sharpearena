@@ -1,5 +1,53 @@
 # Verification record
 
+## The backtest path's cross-runtime evidence, 2026-09-11
+
+`contract/attestation/backtest-goldens.json` pins `run_baseline` and `replay_run` output
+bytes, read by the native suite, the wasm32 suite and the npm suite against the committed
+bundle. Before it, the cross-runtime byte-identity evidence covered scenario generation
+only: the wasm32 test named for replay never called `replay_run` and compared one module
+against itself, and the npm smoke suite compared replay against its own output, so a
+native-versus-wasm32 difference anywhere behind the backtest path was invisible to every
+gate.
+
+Nothing numerical moved. All four entries reproduce byte for byte on the host build, on a
+freshly compiled wasm32 build and through the shipped `pkg/sharpearena_bg.wasm`, and no
+existing golden, snapshot or artifact digest changed. Each new test was mutation-checked
+by perturbing in place the exact behaviour it defends and restored from `HEAD`.
+
+### Not established
+
+No cross-runtime arithmetic mismatch was demonstrated, before or after. This round closed
+an evidence gap and repaired no number. Coverage is the backtest path only: `walk_forward`,
+`stress_suite` and `tag_regime` still have no committed cross-runtime fixture, and the
+four entries are four inputs rather than the export's whole domain, so a divergence
+reachable only by an input outside them stays invisible in the same way.
+
+### The published 0.25.0 wasm bytes differ from the committed ones
+
+Recorded here because it was measured and because nothing in the repository records it.
+An independent reviewer fetched the published npm 0.25.0 artifact from the registry and
+hashed its WASM: SHA-256 `f50a527b71c97e37f59b5f577baf35a6582eea0a687ed61d80ae90a30bfd4ca8`,
+against `7e3d5faea27be55b6d566953d19c93b633d093ff01a79660c0979467a30482e4` for the
+committed and tagged bytes. That is what the release job did at the time, since it deleted
+`npm/sharpearena/pkg` and republished a rebuild; the job no longer does so (A4).
+
+What this does **not** establish, and must not be read as establishing: that the published
+artifact is numerically wrong. In the same check it reported the expected spec hash and
+reproduced both committed scenario goldens. Differing bytes are not evidence of divergence,
+for the reason the A4 disposition gives at length: wasm-pack output is not byte-reproducible
+across build environments, and CI refused a byte-equality gate on exactly that ground. Nor
+does one measured release generalize. Releases before 0.25.0 were not fetched or hashed, so
+nothing is claimed about them.
+
+What remains open is the narrower thing: for 0.25.0 there is no evidence that the bytes on
+the registry are a compilation of the tagged source, as opposed to a compilation that
+answers like it on the inputs that were checked. Byte equality would have established it
+and cannot hold across hosts. The forward repair is that the published artifact is now the
+committed one and the suite runs against it in the same job immediately before publish, so
+the question does not arise for the next release; it is not retroactive, and 0.25.0 is not
+being republished to make it so.
+
 ## Making the stated facts checkable, 2026-09-11
 
 Both pull requests merged with every check green on the exact pushed head, main

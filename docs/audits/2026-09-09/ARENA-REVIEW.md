@@ -702,6 +702,37 @@ unenforced for `run_baseline`, `replay_run`, `walk_forward`, `stress_suite` and
 `tag_regime`. The npm side has the same shape: `golden.test.js` exercises only
 `generate_scenario`, and `smoke.test.js` asserts shape and determinism rather than values.
 
+**Disposition: repaired for the backtest path; the three remaining exports stand.**
+
+`contract/attestation/backtest-goldens.json` is the scenario goldens' counterpart for
+execution and replay: two `run_baseline` entries and two `replay_run` entries, each with
+the exact kernel input and the FNV-1a/64 fingerprint of the bytes it must return, beside a
+committed pre-hash fixture so a drift is diagnosed by string diff before it is reduced to
+two hex words. Three runtimes read that one file. `backtest_goldens_reproduce_natively`
+drives the host-compiled engine, `exported_backtest_goldens_reproduce_under_wasm32` drives
+the `#[wasm_bindgen]` exports as WebAssembly, and
+`npm/sharpearena/test/golden.test.js` drives the committed `pkg/sharpearena_bg.wasm`, which
+makes native equals wasm32 equals shipped binary transitive the way the scenario leg
+already did. A replay entry's dataset argument is the kernel's own `dataset_synthetic`
+output passed verbatim, so what is pinned is the replay arithmetic rather than a
+re-serialization of the price panel.
+
+The misnamed test is renamed to what it does,
+`exported_run_baseline_repeats_within_one_wasm_module`, and kept. Non-determinism inside
+one module and disagreement between runtimes are different faults, and the golden test
+cannot tell them apart.
+
+**No cross-runtime arithmetic mismatch was found.** All three runtimes agree byte for byte
+on all four entries at the time they were recorded, so this closes an evidence gap and
+fixes no wrong number. That is worth stating plainly, because the fingerprints were
+recorded from the shipped bundle and then reproduced by the native and wasm32 builds; had
+they disagreed the entries could not have been written at all.
+
+`walk_forward`, `stress_suite` and `tag_regime` remain uncovered by a committed
+cross-runtime fixture. They were named in the finding alongside the backtest path; the
+backtest path is the one the recompute-to-verify claim rests on, and the other three are
+left open rather than quietly folded in.
+
 ### T2. The spec-hash record's file-set leg
 
 See A21. `committed_spec_hash_record_is_current` is named for the record being current.

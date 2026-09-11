@@ -1,0 +1,626 @@
+{
+  "note": "Cross-runtime backtest goldens. Each entry is the exact JSON input the run/replay kernel takes and the FNV-1a/64 fingerprint of the bytes it must return. Native Rust, the wasm32 export layer and the published npm package all read this one file, so a backtest-path arithmetic change that is not carried into the committed .wasm fails a gate instead of shipping. The scenario goldens next door cover generation only; these cover the execution and replay path. A replay entry's dataset is the kernel's own dataset_synthetic output for `dataset`, passed verbatim, so the pin is on the replay arithmetic rather than on a re-serialization of the panel.",
+  "fingerprint": "fnv1a-64",
+  "runs": [
+    {
+      "name": "momentum_2x40_seed3",
+      "fnv1a64": "028c456b225087a3",
+      "pre_hash": "run-momentum-2x40-seed3.json",
+      "config": {
+        "agent": "momentum",
+        "dataset": {
+          "synthetic": {
+            "n_symbols": 2,
+            "n_days": 40,
+            "seed": 11
+          }
+        },
+        "window": {
+          "start": 20,
+          "end": 40
+        },
+        "seed": 3,
+        "momentum_lookback": 10,
+        "costs": {
+          "fee_bps": 5,
+          "slippage_bps": 2,
+          "impact_bps": 1,
+          "financing_bps": 0,
+          "max_participation": 0.25
+        }
+      }
+    },
+    {
+      "name": "buy_and_hold_2x40_seed1",
+      "fnv1a64": "3b444c4e0846547d",
+      "pre_hash": "run-buy-and-hold-2x40-seed1.json",
+      "config": {
+        "agent": "buy_and_hold",
+        "dataset": {
+          "synthetic": {
+            "n_symbols": 2,
+            "n_days": 40,
+            "seed": 11
+          }
+        },
+        "window": {
+          "start": 20,
+          "end": 40
+        },
+        "seed": 1
+      }
+    }
+  ],
+  "replays": [
+    {
+      "name": "fixed_weight_2x40_seed7_costed",
+      "fnv1a64": "dea1a1ceff6ac552",
+      "pre_hash": "replay-fixed-weight-2x40-seed7-costed.json",
+      "dataset": {
+        "n_symbols": 2,
+        "n_days": 40,
+        "seed": 11
+      },
+      "trajectory": {
+        "window_start": 20,
+        "window_end": 30,
+        "seed": 7,
+        "steps": [
+          {
+            "step": 0,
+            "observation_id": "2025-021",
+            "decision": {
+              "orders": [
+                {
+                  "symbol": "SYM00",
+                  "action": "buy",
+                  "target_weight": 0.25,
+                  "confidence": 0.6,
+                  "rationale": "golden"
+                }
+              ],
+              "reasoning": "golden trajectory"
+            }
+          },
+          {
+            "step": 1,
+            "observation_id": "2025-022",
+            "decision": {
+              "orders": [
+                {
+                  "symbol": "SYM00",
+                  "action": "buy",
+                  "target_weight": 0.25,
+                  "confidence": 0.6,
+                  "rationale": "golden"
+                }
+              ],
+              "reasoning": "golden trajectory"
+            }
+          },
+          {
+            "step": 2,
+            "observation_id": "2025-023",
+            "decision": {
+              "orders": [
+                {
+                  "symbol": "SYM00",
+                  "action": "buy",
+                  "target_weight": 0.25,
+                  "confidence": 0.6,
+                  "rationale": "golden"
+                }
+              ],
+              "reasoning": "golden trajectory"
+            }
+          },
+          {
+            "step": 3,
+            "observation_id": "2025-024",
+            "decision": {
+              "orders": [
+                {
+                  "symbol": "SYM00",
+                  "action": "buy",
+                  "target_weight": 0.25,
+                  "confidence": 0.6,
+                  "rationale": "golden"
+                }
+              ],
+              "reasoning": "golden trajectory"
+            }
+          },
+          {
+            "step": 4,
+            "observation_id": "2025-025",
+            "decision": {
+              "orders": [
+                {
+                  "symbol": "SYM00",
+                  "action": "buy",
+                  "target_weight": 0.25,
+                  "confidence": 0.6,
+                  "rationale": "golden"
+                }
+              ],
+              "reasoning": "golden trajectory"
+            }
+          },
+          {
+            "step": 5,
+            "observation_id": "2025-026",
+            "decision": {
+              "orders": [
+                {
+                  "symbol": "SYM00",
+                  "action": "buy",
+                  "target_weight": 0.25,
+                  "confidence": 0.6,
+                  "rationale": "golden"
+                }
+              ],
+              "reasoning": "golden trajectory"
+            }
+          },
+          {
+            "step": 6,
+            "observation_id": "2025-027",
+            "decision": {
+              "orders": [
+                {
+                  "symbol": "SYM00",
+                  "action": "buy",
+                  "target_weight": 0.25,
+                  "confidence": 0.6,
+                  "rationale": "golden"
+                }
+              ],
+              "reasoning": "golden trajectory"
+            }
+          },
+          {
+            "step": 7,
+            "observation_id": "2025-028",
+            "decision": {
+              "orders": [
+                {
+                  "symbol": "SYM00",
+                  "action": "buy",
+                  "target_weight": 0.25,
+                  "confidence": 0.6,
+                  "rationale": "golden"
+                }
+              ],
+              "reasoning": "golden trajectory"
+            }
+          },
+          {
+            "step": 8,
+            "observation_id": "2025-029",
+            "decision": {
+              "orders": [
+                {
+                  "symbol": "SYM00",
+                  "action": "buy",
+                  "target_weight": 0.25,
+                  "confidence": 0.6,
+                  "rationale": "golden"
+                }
+              ],
+              "reasoning": "golden trajectory"
+            }
+          },
+          {
+            "step": 9,
+            "observation_id": "2025-030",
+            "decision": {
+              "orders": [
+                {
+                  "symbol": "SYM00",
+                  "action": "buy",
+                  "target_weight": 0.25,
+                  "confidence": 0.6,
+                  "rationale": "golden"
+                }
+              ],
+              "reasoning": "golden trajectory"
+            }
+          }
+        ]
+      },
+      "costs": {
+        "fee_bps": 5,
+        "slippage_bps": 2,
+        "impact_bps": 1,
+        "financing_bps": 3,
+        "max_participation": 0.5
+      }
+    },
+    {
+      "name": "long_short_rotation_2x40_seed13_frictionless",
+      "fnv1a64": "2c64740fb4b5b142",
+      "pre_hash": "replay-long-short-rotation-2x40-seed13-frictionless.json",
+      "dataset": {
+        "n_symbols": 2,
+        "n_days": 40,
+        "seed": 11
+      },
+      "trajectory": {
+        "window_start": 20,
+        "window_end": 36,
+        "seed": 13,
+        "steps": [
+          {
+            "step": 0,
+            "observation_id": "2025-021",
+            "decision": {
+              "orders": [
+                {
+                  "symbol": "SYM00",
+                  "action": "buy",
+                  "target_weight": 0.4,
+                  "confidence": 0.55,
+                  "rationale": "rotate"
+                },
+                {
+                  "symbol": "SYM01",
+                  "action": "close",
+                  "target_weight": 0,
+                  "confidence": 0.45,
+                  "rationale": "hedge"
+                }
+              ],
+              "reasoning": "golden trajectory"
+            }
+          },
+          {
+            "step": 1,
+            "observation_id": "2025-022",
+            "decision": {
+              "orders": [
+                {
+                  "symbol": "SYM00",
+                  "action": "sell",
+                  "target_weight": -0.3,
+                  "confidence": 0.55,
+                  "rationale": "rotate"
+                },
+                {
+                  "symbol": "SYM01",
+                  "action": "buy",
+                  "target_weight": 0.2,
+                  "confidence": 0.45,
+                  "rationale": "hedge"
+                }
+              ],
+              "reasoning": "golden trajectory"
+            }
+          },
+          {
+            "step": 2,
+            "observation_id": "2025-023",
+            "decision": {
+              "orders": [
+                {
+                  "symbol": "SYM00",
+                  "action": "buy",
+                  "target_weight": 0.4,
+                  "confidence": 0.55,
+                  "rationale": "rotate"
+                },
+                {
+                  "symbol": "SYM01",
+                  "action": "buy",
+                  "target_weight": 0.2,
+                  "confidence": 0.45,
+                  "rationale": "hedge"
+                }
+              ],
+              "reasoning": "golden trajectory"
+            }
+          },
+          {
+            "step": 3,
+            "observation_id": "2025-024",
+            "decision": {
+              "orders": [
+                {
+                  "symbol": "SYM00",
+                  "action": "sell",
+                  "target_weight": -0.3,
+                  "confidence": 0.55,
+                  "rationale": "rotate"
+                },
+                {
+                  "symbol": "SYM01",
+                  "action": "close",
+                  "target_weight": 0,
+                  "confidence": 0.45,
+                  "rationale": "hedge"
+                }
+              ],
+              "reasoning": "golden trajectory"
+            }
+          },
+          {
+            "step": 4,
+            "observation_id": "2025-025",
+            "decision": {
+              "orders": [
+                {
+                  "symbol": "SYM00",
+                  "action": "buy",
+                  "target_weight": 0.4,
+                  "confidence": 0.55,
+                  "rationale": "rotate"
+                },
+                {
+                  "symbol": "SYM01",
+                  "action": "buy",
+                  "target_weight": 0.2,
+                  "confidence": 0.45,
+                  "rationale": "hedge"
+                }
+              ],
+              "reasoning": "golden trajectory"
+            }
+          },
+          {
+            "step": 5,
+            "observation_id": "2025-026",
+            "decision": {
+              "orders": [
+                {
+                  "symbol": "SYM00",
+                  "action": "sell",
+                  "target_weight": -0.3,
+                  "confidence": 0.55,
+                  "rationale": "rotate"
+                },
+                {
+                  "symbol": "SYM01",
+                  "action": "buy",
+                  "target_weight": 0.2,
+                  "confidence": 0.45,
+                  "rationale": "hedge"
+                }
+              ],
+              "reasoning": "golden trajectory"
+            }
+          },
+          {
+            "step": 6,
+            "observation_id": "2025-027",
+            "decision": {
+              "orders": [
+                {
+                  "symbol": "SYM00",
+                  "action": "buy",
+                  "target_weight": 0.4,
+                  "confidence": 0.55,
+                  "rationale": "rotate"
+                },
+                {
+                  "symbol": "SYM01",
+                  "action": "close",
+                  "target_weight": 0,
+                  "confidence": 0.45,
+                  "rationale": "hedge"
+                }
+              ],
+              "reasoning": "golden trajectory"
+            }
+          },
+          {
+            "step": 7,
+            "observation_id": "2025-028",
+            "decision": {
+              "orders": [
+                {
+                  "symbol": "SYM00",
+                  "action": "sell",
+                  "target_weight": -0.3,
+                  "confidence": 0.55,
+                  "rationale": "rotate"
+                },
+                {
+                  "symbol": "SYM01",
+                  "action": "buy",
+                  "target_weight": 0.2,
+                  "confidence": 0.45,
+                  "rationale": "hedge"
+                }
+              ],
+              "reasoning": "golden trajectory"
+            }
+          },
+          {
+            "step": 8,
+            "observation_id": "2025-029",
+            "decision": {
+              "orders": [
+                {
+                  "symbol": "SYM00",
+                  "action": "buy",
+                  "target_weight": 0.4,
+                  "confidence": 0.55,
+                  "rationale": "rotate"
+                },
+                {
+                  "symbol": "SYM01",
+                  "action": "buy",
+                  "target_weight": 0.2,
+                  "confidence": 0.45,
+                  "rationale": "hedge"
+                }
+              ],
+              "reasoning": "golden trajectory"
+            }
+          },
+          {
+            "step": 9,
+            "observation_id": "2025-030",
+            "decision": {
+              "orders": [
+                {
+                  "symbol": "SYM00",
+                  "action": "sell",
+                  "target_weight": -0.3,
+                  "confidence": 0.55,
+                  "rationale": "rotate"
+                },
+                {
+                  "symbol": "SYM01",
+                  "action": "close",
+                  "target_weight": 0,
+                  "confidence": 0.45,
+                  "rationale": "hedge"
+                }
+              ],
+              "reasoning": "golden trajectory"
+            }
+          },
+          {
+            "step": 10,
+            "observation_id": "2025-031",
+            "decision": {
+              "orders": [
+                {
+                  "symbol": "SYM00",
+                  "action": "buy",
+                  "target_weight": 0.4,
+                  "confidence": 0.55,
+                  "rationale": "rotate"
+                },
+                {
+                  "symbol": "SYM01",
+                  "action": "buy",
+                  "target_weight": 0.2,
+                  "confidence": 0.45,
+                  "rationale": "hedge"
+                }
+              ],
+              "reasoning": "golden trajectory"
+            }
+          },
+          {
+            "step": 11,
+            "observation_id": "2025-032",
+            "decision": {
+              "orders": [
+                {
+                  "symbol": "SYM00",
+                  "action": "sell",
+                  "target_weight": -0.3,
+                  "confidence": 0.55,
+                  "rationale": "rotate"
+                },
+                {
+                  "symbol": "SYM01",
+                  "action": "buy",
+                  "target_weight": 0.2,
+                  "confidence": 0.45,
+                  "rationale": "hedge"
+                }
+              ],
+              "reasoning": "golden trajectory"
+            }
+          },
+          {
+            "step": 12,
+            "observation_id": "2025-033",
+            "decision": {
+              "orders": [
+                {
+                  "symbol": "SYM00",
+                  "action": "buy",
+                  "target_weight": 0.4,
+                  "confidence": 0.55,
+                  "rationale": "rotate"
+                },
+                {
+                  "symbol": "SYM01",
+                  "action": "close",
+                  "target_weight": 0,
+                  "confidence": 0.45,
+                  "rationale": "hedge"
+                }
+              ],
+              "reasoning": "golden trajectory"
+            }
+          },
+          {
+            "step": 13,
+            "observation_id": "2025-034",
+            "decision": {
+              "orders": [
+                {
+                  "symbol": "SYM00",
+                  "action": "sell",
+                  "target_weight": -0.3,
+                  "confidence": 0.55,
+                  "rationale": "rotate"
+                },
+                {
+                  "symbol": "SYM01",
+                  "action": "buy",
+                  "target_weight": 0.2,
+                  "confidence": 0.45,
+                  "rationale": "hedge"
+                }
+              ],
+              "reasoning": "golden trajectory"
+            }
+          },
+          {
+            "step": 14,
+            "observation_id": "2025-035",
+            "decision": {
+              "orders": [
+                {
+                  "symbol": "SYM00",
+                  "action": "buy",
+                  "target_weight": 0.4,
+                  "confidence": 0.55,
+                  "rationale": "rotate"
+                },
+                {
+                  "symbol": "SYM01",
+                  "action": "buy",
+                  "target_weight": 0.2,
+                  "confidence": 0.45,
+                  "rationale": "hedge"
+                }
+              ],
+              "reasoning": "golden trajectory"
+            }
+          },
+          {
+            "step": 15,
+            "observation_id": "2025-036",
+            "decision": {
+              "orders": [
+                {
+                  "symbol": "SYM00",
+                  "action": "sell",
+                  "target_weight": -0.3,
+                  "confidence": 0.55,
+                  "rationale": "rotate"
+                },
+                {
+                  "symbol": "SYM01",
+                  "action": "close",
+                  "target_weight": 0,
+                  "confidence": 0.45,
+                  "rationale": "hedge"
+                }
+              ],
+              "reasoning": "golden trajectory"
+            }
+          }
+        ]
+      },
+      "costs": {}
+    }
+  ]
+}
