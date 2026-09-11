@@ -556,9 +556,9 @@ attributes nothing. Mutating the two branches of `validate` separately fails onl
 matching test; removing the `cfg.validate()?` call fails both; removing it in a rebuilt
 wheel fails only the binding group in a throwaway venv.
 
-`exec_noise.rs` and `mandate.rs` are two of the seven `SPEC_FILES`, so the A5, A8 and A9
-edits together rebind `SPEC_HASH` from `2eca39c3ad45a5f7` to `5518afd039aa5317` with no
-`SPEC_EPOCH` change. The attestation record, both wrapper pins and the committed wasm
+`exec_noise.rs`, `mandate.rs` and `scenario_gen.rs` are three of the seven `SPEC_FILES`, so
+the A5, A8, A9 and A16 edits together rebind `SPEC_HASH` from `2eca39c3ad45a5f7` to
+`460811a8d810c454` with no `SPEC_EPOCH` change. The attestation record, both wrapper pins and the committed wasm
 bundle rebind together. The release recipe (wasm-pack 0.15.0, Rust 1.96.0,
 `wasm-pack build crates/sharpearena-wasm --target nodejs --out-name sharpearena`) run on
 the parent commit reproduced all five committed `pkg/` files byte for byte, and on this
@@ -756,6 +756,26 @@ not entropy: `SealedSalt::new(b"password12345678")` is accepted, and the module'
 at `:1339` passes `&[0u8; MIN_SEALED_SALT_BYTES]`. The `sealed_seed` doc comment is
 otherwise unusually honest about what the construction is not, which is why this one
 sentence stands out.
+
+**Disposition (wording corrected).** The `SealedSalt` doc comment now says the type
+enforces neither property: it enforces a length floor, which is a necessary condition for
+entropy and not a measurement of it, and the plumbing that carries secrecy end to end.
+It states plainly that nothing here can measure the entropy of the bytes it is handed,
+that `SealedSalt::new(b"password12345678")` is accepted and that the module's own tests
+pass an all-zero 16-byte salt deliberately, and it puts entropy back where it belongs, on
+the caller drawing from a CSPRNG. `MIN_SEALED_SALT_BYTES` gained the same qualification:
+the floor bounds how much entropy a salt *can* carry, not whether it does.
+
+No behaviour changed, and none should: an all-zero salt is accepted **by design**, since
+the constructor has no way to distinguish it from sixteen bytes that came out of a CSPRNG.
+Only the claim moved.
+
+This is a doc-comment fix in a `SPEC_FILES` source, so on its own it would cost a full
+fingerprint rebind across the attestation record, both wrapper pins and the committed wasm
+bundle, which is why the agent who found it correctly declined to spend one. It is folded
+in here because the A5 and A8 repairs already rebind all four on this branch, so it rides
+along for nothing. `SPEC_HASH` therefore lands at `460811a8d810c454` rather than
+`5518afd039aa5317`; see A8 for the move and the reproduction control.
 
 ### A17. `AdaptiveCurriculum` prior is unvalidated, and off-schedule records vanish in release (low)
 

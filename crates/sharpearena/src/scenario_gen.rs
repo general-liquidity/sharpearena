@@ -563,8 +563,10 @@ pub const EVAL_SEED_BASE: u64 = 1_000_000;
 
 /// Minimum salt length, enforced by [`SealedSalt::new`] and therefore by every surface
 /// that can reach [`sealed_seed`]. The derivation is only as unguessable as the salt: 16
-/// random bytes put the salt itself outside any enumeration budget, whereas a short
+/// *random* bytes put the salt itself outside any enumeration budget, whereas a short
 /// passphrase re-creates the bounded-band table-scan the predictability probe measured.
+/// The floor is a bound on how much entropy a salt *can* carry, not a check that it does;
+/// see [`SealedSalt`] for what this constant does and does not buy.
 pub const MIN_SEALED_SALT_BYTES: usize = 16;
 
 /// Why [`SealedSalt::new`] refused the bytes it was handed.
@@ -595,10 +597,19 @@ impl std::error::Error for SealedSaltError {}
 /// A validated sealed-seed salt: at least [`MIN_SEALED_SALT_BYTES`] bytes, and structurally
 /// prevented from escaping into anything an entrant can read.
 ///
-/// The sealed-seed argument rests on two properties of the salt, entropy and secrecy, and
-/// before this type both were conventions a caller could quietly break. The length floor
-/// lived only in the pyo3 binding, so a direct Rust caller could derive from a passphrase
-/// without complaint; the WASM surface never exposed sealed-seed derivation. A bare
+/// The sealed-seed argument rests on two properties of the salt, entropy and secrecy. This
+/// type enforces **neither**. What it enforces is a length floor and the plumbing that
+/// keeps the bytes from escaping, which are a necessary condition for the first and the
+/// mechanism for the second, and that distinction is worth stating because a length check
+/// reads like an entropy check and is not one: nothing here can measure the entropy of the
+/// bytes it is handed, `SealedSalt::new(b"password12345678")` is accepted, and the module's
+/// own tests pass `&[0u8; MIN_SEALED_SALT_BYTES]` deliberately. Entropy remains the
+/// caller's obligation; draw the salt from a CSPRNG. Secrecy is what the type actually
+/// carries end to end.
+///
+/// Before this type both properties were conventions a caller could quietly break. The
+/// length floor lived only in the pyo3 binding, so a direct Rust caller could derive from a
+/// passphrase without complaint; the WASM surface never exposed sealed-seed derivation. A bare
 /// `&[u8]` reachable from a [`ScenarioSpec`]-adjacent call
 /// site could be printed, serialized, or folded into a golden fingerprint by accident.
 ///
