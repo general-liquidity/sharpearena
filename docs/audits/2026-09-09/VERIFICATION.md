@@ -28,9 +28,17 @@ reachable only by an input outside them stays invisible in the same way.
 Recorded here because it was measured and because nothing in the repository records it.
 An independent reviewer fetched the published npm 0.25.0 artifact from the registry and
 hashed its WASM: SHA-256 `f50a527b71c97e37f59b5f577baf35a6582eea0a687ed61d80ae90a30bfd4ca8`,
-against `7e3d5faea27be55b6d566953d19c93b633d093ff01a79660c0979467a30482e4` for the
-committed and tagged bytes. That is what the release job did at the time, since it deleted
+against `7e3d5faea27be55b6d566953d19c93b633d093ff01a79660c0979467a30482e4` for the bytes
+at the `v0.25.0` tag. That is what the release job did at the time, since it deleted
 `npm/sharpearena/pkg` and republished a rebuild; the job no longer does so (A4).
+
+The two digests are not on the same footing here. The tag side was recomputed in this
+repository, `git show v0.25.0:npm/sharpearena/pkg/sharpearena_bg.wasm | sha256sum`, and
+agrees. The registry side is the reviewer's measurement, repeated rather than reproduced;
+no fetch from the registry happened under this round. The committed bundle on `main` is a
+third value again (`3bd54950af9360b2229a07eb6831ec9477feb49b3d507f74b1dcdb1dcc13d28d`),
+because the unreleased `SPEC_HASH` move rebound it, which is expected and is not part of
+this record.
 
 What this does **not** establish, and must not be read as establishing: that the published
 artifact is numerically wrong. In the same check it reported the expected spec hash and
