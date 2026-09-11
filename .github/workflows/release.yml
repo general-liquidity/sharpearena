@@ -160,11 +160,11 @@ jobs:
           fi
           echo "ok   npm manifest is at $V"
 
-      # The committed bundle is the one about to be published, so it has to be the one
-      # this tag's source builds. A mismatch is classified (stale artifact vs a build
-      # that is not reproducible on this runner) rather than reported as a bare byte
-      # diff, because the two need different remedies.
-      - name: The committed wasm bundle is what this tag builds
+      # The committed bundle is the one about to be published, so it has to answer like the
+      # one this tag's source builds. Behavioral equivalence over every export rather than
+      # byte equality, because wasm-pack output is not reproducible across operating
+      # systems; the script header records what that no longer catches.
+      - name: The committed wasm bundle answers like this tag's build
         run: node scripts/check-wasm-bundle.mjs
 
       # The gate that the published artifact actually passed. Every one of these reads

@@ -224,7 +224,7 @@ jobs:
         run: npm run smoke-install
 
   wasm_bundle:
-    name: committed wasm bundle is what this tree builds
+    name: committed wasm bundle answers like this tree's build
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -241,10 +241,11 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: wasm-pack@0.15.0
-      # The release publishes the COMMITTED bundle, so this is the gate that keeps it
-      # from falling behind source. The script classifies a mismatch as a stale artifact
-      # or as a non-reproducible build before failing, because the two need different
-      # remedies and a bare byte diff does not distinguish them.
+      # The release publishes the COMMITTED bundle, so this is the gate that keeps it from
+      # falling behind source. It rebuilds and drives both bundles through every export on
+      # a fixed input battery, comparing returns. Not byte equality: wasm-pack output is
+      # not reproducible across operating systems, so bytes are reported and behavior is
+      # asserted. See the script header for what that trade gives up.
       - run: node scripts/check-wasm-bundle.mjs
 
   python:

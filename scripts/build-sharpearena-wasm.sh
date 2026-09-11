@@ -8,9 +8,10 @@
 # (+ dataset/scenario/stress/walk-forward helpers), which the npm wrapper imports.
 #
 # This must be wasm-pack, not bare wasm-bindgen: the committed bundle is the PUBLISHED
-# bundle, and `scripts/check-wasm-bundle.mjs` gates it byte for byte against exactly this
-# command. wasm-pack runs wasm-opt after wasm-bindgen, so a bare wasm-bindgen build
-# produces a different binary and turns that gate red.
+# bundle, and `scripts/check-wasm-bundle.mjs` rebuilds with exactly this command and holds
+# the committed bundle to answering the same way. wasm-pack runs wasm-opt after
+# wasm-bindgen, so a bare wasm-bindgen build is a different optimization of the same
+# source and is not what the release ships.
 set -euo pipefail
 
 if ! command -v wasm-pack >/dev/null 2>&1; then
