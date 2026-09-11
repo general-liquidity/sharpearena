@@ -2,9 +2,11 @@
 
 Scope: SharpeArena as it stands on `main` at `6953538`. SharpeBench was reviewed
 adversarially twice this week; Arena consumes the same kernel and publishes its own
-leaderboard but had nothing equivalent. This is a review, not a repair. No production
-code was changed. One test file was added to demonstrate five of the findings:
-`crates/sharpearena/tests/fail_open_review.rs`.
+leaderboard but had nothing equivalent. This was a review, not a repair: at `6953538` no
+production code was changed, and one test file was added to demonstrate five of the
+findings, `crates/sharpearena/tests/fail_open_review.rs`. A1 and A2 have since been
+repaired on top of this branch; each carries a **Disposition** paragraph recording what
+was changed and what it cost. Every other finding stands as written and is open.
 
 The two patterns the sibling reviews kept finding were looked for specifically:
 fail-open shapes (a missing, malformed or unknown value producing a permissive default
@@ -49,16 +51,41 @@ can land the test band below the train band.
 The function's own doc comment says "a **provably disjoint** test family", and
 `EVALUATION.md` says the bands are "**provably disjoint**".
 
-Reproduce:
+Reproduce (against `6953538`, before the repair):
 
 ```
 cargo test --release --test fail_open_review r5_release_build_admits_an_overlapping_train_test_split
 ```
 
-The test asserts that all 64 seeds of the "held-out" family are also train seeds. It is
-gated `#[cfg(not(debug_assertions))]` because CI runs `cargo test --workspace` in debug,
+The test asserted that all 64 seeds of the "held-out" family are also train seeds. It is
+gated `#[cfg(not(debug_assertions))]` because CI ran `cargo test --workspace` in debug,
 where the assertion still fires; that gap between the tested configuration and the
 shipped one is itself part of the finding.
+
+**Disposition: repaired.** `train_test_split` returns
+`Result<(ScenarioSpec, ScenarioSpec), SplitError>`, with `SplitError::UnboundedTrain` for
+`num_levels == 0` and `SplitError::BandOverflow` for a sum that does not fit in a `u64`
+(`checked_add`, so the wrap at `:461` is gone as well). A typed refusal rather than a
+`panic!` follows the crate's own convention for an input that cannot produce a valid
+result: `SealedSalt::new` returns `Result<_, SealedSaltError>`, and `error_style.rs`
+applies one `[CODE]` message register to every `Display` error the crate defines, which
+`SplitError`'s two variants now join. The signature change is breaking and is recorded
+under `### Breaking` in the changelog; `train_test_split` has no pyo3 or wasm export, so
+the break is confined to direct Rust callers.
+
+The release-only test is kept release-only and now asserts the refusal, plus the
+disjointness of a split that is accepted, on the same inputs that previously produced a
+fully overlapping family: `r5_release_build_refuses_an_overlapping_train_test_split`. The
+`Err` is what isolates the cause, since nothing else in the function returns one. Two
+config-agnostic unit tests in `scenario_gen.rs` cover the same two refusals, and
+`.github/workflows/ci.yml` gained a `cargo test --workspace --release` step, so the
+configuration the defect lived in is now a gate rather than a manual run.
+
+`scenario_gen.rs` is one of the seven `SPEC_FILES`, so the repair rebinds `SPEC_HASH`
+from `d22da4be7f050c5d` to `2eca39c3ad45a5f7` with no `SPEC_EPOCH` change; the attestation
+record, the Python and npm wrapper pins and the committed wasm bundle rebind together, as
+they did for the 0.20.0 and 0.21.0 pin moves. No golden, no snapshot and nothing under
+`paper/evidence/` was regenerated.
 
 ### A2. The Python twin of A1, stripped by `python -O` (high)
 
@@ -84,6 +111,81 @@ which reads as "generalizes perfectly".
 This cannot be demonstrated from a test inside the package's own pytest run, because
 pytest does not run under `-O`. It is a property of the language, not of this code, and
 the source above is the whole evidence.
+
+**Disposition: repaired.** Both guards are `raise ValueError` statements, which follows
+the package's own convention for an argument it cannot use (`_salt_bytes` in
+`eval_seeds.py`, the `n_windows` and `mode` checks in `dataset.py`). The docstring no
+longer says disjointness is asserted; it says what is refused and why the check is not an
+assertion. The exception type changes from `AssertionError` to `ValueError`, which is
+caller-visible and recorded under `### Breaking`.
+
+The same sweep found three more `assert` statements guarding published guarantees in the
+same package, all converted: the named eval seeds' held-out band membership and uniqueness
+at import time in `eval_seeds.py` (factored into `_require_held_out_band` so the guard is
+callable under the flag), the sealed-seed band membership inside `sealed_eval_seeds`, and
+the train-seed range check in `dataset.build_dataset`. The native-versus-Python
+`EVAL_SEED_BASE` cross-check became a `RuntimeError` for the same reason.
+
+Demonstrated in the configuration the defect lives in, not in the one pytest offers:
+`crates/sharpearena-py/tests/test_optimized_guards.py` re-enters `python -O` in a
+subprocess, confirms the flag reached the child without using an assertion to do it, and
+compares a single printed refusal token, so a child that died for any other reason fails
+the comparison. `scripts/check-optimized-guards.py` drives the same guards from a `-O`
+interpreter with no pytest at all, and runs as a CI step; running pytest itself under `-O`
+would be worse than useless, because the tests' own assertions would be stripped and every
+one of them would pass vacuously.
+
+A fourth surface was carrying the guarantee rather than enforcing it:
+`paper/src/make-f3-generalization.py:156` recomputed the bands inline as
+`range(N_TRAIN + SEED_GAP, ...)` instead of calling `train_test_seeds`. It now calls it.
+The arithmetic is identical (train `[0, 16)`, test `[10016, 10032)`), so no published
+number moves.
+
+### A1/A2 follow-through: the rest of the assertion sweep
+
+Every `debug_assert!` in the Rust crates and every bare `assert` in the Python package was
+read, to separate the ones carrying a published claim from the ones carrying an internal
+precondition. The published-claim ones are listed in the two dispositions above and are
+repaired. These are the rest, left as they are:
+
+- `curriculum.rs:110`, `debug_assert!(false, "recorded outcome for off-schedule level")`.
+  The doc comment above it says "Unknown levels are ignored (guarded by a debug
+  assertion)", so the shipped behaviour is the documented behaviour and nothing published
+  claims a refusal. Recorded as A17, which stands.
+- `leaderboard_ci.rs:288`, `debug_assert!(n > 0)` in the private `SplitMix64::below`. A
+  precondition on a private helper whose only callers pass a non-empty length. No public
+  claim rests on it.
+- `check_env.py`, 18 asserts. The asserts *are* the conformance checker's body, so under
+  `-O` the function reports conformance it did not check. It is a diagnostic a user runs
+  deliberately rather than a guarantee the library enforces on its own operations, and
+  converting it would rewrite the module rather than fix a guard, so it is recorded here
+  and not changed.
+- Constructor and argument checks in `pairs.py` (window, delta, obs_var), `wrappers.py`
+  and `wrappers_vector.py` (`num_stack`, observation-space shape), `risk.py`,
+  `obs_extra.py`, `forecast.py`, `indicators.py` and `news.py` (observation-space shape).
+  These reject a caller's bad argument; none of them is a published guarantee, and four
+  test files assert on the `AssertionError` they raise.
+- Internal narrowing and numeric invariants: `deferred.py:609`, `edge_manifest.py:659`
+  and `:669`, `local_agents.py:1390`, `trace_promotion.py:260`,
+  `strategy_generation.py:846-847`, `manipulation.py:373` and `:386-387`. Not-None
+  narrowing and a sum-to-one check on values the module just computed.
+- `assert_no_regression` in `eval_seeds.py` already uses `raise AssertionError`, not
+  `assert`, so the eval-seed regression gate survives `-O` unchanged.
+
+**Should `[profile.release]` enable `overflow-checks`?** Not as the fix for A1, and the
+repair does not depend on it. Arguments for: it would turn the wrapping sum at
+`scenario_gen.rs:461` and every other release wrap into a panic, and the crate's
+determinism claim means a silent wrap is a wrong number rather than a crash. Arguments
+against, which win here: it changes the cost of the kernel's hot path, and the published
+throughput figure under `paper/evidence/` describes a build without it, so flipping it
+would make the frozen number describe a binary nobody ships; a panic is a worse outcome
+than a typed refusal at a library entry point, which is the convention A1 was repaired
+under; and the checks would apply to code that wraps on purpose (`wrapping_mul` and
+`wrapping_add` are explicit in `mix64`, `sealed_seed` and `SplitMix64`, so those are
+unaffected, but nothing guarantees the next such site will be). The narrower action is the
+one taken: `checked_add` at the site where the sum carries a guarantee. Revisit the
+profile flag as a deliberate, measured change with its own throughput rerun, not as a side
+effect of a repair.
 
 ### A3. The npm spec-hash handshake is bypassable by a documented import path (high)
 

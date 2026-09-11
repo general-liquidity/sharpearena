@@ -42,8 +42,11 @@ split and must not train on test seeds.
 | Held-out test | `[10256, 10512)` | 256 |
 
 The gap is wide on purpose: train can later grow by up to `gap` seeds without ever
-touching the held-out band. The split is produced (and disjointness asserted) by
-`train_test_seeds(n_train=256, n_test=256, seed_start=0, gap=10000)`.
+touching the held-out band. The split is produced by
+`train_test_seeds(n_train=256, n_test=256, seed_start=0, gap=10000)`, which raises
+`ValueError` rather than returning overlapping bands. The check is a `raise`, not an
+`assert`, so it is still there under `python -O`; the Rust `train_test_split` refuses the
+same two cases with a typed `SplitError` in every build profile.
 
 Disjoint is not secret. Because scenarios are deterministic, publishing a bounded
 held-out band lets an adversary enumerate it: the paper's predictability probe
