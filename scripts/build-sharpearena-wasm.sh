@@ -5,22 +5,29 @@
 #
 # Output: ./npm/sharpearena/pkg with a JS module exposing
 # `run_baseline(configJson)` / `replay_run(datasetJson, trajectoryJson, costsJson)`
-# (+ dataset/stress/walk-forward helpers), which the npm wrapper imports.
+# (+ dataset/scenario/stress/walk-forward helpers), which the npm wrapper imports.
+#
+# This must be wasm-pack, not bare wasm-bindgen: the committed bundle is the PUBLISHED
+# bundle, and `scripts/check-wasm-bundle.mjs` rebuilds with exactly this command and holds
+# the committed bundle to answering the same way. wasm-pack runs wasm-opt after
+# wasm-bindgen, so a bare wasm-bindgen build is a different optimization of the same
+# source and is not what the release ships.
 set -euo pipefail
 
-rustup target add wasm32-unknown-unknown
-cargo build -p sharpearena-wasm --release --target wasm32-unknown-unknown
-WASM="target/wasm32-unknown-unknown/release/sharpearena_wasm.wasm"
-OUT_DIR="npm/sharpearena/pkg"
-
-if command -v wasm-bindgen >/dev/null 2>&1; then
-  # The npm wrapper is CommonJS and supports Node >=18, so its checked-in WASM
-  # bindings must use Node's loader, matching the release workflow.
-  rm -rf "$OUT_DIR"
-  wasm-bindgen "$WASM" --out-dir "$OUT_DIR" --target nodejs --out-name sharpearena
-  echo "wrote ./$OUT_DIR  — require('./pkg/sharpearena')"
-else
-  echo "built $WASM"
-  echo "To generate the JS bindings, install the CLI then re-run:"
-  echo "  cargo install wasm-bindgen-cli"
+if ! command -v wasm-pack >/dev/null 2>&1; then
+  echo "wasm-pack is required (CI pins wasm-pack 0.15.0 with Rust 1.96.0):" >&2
+  echo "  cargo install wasm-pack --version 0.15.0" >&2
+  exit 1
 fi
+
+rustup target add wasm32-unknown-unknown
+
+# The npm wrapper is CommonJS and supports Node >=18, so its checked-in WASM bindings
+# must use Node's loader, matching the release workflow.
+wasm-pack build crates/sharpearena-wasm \
+  --target nodejs \
+  --out-dir ../../npm/sharpearena/pkg \
+  --out-name sharpearena
+
+echo "wrote ./npm/sharpearena/pkg  (require('./pkg/sharpearena'))"
+echo "verify with: node scripts/check-wasm-bundle.mjs"

@@ -168,6 +168,73 @@ test("the kit exercises every additive optional field as omitted", () => {
   }
 });
 
+// --- The TypeScript restatement of the wire contract -------------------------------
+//
+// A15: `types.ts` is a hand copy of the published schemas, and TypeScript types are
+// erased before any validator sees them, so the fixture validation above cannot catch
+// drift in them. It had already drifted: the schema's optional `cost` object
+// (`DecisionCost`) was absent from `Decision` entirely, so a consumer typing a
+// cost-reporting agent against this package got a type error for a field the contract
+// defines and the kernel accumulates. These read the TS source as text, which is the
+// only way to assert on a declaration that does not exist at runtime.
+
+const TYPES_SRC = fs.readFileSync(path.join(__dirname, "../src/types.ts"), "utf8");
+
+/** The member names declared in `export interface <name> { ... }`. */
+function interfaceFields(name) {
+  const start = TYPES_SRC.indexOf(`export interface ${name} {`);
+  assert.notEqual(start, -1, `src/types.ts declares no interface ${name}`);
+  const body = TYPES_SRC.slice(start, TYPES_SRC.indexOf("\n}", start));
+  return new Set([...body.matchAll(/^\s{2}(\w+)\??:/gm)].map((m) => m[1]));
+}
+
+/** The members of `export type <name> = "a" | "b";`. */
+function unionMembers(name) {
+  const match = new RegExp(`export type ${name} =([^;]+);`).exec(TYPES_SRC);
+  assert.ok(match, `src/types.ts declares no type ${name}`);
+  return [...match[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]).sort();
+}
+
+test("every decision-schema property is declared on the TypeScript types", () => {
+  const decision = schema("decision");
+  const pairs = [
+    ["Decision", decision.properties],
+    ["Order", decision.$defs.Order.properties],
+    ["DecisionCost", decision.$defs.DecisionCost.properties],
+  ];
+  for (const [name, properties] of pairs) {
+    const declared = interfaceFields(name);
+    for (const property of Object.keys(properties)) {
+      assert.ok(declared.has(property), `${name} does not declare the schema's \`${property}\``);
+    }
+    for (const field of declared) {
+      assert.ok(
+        Object.hasOwn(properties, field),
+        `${name} declares \`${field}\`, which the published schema does not define`,
+      );
+    }
+  }
+});
+
+test("every observation-schema property is declared on the TypeScript types", () => {
+  const observation = schema("observation");
+  const pairs = [
+    ["MarketObservation", observation.properties],
+    ["SymbolSnapshot", observation.$defs.SymbolSnapshot.properties],
+    ["PositionState", observation.$defs.PositionState.properties],
+  ];
+  for (const [name, properties] of pairs) {
+    const declared = interfaceFields(name);
+    for (const property of Object.keys(properties)) {
+      assert.ok(declared.has(property), `${name} does not declare the schema's \`${property}\``);
+    }
+  }
+});
+
+test("the Action union is the schema's enum, not a hand copy that drifted", () => {
+  assert.deepEqual(unionMembers("Action"), [...schema("decision").$defs.Order.properties.action.enum].sort());
+});
+
 test("a malformed decision is rejected, so the validator is not vacuous", () => {
   const root = schema("decision");
   const bad = { orders: [{ symbol: "SPY", action: "liquidate", target_weight: "0.5" }] };

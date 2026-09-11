@@ -53,14 +53,21 @@ geometry separately when the trajectory is an evidence artifact.
 | `runBaseline(config)` | Run one named in-process baseline. |
 | `replayRun(dataset, trajectory, costs?)` | Recompute a captured decision trajectory. |
 | `datasetSynthetic(params?)` | Build a deterministic synthetic panel. |
+| `generateScenario(input?)` | Draw one level of a procedural scenario family. |
 | `stressSuite(seed?)` | Return the named adversarial stress scenarios. |
 | `walkForward(params)` | Generate disjoint out-of-sample windows. |
 | `tagRegime(dataset, window)` | Classify a window as bull, bear, or chop. |
-| `SPEC_HASH`, `checkSpecHash(...)` | Inspect or verify wrapper/engine compatibility. |
+| `SPEC_HASH`, `checkSpecHash(engineHash)` | Inspect or verify wrapper/engine compatibility. |
 
 The package also exports the TypeScript wire and engine types, including
-`MarketObservation`, `Decision`, `Run`, `RunTrajectory`, `Dataset`, `Window`, and
-`CostModel`.
+`MarketObservation`, `Decision`, `DecisionCost`, `Run`, `RunTrajectory`, `Dataset`,
+`ScenarioSpec`, `Window`, and `CostModel`.
+
+The package entry point is the only import path. The bundled WebAssembly kernel under
+`pkg/` is not a public subpath: importing it directly would skip the `SPEC_HASH`
+handshake that runs when this module loads, so Node refuses it with
+`ERR_PACKAGE_PATH_NOT_EXPORTED`. Every kernel export is reachable through the table
+above.
 
 ## Links
 

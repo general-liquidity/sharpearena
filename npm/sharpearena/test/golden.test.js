@@ -70,6 +70,25 @@ test("the committed .wasm reproduces every cross-runtime scenario golden", () =>
   }
 });
 
+test("every golden is reachable through the wrapper, not only through pkg/", () => {
+  // A3: `generate_scenario` used to be the one export `src/index.ts` did not wrap, so
+  // the function the cross-runtime byte-identity claim is written about was reachable
+  // only by the deep import that skips the spec-hash handshake. Driving the goldens
+  // through the public API pins that it is no longer.
+  //
+  // The fingerprint is asserted on the kernel bytes above; a JS re-serialization of the
+  // parsed value is not those bytes (`100.0` round-trips to `100`), so this leg pins the
+  // wrapper to the kernel's own decoded output for the same input rather than re-hashing.
+  const api = require("../dist/index.js");
+  for (const scenario of GOLDENS.scenarios) {
+    assert.deepEqual(
+      api.generateScenario(scenario.input),
+      JSON.parse(kernel.generate_scenario(JSON.stringify(scenario.input))),
+      `${scenario.name}: the wrapper's generateScenario is not the golden export`,
+    );
+  }
+});
+
 test("the shipped wasm package carries the crate version", () => {
   const wrapper = JSON.parse(fs.readFileSync(path.join(__dirname, "../package.json"), "utf8"));
   const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, "../pkg/package.json"), "utf8"));
@@ -77,6 +96,22 @@ test("the shipped wasm package carries the crate version", () => {
   const workspaceVersion = /\[workspace\.package\][^[]*?\bversion\s*=\s*"([^"]+)"/s.exec(cargo);
 
   assert.ok(workspaceVersion, "could not read [workspace.package] version from Cargo.toml");
+
+  // The binary's own stamp, first. The three text comparisons below are three manifests
+  // agreeing with each other; none of them reads the .wasm, so before `crate_version()`
+  // existed a stale binary beside a current pkg/package.json passed this test. See A4 in
+  // docs/audits/2026-09-09/ARENA-REVIEW.md.
+  assert.equal(
+    typeof kernel.crate_version,
+    "function",
+    "the committed pkg/ predates the crate_version stamp; rebuild it with wasm-pack",
+  );
+  assert.equal(
+    kernel.crate_version(),
+    workspaceVersion[1],
+    "the committed pkg/sharpearena_bg.wasm was built from a different crate version than the workspace is at; rebuild pkg/",
+  );
+
   assert.equal(
     pkg.version,
     workspaceVersion[1],

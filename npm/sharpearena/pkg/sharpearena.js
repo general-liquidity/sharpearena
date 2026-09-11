@@ -1,6 +1,23 @@
 /* @ts-self-types="./sharpearena.d.ts" */
 
 /**
+ * @returns {string}
+ */
+function crate_version() {
+    let deferred1_0;
+    let deferred1_1;
+    try {
+        const ret = wasm.crate_version();
+        deferred1_0 = ret[0];
+        deferred1_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+    }
+}
+exports.crate_version = crate_version;
+
+/**
  * @param {string} params_json
  * @returns {string}
  */

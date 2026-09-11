@@ -221,6 +221,42 @@ Reproduce: read `npm/sharpearena/package.json` for the absent `exports`, then
 from the repository root, which loads and runs the kernel without `index.ts` ever
 executing.
 
+**Disposition: repaired, with one residue named below.** All three remedies the finding
+weighs were taken, because each closes a different half. `package.json` declares an
+`exports` map resolving `.` and `./package.json` and nothing else, so the deep path is
+refused by Node's resolver. `generate_scenario` is wrapped as `generateScenario`, so the
+one export that forced a consumer past the wrapper no longer does; `golden.test.js` drives
+every committed golden through it. And `checkSpecHash` lost its `wrapperHash` parameter:
+the exported function compares against the pin and nothing else, with the two-sided
+`compareSpecHash` kept module-internal and not re-exported from `index.ts`, so
+`checkSpecHash(h, h)` is no longer expressible. All three are breaking and are recorded
+under `### Breaking`.
+
+The package's own tests and benchmark keep reading `../pkg/sharpearena.js`. That is a
+relative file path inside the package, not a package-name subpath, so `exports` does not
+govern it and should not: those tests exist precisely to drive the committed binary
+directly, and `golden.test.js` is the only gate that touches the `.wasm` that ships.
+
+Proving the bypass closed required attempting it, because a deep import can fail for a
+reason that has nothing to do with `exports`: if `pkg/` were simply absent from the
+tarball, the import would fail and an assertion that it failed would be green while the
+map did nothing. `npm run smoke-install` packs, installs offline into a throwaway project
+with an isolated cache, and asserts three things together: the import fails with
+`code === "ERR_PACKAGE_PATH_NOT_EXPORTED"` specifically, `pkg/sharpearena.js` IS present
+in the tarball, and that same file DOES load and answer `spec_hash()` when required by
+absolute file path from the installed tree. Only the exports map produces that
+combination. The same probe walks `pkg/sharpearena_bg.wasm`, `dist/index.js` and
+`dist/specHash.js`, so a partial map would fail too. Mutation-checked in an isolated
+staged copy: with `exports` deleted from the packed manifest, the deep import returns the
+raw kernel and reports `spec_hash()` again, and the probe's assertion fails as written.
+
+Residue, not closed: a resolver that ignores `exports` is unaffected. webpack 4 and older
+bundlers read `main` and resolve subpaths from the file tree, and `pkg/` has to ship
+because `dist/index.js` loads it by relative path. The refusal is a property of Node's
+resolver and of every bundler that implements `exports`, not of the files on disk, and
+there is no way to close it further without making the wrapper itself unable to load its
+own kernel. It is stated in the changelog rather than half-fixed.
+
 ### A4. The published wasm bundle is never the one that was tested (high)
 
 `.github/workflows/ci.yml:186-202` runs the npm job as `npm ci && npm run build && npm test`,
@@ -248,6 +284,104 @@ crate version stamp. Grepping the committed `pkg/sharpearena_bg.wasm` finds
 `d22da4be7f050c5d` and `sharpebench-sim-0.21.0` but not `0.25.0`. The version test
 (`test/golden.test.js:73-89`) compares `pkg/package.json` text to `Cargo.toml` text, so a
 stale binary beside a correct `pkg/package.json` passes.
+
+**Disposition: repaired.** The release job no longer deletes and rebuilds the bundle. The
+committed `npm/sharpearena/pkg` is the published one, which is the artifact CI already
+tests, and the job runs `npm ci && npm run build && npm test && npm run smoke-install`
+against it before `npm publish`. `ci.yml` also triggers on `push: tags: ["v*"]` now, so
+the whole gate covers the tagged commit rather than only the branch it came from.
+
+That is the whole of A4's original point, and it is now a tautology rather than a claim:
+the bytes that publish are the bytes the suite just executed, in the same job, on the same
+checkout. Nothing else has to hold for it.
+
+What the rebuild did provide, and this does not provide by construction, is that the
+published bundle came from the tag's source. Note what that guarantee was worth as it
+stood: it was paired with never testing the result, so it bought "built from this source"
+at the price of "and nothing has run it". It is replaced by
+`scripts/check-wasm-bundle.mjs`, a CI job on every push and pull request and a release step
+before publish, which rebuilds into a temporary directory and holds the committed bundle to
+answering the same way. Checked rather than assumed is weaker than by construction, and it
+is the half that was already being checked by nobody.
+
+**The first version of this gate asserted byte equality and was wrong.** It was measured
+on one host, against a bundle committed from that same operating system, and generalized
+from there. CI refused it: on `ubuntu-latest`, at the same pinned rustc 1.96.0 and
+wasm-pack 0.15.0, the rebuild agreed with the committed bundle on the spec hash, the crate
+version and both committed scenario goldens and still differed in bytes. The classification
+did its job and said so, which is the only reason this is a corrected premise rather than a
+misdiagnosed artifact. Byte-for-byte reproducibility of wasm-pack output is a property of
+the build environment, not of the artifact, and an assertion on it is a report about which
+machine ran the gate.
+
+Keeping byte equality and pinning the one environment that can produce those bytes was
+considered and rejected. It is not free: the committed bundle would have to be built on a
+Linux host matching the runner, so no Windows or macOS contributor could regenerate it or
+run the gate locally, `scripts/build-sharpearena-wasm.sh` would be unusable for exactly the
+job it names, and the claim would rest on a second unverified premise, that one Linux
+distribution's wasm-opt matches `ubuntu-latest`'s. That premise could not be established
+here, and asserting an unestablished premise is what produced this correction in the first
+place.
+
+So the gate asserts **differential behavioral equivalence** instead. Both bundles are
+loaded and driven through every export on a fixed 44-call battery, and their returned JSON
+is compared byte for byte: `spec_hash`, `crate_version`, `dataset_synthetic` across panel
+shapes and an unknown field, `generate_scenario` across both committed goldens, all five
+distribution modes, the richness knobs, the clustering and jump-burst knobs and two
+refusal paths, `run_baseline` for all four agents with and without a full cost model plus
+the CSV path, the momentum lookback and two refusal paths, `stress_suite`, `walk_forward`
+including degenerate windows, and `tag_regime` and `replay_run` driven from a dataset each
+bundle generates for itself, so a divergence in the generator cannot hide behind an
+identical replay. The committed bundle is separately anchored against the committed
+scenario goldens, which is an absolute check rather than a comparison against a peer.
+
+This covers strictly more of the artifact than the stamps do. `SPEC_HASH` fingerprints
+seven tape-defining sources and `crate_version` moves only when the version does, so
+neither notices a change in the export layer, the baselines, the replay path or the cost
+model. Demonstrated rather than argued: an isolated copy of the workspace with one line
+changed in `crates/sharpearena-wasm/src/lib.rs`, the default momentum lookback from 10 to
+11, builds a bundle that reports the identical spec hash and crate version and reproduces
+both committed goldens, and the gate fails it on `run_baseline(momentum)` and
+`run_baseline(momentum, costs)` and nothing else. That is precisely the class byte equality
+was covering and the stamps were not.
+
+**What it no longer catches, plainly.** Two bundles that agree on every input in the
+battery are taken as equivalent. A divergence reachable only by an input the battery does
+not contain survives, and byte equality would have caught it. A bundle rebuilt from
+different source that happens to agree on all 44 calls, the two stamps and both goldens
+passes. The battery is therefore the gate's actual scope, not an illustration of it, and it
+has to grow when an export grows a branch; that obligation is written into the script
+header rather than left implicit. Byte equality is still computed and printed, so a bundle
+that does match is reported as matching; only the failure on a mismatch is gone.
+
+All three outcomes were exercised rather than reasoned about. A bundle perturbed in bytes
+that no call reads passes with the environment-difference note (exit 0), reproducing the
+CI shape. The previous committed bundle fails as stale, named by `crate_version` (exit 1).
+The mutated-source build fails with matching stamps and divergent answers (exit 1).
+
+The second-order gap is closed by a stamp in the binary rather than beside it. The wasm
+crate exports `crate_version()` (`env!("CARGO_PKG_VERSION")`), and `golden.test.js` asserts
+it against the `[workspace.package]` version before the three manifest comparisons, which
+are three text files agreeing with each other and read nothing from the `.wasm`. This is
+the sibling's pattern, where `methodologyVersion` is stamped into the kernel and the
+offline-installed tarball is asserted against the installed `package.json` version. The
+previous committed bundle isolates the cause: driven directly, it reports the same
+`spec_hash`, reproduces both scenario goldens, and has no `crate_version` export at all, so
+the version leg is the only one of the four that names it. `SPEC_HASH` covers the seven
+tape-defining sources, not this crate's export layer, the baselines or the replay path,
+which is exactly the drift the stamp catches and the hash cannot.
+
+`scripts/build-sharpearena-wasm.sh` was changed to call wasm-pack in the same shape. It
+used bare `wasm-bindgen`, which skips the `wasm-opt` pass wasm-pack runs, so a developer
+using the repository's own build script produced a different optimization of the same
+source than the release ships.
+
+Not established: that the committed bundle is the compilation of the tagged source, as
+opposed to a compilation that answers like it on 44 inputs. Byte equality would have
+established it and cannot hold across hosts; nothing here replaces it. Also not
+established, and no longer relied on, is byte reproducibility of wasm-pack across
+operating systems: it was measured on one host, CI refused it, and the assertion is gone
+rather than retried.
 
 ### A5. `mandate_breach` scores a NaN book as a clean mandate (medium-high)
 
@@ -441,6 +575,14 @@ documentation defect, not a hash defect. It is easy to believe the doc because
 `spec_hash.rs:82-110` asserts that all four are exact-pinned, which looks like the
 enforcement of the claim and is not.
 
+**Disposition: repaired, as a documentation fix.** `AGENTS.md` now says that
+`build_support.rs` canonicalizes three crates, that `sharpebench-attest` is a
+dev-dependency outside the hash, and that the `spec_hash.rs` assertion that all four are
+exact-pinned is manifest hygiene rather than hash coverage. No code changed, because the
+hash and the committed record were already correct. Folded in here rather than filed
+separately because the sentence is a claim about what binds a published identity, which is
+what A3 and A4 are about.
+
 ### A15. The npm `Decision` type has drifted from the published contract (low-medium)
 
 `crates/sharpearena/contract/decision.schema.json:19-32` defines an optional `cost` object
@@ -451,6 +593,27 @@ package has no `DecisionCost` type. `test/conformance.test.js:140-152` validates
 *fixtures* against the schemas, never the TS types, which are erased before any validator
 sees them. The same file's enum restatements (`Action` at `types.ts:9`, `BaselineAgent` at
 `:138`, `Regime` at `:163`) are likewise hand copies with no cross-check.
+
+**Disposition: repaired for the contract types; the engine-output enums stand.**
+`types.ts` gains `DecisionCost` and `Decision.cost`, matching the published schema field
+for field. `test/conformance.test.js` gains three cross-checks that read `types.ts` as
+text, which is the only way to assert on declarations that do not exist at runtime: every
+property of `decision.schema.json` (`Decision`, `Order`, `DecisionCost`) and of
+`observation.schema.json` (`MarketObservation`, `SymbolSnapshot`, `PositionState`) is
+declared on the corresponding interface, the decision types declare nothing the schema
+does not define, and the `Action` union equals the schema's enum. Mutation-checked against
+the pre-repair `types.ts` extracted from `HEAD`: it fails with `Decision does not declare
+the schema's cost` and `src/types.ts declares no interface DecisionCost`, which is the
+drift the finding names rather than an incidental error.
+
+`BaselineAgent` and `Regime` are not covered. They restate Rust enums that the published
+JSON schemas do not define, so there is no committed artifact to check them against; that
+would need a generated contract file rather than a test, and is left open. The scenario
+types added alongside (`ScenarioSpec`, `DistributionMode`, `ObservationRichness`) are in
+the same position, and the first draft of `ScenarioSpec` marked all five base fields
+optional; the kernel refuses a partial spec, and the offline-install probe caught it with
+`missing field 'start_level'`, which is the sort of thing a schema cross-check would have
+caught instead.
 
 ### A16. `SealedSalt` enforces length, and is framed as enforcing entropy (low-medium)
 
