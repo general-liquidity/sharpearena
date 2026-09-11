@@ -10,7 +10,7 @@
  */
 import * as kernel from "../pkg/sharpearena.js";
 
-import { checkSpecHash, SPEC_HASH } from "./specHash.js";
+import { checkSpecHash } from "./specHash.js";
 
 import type {
   BaselineConfig,
@@ -19,6 +19,7 @@ import type {
   Regime,
   Run,
   RunTrajectory,
+  ScenarioInput,
   StressScenario,
   SyntheticParams,
   WalkForwardParams,
@@ -26,6 +27,7 @@ import type {
 } from "./types.js";
 
 export * from "./types.js";
+// `compareSpecHash` stays internal on purpose: see its doc comment in specHash.ts.
 export { checkSpecHash, SPEC_HASH } from "./specHash.js";
 
 // Refuse-on-mismatch spec-hash handshake, at load: the committed wasm bundle must
@@ -36,7 +38,6 @@ checkSpecHash(
   typeof (kernel as { spec_hash?: () => string }).spec_hash === "function"
     ? (kernel as { spec_hash: () => string }).spec_hash()
     : undefined,
-  SPEC_HASH,
 );
 
 /** Parse a kernel JSON string, surfacing the kernel's `{error}` as a thrown Error. */
@@ -86,6 +87,21 @@ export function replayRun(
 /** Build a deterministic synthetic {@link Dataset} from `{n_symbols, n_days, seed}`. */
 export function datasetSynthetic(params?: SyntheticParams): Dataset {
   return parse(kernel.dataset_synthetic(optJson(params)));
+}
+
+/**
+ * Draw one level of a procedural scenario family: the {@link Dataset} for
+ * `input.spec` under `input.seed`. Deterministic, and the export the cross-runtime
+ * byte-identity claim is written about (its output is pinned against the committed
+ * goldens in `contract/attestation/scenario-goldens.json` from Rust, from wasm32 and
+ * from this package's own suite).
+ *
+ * It is wrapped here, rather than left to `pkg/`, because a consumer who has to reach
+ * past the wrapper to call it also reaches past the spec-hash handshake that runs at
+ * this module's load. See finding A3 in the 2026-09-09 Arena review.
+ */
+export function generateScenario(input?: ScenarioInput): Dataset {
+  return parse(kernel.generate_scenario(optJson(input)));
 }
 
 /** The named adversarial stress suite (flash-crash, whipsaw, …) for a seed. */

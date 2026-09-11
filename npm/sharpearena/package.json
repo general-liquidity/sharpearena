@@ -22,6 +22,13 @@
   "type": "commonjs",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "files": [
     "dist",
     "pkg"
@@ -29,6 +36,7 @@
   "scripts": {
     "build": "tsc",
     "test": "node --test \"test/**/*.test.js\"",
+    "smoke-install": "node test/smoke-install.mjs",
     "prepublishOnly": "tsc && node -e \"require('fs').rmSync('pkg/.gitignore',{force:true})\""
   },
   "devDependencies": {
