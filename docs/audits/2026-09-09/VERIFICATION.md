@@ -1,5 +1,67 @@
 # Verification record
 
+## Acting on the independent assessment, 2026-09-11
+
+Seven pull requests, four in SharpeBench and three in SharpeArena, each merged
+with every check green on its exact pushed head and the merged tree identical to
+the tested tree. Four of the seven had to be brought up to date and tested again
+because another of them landed first.
+
+| PR | Work | Main after merge |
+|---|---|---|
+| Bench #96 | The journal's identity read once; a failed settlement refused on reopen | `fbc00a0` |
+| Bench #95 | Six fail-open paths in the field assembly and the agent shim | `76fbea2` |
+| Bench #97 | A p-value stated as a p-value; the conversion's assumption written down | `ebf1c40` |
+| Bench #98 | The last posterior phrasing, and the module rebuilt against its source | `3fe5e4e` |
+| Arena #57 | Cross-runtime fixtures for the backtest path | `6c4b9be` |
+| Arena #59 | Release-mode validation, a real metadata check, ties marked as ties | `c363cd2` |
+| Arena #58 | Typed refusals in grading; the empty evaluation refused | `8e0b606` |
+
+The round is worth recording for what it did not find as much as for what it
+did. Three of the five paper-derived claims were already correct in the code,
+and saying so with an anchor was the whole result for them. Four of the
+adjudicated Arena findings were already closed by earlier rounds. One finding in
+this project's own review was rejected outright and two more were not supported,
+so the corrections went into our text rather than into the code. A review that
+only ever confirms is not being read.
+
+Three defects were found by doing the work rather than by being told about them.
+The statistics files name a model that has no accounting row, in a proportion,
+262 of 694, that makes the omission a third of the run rather than a stray file.
+The committed module had drifted three minor versions from its source while every
+gate stayed green, because the gates each build their own copy and none of them
+compares against the committed one. And the module moves on changes that cannot
+affect behaviour: a documentation-only edit three lines up shifted twenty-two
+bytes of panic location records, which is the mechanism by which the first drift
+went unnoticed.
+
+Two of the failures this round were in the checking itself, which is the reason
+the isolated-cause rule keeps earning its place. A mutation removing a guard from
+a spec-hash input made every test in the installed package fail at import,
+because moving the hash breaks the package's pin, so three unrelated groups
+appeared to be defended by one guard until each mutated copy's pins were rebound.
+And a bounds test used a weight that the sum-of-weights rule refuses as well, so
+it asserted an outcome two causes could produce. Both were found and stated by
+the people doing the work, not by a reviewer.
+
+One number in this round was written down before it was measured, and was wrong.
+A disposition named the fingerprint its own change would produce; the measured
+value differed, and the document was corrected from the build rather than the
+build from the document. It is recorded because the alternative is how a golden
+becomes a wish.
+
+### Not established
+
+No gateway has served a real provider, no paid or concurrent run has happened,
+and the field has still never completed, so the accounting repairs are established
+against synthetic inputs and a read-only inventory of untracked remnants rather
+than against a bill. The published package bytes for Arena 0.25.0 are a
+reviewer's measurement repeated here, not reproduced under this round. The
+momentum style remains sampled and ungraded until its producer is rerun.
+Cross-runtime fixtures cover the backtest path only. Nothing in SharpeBench yet
+compares its committed module against a fresh build, which is the drift found
+here and not yet closed.
+
 ## The backtest path's cross-runtime evidence, 2026-09-11
 
 `contract/attestation/backtest-goldens.json` pins `run_baseline` and `replay_run` output
