@@ -216,7 +216,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "ac6c50740d98594d209fe6eef5ed859e7da53745",
+  "generated_at_head": "05714d6e9361ad75487844eb6d818b72e2599596",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -238,11 +238,11 @@
     },
     {
       "path": ".github/workflows/ci.yml",
-      "sha256": "53497af94212e09d15542623181d028de67a613bd25d2431ce8d630f39d798d3"
+      "sha256": "85f4fcb1056eef935dd5895b9661f6c58b824a55c4895466373fe631656777bf"
     },
     {
       "path": ".github/workflows/release.yml",
-      "sha256": "0502e6122ba1ddf10cf53b81031b4df0828c333f2c45008e0b2e50f78919c48e"
+      "sha256": "0fdadddcc2ecb08f27848a824740cf450dda74357e8ec5cf8e8deb732d156534"
     },
     {
       "path": "Cargo.lock",
@@ -874,6 +874,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "bacb5619ea6314ef2cbf1a1d737c2ad9939eb65873278f5a82ed54aa64f61172",
+  "source_snapshot_sha256": "f25143bfd99393f6dece74faccb0bed494d39d6dfed3efa3888b5abb5dc0269f",
   "validator": "paper/src/check-provenance.py"
 }
