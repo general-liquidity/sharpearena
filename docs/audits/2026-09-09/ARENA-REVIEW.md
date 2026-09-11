@@ -728,6 +728,13 @@ fixes no wrong number. That is worth stating plainly, because the fingerprints w
 recorded from the shipped bundle and then reproduced by the native and wasm32 builds; had
 they disagreed the entries could not have been written at all.
 
+The entries pin output bytes and nothing else. They do not restate `SPEC_HASH`, a wasm
+digest or any other value that moves when the committed bundle is rebuilt, so a spec-hash
+rebind does not touch them: `run_backtest`, `replay_run`, `Dataset` and `CostModel` all
+come from `sharpebench-sim`, pinned at `=0.21.0`, and the wasm façade's only contribution
+to these calls is its config translation. A rebuilt bundle reproduces them, which the
+wasm32 leg shows on every run by compiling fresh and matching the same fixtures.
+
 `walk_forward`, `stress_suite` and `tag_regime` remain uncovered by a committed
 cross-runtime fixture. They were named in the finding alongside the backtest path; the
 backtest path is the one the recompute-to-verify claim rests on, and the other three are

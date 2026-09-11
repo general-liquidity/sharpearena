@@ -43,10 +43,21 @@ this record.
 What this does **not** establish, and must not be read as establishing: that the published
 artifact is numerically wrong. In the same check it reported the expected spec hash and
 reproduced both committed scenario goldens. Differing bytes are not evidence of divergence,
-for the reason the A4 disposition gives at length: wasm-pack output is not byte-reproducible
-across build environments, and CI refused a byte-equality gate on exactly that ground. Nor
-does one measured release generalize. Releases before 0.25.0 were not fetched or hashed, so
-nothing is claimed about them.
+for the reason the A4 disposition gives at length. Nor does one measured release
+generalize. Releases before 0.25.0 were not fetched or hashed, so nothing is claimed about
+them.
+
+Two further measurements narrow what the difference can be, and neither closes it. The
+release recipe (wasm-pack 0.15.0, Rust 1.96.0, `wasm-pack build crates/sharpearena-wasm
+--target nodejs --out-name sharpearena`) reproduced all five committed `pkg/` files byte
+for byte on an unmodified parent commit locally, so the build is not irreproducible as
+such. And CI, at the same pinned toolchain on `ubuntu-latest`, produced a bundle that
+agreed on the spec hash, the crate version and both scenario goldens and still differed in
+bytes, which is why the gate asserts behavioral equivalence rather than byte equality.
+Together they say the byte difference is a property of the build environment rather than
+of the source, which is narrower than "not reproducible" and still not an account of the
+published artifact: no build environment has been shown to produce the published bytes,
+and none was tried.
 
 What remains open is the narrower thing: for 0.25.0 there is no evidence that the bytes on
 the registry are a compilation of the tagged source, as opposed to a compilation that
