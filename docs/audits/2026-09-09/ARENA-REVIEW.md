@@ -735,6 +735,15 @@ come from `sharpebench-sim`, pinned at `=0.21.0`, and the wasm façade's only co
 to these calls is its config translation. A rebuilt bundle reproduces them, which the
 wasm32 leg shows on every run by compiling fresh and matching the same fixtures.
 
+That has a consequence worth stating as a standing rule, because it is the one way this
+gate can be turned into a dashboard. **If these fixtures ever move, that is a finding, not
+something to regenerate.** Nothing in the ordinary maintenance of this repository should
+move them: a spec-hash rebind does not, a bundle rebuild does not, and a change confined to
+the arena crate's own modules does not. A number that moves here is either a
+`sharpebench-sim` pin move or a change in the wasm façade's config translation, and both
+of those are the kind of thing a reader of the changelog needs told. Regenerating the
+fixtures to make the suite green would record the opposite.
+
 `walk_forward`, `stress_suite` and `tag_regime` remain uncovered by a committed
 cross-runtime fixture. They were named in the finding alongside the backtest path; the
 backtest path is the one the recompute-to-verify claim rests on, and the other three are
