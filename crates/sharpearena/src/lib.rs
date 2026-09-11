@@ -33,7 +33,7 @@ pub use spec_hash::{SPEC_HASH, SPEC_HASH_HEX};
 pub mod scenario_gen;
 pub use scenario_gen::{
     cross_regime_split, generate_scenario, level_seed, sealed_seed, train_test_split,
-    DistributionMode, ScenarioSpec, SealedSalt, SealedSaltError, EVAL_SEED_BASE,
+    DistributionMode, ScenarioSpec, SealedSalt, SealedSaltError, SplitError, EVAL_SEED_BASE,
     MIN_SEALED_SALT_BYTES,
 };
 

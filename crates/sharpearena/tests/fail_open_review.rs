@@ -154,7 +154,7 @@ fn r4_zero_test_levels_yields_an_unbounded_test_family() {
         num_levels: 50,
         ..ScenarioSpec::default()
     };
-    let (_, test) = train_test_split(train, 0, 10_000);
+    let (_, test) = train_test_split(train, 0, 10_000).expect("a bounded train band splits");
     assert_eq!(test.num_levels, 0);
     // An "empty" test family still yields distinct seeds for every index.
     let a = level_seed(&test, 0);
@@ -164,31 +164,62 @@ fn r4_zero_test_levels_yields_an_unbounded_test_family() {
     assert_ne!(a, far);
 }
 
-/// R5. The disjointness guarantee of `train_test_split` is carried by `debug_assert!`,
-/// so it is compiled out of every release build: the published crate, the maturin wheel
-/// and the wasm bundle. Under `cargo test --release` an unbounded train interval
-/// produces a "test" family that overlaps the train band, with no refusal. CI runs
-/// `cargo test --workspace` in debug, where the assertion fires, so this test is
-/// compiled only in the configuration that actually ships.
+/// R5. The disjointness guarantee of `train_test_split` used to be carried by
+/// `debug_assert!`, so it was compiled out of every release build: the published crate,
+/// the maturin wheel and the wasm bundle. It is now a typed refusal (`SplitError`), which
+/// survives `[profile.release]`. This test is compiled only in the configuration that
+/// actually ships, because that is the configuration the defect lived in; CI runs it via
+/// the `cargo test --release --test fail_open_review` step.
+///
+/// The `Err` is the isolation: nothing else in the function can return one, so the
+/// assertion cannot be satisfied by an unrelated cause. The no-overlap leg then pins what
+/// the refusal buys, on the same inputs that previously produced a fully overlapping
+/// family.
 #[cfg(not(debug_assertions))]
 #[test]
-fn r5_release_build_admits_an_overlapping_train_test_split() {
-    let train = ScenarioSpec {
+fn r5_release_build_refuses_an_overlapping_train_test_split() {
+    use sharpearena::SplitError;
+
+    let unbounded = ScenarioSpec {
         start_level: 100,
         num_levels: 0, // unbounded: the train band is [100, u64::MAX)
         ..ScenarioSpec::default()
     };
-    let (train, test) = train_test_split(train, 64, 10_000);
-    // The "held-out" band starts inside the unbounded train band.
-    assert_eq!(test.start_level, 10_100);
+    assert_eq!(
+        train_test_split(unbounded, 64, 10_000),
+        Err(SplitError::UnboundedTrain { start_level: 100 }),
+        "an unbounded train band must be refused in the shipped profile"
+    );
+
+    // The wrapping sum that could land the test band below the train band is refused
+    // in release too, where `+` does not panic.
+    let near_max = ScenarioSpec {
+        start_level: u64::MAX - 10,
+        num_levels: 5,
+        ..ScenarioSpec::default()
+    };
+    assert_eq!(
+        train_test_split(near_max, 64, 10_000),
+        Err(SplitError::BandOverflow {
+            start_level: u64::MAX - 10,
+            num_levels: 5,
+            gap: 10_000,
+        })
+    );
+
+    // A bounded band still splits, and the split it returns is genuinely disjoint.
+    let bounded = ScenarioSpec {
+        start_level: 100,
+        num_levels: 50,
+        ..ScenarioSpec::default()
+    };
+    let (train, test) = train_test_split(bounded, 64, 10_000).expect("bounded train splits");
+    assert_eq!(test.start_level, 10_150);
     let train_seeds: std::collections::HashSet<u64> =
-        (0..200_000u64).map(|i| level_seed(&train, i)).collect();
+        (0..50u64).map(|i| level_seed(&train, i)).collect();
     let overlapping = (0..64u64)
         .map(|i| level_seed(&test, i))
         .filter(|s| train_seeds.contains(s))
         .count();
-    assert_eq!(
-        overlapping, 64,
-        "every held-out seed is also a train seed, and nothing refused"
-    );
+    assert_eq!(overlapping, 0, "no held-out seed may be a train seed");
 }

@@ -8,11 +8,11 @@
 //! every reachable engine exception; this test constructs every variant of every
 //! `Display`-able typed error THIS crate defines.
 //!
-//! Coverage note: `SealedSaltError` is currently the crate's only `Display` error
-//! type. `TransportFault` / `CellOutcome` are typed data carriers without a message
+//! Coverage note: `SealedSaltError` and `SplitError` are the crate's `Display` error
+//! types. `TransportFault` / `CellOutcome` are typed data carriers without a message
 //! register, and `DecideError` is defined upstream in `sharpebench-sim`.
 
-use sharpearena::{SealedSaltError, MIN_SEALED_SALT_BYTES};
+use sharpearena::{SealedSaltError, SplitError, MIN_SEALED_SALT_BYTES};
 
 /// Assert `message` obeys the register. Returns the body for observable checks.
 fn assert_register(message: &str) -> &str {
@@ -60,4 +60,29 @@ fn every_typed_error_variant_obeys_the_register() {
             "body must name the observed and required values: {body:?}"
         );
     }
+}
+
+/// `SplitError` carries the train/test disjointness refusal, so its register is
+/// checked the same way: construct every variant rather than trigger it, so a new
+/// variant without a conforming message is a compile-time reminder here.
+#[test]
+fn split_error_variants_obey_the_register() {
+    let unbounded = SplitError::UnboundedTrain { start_level: 100 }.to_string();
+    let body = assert_register(&unbounded);
+    assert!(
+        body.contains("100"),
+        "body must name the observed start_level: {body:?}"
+    );
+
+    let overflow = SplitError::BandOverflow {
+        start_level: 7,
+        num_levels: 5,
+        gap: 10_000,
+    }
+    .to_string();
+    let body = assert_register(&overflow);
+    assert!(
+        body.contains('7') && body.contains('5') && body.contains("10000"),
+        "body must name the three observed operands: {body:?}"
+    );
 }
