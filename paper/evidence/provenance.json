@@ -216,7 +216,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "b0e36a42a4ae14f3335fa48d204a2b0925360319",
+  "generated_at_head": "65ca24e29dc5d2baa39b0ce932620081f7454849",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -262,7 +262,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/__init__.py",
-      "sha256": "9d1bbff13010fa85a9ba4b0c84afa5ca20d0925c9dd3545e18de02cd2c675206"
+      "sha256": "38f9252d5e655efced636bd61e5fe155ef7d733ad2043ef1558b8b94331400d1"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/_action_validation.py",
@@ -270,7 +270,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/_spec_hash.py",
-      "sha256": "6fa07cb33172a1a81935bd0e23da9956eedc6c2bce9a7503a82ada85f5c2ae32"
+      "sha256": "493be723f7e9223d8208a958ae7d84fac8203280ec1de5f7654154c53e037251"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/adverse_selection.py",
@@ -362,7 +362,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/execution_noise.py",
-      "sha256": "cd4c2aa8f5e1ec08fa74531cd10b9e01b9a2e39870b14e9c6ea965112c5aa1a9"
+      "sha256": "1d2dfa9de3ec2ea9534e7a7140fdc5774d9738bbd52a5a1a07231939f868acdb"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/failure_taxonomy.py",
@@ -386,7 +386,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/generalization.py",
-      "sha256": "cc15486d13ed473e76ef556dd4d55db97fb9c6258dd23b3927ac19ea7a245e76"
+      "sha256": "37795b0d6c8a91d6137d0531f4b928380980566489f52c29821e7ed7cb0e29b7"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/gym.py",
@@ -418,7 +418,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/mandate.py",
-      "sha256": "e2509492b3e76033f772dd2498a2ba52791dd00a3caeb2f48f3a7dd0e33778e7"
+      "sha256": "2ac6e0ffffb4a2eb38842de3d5771c170822e71b43f72c1009f1ce2e71b553a2"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/manipulation.py",
@@ -482,7 +482,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/preprocessing.py",
-      "sha256": "1c4fa20d55c07d7eecfd93ad459b79cb621014412f6eded025f0d8f65a401a59"
+      "sha256": "e1dcd4bb4e9e21a02178d1a4e57edfaac12cef99492c01d5ab9f4f5004c54e55"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/promotion_replay.py",
@@ -546,7 +546,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/verifiers_env.py",
-      "sha256": "cacbc88ca9cadd685be762556b77dab3541aca9d7099489480a420388466e60c"
+      "sha256": "922dbcb9520f6ed686ffd494ea180c6f17d9c5608ae244ea7d6231c3cf17d83e"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/wrappers.py",
@@ -558,7 +558,7 @@
     },
     {
       "path": "crates/sharpearena-py/src/lib.rs",
-      "sha256": "5442fddf1589b3327566e4c6182d046df2b90ba49126e33553a04af42b720a32"
+      "sha256": "c4e4431ff63bf7cd58c4df50ab31e2f7e22520a4a96ba0af5c19eb7147051211"
     },
     {
       "path": "crates/sharpearena-wasm/Cargo.toml",
@@ -602,7 +602,7 @@
     },
     {
       "path": "crates/sharpearena/src/exec_noise.rs",
-      "sha256": "721dfb9ba56ad07a6c0addd300bc848cde36cdefb0fac7d31183aa93d3b79246"
+      "sha256": "f908ee8f4940feda37af7e9b0c9aef07cb801097ecbf19a2f3364dd8a4bc83d9"
     },
     {
       "path": "crates/sharpearena/src/leaderboard_ci.rs",
@@ -610,7 +610,7 @@
     },
     {
       "path": "crates/sharpearena/src/lib.rs",
-      "sha256": "d07da4c4449076c80f0d90c1563277c89aabfc1b068178ea24b40a7de80c5091"
+      "sha256": "a3c8e11ea39034d43617cda7b361e1a0dfeba94320a598040c2698fa19b25d36"
     },
     {
       "path": "crates/sharpearena/src/lob_market.rs",
@@ -618,7 +618,7 @@
     },
     {
       "path": "crates/sharpearena/src/mandate.rs",
-      "sha256": "26d9945ea6d0c6af474a952353501f4053a7e0e757995d2b23861afac677db7c"
+      "sha256": "f6adfae4bdabe4b53ceb81c3f337e51a191c1133a2fb133b7022a859a036ab8d"
     },
     {
       "path": "crates/sharpearena/src/market.rs",
@@ -630,7 +630,7 @@
     },
     {
       "path": "crates/sharpearena/src/scenario_gen.rs",
-      "sha256": "2ce4ea77fe6d201ffa58912163ed9f82bf5d3ede3745423a847ecdc6373357b5"
+      "sha256": "f41678f81536ec925d5a48b48463de1ebd63c383935eb1fbcff8eb22c9779dab"
     },
     {
       "path": "crates/sharpearena/src/spec_hash.rs",
@@ -654,11 +654,11 @@
     },
     {
       "path": "crates/sharpearena/tests/error_style.rs",
-      "sha256": "6b92800fe4da4877b3e15f79b147f101f0d1fa60369ba363ee7a68b6058a6e66"
+      "sha256": "ec0262b7523b90672b6fc3669dea942bc1c69f94ca071523228525a0a3986cf3"
     },
     {
       "path": "crates/sharpearena/tests/fail_open_review.rs",
-      "sha256": "2051ce6436300ebfcd1dcaac0e20e2cd908ab0d91135eaf4bd6275dcec96223e"
+      "sha256": "0a4bd55a58d9fe583855db9d26cdfde9b28980038164f20acff34759df715445"
     },
     {
       "path": "crates/sharpearena/tests/kernel_properties.rs",
@@ -834,7 +834,7 @@
     },
     {
       "path": "scripts/check-optimized-guards.py",
-      "sha256": "ccc89573dceeac32c7eafeb4f4fd7643ea978b24876d22df2748c1c095597bd1"
+      "sha256": "df2520f03b45e15a3e0ee453695d013dfa4b16cde7c5a6c2be5e5ac3cad2e474"
     },
     {
       "path": "scripts/check-packaged-consumer.py",
@@ -874,6 +874,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "86b5c52665f3d11122692169e89b1fd4633ac048fb73f31b2558ffa7dd9eb9d8",
+  "source_snapshot_sha256": "95a4b84bebf10891622bcd097079c64469ecd716ac3f05a8e56b2098c668269b",
   "validator": "paper/src/check-provenance.py"
 }
