@@ -6,7 +6,15 @@ leaderboard but had nothing equivalent. This was a review, not a repair: at `695
 production code was changed, and one test file was added to demonstrate five of the
 findings, `crates/sharpearena/tests/fail_open_review.rs`. A1 and A2 have since been
 repaired on top of this branch; each carries a **Disposition** paragraph recording what
-was changed and what it cost. Every other finding stands as written and is open.
+was changed and what it cost.
+
+Later rounds added dispositions to A10, A14, A15, A16, A17, A18, A19, A21 and T2, and
+three findings did not survive adjudication against the source. **T3 is withdrawn**: the
+test it calls vacuous supplies the default from the implementation and does detect a
+change in it. **A11 is not upheld**: the rank it describes is filtered out before the
+default can fire. **A12 is not upheld as a current defect**: the pinned `CompositeScore`
+carries exactly the three error fields the convention matches. Each is marked at the
+finding. A finding with no Disposition paragraph stands as written and is open.
 
 The two patterns the sibling reviews kept finding were looked for specifically:
 fail-open shapes (a missing, malformed or unknown value producing a permissive default
@@ -503,6 +511,23 @@ what is printed, or the floats tie, in which case the published rank order is an
 of a list literal. Which of the two it is could not be established here (see "Not
 established").
 
+**Disposition: repaired as a rendering policy, and the committed artifact settles which
+case it was.** The two Calm rows are *not* equal: `paper/evidence/f1-baselines.json`
+(version 0.9.0) records `kelly_vol_target` at `0.9999999999259135` and
+`equal_weight_long` at `0.9999998622925645`, so that rank is real and the four displayed
+decimals do not support it. The same artifact does contain exact ties: Calm `momentum` and
+`max_sharpe` are both exactly `0.0`, and there the printed order was an artifact of
+`BASELINE_POLICIES` declaration order. The two cases needed different answers, so
+`leaderboard_markdown` now distinguishes three things a reader could previously not tell
+apart: `=` marks an exact estimator tie (tied rows share the lowest ordinal of their group
+and their order within it is arbitrary), `~` marks rows separated only beyond the four
+displayed decimals, and a legend states that neither marker is a claim of statistical
+separation, which remains the job of `show_ci=True` and `pairwise_significance`. A table
+with no marked row renders byte-identically to before, legend included. `EVALUATION.md`'s
+three tier tables were re-rendered from the committed artifact rows, so the Calm table now
+reads `1~`, `2~` and a shared `5=`; no number moved and no producer was run. Covered by
+`test_leaderboard_rank_separates_exact_ties_from_rounded_equality`.
+
 ### A11. The significance ranker defaults a missing score to zero (medium)
 
 `crates/sharpearena-py/python/sharpearena/confidence.py:152`:
@@ -520,6 +545,18 @@ Adjacent, in the renderer: `baselines.py:636-638` uses `r.get("passed_k_rate", 0
 `float(r.get("mean_return", 0.0))`, so a row with no pass^k rate prints `0.00`, and
 `:624` renders an unidentified entry's policy as `"?"`.
 
+**Disposition: not upheld as written; the rank it describes is not reachable.** The
+`usable` filter is not a mitigation sitting beside the defect, it is the defect's
+precondition: `confidence.py:150-151` keeps a row only when
+`kernel_score_or_unavailable(r)` returns a number, and that helper reads
+`composite["deflated_sharpe"]` and returns an unavailability *string* when the key is
+absent, non-numeric or non-finite (`kernel_score.py:72-83`). A row with no
+`deflated_sharpe` is therefore dropped before line 152 can default it, so no missing score
+can be ranked as a mid-table zero. What stands is a style point about the shape of the
+key, not a defect: the `0.0` fallback cannot fire and should not be written as though it
+could. The adjacent renderer defaults (`baselines.py` `passed_k_rate` and `mean_return`)
+are display fields, not the rank key, and are unchanged.
+
 ### A12. Kernel unavailability is detected by matching a field-name suffix (medium)
 
 `crates/sharpearena-py/python/sharpearena/kernel_score.py:60-64`:
@@ -535,6 +572,18 @@ field yields zero detected errors, and `_kernel_value` then returns the no-skill
 a score, which is exactly the flattering substitution the module's own header says the
 kernel refused to make. The pin is an Arena-side string convention against a pinned
 dependency's field names, with no test tying the two together.
+
+**Disposition: not upheld as a current defect; the convention matches the pinned
+contract.** The "Not established" entry below asked whether the suffix convention covers
+every field `sharpebench-core 0.21.0`'s `CompositeScore` can carry. It does. The pinned
+source (`composite.rs:812-836`) declares exactly three `Option<String>` error fields,
+`bootstrap_error`, `deflation_error` and `selection_error`, each `skip_serializing_if =
+"Option::is_none"`, and all three are matched by `kernel_score.py:60`. No field the gate
+misses exists today, so nothing published can carry a floor as a score through this path,
+and `tests/test_kernel_score.py:84` already drives all three keys through the gate. The
+residual risk is prospective: a future kernel that renamed a field would silently narrow
+the gate, which is a pin-bump review item rather than a defect in this tree. Retained as a
+hazard note, not a confirmed defect.
 
 ### A13. Process blocks are detected by substring (medium)
 
@@ -627,6 +676,25 @@ at `:1339` passes `&[0u8; MIN_SEALED_SALT_BYTES]`. The `sealed_seed` doc comment
 otherwise unusually honest about what the construction is not, which is why this one
 sentence stands out.
 
+**Disposition: upheld as a claim-boundary defect, repaired in prose and deliberately not
+in `scenario_gen.rs`.** The finding is right about what the type can and cannot do: a
+length floor bounds entropy and does not measure it, a passphrase of sixteen bytes is
+accepted, and so is an all-zero 16-byte salt, by design, because the constructor cannot
+see how the bytes were produced. The requirement is now stated where an operator reads it
+rather than only in the crate. `docs/training.md` says the floor is a length check and not
+an entropy measurement, that an all-zero or passphrase-derived salt clears it and is worth
+nothing, and that generation from a cryptographic RNG, secrecy until the reveal and no
+reuse of a revealed salt are the operator's obligations; the seed-custody row in
+`docs/integrity-and-security.md` carries the same boundary. The one piece of prose that
+did imply the floor proved randomness, `docs/SMOLVM_ASSESSMENT.md`'s "can no longer bypass
+the entropy floor", now says length floor and names what that does not establish. The
+existing explicit non-cryptographic limits on `sealed_seed` stand and are restated rather
+than softened. `src/scenario_gen.rs` is deliberately untouched: it is one of the seven
+`SPEC_FILES`, so editing even a doc comment there rebinds `SPEC_HASH` and forces the
+attestation record, both wrapper pins and the committed wasm bundle to move for a wording
+change. The crate's own sentence should be narrowed the next time a spec file moves for a
+reason that is worth the rebind.
+
 ### A17. `AdaptiveCurriculum` prior is unvalidated, and off-schedule records vanish in release (low)
 
 `crates/sharpearena/src/curriculum.rs:43-62`: `with_prior` documents `prior` in `[0, 1]`
@@ -639,6 +707,23 @@ dropped and the level keeps its prior forever.
 
 Reproduce: `cargo test --test fail_open_review r3_curriculum_prior_is_unvalidated`.
 
+**Disposition: repaired.** `with_prior` now refuses a prior that is not a finite rate in
+`[0, 1]` with an `assert!`, which `[profile.release]` keeps, and `record` refuses an
+off-schedule level in every profile instead of dropping it behind a `debug_assert!`. Both
+are the crate's existing convention for input that cannot produce a valid result, and the
+`record` policy is the one the Python twin already applied (`AdaptiveScheduler.record`
+raises `KeyError`); `AdaptiveScheduler.__init__` gained the matching prior refusal as a
+`raise`, not an `assert`, so it survives `python -O`. The boundary priors `0.0` and `1.0`
+remain in domain: every unseen level then weighs zero and the documented lowest-index
+tie-break decides, which is well defined rather than degenerate. The characterization test
+is inverted in place: `r3_curriculum_prior_is_unvalidated` becomes
+`r3_release_build_refuses_an_unrankable_curriculum`, compiled only under
+`#[cfg(not(debug_assertions))]` like R5, because a guard that exists only in debug is not
+a guard. It asserts on the refusal *message*, so no unrelated panic can satisfy it. Three
+`#[should_panic]` unit tests in `curriculum.rs` and two parametrized Python tests cover
+the same refusals in the ordinary debug run. `curriculum.rs` is not a `SPEC_HASH` input
+(`build.rs` says so explicitly), so nothing rebinds.
+
 ### A18. Asking for zero held-out levels yields an unbounded test family (low)
 
 `train_test_split(train, 0, gap)` sets `num_levels = 0`, which `level_seed` reads as
@@ -647,6 +732,21 @@ the documented Procgen convention for `ScenarioSpec`, and inconsistent with
 `train_test_split`'s own parameter being named `n_test`.
 
 Reproduce: `cargo test --test fail_open_review r4_zero_test_levels_yields_an_unbounded_test_family`.
+
+**Disposition: decided and documented, not changed.** Zero is not evidence of leakage: the
+family `train_test_split` returns for `n_test == 0` starts at `train_end + gap` and runs to
+`u64::MAX`, which is disjoint from the train band, and disjointness is the guarantee
+`SplitError` exists to protect. It is `ScenarioSpec`'s documented Procgen convention
+(`num_levels == 0` means unlimited) reaching a parameter named `n_test`, so the defect is a
+documentation gap and the decision is to keep the convention and say so. `EVALUATION.md`
+and `docs/training.md` now state that asking Rust for zero held-out levels means
+*unbounded*, not *empty*, that the family stays disjoint from train, and that Python's
+`train_test_seeds` materializes a `range` and so returns an empty list for the same
+argument. A caller that wants no evaluation should skip the evaluation rather than ask for
+zero levels. The surfaces are not made to agree in code because `src/scenario_gen.rs` is a
+`SPEC_HASH` input and a signature change there rebinds the fingerprint, the attestation
+record, both wrapper pins and the committed wasm bundle. `r4` continues to pin the
+behaviour, now as documented semantics rather than as an open finding.
 
 ### A19. Constants restated across surfaces without a cross-check (low)
 
@@ -660,6 +760,26 @@ Reproduce: `cargo test --test fail_open_review r4_zero_test_levels_yields_an_unb
   `effective_config.py:45`, `minari_export.py:58-61`). The native cross-check at
   `eval_seeds.py:91-96` binds only `dataset.EVAL_SEED_BASE`. `gym._EVAL_SEED_BASE`, which
   computes the seed offset every env actually uses (`gym.py:85`), is not covered.
+
+**Disposition: the duplication is removed where it was a copy, and the two deliberate
+restatements are now checked by value.** No constant disagreed, so nothing numerical was
+wrong and nothing published moved. `EVAL_SEED_BASE` had four bare copies plus a fallback
+literal; `sharpearena/_seed_bands.py` now holds the value, imports nothing (so it is
+reachable from modules that must not pull the native binding, which is why
+`minari_export` carried the fallback at all), and `dataset`, `gym`, `vector` and
+`minari_export` import it. Two restatements survive on purpose: `effective_config`
+restates the split rule so the arm readback is derived independently of the environment it
+checks, which its module docstring already explains, and the native constant is Rust's.
+`tests/test_seed_bands.py` binds both by value and then drives the behaviour the constant
+exists for, including the `gym` offset the review noted was uncovered: an eval-mode env at
+user seed 3 must resolve to the same scenario and execution seeds as a train-mode env at
+`3 + EVAL_SEED_BASE`, so a module that imports the value and then offsets by something
+else fails. For the confidence constants, the pyo3 signature defaults cannot import the
+Python module, so the check is behavioural instead:
+`test_python_bootstrap_defaults_are_the_native_defaults` calls the native functions with
+the arguments omitted and compares against `confidence.py`'s constants passed explicitly,
+with a leg proving each of the four moves the fixture, so the agreement is not vacuous.
+Mutating the pyo3 `n_boot` default to `2500` fails it.
 
 ### A20. Two event-to-weights adapters disagree (low)
 
@@ -677,6 +797,18 @@ comment in `build.rs` would satisfy the first check, and the count does not move
 array it claims to track. In practice the `spec_hash` equality assertion at `:53-58` is
 what makes this leg hard to fool, which is the point: the file-set leg is not carrying the
 weight its message implies.
+
+**Disposition: repaired; the compiled-hash leg is untouched and still load-bearing.**
+`build.rs` now records every input as the hashing loop folds it in and emits the list and
+the epoch it seeded with as `SHARPEARENA_SPEC_INPUTS` and `SHARPEARENA_SPEC_EPOCH`. The
+metadata leg compares the committed record's `files` array to that list, in order, and its
+`epoch` to that epoch, so it no longer searches source text and no longer asserts a count
+literal. The equality assertion on the hash value is unchanged and remains what makes a
+stale record fail. Mutation evidence for the new leg: changing the record's
+`suite-dependencies.v1.toml` entry to `Cargo.toml`, a name `build.rs` does quote (in
+`read_to_string("Cargo.toml")`) and which keeps the count at eight, satisfies both of the
+old assertions and fails the new one by naming the exact disagreement. Emitting two more
+build-script environment variables changes no hashed input, so `SPEC_HASH` does not move.
 
 ## Tests that could pass for a cause other than the one they name
 
@@ -708,11 +840,22 @@ See A21. `committed_spec_hash_record_is_current` is named for the record being c
 Its first assertion (the compiled hash equals the recorded hash) genuinely establishes
 that. Its file-set assertions establish something weaker than they read as.
 
-### T3. `test_confidence.py:114`
+**Disposition: repaired with A21.** The file-set assertions now compare the record against
+the inputs `build.rs` actually hashed, not against its source text.
 
-`assert daily == deflated_sharpe_ci(per_seed, 6, periods_per_year=252.0)` pins the default
-by restating it, so it passes for any value of the default as long as the same literal is
-written on both sides. Named for the daily default; tests that `252.0 == 252.0`.
+### T3. `test_confidence.py:114` (withdrawn: this claim was wrong)
+
+**This finding is retracted.** The test is not vacuous and the review misread it. The
+left-hand side is not a restatement: `daily = deflated_sharpe_ci(per_seed, 6)` on the
+preceding line calls the function with `periods_per_year` *omitted*, so the default is
+supplied by the implementation, and line 114 compares that against an explicit `252.0`.
+A changed default therefore fails the assertion rather than passing it. The fixture is
+chosen to be unsaturated, which is what makes the comparison able to move at all, and the
+test goes on to check weekly ordering (`0.0 < weekly["point"] < daily["point"] < 1.0`) and
+parity with the native `score_run` at both rates. It is retained unchanged. Described
+accurately: the test pins the daily default behaviourally and detects a change in it. The
+duplication the review was reaching for is real and is filed under A19, where it is
+repaired as a contract check rather than as a defect in this test.
 
 ## Claims checked and found sound
 
@@ -815,10 +958,11 @@ written on both sides. Named for the daily default; tests that `252.0 == 252.0`.
 Each of these needs something this review deliberately did not do, per the goal's rules
 against new experiments and regenerating published evidence.
 
-- **Whether the two `1.0000` Calm rows in `EVALUATION.md` are exactly equal floats.**
-  Settling A10 as "the rank is arbitrary" rather than "the rank is real but the rendering
-  hides it" requires `maturin develop` and a `run_baselines` execution. The wheel is not
-  built in this worktree, and running the producer would regenerate a published number.
+- ~~**Whether the two `1.0000` Calm rows in `EVALUATION.md` are exactly equal floats.**~~
+  **Settled without a producer run.** `paper/evidence/f1-baselines.json` carries the full
+  precision of the frozen rows, so reading the artifact answers it: they differ in the
+  seventh decimal, and the exact ties are elsewhere in the same table (`momentum` and
+  `max_sharpe`, both exactly `0.0`). See A10's disposition.
 - **Whether rebuilding `crates/sharpearena-wasm` from the current tree reproduces the
   committed `pkg/sharpearena_bg.wasm` byte for byte.** I verified the committed bundle's
   behaviour (spec hash, both goldens) but not binary reproducibility, which needs a
@@ -830,9 +974,10 @@ against new experiments and regenerating published evidence.
   returns.** T1 shows nothing asserts it; whether it is in fact true needs a wasm-pack run
   that compares wasm32 output to a committed native fixture, which does not exist to
   compare against.
-- **Whether `kernel_errors`'s suffix convention currently matches every field
-  `sharpebench-core 0.21.0`'s `CompositeScore` can carry.** That requires reading the pinned
-  dependency's source, which is outside this repository.
+- ~~**Whether `kernel_errors`'s suffix convention currently matches every field
+  `sharpebench-core 0.21.0`'s `CompositeScore` can carry.**~~ **Settled: it does.** The
+  pinned crate source is present in the local registry, and `composite.rs:812-836` declares
+  exactly three error fields, all three matched. See A12's disposition.
 - **Anything needing a second host, a network file system, credentials or a live registry.**
   In particular, whether the release workflow's rebuilt bundle has ever differed from the
   committed one, which would need the published tarballs.
