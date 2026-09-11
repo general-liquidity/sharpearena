@@ -53,12 +53,8 @@ from typing import Any, Optional, Sequence, Union
 
 import numpy as np
 
+from ._seed_bands import EVAL_SEED_BASE
 from .trace import _is_leaky, load_trace
-
-try:  # mirror the canonical band boundary when the binding (and thus dataset) imports
-    from .dataset import EVAL_SEED_BASE
-except Exception:  # noqa: BLE001 - keep this module importable without the native binding
-    EVAL_SEED_BASE = 1_000_000
 
 try:  # pragma: no cover - exercised only when minari is installed
     import minari  # noqa: F401

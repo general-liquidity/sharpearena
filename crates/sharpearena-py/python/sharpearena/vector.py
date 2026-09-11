@@ -45,11 +45,9 @@ except Exception:  # noqa: BLE001
 
 from .sharpearena_py import VecTradingEnv
 from ._action_validation import validate_weight_limit, validated_action
+from ._seed_bands import EVAL_SEED_BASE as _EVAL_SEED_BASE
 
 _BUY, _SELL, _HOLD = "buy", "sell", "hold"
-
-# Eval scenarios live in a disjoint seed band (must match ``dataset.EVAL_SEED_BASE``).
-_EVAL_SEED_BASE = 1_000_000
 
 
 def _action_label(weight: float) -> str:
