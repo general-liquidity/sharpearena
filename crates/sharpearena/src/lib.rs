@@ -62,12 +62,12 @@ pub use vec_env::{BatchStep, LaneConfig, VecTradingEnv};
 // --- Per-scenario trading mandates (MiniGrid Fetch-style per-episode objective) -----------
 
 pub mod mandate;
-pub use mandate::{mandate_breach, sample_mandate, Mandate, MandateStyle};
+pub use mandate::{mandate_breach, sample_mandate, Mandate, MandateError, MandateStyle};
 
 // --- Execution-noise perturbation (seeded sticky-actions / slippage; ALE-style) -----------
 
 pub mod exec_noise;
-pub use exec_noise::{perturb as perturb_action, ExecNoise};
+pub use exec_noise::{perturb as perturb_action, ExecNoise, ExecNoiseError};
 
 // --- Limit-order-book matching engine (M3) -------------------------------------------------
 

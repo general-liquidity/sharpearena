@@ -8,11 +8,14 @@
 //! every reachable engine exception; this test constructs every variant of every
 //! `Display`-able typed error THIS crate defines.
 //!
-//! Coverage note: `SealedSaltError` and `SplitError` are the crate's `Display` error
-//! types. `TransportFault` / `CellOutcome` are typed data carriers without a message
-//! register, and `DecideError` is defined upstream in `sharpebench-sim`.
+//! Coverage note: `SealedSaltError`, `SplitError`, `MandateError` and `ExecNoiseError`
+//! are the crate's `Display` error types. `TransportFault` / `CellOutcome` are typed data
+//! carriers without a message register, and `DecideError` is defined upstream in
+//! `sharpebench-sim`.
 
-use sharpearena::{SealedSaltError, SplitError, MIN_SEALED_SALT_BYTES};
+use sharpearena::{
+    ExecNoiseError, MandateError, SealedSaltError, SplitError, MIN_SEALED_SALT_BYTES,
+};
 
 /// Assert `message` obeys the register. Returns the body for observable checks.
 fn assert_register(message: &str) -> &str {
@@ -85,4 +88,78 @@ fn split_error_variants_obey_the_register() {
         body.contains('7') && body.contains('5') && body.contains("10000"),
         "body must name the three observed operands: {body:?}"
     );
+}
+
+/// `MandateError` carries the refusal of a book the grader cannot read, and crosses the
+/// pyo3 boundary, so its code must also be one `relay_err` maps to a typed Python class.
+/// Every variant is constructed rather than triggered, so a new one without a conforming
+/// message is a compile-time reminder here.
+#[test]
+fn mandate_error_variants_obey_the_register() {
+    let cases = [
+        (
+            MandateError::NonFiniteReturn {
+                index: 3,
+                value: f64::NAN,
+            },
+            vec!["3", "NaN"],
+        ),
+        (
+            MandateError::NonFiniteWeight {
+                bar: 4,
+                index: 1,
+                value: f64::INFINITY,
+            },
+            vec!["4", "1", "inf"],
+        ),
+        (
+            MandateError::InvalidDrawdownCap { max_drawdown: 1.5 },
+            vec!["1.5"],
+        ),
+        (
+            MandateError::InvalidInventoryCap { max_inventory: 0.0 },
+            vec!["0"],
+        ),
+    ];
+    for (error, observables) in cases {
+        let message = error.to_string();
+        assert!(
+            message.starts_with("[INVALID_ARGUMENT] "),
+            "a variant crossing pyo3 must carry a mapped code: {message:?}"
+        );
+        let body = assert_register(&message);
+        for observable in observables {
+            assert!(
+                body.contains(observable),
+                "body must name the observable {observable:?}: {body:?}"
+            );
+        }
+    }
+}
+
+/// `ExecNoiseError` carries the refusal of an out-of-range benchmark-integrity knob, and
+/// crosses the pyo3 boundary, so the same two rules apply.
+#[test]
+fn exec_noise_error_variants_obey_the_register() {
+    let cases = [
+        (ExecNoiseError::DelayProb { delay_prob: -0.1 }, "-0.1"),
+        (
+            ExecNoiseError::SlippageBps {
+                slippage_bps: f64::NAN,
+            },
+            "NaN",
+        ),
+    ];
+    for (error, observable) in cases {
+        let message = error.to_string();
+        assert!(
+            message.starts_with("[INVALID_ARGUMENT] "),
+            "a variant crossing pyo3 must carry a mapped code: {message:?}"
+        );
+        let body = assert_register(&message);
+        assert!(
+            body.contains(observable),
+            "body must name the observable {observable:?}: {body:?}"
+        );
+    }
 }

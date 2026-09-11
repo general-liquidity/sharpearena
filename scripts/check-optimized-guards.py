@@ -62,6 +62,46 @@ def main() -> None:
     else:
         fail("a named eval seed below EVAL_SEED_BASE was accepted")
 
+    from sharpearena.mandate import MandateError, require_mandate
+    from sharpearena.verifiers_env import mandate_reward
+
+    # ARENA-REVIEW A6. A present-but-malformed mandate used to read as "no mandate",
+    # which the reward layer turns into full credit. The refusal is an `if` and a
+    # `raise`, so it must survive the flag that strips assertions. The payload violates
+    # exactly one rule (the style), so nothing else here can be what refused it.
+    malformed = {"style": "momentum_v2"}
+    try:
+        require_mandate(malformed)
+    except MandateError:
+        pass
+    else:
+        fail("a mandate with an unrecognized style was accepted")
+    try:
+        reward = mandate_reward(state={"mandate": malformed})
+    except MandateError:
+        pass
+    else:
+        fail(f"a malformed mandate scored {reward} instead of refusing")
+
+    # The absent case is a different state and keeps its vacuous full credit, so the
+    # check above is about the malformed payload and not about mandates in general.
+    if mandate_reward(state={}) != 1.0:
+        fail("a scenario with no mandate must stay vacuously satisfied")
+
+    from sharpearena.preprocessing import ExecutionNoiseConfig
+
+    # ARENA-REVIEW A8. A NaN execution-noise knob passed every guard in the core and
+    # reported itself as enabled through `nan != 0.0`. One knob per case, the other left
+    # at its in-range default.
+    for kwargs in ({"delay_prob": float("nan")}, {"slippage_bps": -0.1}):
+        try:
+            ExecutionNoiseConfig(**kwargs)
+        except ValueError:
+            continue
+        fail(f"ExecutionNoiseConfig({kwargs}) was accepted")
+    if ExecutionNoiseConfig(slippage_bps=25.0).enabled is not True:
+        fail("a legal execution-noise knob was mangled by the refusal")
+
     print("OK: published guarantees still refuse under -O")
 
 

@@ -28,8 +28,11 @@ from typing import Any, Optional, Union
 from .sharpearena_py import mandate_breach as _rs_mandate_breach
 from .sharpearena_py import sample_mandate_json as _rs_sample_mandate_json
 
-# The constraint families a scenario can draw. ``unconstrained`` is the permissive
-# control (no structural breach); the others each carry a distinct structural rule.
+# The constraint families a scenario can draw. ``long_only``, ``market_neutral`` and
+# ``pairs_convergence`` each carry a distinct structural rule. ``unconstrained`` is the
+# declared permissive control, and ``momentum`` carries no structural rule either despite
+# rendering one in its prompt text: the breach checker has no per-symbol returns to read
+# "lean into recent winners" off. See docs/audits/2026-09-09/ARENA-REVIEW.md A9.
 # Kept in sync with the Rust ``MandateStyle`` wire labels (canonical draw order).
 STYLES = ("long_only", "market_neutral", "momentum", "unconstrained", "pairs_convergence")
 
@@ -101,6 +104,19 @@ def mandate_from_dict(d: dict[str, Any]) -> Mandate:
     return Mandate.from_dict(d)
 
 
+class MandateError(ValueError):
+    """A present mandate that cannot be parsed or is outside its declared ranges.
+
+    Distinct from *no mandate*. A scenario carrying no mandate is genuinely unconstrained
+    and is vacuously satisfied; a scenario carrying an unparseable payload, an unrecognized
+    style or an unusable cap is a scenario nothing can be graded against, and grading it as
+    unconstrained hands full credit to the malformed input. The Rust kernel refuses the
+    same shapes with :class:`~sharpearena.MandateError`'s engine counterpart rather than
+    defaulting, and :mod:`sharpearena.failure_taxonomy` already classifies a present-but-
+    invalid mandate as ``INVALID_EVIDENCE``; this is that rule at the reward boundary.
+    """
+
+
 def validate_mandate(obj: Union[Mandate, dict, None]) -> bool:
     """True iff ``obj`` is a structurally valid mandate (round-trip / replay guard)."""
     if obj is None:
@@ -117,6 +133,21 @@ def validate_mandate(obj: Union[Mandate, dict, None]) -> bool:
     if m.max_inventory is not None and not (float(m.max_inventory) > 0.0):
         return False
     return True
+
+
+def require_mandate(obj: Union[Mandate, dict]) -> Union[Mandate, dict]:
+    """Return ``obj`` unchanged if it validates, else raise :class:`MandateError`.
+
+    ``None`` is refused too: absence is the caller's business to distinguish before
+    calling, precisely because the two cases must not be conflated. Written as an ``if``
+    and a ``raise`` rather than an assertion, so the refusal survives ``python -O``.
+    """
+    if not validate_mandate(obj):
+        raise MandateError(
+            f"[INVALID_ARGUMENT] mandate {obj!r} is not a valid mandate: style must be one "
+            f"of {list(STYLES)}, max_drawdown in (0, 1], max_inventory > 0"
+        )
+    return obj
 
 
 def _as_mandate(m: Union[Mandate, dict]) -> Mandate:
@@ -161,6 +192,12 @@ def mandate_breach(
 
     Pure and numpy-light; safe on empty inputs (returns 0). This wrapper adapts the event
     dicts into the weight-vector shape the kernel scores, then delegates the math to Rust.
+
+    Raises ``sharpearena.sharpearena_py.InvalidArgument`` rather than returning a verdict
+    for a book the kernel cannot read: a non-finite return or target weight, or a
+    ``max_drawdown`` / ``max_inventory`` outside its declared range. ``f64::max`` discards
+    a NaN operand and every kernel guard is a ``>`` comparison, so the answer such a book
+    would otherwise get is the most favourable one available.
     """
     mandate = _as_mandate(m)
     weights = _weights_per_step(events)
@@ -175,10 +212,12 @@ def mandate_breach(
 
 __all__ = [
     "Mandate",
+    "MandateError",
     "STYLES",
     "sample_mandate",
     "mandate_text",
     "mandate_breach",
     "mandate_from_dict",
+    "require_mandate",
     "validate_mandate",
 ]
