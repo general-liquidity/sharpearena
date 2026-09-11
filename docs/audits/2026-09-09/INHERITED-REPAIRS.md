@@ -1,6 +1,6 @@
 # Inherited repairs: call ceiling, dataset selector, unsupported DSR interval
 
-Date: 2026-09-10, with sections 4 and 5 added 2026-09-11. Scope: defects an
+Date: 2026-09-10, with sections 4, 5, 6 and 7 added 2026-09-11. Scope: defects an
 independent verification confirmed. None of the first three was introduced by
 the 2026-09-09 work, but that work leans on all of them: the readiness
 preflight made the LLM call ceiling a required explicit setting, added the
@@ -20,6 +20,12 @@ regression that fails without it.
 | 5b | An unnamed model was recorded as the requested one | `a7be8d7` | `test_llm_agent_identity.py::ModelIdentityTests` |
 | 5c | The ledger count was read once, at process start | `a7be8d7` | `test_llm_agent_budget.py::LedgerOwnershipTests` |
 | 5d | A malformed reply's cost was not stored on its record | `a7be8d7` | `test_llm_agent_budget.py::MalformedCostTests` |
+| 6a | The retry check was not on the caller-supplied client path | `b91f19a` | `test_llm_agent_budget.py::ProviderRequestTests` |
+| 6b | The constructor case errored inside the driver instead of failing its own assertion | `b91f19a` | `test_llm_agent_budget.py::ProviderRequestTests` |
+| 7a | An unpriced model reported its calls as free | section 7 | `test_llm_agent_budget.py::ModelPricingTests` |
+| 7b | A prefix match billed a model at another model's rate card | section 7 | `test_llm_agent_budget.py::ModelPricingTests` |
+| 7c | The assembler that publishes the number carried both | section 7 | `test_llm_agent_budget.py::AssemblerPricingTests` |
+| 7d | A replay was screened by a shorter rule than a fresh answer | section 7 | `test_llm_agent_identity.py::CacheIdentityTests` |
 
 Row 4 was found by a later independent review of row 1's repair, and is
 recorded here rather than in a new file because it is the same defect class in
@@ -409,6 +415,124 @@ repository, and no golden, example or `paper/evidence/` value depends on which
 ids the identity check admits, on the ledger's locking, or on a field the
 assembler does not read.
 
+## 6. The retry check was not on the caller-supplied client path
+
+Two findings from the [accounting review](ACCOUNTING-REVIEW.md), A4 and A5, both
+about the section 4 repair rather than about money that moved. Neither is
+reachable from the field producer, which spawns `python llm_agent.py` and so
+enters through `main()` with no client.
+
+### 6a. A supplied client reached the provider unchecked
+
+**Confirmed.** `assert_no_provider_retries` ran inside `build_client`, and
+`main` called `build_client` only when no client was supplied. A client handed
+to `main` reached `client.messages.create` with its retry policy never read.
+What the project publishes is not "the client the shim builds has retries off"
+but "either the ceiling bounds provider requests, or the run does not start",
+and on that path the second half was untrue. The suite made it worse by using
+that path for
+`test_n_units_allow_exactly_n_provider_requests_across_a_retryable_failure`, so
+the case that demonstrates the ceiling was the one case running where the check
+was not.
+
+**Repair.** `main` calls `assert_no_provider_retries` on whatever client it will
+use, supplied or built. `build_client` keeps its own call.
+
+**Checked, not refused, and why.** Refusing a supplied client outright was the
+other option the review names. It was rejected because the guarantee is a
+property of the client's behaviour, not of its provenance: a client that reports
+zero will send one request per `create` whoever constructed it, and one that
+reports two will not, which is exactly what the check reads. The concrete cost
+of refusing is that the load-bearing case cannot exist. That case observes the
+SDK's own retry behaviour by driving a real `anthropic.Anthropic` over an
+`httpx.MockTransport`, which has to be supplied, and refusing supplied clients
+would force it back onto `build_client` or onto a private path, which is the
+shape this repair removes. Checking instead means that case now enters through
+the checked path and passes the check, so the ceiling is demonstrated on the
+same path the guarantee is stated for.
+
+Keeping the check in `build_client` as well is deliberate rather than
+redundancy left in place. The helper is importable and states a property of what
+it returns, and `main` cannot cover a caller that uses the returned client
+directly. Each call site has one case that fails when that call alone is
+deleted, so neither can rot.
+
+**What the guarantee now covers.** Every path from this module to
+`client.messages.create` passes the check before the first observation is read:
+`main()` with no client, `main(client=...)` with any client, and `build_client`
+used on its own. What it does not cover is a caller that imports `call_model` or
+constructs its own client and dispatches without going through `main` at all;
+nothing in this repository does, and the ceiling's reservation is not on that
+path either.
+
+**Regression.** `test_a_client_the_caller_supplies_is_checked_like_one_the_run_builds`
+drives `main` with a supplied `Ignoring`, the stand-in that accepts
+`max_retries` and reports two. Four causes could produce a refusal there without
+the check on that path, and each is excluded rather than assumed:
+
+| Cause that could also refuse | How it is excluded |
+|---|---|
+| The stand-in is too thin to dispatch | `Ignoring` answers normally, and the second half of the case supplies a compliant client of the same shape, which completes the run and dispatches one request |
+| `main` built a client of its own after all | The SDK constructor is replaced by one that fails the test if it is called |
+| The allowance was already spent | The ledger is asserted empty, and the message asserted is the check's, naming `max_retries=2` |
+| The supplied-client path refuses whatever it is handed | The compliant control is supplied through the same parameter and is not refused |
+
+`test_build_client_refuses_to_return_a_client_that_would_retry` pins the
+helper's own call: the stand-in constructor returns normally, so nothing but the
+call inside `build_client` can raise.
+
+### 6b. The constructor case did not reach its own assertion
+
+**Confirmed.** `test_the_client_the_run_uses_disables_the_sdk_automatic_retries`
+names the keyword `build_client` passes its constructor. Removing that keyword
+made the recording stand-in report `max_retries=None`, the runtime check refused
+the run, and the case ended as an `ERROR` raised inside `drive` with its
+assertion never evaluated. The regression gate held in aggregate; the case did
+not demonstrate what it names.
+
+**Repair.** The recording constructor sets the returned stand-in's effective
+setting to `PROVIDER_MAX_RETRIES` whatever keyword it was built with, so the
+check cannot be what refuses and the recorded keyword is the only thing that can
+answer the assertion. Reading the constant rather than writing a literal keeps
+that true under a mutation of the constant: at 2 the check still passes and the
+case fails on its own assertion, 2 against the literal 0 it asserts.
+
+**Consequence for the other cases.** Because `main` now checks every client it
+is handed, a stand-in that reports no setting is refused before the decision
+loop runs. The default stand-in in both shim suites therefore reports the
+compliant setting, and the three classes that vary it keep doing so
+deliberately. Without that, every ceiling, ledger and model-identity case would
+have failed on the check rather than on the thing it names, which is the failure
+mode this section is about.
+
+**Frozen values.** None moved. The shim makes no provider call in this
+repository, and no golden, example or `paper/evidence/` value depends on the
+client's retry policy or on where the check is called from.
+
+**Also audited, not changed.** Two claims in the same file were looked at for
+the same shape, a published guarantee with a path that reaches the guarded
+effect without passing the guard.
+
+- **The model-identity rule is enforced where a decision is written and not
+  where one is replayed.** `effective_model` refuses a served id that is not the
+  requested policy, and every cached record carries `model_effective`.
+  `load_cache` screens a record on three identity fields, `scaffold_version`,
+  `request_sha256` equal to its own key, and `model_requested`, and not on
+  `model_effective`, so a record naming a served model this scaffold would have
+  refused is replayed rather than dropped. This scaffold cannot write such a
+  record, so it takes a cache file from somewhere else, and the digest still has
+  to match a request for the requested model, which bounds what the replayed
+  decision can be. It is reported rather than repaired: it is the same shape as
+  A4, a check on the writing path and not on the reading one, and worth a
+  decision rather than a silent fix. **Decided and repaired in section 7.**
+- **`price_for` falls back to `(0.0, 0.0)` for a model not in `PRICING`.** A run
+  on an unpriced model reports its calls as free rather than refusing. This is a
+  fail-open default rather than a bypassed check, so it is a different shape, but
+  it is the other place in the file where a stated property (recorded cost
+  describes the call) does not hold on every input. **Decided and repaired in
+  section 7**, which also found the prefix walk above that fallback and the
+  same pair in the assembler that publishes the number.
+
 ## Verification
 
 Run from the worktree on the committed tree with an isolated
@@ -504,3 +628,234 @@ outside one process on one file system. The identity rule is evidenced against
 SDK or a new alias family that expands some other way would be refused rather
 than misread, but the rule would need re-reading. `O_EXCL` over a network file
 system is only as exclusive as the remote server makes it.
+
+## Verification, section 6 (2026-09-11)
+
+Section 6 changes Python and prose only. No Rust file was touched, so
+`cargo fmt` and the workspace suites are unaffected and were not re-run for it.
+The installed SDK is `anthropic` 0.112.0, the version the `llm-shim` job pins.
+
+| Command | Exit |
+|---|---|
+| `python -m unittest paper/src/test_llm_agent_budget.py paper/src/test_llm_agent_identity.py` (40 tests, run five times) | 0 |
+| `python -m unittest paper/src/test_provenance.py` | 0 |
+| `python paper/src/check-provenance.py` | 0 |
+
+Mutations, each applied in place, the suite run, then the file restored from
+`git show HEAD:<path>` and confirmed byte-identical with `cmp` before the next
+one. The suite is the 18 cases of `test_llm_agent_budget.py`; the identity file
+was run alongside the first mutation and is unaffected by all of them.
+
+| Mutation | Result |
+|---|---|
+| `assert_no_provider_retries(client)` deleted from `main` | 1 of 18 fails, the caller-supplied case, as `AssertionError: RuntimeError not raised` on its own `assertRaises`. The 22 identity cases still pass, so nothing incidental is carrying it |
+| `assert_no_provider_retries(client)` deleted from `build_client` | 1 of 18 fails, the helper's case, on the same `assertRaises`. A different case from the one above, so neither call site is pinned by the other |
+| `max_retries=PROVIDER_MAX_RETRIES` removed from the constructor call | 1 of 18 fails, the constructor case, as `AssertionError: None != 0` at `self.assertEqual(seen[0].get("max_retries"), 0)`. Before 6b it was an `ERROR` raised inside `drive`, with that line never reached |
+| the same, with 6b's one line also reverted in the test | 1 of 18 errors, `RuntimeError ... does not report a readable max_retries (got None)` raised at `build_client`, inside `drive`. This is the finding's own observation, reproduced, and it is what 6b changes |
+
+The first two mutations are the point of 6a: the guarantee is now pinned on the
+path the caller takes and on the helper separately, and deleting either call is
+caught by the case named for that path rather than by a case that happens to run
+through it.
+
+**Not established.** No provider was called. What the check reads is an
+attribute on the client object, so a future SDK that reports zero and retries
+anyway would pass it; that is the same limit the check has always had, and the
+load-bearing case is what observes real behaviour, for `anthropic` 0.112.0 only.
+A caller that bypasses `main` entirely, by importing `call_model` or dispatching
+on a client of its own, is outside what any of this covers.
+
+## 7. Two fail-open paths, both found while repairing the third
+
+A8 and A9 from the [accounting review](ACCOUNTING-REVIEW.md), reported at the
+end of section 6 and left for a decision rather than fixed silently. Neither is
+a bypassed check: both are stated properties that do not hold on every input,
+which is the shape this round has been closing.
+
+### 7a. An unpriced model reported its calls as free
+
+**Confirmed.** `price_for` returned `(0.0, 0.0)` for a model no entry of
+`PRICING` matched. A run on such a model priced every call at nothing,
+`STATS["cost_usd"]` stayed 0.0, and that zero was what the field published as
+its spend. Nothing anywhere said the number was a fallback rather than a
+measurement.
+
+**Refusal, and why not an unavailability.** Two candidates were weighed.
+
+The Rust side never answers an unknowable cost with a number: a journal or an
+attempt ledger that cannot be priced produces `MonetarySummary::Unavailable`
+with a `reason` and, where one exists, a separately labelled `known_subtotal`
+(`crates/sharpebench-harness/src/accounting.rs`, `gateway_journal.rs`). The
+consistent-looking move is to give the shim the same shape. It was rejected on
+what the shim can actually express. Its output is a statistics file with one
+`cost_usd` float, summed by `paper/evidence/assemble_llm_field.py` across
+processes; there is no status field, no reason and no place for a labelled
+subtotal, and adding that vocabulary to a stats file two scripts read is a
+larger change than the defect warrants. More to the point, an unavailability is
+for a cost that could not be established after the fact. This one is knowable
+before any money moves: the operator names the model, the table is a literal in
+the same file, and the mismatch is visible at startup. What the Rust convention
+says is "never publish a number you cannot establish", and refusing the run
+satisfies that more completely than recording an absence would, because no field
+is produced at all.
+
+So: refusal, raised as a typed `UnpricedModel`, and established in `main`
+through `assert_model_is_priced` beside `assert_no_provider_retries`, before the
+first observation is read. `price_for` refuses on its own path too rather than
+relying on the startup check having run.
+
+**Consistency with the Rust side.** No third convention is invented. This shim
+states one of the two things the Rust side states, "no number without a rate
+card", by the strongest available means; it does not emit a differently shaped
+unavailability record.
+
+### 7b. A prefix match could select the wrong rate card
+
+**Confirmed, and it could.** The walk accepted any continuation of a table key,
+so a model whose name extends a priced one was billed at the other model's card:
+`claude-opus-5-1` prices as `claude-opus-5`, at half the input rate and half the
+output rate, silently. `claude-opus-5-mini` and `claude-opus-50` do the same.
+The table's three keys do not collide with each other today, so nothing is
+mispriced right now, but the exposure is to any future model name and to the
+table gaining a shorter key: adding `claude-haiku-4` would price every
+`claude-haiku-4-5` at whichever key `dict` iteration reached first.
+
+This is the model-identity defect (5a) in the accounting, in the file that
+repaired it. The repair is the same rule: a model matches a card when it equals
+the alias, or is that alias followed by one hyphen and a dated snapshot of
+exactly eight digits, which is what `is_dated_snapshot_of` already states.
+`price_for` calls that function rather than restating it, so narrowing the
+identity rule narrows the pricing match with it.
+
+### 7c. The assembler carried both
+
+**Confirmed.** `paper/evidence/assemble_llm_field.py` had its own `PRICING`
+table, its own prefix walk and its own `(0.0, 0.0)` fallback, and it is the
+script that writes the published `cost_usd`. With 7a in place this scaffold can
+no longer produce a response cache for an unpriced model, but the assembler
+prices by cache file name and does not cross-check those names against the
+models it requires, so a stray or hand-placed `llm-cache-<model>.jsonl` was
+still assembled at zero.
+
+Repaired the same way, as a `SystemExit`, which is how every other
+incompleteness in that script refuses. The rule is restated there rather than
+imported: importing the shim would pull the Anthropic SDK into an assembler that
+reads only files. The two tables must agree, and that is now a stated
+requirement rather than an accident, but it is a duplication and it is recorded
+as one.
+
+### 7d. A replay was screened by a shorter rule than a fresh answer
+
+**Confirmed.** `effective_model` refuses a served id that is not the requested
+policy, and `record_decision` stamps `model_effective` on every record, but
+`load_cache` screened on `scaffold_version`, `request_sha256` equal to its own
+key and `model_requested`, and not on `model_effective`. A record naming a
+served model this scaffold would refuse today was replayed rather than dropped.
+
+**Bounded, and closed anyway.** This scaffold cannot write such a record, so the
+case needs a foreign or hand-edited cache file, and the request digest must
+still match a request for the requested model. A replayed decision is published
+exactly as a fresh one is, so a replay should be screened by the rule that
+governs a fresh answer.
+
+**The same rule, not a second copy.** The acceptance test moved into
+`is_requested_policy`, which `effective_model` and `load_cache` both call.
+`effective_model` keeps its two distinct refusals, the unverifiable-identity one
+for an absent id and the substitution one for a wrong id, and delegates only the
+acceptance decision. A record whose `model_effective` is null or absent is
+dropped too, which is the same absence `effective_model` refuses. Writing the
+rule out a second time inside `load_cache` is a mutation the suite catches.
+
+**Frozen values.** None moved, and none could. The LLM field has never
+completed: `git ls-files` tracks no `llm-cache-*.jsonl`, no
+`llm-attempts-*.jsonl`, no `stats-*.json` and no `llm-field*` artifact; the
+assembler's output `paper/evidence/final/llm-field.jsonl` does not exist;
+`.gitignore` excludes every one of those paths and
+`paper/evidence/provenance.json` excludes the `llm-cache-` and `llm-field-`
+prefixes from result provenance. No committed evidence file, in
+`paper/evidence/`, `arena/`, `suites/` or `data/`, contains a `claude-` model id
+or a `cost_usd` value, and no `.tex` source states an LLM cost, token count or
+field result. `paper/sections/07-limitations.tex` says so directly: "No current
+model field has completed or produced an admitted performance artifact." So no
+committed evidence or example was produced with a model absent from the table,
+because none was produced with any model at all. The two files that mention
+pricing are hashed in `provenance.json` as **source**, not as artifacts, so the
+manifest rebinds and no artifact digest changes.
+
+## Verification, section 7 (2026-09-11)
+
+Section 7 changes Python and prose only. No Rust file was touched, so the
+workspace suites and `cargo fmt` are unaffected and were not re-run for it. The
+installed SDK is `anthropic` 0.112.0, the version the `llm-shim` job pins; the
+pin is unchanged.
+
+| Command | Exit |
+|---|---|
+| `python -m unittest paper/src/test_llm_agent_budget.py paper/src/test_llm_agent_identity.py` (52 tests) | 0 |
+| `python -m unittest paper/src/test_provenance.py` | 0 |
+| `python -m unittest paper/src/test_sweep_grid.py` | 0 |
+| `python paper/src/check-provenance.py` | 0 |
+
+Mutations were applied in an isolated copy of the four files under the session
+scratchpad, never in the worktree, and each file was restored from the
+pre-mutation copy and confirmed byte-identical with `cmp` before the next
+mutation. The worktree copies were compared against those originals afterwards
+and are identical.
+
+Each refusal names the causes that could also satisfy its assertion, and each is
+excluded rather than assumed.
+
+**The unpriced-model refusal.** Four other causes could raise from that run: the
+retry guard, a stand-in too thin to dispatch, an exhausted allowance, and the
+identity rule. The stand-in reports the compliant retry setting and answers
+under the requested id, so neither of those can fire; the allowance is two for
+one observation and the ledger is asserted empty afterwards; and a control case
+drives the same stand-in class, the same allowance and the same observation
+under a priced model to a decision. The isolating assertion is
+`client.requests == []`: the refusal lands before any dispatch, which no cause
+further down the loop can produce.
+
+| Mutation | Observed |
+|---|---|
+| `price_for`'s refusal reverted to `return (0.0, 0.0)` | 6 of 26 fail in the budget suite, all in `ModelPricingTests`, each as `AssertionError: UnpricedModel not raised`. Nothing errors, so no case is carried by an incidental failure |
+| the match reverted to `model.startswith(alias)`, the refusal kept | 5 of 26 fail: the four extending-name subcases and the shared-rule case. The unpriced-model case still passes, which separates the two defects |
+| `assert_model_is_priced()` deleted from `main` | 1 of 26 fails, and on the isolating assertion rather than on the refusal: `Lists differ: [{'model': 'claude-not-a-model-9', ...}] != []`, with the message "the refusal precedes every dispatch". The run still refuses, further down, after a provider request has been made. This is what shows the check is on the path the run takes and at the point claimed |
+| `SNAPSHOT_DIGITS` narrowed to 6 (applied by the test to the module, not to the file) | `price_for("claude-haiku-4-5-20251001")` refuses, so the pricing match really is the identity rule and not a copy of it |
+
+**The assembler refusal.** Four gates in that script can exit non-zero on the
+same fixture: the empty-records check, the model set, the dataset set and the
+incompleteness check. Each states its own reason, so the assertion is on the
+pricing refusal's message rather than on the exit code, and a priced control
+reaches the later gates.
+
+| Mutation | Observed |
+|---|---|
+| the assembler's prefix walk and zero fallback restored | 2 of 3 `AssemblerPricingTests` fail. The script still exits 1, for the later gate instead: `AssertionError: 'no rate card for claude-not-a-model-9' not found in "refusing to assemble: models ['claude-not-a-model-9']; required [...]"`. Exit code alone would not have told the two apart |
+
+**The replay screen.** Three other clauses of the screen could empty the cache:
+the scaffold version, the digest, and the requested model. The record is built
+by `record_decision` itself, so all three are correct by construction and only
+the served identity differs. A control record whose served id is a dated
+snapshot of the requested alias is still replayed, so the screen is not simply
+rejecting everything.
+
+| Mutation | Observed |
+|---|---|
+| the `model_effective` clause deleted from `load_cache` | 4 of 26 fail in the identity suite: the refused-served-model case, both absence subcases and the shared-rule case, each as the cache being non-empty |
+| the clause replaced by a second, inline copy of the same rule | 1 of 26 fails, `test_the_replay_screen_is_the_rule_the_fresh_path_uses`, and only that one. The drift the repair is meant to prevent is caught by the case named for it |
+
+One pre-existing case needed its own isolation restored.
+`test_a_record_whose_digest_is_not_its_key_is_not_replayed` wrote a fixture with
+no `model_effective`, which the new clause also rejects, so it would have passed
+with the digest clause deleted. The fixture now carries a valid served id, and
+the digest is again the only clause it can fail.
+
+**Not established.** No provider was called and no field was run, so nothing
+here says what a real run costs. The rate card values themselves are unverified
+against a price list: this repair changes which card is selected and what
+happens when none is, not whether the numbers in the table are right. The two
+pricing tables, in the shim and in the assembler, are still separate literals
+that a future edit could desynchronize; the duplication is stated rather than
+prevented. And the refusal is at startup on the requested model: it rests on
+`effective_model` binding the served id to the requested one, which is argued
+from that function rather than observed against a provider.
