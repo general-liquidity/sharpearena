@@ -35,13 +35,29 @@ def train_test_seeds(
 
     Train occupies ``[seed_start, seed_start + n_train)``; test starts at
     ``seed_start + n_train + gap`` so the bands cannot touch even if ``n_train`` is
-    later grown by up to ``gap``. Disjointness is asserted, not assumed.
+    later grown by up to ``gap``. Disjointness is *refused* when it does not hold, not
+    assumed: a negative ``gap`` (or a negative band size) raises :class:`ValueError`.
+
+    The checks are ``raise`` statements rather than ``assert`` statements on purpose.
+    ``assert`` is removed outright by the CPython compiler under ``-O`` or
+    ``PYTHONOPTIMIZE``, which took the range check and the disjointness check away
+    together: ``train_test_seeds(256, 256, 0, -256)`` then returned two identical bands
+    labelled train and test, and the generalization gap over them is zero by
+    construction, which reads as perfect generalization.
     """
-    assert n_train >= 0 and n_test >= 0 and gap >= 0
+    if n_train < 0 or n_test < 0 or gap < 0:
+        raise ValueError(
+            "n_train, n_test and gap must all be >= 0 "
+            f"(got n_train={n_train}, n_test={n_test}, gap={gap})"
+        )
     train = list(range(seed_start, seed_start + n_train))
     test_start = seed_start + n_train + gap
     test = list(range(test_start, test_start + n_test))
-    assert set(train).isdisjoint(test), "train/test seed bands overlap"
+    if not set(train).isdisjoint(test):
+        raise ValueError(
+            f"train/test seed bands overlap: train [{seed_start}, "
+            f"{seed_start + n_train}) and test [{test_start}, {test_start + n_test})"
+        )
     return train, test
 
 

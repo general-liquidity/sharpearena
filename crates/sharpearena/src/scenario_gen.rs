@@ -446,32 +446,87 @@ pub fn level_seed(spec: &ScenarioSpec, index: u64) -> u64 {
     spec.start_level + (index % span)
 }
 
+/// Why [`train_test_split`] refused to carve a test family.
+///
+/// Disjointness is the whole basis of the overfitting measurement, so the two inputs
+/// that can break it are refused rather than asserted. A `debug_assert!` is absent from
+/// `[profile.release]`, which is every configuration that ships (the crates.io crate,
+/// the maturin wheel, the wasm bundle), and a guarantee that holds only in debug is not
+/// a guarantee.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SplitError {
+    /// `train.num_levels == 0`, which [`level_seed`] reads as Procgen's "unlimited": the
+    /// train band is `[start_level, u64::MAX)` and no test band can sit outside it.
+    UnboundedTrain {
+        /// Where the unbounded train band starts.
+        start_level: u64,
+    },
+    /// `start_level + num_levels + gap` does not fit in a `u64`. In release that sum
+    /// wraps, which lands the test band *below* the train band.
+    BandOverflow {
+        /// The train band's start.
+        start_level: u64,
+        /// The train band's width.
+        num_levels: u64,
+        /// The requested separation between the bands.
+        gap: u64,
+    },
+}
+
+impl std::fmt::Display for SplitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SplitError::UnboundedTrain { start_level } => write!(
+                f,
+                "[UNBOUNDED_TRAIN] an unbounded train interval [{start_level}, u64::MAX) admits no disjoint test split; set num_levels > 0"
+            ),
+            SplitError::BandOverflow {
+                start_level,
+                num_levels,
+                gap,
+            } => write!(
+                f,
+                "[SEED_BAND_OVERFLOW] test band start {start_level} + {num_levels} + {gap} exceeds u64::MAX; lower start_level or gap"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for SplitError {}
+
 /// Carve a **provably disjoint** test family from a (necessarily bounded) `train`
 /// family: the test interval starts at `train.start_level + train.num_levels + gap`,
 /// so no seed is shared. Panel dimensions and difficulty are inherited from `train`.
+///
+/// Both conditions that would break disjointness are refused with a [`SplitError`], in
+/// every build profile. A `Result` rather than an assertion is deliberate: this is a
+/// library entry point, the crate already refuses malformed input this way
+/// ([`SealedSalt::new`]), and an assertion is compiled out of everything users run.
 pub fn train_test_split(
     train: ScenarioSpec,
     n_test: u64,
     gap: u64,
-) -> (ScenarioSpec, ScenarioSpec) {
-    debug_assert!(
-        train.num_levels > 0,
-        "an unbounded train interval admits no disjoint test split"
-    );
-    let test_start = train.start_level + train.num_levels + gap;
+) -> Result<(ScenarioSpec, ScenarioSpec), SplitError> {
+    if train.num_levels == 0 {
+        return Err(SplitError::UnboundedTrain {
+            start_level: train.start_level,
+        });
+    }
+    let test_start = train
+        .start_level
+        .checked_add(train.num_levels)
+        .and_then(|train_end| train_end.checked_add(gap))
+        .ok_or(SplitError::BandOverflow {
+            start_level: train.start_level,
+            num_levels: train.num_levels,
+            gap,
+        })?;
     let test = ScenarioSpec {
         start_level: test_start,
         num_levels: n_test,
         ..train.clone()
     };
-    debug_assert!(
-        test.start_level >= train.start_level + train.num_levels,
-        "test interval [{}, …) overlaps train [{}, {})",
-        test.start_level,
-        train.start_level,
-        train.start_level + train.num_levels
-    );
-    (train, test)
+    Ok((train, test))
 }
 
 /// Carve a **cross-regime (cross-distribution) transfer** protocol from an in-sample
@@ -771,7 +826,7 @@ mod tests {
             num_levels: 1000,
             ..ScenarioSpec::default()
         };
-        let (train, test) = train_test_split(train, 200, 50);
+        let (train, test) = train_test_split(train, 200, 50).expect("bounded train splits");
         let train_end = train.start_level + train.num_levels;
         assert!(test.start_level >= train_end);
         // No legal train seed equals any legal test seed.
@@ -783,6 +838,41 @@ mod tests {
         }
         assert_eq!(test.start_level, 1050);
         assert_eq!(test.num_levels, 200);
+    }
+
+    /// An unbounded train band is refused, not asserted against. The refusal is the
+    /// only thing that can produce this `Err`, and it is produced in every profile,
+    /// which is what `tests/fail_open_review.rs` re-checks under `--release`.
+    #[test]
+    fn train_test_split_refuses_an_unbounded_train_band() {
+        let train = ScenarioSpec {
+            start_level: 100,
+            num_levels: 0,
+            ..ScenarioSpec::default()
+        };
+        assert_eq!(
+            train_test_split(train, 64, 10_000),
+            Err(SplitError::UnboundedTrain { start_level: 100 })
+        );
+    }
+
+    /// The band arithmetic is checked rather than wrapping, so a test band can never
+    /// land below the train band.
+    #[test]
+    fn train_test_split_refuses_a_wrapping_band_start() {
+        let train = ScenarioSpec {
+            start_level: u64::MAX - 10,
+            num_levels: 5,
+            ..ScenarioSpec::default()
+        };
+        assert_eq!(
+            train_test_split(train, 4, 10_000),
+            Err(SplitError::BandOverflow {
+                start_level: u64::MAX - 10,
+                num_levels: 5,
+                gap: 10_000,
+            })
+        );
     }
 
     /// Committed pre-hash canonical JSON per pinned golden. Each golden test asserts

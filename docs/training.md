@@ -152,7 +152,10 @@ The repo ships two independent train/eval split conventions; they do not interac
   train at `[seed_start, seed_start + n_train)` and test at a far-separated band
   starting `gap = 10_000` seeds later (with `n_train = n_test = 256`, that is
   `[0, 256)` vs `[10256, 10512)`). Used by `generalization_gap` and the Rust
-  `train_test_split`; the gap absorbs later growth of the train band.
+  `train_test_split`; the gap absorbs later growth of the train band. Both entry points
+  refuse the inputs that would break disjointness (`ValueError` in Python, a typed
+  `SplitError` in Rust) in the configuration that ships, not only in a debug build or an
+  unoptimized interpreter.
 - **The `EVAL_SEED_BASE = 1_000_000` offset** (`dataset.py`): `mode="eval"` datasets,
   the `-Eval-v1` Gymnasium IDs, and the frozen named seeds in `eval_seeds.py` all live
   at or above `EVAL_SEED_BASE`, provably disjoint from the train band

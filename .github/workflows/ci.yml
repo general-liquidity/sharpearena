@@ -106,6 +106,15 @@ jobs:
         run: cargo doc --workspace --no-deps
       - name: Test
         run: cargo test --workspace
+      # `cargo test` is a debug build, and `[profile.release]` enables neither
+      # debug-assertions nor overflow-checks. Everything a user runs (the crates.io
+      # crate, the maturin wheel, the wasm bundle) is a release build, so the guards
+      # that carry published guarantees are re-run in that profile. This is the leg
+      # that keeps ARENA-REVIEW A1 closed: the release-only test in
+      # `tests/fail_open_review.rs` is compiled only here.
+      - name: Test (release profile, where the shipped guards live)
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo test --workspace --release
       - name: Packaged Rust crate preserves the source SPEC_HASH
         if: matrix.os == 'ubuntu-latest'
         run: python scripts/check-packaged-spec.py
@@ -239,6 +248,17 @@ jobs:
           pip install --requirement ci-requirements.txt
           maturin develop
           python -m pytest -q
+      # pytest never runs under -O, and `assert` is stripped by the CPython compiler
+      # there, so a guard written as an assertion is absent from a configuration a
+      # user can run. `tests/test_optimized_guards.py` (in the run above) re-enters
+      # `python -O` in subprocesses to cover that; this step drives the guards from a
+      # -O interpreter directly, with no pytest in the picture at all. Running pytest
+      # itself under -O would be worse than useless: the tests' own assertions would
+      # be stripped and every one of them would pass vacuously. ARENA-REVIEW A2.
+      - name: Published guarantees hold under python -O
+        run: |
+          source crates/sharpearena-py/.venv/bin/activate
+          python -O scripts/check-optimized-guards.py
 
   # --- usability, not identity ------------------------------------------------------
   # Every other packaging guard here checks that the right version, commit and registry
