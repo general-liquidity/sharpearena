@@ -81,19 +81,33 @@ EVAL_SEEDS: dict[str, int] = {
     "held_out_07": EVAL_SEED_BASE + 4099,
 }
 
+def _require_held_out_band(seeds: dict[str, int]) -> None:
+    """Refuse a named-seed mapping that leaves the held-out band or repeats a seed.
+
+    A `raise`, not an `assert`: `assert` is stripped by `python -O`, and band
+    membership is a published guarantee that has to hold in the configuration users
+    run, not only in the unoptimized one. Factored out of the module body so the
+    guard itself is callable from a test under that flag.
+    """
+    for name, seed in seeds.items():
+        if seed < EVAL_SEED_BASE:
+            raise ValueError(
+                f"eval seed {name}={seed} is below EVAL_SEED_BASE={EVAL_SEED_BASE}; "
+                "named eval seeds must live in the held-out band"
+            )
+    if len(set(seeds.values())) != len(seeds):
+        raise ValueError("eval seeds must be unique")
+
+
 # Disjointness + uniqueness guard: the committed set must never touch the train band.
-for _name, _seed in EVAL_SEEDS.items():
-    assert _seed >= EVAL_SEED_BASE, (
-        f"eval seed {_name}={_seed} is below EVAL_SEED_BASE={EVAL_SEED_BASE}; "
-        "named eval seeds must live in the held-out band"
-    )
-assert len(set(EVAL_SEEDS.values())) == len(EVAL_SEEDS), "eval seeds must be unique"
+_require_held_out_band(EVAL_SEEDS)
 # The native band start must agree with the Python convention, or a sealed seed
 # could land in what Python treats as the train band.
-assert _NATIVE_EVAL_SEED_BASE == EVAL_SEED_BASE, (
-    f"native EVAL_SEED_BASE={_NATIVE_EVAL_SEED_BASE} != "
-    f"dataset.EVAL_SEED_BASE={EVAL_SEED_BASE}"
-)
+if _NATIVE_EVAL_SEED_BASE != EVAL_SEED_BASE:
+    raise RuntimeError(
+        f"native EVAL_SEED_BASE={_NATIVE_EVAL_SEED_BASE} != "
+        f"dataset.EVAL_SEED_BASE={EVAL_SEED_BASE}"
+    )
 
 PolicyFactory = Callable[[], Policy]
 Salt = Union[bytes, bytearray, memoryview, str]
@@ -126,7 +140,11 @@ def sealed_eval_seeds(
         raise ValueError("sealed eval slot names must be unique")
     out = {name: int(sealed_seed(raw, i)) for i, name in enumerate(slots)}
     for name, seed in out.items():
-        assert seed >= EVAL_SEED_BASE, f"sealed seed {name}={seed} left the held-out band"
+        if seed < EVAL_SEED_BASE:
+            raise RuntimeError(
+                f"sealed seed {name}={seed} left the held-out band "
+                f"[{EVAL_SEED_BASE}, 2**64)"
+            )
     if len(set(out.values())) != len(out):  # pragma: no cover - 2^-64-scale event
         raise ValueError("sealed seeds collided; choose a different salt")
     return out

@@ -32,6 +32,7 @@ from sharpearena import (
     kernel_deflated_sharpe,
     merge_effective_configs,
     score_run,
+    train_test_seeds,
 )
 
 PAPER = Path(__file__).resolve().parents[1]
@@ -153,8 +154,11 @@ def main() -> None:
             )
 
     # Per-seed return series for the dispersion layer (same policy, same envs).
-    train_seeds = list(range(N_TRAIN))
-    test_seeds = list(range(N_TRAIN + SEED_GAP, N_TRAIN + SEED_GAP + N_TEST))
+    # The bands come from the checked splitter rather than being recomputed here: the
+    # arithmetic is identical (train [0, 16), test [10016, 10032)), so no published
+    # number moves, but the disjointness guarantee is now enforced on this surface too
+    # instead of restated. See ARENA-REVIEW A2.
+    train_seeds, test_seeds = train_test_seeds(N_TRAIN, N_TEST, 0, SEED_GAP)
     series = {
         tier: {
             "train": [_rollout(s, tier) for s in train_seeds],

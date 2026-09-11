@@ -84,8 +84,10 @@ def build_scenario_dataset(
     infos: list[dict[str, Any]] = []
     for i in range(n_windows):
         seed = _seed_for(mode, seed_start, i)
-        if mode == "train":
-            assert seed < EVAL_SEED_BASE, (
+        # `raise`, not `assert`: train/eval disjointness is a published guarantee and
+        # `assert` is stripped by `python -O`.
+        if mode == "train" and seed >= EVAL_SEED_BASE:
+            raise ValueError(
                 f"train seed {seed} crosses into the eval range >= {EVAL_SEED_BASE}; "
                 "shrink n_windows/seed_start to keep train and eval disjoint"
             )
