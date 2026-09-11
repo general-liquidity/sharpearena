@@ -89,6 +89,110 @@ test("every golden is reachable through the wrapper, not only through pkg/", () 
   }
 });
 
+const BACKTEST = JSON.parse(
+  fs.readFileSync(
+    path.join(REPO, "crates/sharpearena/contract/attestation/backtest-goldens.json"),
+    "utf8",
+  ),
+);
+
+/**
+ * The fingerprint as the backtest goldens record it: a fixed-width 16-hex-digit word.
+ * `BigInt.toString(16)` drops leading zeros, so an unpadded comparison is a one-in-sixteen
+ * flake against a real fingerprint that happens to start with a zero nibble — which is
+ * exactly what `momentum_2x40_seed3` does. Rust reads these with `from_str_radix`, which
+ * is indifferent to the padding.
+ */
+const fingerprint = (text) => fnv1a64(Buffer.from(text, "utf8")).toString(16).padStart(16, "0");
+
+/** Read a committed pre-hash fixture by file name. */
+const preHash = (name) =>
+  fs.readFileSync(
+    path.join(REPO, "crates/sharpearena/contract/attestation/pre-hash", name),
+    "utf8",
+  );
+
+test("the committed .wasm reproduces every cross-runtime backtest golden", () => {
+  // T1: the scenario goldens above pin generation only. Nothing pinned the execution or
+  // replay arithmetic across runtimes — the wasm32 test compared one module against
+  // itself and the npm smoke suite compared replay against its own output, both of which
+  // stay green if native and wasm32 disagree. These entries are the same ones the native
+  // suite (`backtest_goldens_reproduce_natively`) and the wasm32 suite
+  // (`exported_backtest_goldens_reproduce_under_wasm32`) drive, read from the same file.
+  const names = [...BACKTEST.runs, ...BACKTEST.replays].map((e) => e.name);
+  for (const required of [
+    "momentum_2x40_seed3",
+    "fixed_weight_2x40_seed7_costed",
+    "long_short_rotation_2x40_seed13_frictionless",
+  ]) {
+    assert.ok(names.includes(required), `backtest-goldens.json must keep pinning ${required}`);
+  }
+  assert.ok(BACKTEST.replays.length > 0, "a backtest golden set with no replay entry is the T1 gap");
+
+  for (const entry of BACKTEST.runs) {
+    const out = kernel.run_baseline(JSON.stringify(entry.config));
+    assert.ok(!out.startsWith('{"error"'), `${entry.name}: the wasm export failed: ${out}`);
+    assert.equal(
+      out,
+      preHash(entry.pre_hash),
+      `${entry.name}: the committed .wasm's run bytes drifted from the pre-hash fixture`,
+    );
+    assert.equal(
+      fingerprint(out),
+      entry.fnv1a64,
+      `${entry.name}: the committed pkg/sharpearena_bg.wasm has drifted from the backtest golden`,
+    );
+  }
+
+  for (const entry of BACKTEST.replays) {
+    // The dataset argument is the kernel's own dataset_synthetic output, passed verbatim,
+    // so what is pinned is the replay arithmetic and not a JS re-serialization of the panel.
+    const dataset = kernel.dataset_synthetic(JSON.stringify(entry.dataset));
+    assert.ok(!dataset.startsWith('{"error"'), `${entry.name}: dataset_synthetic failed: ${dataset}`);
+    const out = kernel.replay_run(
+      dataset,
+      JSON.stringify(entry.trajectory),
+      JSON.stringify(entry.costs),
+    );
+    assert.ok(!out.startsWith('{"error"'), `${entry.name}: the wasm export failed: ${out}`);
+    assert.equal(
+      out,
+      preHash(entry.pre_hash),
+      `${entry.name}: the committed .wasm's replay bytes drifted from the pre-hash fixture`,
+    );
+    assert.equal(
+      fingerprint(out),
+      entry.fnv1a64,
+      `${entry.name}: the committed pkg/sharpearena_bg.wasm has drifted from the backtest golden`,
+    );
+  }
+});
+
+test("every backtest golden is reachable through the wrapper, not only through pkg/", () => {
+  const api = require("../dist/index.js");
+  for (const entry of BACKTEST.runs) {
+    assert.deepEqual(
+      api.runBaseline(entry.config),
+      JSON.parse(kernel.run_baseline(JSON.stringify(entry.config))),
+      `${entry.name}: the wrapper's runBaseline is not the golden export`,
+    );
+  }
+  for (const entry of BACKTEST.replays) {
+    const dataset = JSON.parse(kernel.dataset_synthetic(JSON.stringify(entry.dataset)));
+    assert.deepEqual(
+      api.replayRun(dataset, entry.trajectory, entry.costs),
+      JSON.parse(
+        kernel.replay_run(
+          JSON.stringify(dataset),
+          JSON.stringify(entry.trajectory),
+          JSON.stringify(entry.costs),
+        ),
+      ),
+      `${entry.name}: the wrapper's replayRun is not the golden export`,
+    );
+  }
+});
+
 test("the shipped wasm package carries the crate version", () => {
   const wrapper = JSON.parse(fs.readFileSync(path.join(__dirname, "../package.json"), "utf8"));
   const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, "../pkg/package.json"), "utf8"));
