@@ -5,7 +5,7 @@
 
 use sharpearena::{
     level_seed, mandate_breach, perturb_action, train_test_split, AdaptiveCurriculum, ExecNoise,
-    Mandate, MandateStyle, ScenarioSpec,
+    ExecNoiseError, Mandate, MandateError, MandateStyle, ScenarioSpec,
 };
 
 fn long_only(max_drawdown: Option<f64>, max_inventory: Option<f64>) -> Mandate {
@@ -18,57 +18,92 @@ fn long_only(max_drawdown: Option<f64>, max_inventory: Option<f64>) -> Mandate {
     }
 }
 
-/// R1. `mandate_breach` combines its breach sources with `f64::max` and guards each one
+/// R1. `mandate_breach` combined its breach sources with `f64::max` and guarded each one
 /// with a `>` comparison; both discard NaN. A weight vector or return series carrying a
-/// NaN therefore scores a *clean* mandate (0.0) rather than being refused, on every
-/// breach source: the long-only rule, the market-neutral rule, the inventory cap and
-/// the drawdown cap.
+/// NaN therefore scored a *clean* mandate (0.0) on every breach source: the long-only
+/// rule, the market-neutral rule, the inventory cap and the drawdown cap. Those are now
+/// typed refusals (`MandateError`), so the grader answers only for a book it can read.
+///
+/// Each fixture below is broken in exactly one way, which is what makes the assertion
+/// about the named cause. The mandates carrying no cap cannot raise `InvalidDrawdownCap`
+/// or `InvalidInventoryCap`; the three weight fixtures pass an empty return series, so
+/// `NonFiniteReturn` is unreachable and only the weight scan can refuse them; the
+/// drawdown fixture passes a clean finite book, so `NonFiniteWeight` is unreachable and
+/// only the return scan can. The paired `Ok` leg on each is the same fixture with the one
+/// NaN replaced, which pins the NaN rather than the shape as the cause of the refusal.
 #[test]
-fn r1_nan_weights_and_returns_score_a_clean_mandate() {
-    // Long-only: `fold(f64::INFINITY, f64::min)` over an all-NaN bar stays at INFINITY,
-    // so the bar is never counted as holding a short.
+fn r1_nan_weights_and_returns_are_refused_not_scored() {
+    // Long-only: `fold(f64::INFINITY, f64::min)` over an all-NaN bar stayed at INFINITY,
+    // so the bar was never counted as holding a short.
     let structural = long_only(None, None);
     assert_eq!(
         mandate_breach(&structural, &[], &vec![vec![-0.5, 0.2]; 4]),
-        1.0
+        Ok(1.0)
     );
-    assert_eq!(
-        mandate_breach(&structural, &[], &vec![vec![f64::NAN, f64::NAN]; 4]),
-        0.0,
-        "an all-NaN book scores a clean long-only mandate"
+    assert!(
+        matches!(
+            mandate_breach(&structural, &[], &vec![vec![f64::NAN, f64::NAN]; 4]),
+            Err(MandateError::NonFiniteWeight {
+                bar: 0,
+                index: 0,
+                ..
+            })
+        ),
+        "an all-NaN book must be refused, not scored clean"
     );
 
-    // Market-neutral: `gross > EPS` is false for a NaN gross, so the bar contributes 0.
+    // Market-neutral: `gross > EPS` was false for a NaN gross, so the bar contributed 0.
     let neutral = Mandate {
         style: MandateStyle::MarketNeutral,
         ..long_only(None, None)
     };
-    assert!(mandate_breach(&neutral, &[], &[vec![0.5, 0.5]]) > 0.0);
-    assert_eq!(mandate_breach(&neutral, &[], &[vec![0.5, f64::NAN]]), 0.0);
+    assert_eq!(mandate_breach(&neutral, &[], &[vec![0.5, 0.5]]), Ok(1.0));
+    assert!(matches!(
+        mandate_breach(&neutral, &[], &[vec![0.5, f64::NAN]]),
+        Err(MandateError::NonFiniteWeight {
+            bar: 0,
+            index: 1,
+            ..
+        })
+    ));
 
-    // Inventory cap: `gross > cap` is false for a NaN gross.
+    // Inventory cap: `gross > cap` was false for a NaN gross.
     let capped = long_only(None, Some(1.0));
-    assert!(mandate_breach(&capped, &[], &[vec![5.0, 5.0]]) > 0.0);
-    assert_eq!(mandate_breach(&capped, &[], &[vec![5.0, f64::NAN]]), 0.0);
+    assert!(mandate_breach(&capped, &[], &[vec![5.0, 5.0]]).unwrap() > 0.0);
+    assert!(matches!(
+        mandate_breach(&capped, &[], &[vec![5.0, f64::NAN]]),
+        Err(MandateError::NonFiniteWeight {
+            bar: 0,
+            index: 1,
+            ..
+        })
+    ));
 
-    // Drawdown cap: one NaN return poisons the equity curve, and `dd > mdd` is then
-    // false for every later bar, so the realized drawdown reads as zero.
+    // Drawdown cap: one NaN return poisoned the equity curve, and `dd > mdd` was then
+    // false for every later bar, so the realized drawdown read as zero.
     let braked = long_only(Some(0.10), None);
-    assert!(mandate_breach(&braked, &[-0.30, -0.30], &[vec![0.5]]) > 0.0);
-    assert_eq!(
-        mandate_breach(&braked, &[f64::NAN, -0.30, -0.30], &[vec![0.5]]),
-        0.0,
-        "a leading NaN return hides the whole drawdown"
+    assert!(mandate_breach(&braked, &[-0.30, -0.30], &[vec![0.5]]).unwrap() > 0.0);
+    assert!(
+        matches!(
+            mandate_breach(&braked, &[f64::NAN, -0.30, -0.30], &[vec![0.5]]),
+            Err(MandateError::NonFiniteReturn { index: 0, .. })
+        ),
+        "a leading NaN return must be refused, not hide the whole drawdown"
     );
 }
 
-/// R2. `exec_noise::perturb` validates neither knob, and no caller on any surface
-/// validates them either, so a malformed integrity setting is never refused. Negative
-/// knobs take the "no knobs" pass-through and report a run with no execution noise at
-/// all; a probability above one makes every step sticky; NaN skips every guard and
-/// poisons the realized action instead.
+/// R2. `exec_noise::perturb` validated neither knob, and no caller on any surface
+/// validated them either, so a malformed integrity setting was never refused. Negative
+/// knobs took the "no knobs" pass-through and reported a run with no execution noise at
+/// all; a probability above one made every step sticky; NaN skipped every guard and
+/// poisoned the realized action instead. All three are now `ExecNoiseError`.
+///
+/// Each case names one knob and holds the other at an in-range value, so only the named
+/// knob can be the cause of the refusal. The `slippage_bps` case deliberately uses
+/// `delay_prob = 0.0` rather than the "both bad" pair the original review used, because a
+/// config broken in two ways would be refused by either check and would prove neither.
 #[test]
-fn r2_malformed_execution_noise_is_never_refused() {
+fn r2_malformed_execution_noise_is_refused() {
     let requested = [0.2, -0.5, 0.7];
     let previous = [9.9, 9.9, 9.9];
 
@@ -77,13 +112,13 @@ fn r2_malformed_execution_noise_is_never_refused() {
         slippage_bps: 100.0,
     };
     assert_ne!(
-        perturb_action(5, 1, &requested, &previous, &live),
+        perturb_action(5, 1, &requested, &previous, &live).expect("an in-range knob runs"),
         requested.to_vec(),
         "a live slippage knob must perturb"
     );
 
-    // Negative: silent pass-through, indistinguishable from "no noise configured".
-    assert_eq!(
+    // Negative delay: was a silent pass-through, indistinguishable from "no noise".
+    assert!(matches!(
         perturb_action(
             5,
             1,
@@ -91,14 +126,28 @@ fn r2_malformed_execution_noise_is_never_refused() {
             &previous,
             &ExecNoise {
                 delay_prob: -1.0,
+                slippage_bps: 0.0
+            }
+        ),
+        Err(ExecNoiseError::DelayProb { .. })
+    ));
+    // Negative slippage: the same silent pass-through, under the other knob.
+    assert!(matches!(
+        perturb_action(
+            5,
+            1,
+            &requested,
+            &previous,
+            &ExecNoise {
+                delay_prob: 0.0,
                 slippage_bps: -100.0
             }
         ),
-        requested.to_vec()
-    );
-    // A probability above one is unchecked: every step replays the previous action, so
-    // the agent's own decisions never reach the market.
-    assert_eq!(
+        Err(ExecNoiseError::SlippageBps { .. })
+    ));
+    // A probability above one made every step replay the previous action, so the agent's
+    // own decisions never reached the market.
+    assert!(matches!(
         perturb_action(
             5,
             1,
@@ -109,22 +158,35 @@ fn r2_malformed_execution_noise_is_never_refused() {
                 slippage_bps: 0.0
             }
         ),
-        previous.to_vec()
-    );
-    // NaN: no guard fires and the realized action becomes NaN rather than a refusal.
-    for cfg in [
-        ExecNoise {
-            delay_prob: f64::NAN,
-            slippage_bps: f64::NAN,
-        },
-        ExecNoise {
-            delay_prob: 0.0,
-            slippage_bps: f64::NAN,
-        },
-    ] {
-        let out = perturb_action(5, 1, &requested, &previous, &cfg);
-        assert!(out.iter().all(|x| x.is_nan()), "{out:?}");
-    }
+        Err(ExecNoiseError::DelayProb { .. })
+    ));
+    // NaN: no guard fired and the realized action became NaN rather than a refusal.
+    assert!(matches!(
+        perturb_action(
+            5,
+            1,
+            &requested,
+            &previous,
+            &ExecNoise {
+                delay_prob: f64::NAN,
+                slippage_bps: 0.0
+            }
+        ),
+        Err(ExecNoiseError::DelayProb { .. })
+    ));
+    assert!(matches!(
+        perturb_action(
+            5,
+            1,
+            &requested,
+            &previous,
+            &ExecNoise {
+                delay_prob: 0.0,
+                slippage_bps: f64::NAN
+            }
+        ),
+        Err(ExecNoiseError::SlippageBps { .. })
+    ));
 }
 
 /// R3. `AdaptiveCurriculum::with_prior` documents `prior` in `[0, 1]` but does not

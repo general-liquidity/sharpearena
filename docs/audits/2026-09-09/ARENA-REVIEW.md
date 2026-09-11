@@ -4,9 +4,10 @@ Scope: SharpeArena as it stands on `main` at `6953538`. SharpeBench was reviewed
 adversarially twice this week; Arena consumes the same kernel and publishes its own
 leaderboard but had nothing equivalent. This was a review, not a repair: at `6953538` no
 production code was changed, and one test file was added to demonstrate five of the
-findings, `crates/sharpearena/tests/fail_open_review.rs`. A1 and A2 have since been
-repaired on top of this branch; each carries a **Disposition** paragraph recording what
-was changed and what it cost. Every other finding stands as written and is open.
+findings, `crates/sharpearena/tests/fail_open_review.rs`. Findings repaired on top of this
+branch each carry a **Disposition** paragraph recording what was changed and what it cost,
+and A9 carries one recording why it was established rather than repaired. A finding with no
+Disposition paragraph stands as written and is open.
 
 The two patterns the sibling reviews kept finding were looked for specifically:
 fail-open shapes (a missing, malformed or unknown value producing a permissive default
@@ -269,6 +270,32 @@ a NaN book collects full credit.
 
 Reproduce: `cargo test --test fail_open_review r1_nan_weights_and_returns_score_a_clean_mandate`.
 
+**Disposition (repaired).** `mandate_breach` returns `Result<f64, MandateError>` and
+refuses before it grades: `NonFiniteReturn`, `NonFiniteWeight`, `InvalidDrawdownCap` and
+`InvalidInventoryCap`, each naming the offending position and value. That follows the
+convention A1 was repaired under and the one `SealedSalt::new` set: a library entry point
+returns a typed refusal for input that cannot produce a valid result. The cap checks are
+included because a `max_drawdown` outside `(0, 1]` or a non-positive `max_inventory` is
+the same defect one layer up, and the old `cap.max(EPS)` consumed both silently. The
+signature change is breaking; the only exported caller is the pyo3 `mandate_breach`, which
+re-raises through `relay_err` as `InvalidArgument`, so the Python wrapper and
+`mandate_reward` raise rather than return. There is no wasm or npm export of this
+function.
+
+The review's `r1` test is inverted to assert the refusal, and four unit tests in
+`mandate.rs` plus six cases in `crates/sharpearena-py/tests/test_fail_open_review.py`
+cover each cause separately. Isolation: every fixture is broken in exactly one way and
+paired with the same fixture repaired. A mutation removing each guard on its own was run
+in an isolated copy; the attribution is one-to-one (removing the weight scan fails only
+the weight test, and so on, across all six guards), and a mutated wheel installed into a
+throwaway venv fails only the matching group, which is what establishes the *installed*
+package refuses and not just the source tree. A NaN cap is deliberately covered at
+`validate_mandate` rather than at the kernel: `json.dumps` emits the non-standard `NaN`
+literal, so through Python that payload is refused one layer earlier by `InvalidJson`, and
+asserting a kernel refusal on it would be an assertion satisfied by another cause. No
+golden, no snapshot and nothing under `paper/evidence/` moved; `mandate.rs` is one of the
+seven `SPEC_FILES`, so `SPEC_HASH` rebinds (see A8).
+
 ### A6. A malformed mandate is graded as no mandate, which is full credit (medium-high)
 
 `crates/sharpearena-py/python/sharpearena/verifiers_env.py:141-152` resolves the mandate
@@ -285,6 +312,36 @@ through `validate_mandate` and returns `None` when it does not validate;
 payload, an unrecognized style, `max_drawdown` outside `(0, 1]` or a non-positive
 `max_inventory`. None of those is "there is no mandate". The two cases are conflated at
 the point where they become a reward, and the permissive one wins.
+
+**Disposition (repaired).** Absence and malformation are now different outcomes.
+`mandate.require_mandate` raises the new `MandateError` for a present payload that does not
+validate, and `_mandate_from_state` calls it instead of reading `validate_mandate` as
+presence: `None` is returned only when no mandate is there, and that case keeps its
+vacuous `1.0`, which is a real state and a deliberate design. The same conflation at
+`verifiers_env.py:328` is closed the same way: a dataset row carrying a mandate that does
+not validate is refused rather than silently replaced by the seed-derived one, since the
+run would otherwise be scored against an objective the row did not ask for. A row with no
+mandate still falls back to the seed-derived draw.
+
+Refusal rather than a substituted number is what this project already does for
+unavailability elsewhere, which is why it is the right answer here: the sibling records a
+statistic it cannot establish as `unavailable_scoring_kernel_error: ...` and never as a
+number (`kernel_score.py`), the Rust kernel refuses malformed input with typed errors
+(`SealedSaltError`, `SplitError`, and now `MandateError`), and `failure_taxonomy.classify`
+already classified a present-but-invalid mandate as `INVALID_EVIDENCE` rather than as
+clean. `mandate_reward` was the one grading surface that read it as unconstrained, which is
+the most favourable verdict the rubric can give.
+
+`require_mandate` is an `if` and a `raise`, not an assertion, so it survives `python -O`;
+`scripts/check-optimized-guards.py` drives it and `mandate_reward` under the flag, together
+with the control that an absent mandate still scores `1.0`. Seven parametrized cases in
+`crates/sharpearena-py/tests/test_fail_open_review.py` each violate exactly one
+`validate_mandate` rule and satisfy the rest, and each is paired with the same payload
+repaired; a fixture broken in two ways would be refused by whichever rule fired first and
+would attribute nothing. Two mutations of the *installed* package (reverting
+`_mandate_from_state`, and making `require_mandate` never raise) fail the A6 group and only
+the A6 group. Nothing under `paper/evidence/` is produced through `mandate_reward`, and
+`paper/evidence/f7-failures.json` goes through `failure_taxonomy`, which is unchanged.
 
 ### A7. The Python style list is an unchecked hand copy of the Rust enum (medium)
 
@@ -304,6 +361,11 @@ checks in one direction.
 
 Composed with A6 this is the sibling's pricing-table defect in another register: a sixth
 Rust style would deserialize, fail `validate_mandate`, and be graded 1.0.
+
+**Note (A6 repair narrows this, A7 itself still open).** A sixth Rust style now raises
+`MandateError` at the reward boundary instead of being graded 1.0, so the composed failure
+A7 describes no longer ends in full credit. The hand-copied `STYLES` tuple and the missing
+cross-check are unchanged and A7 stays open as written.
 
 ### A8. The execution-noise integrity knobs are unvalidated on every surface (medium)
 
@@ -331,6 +393,43 @@ discloses `delay_prob=-0.1` and was in fact noise-free. Also note
 
 Reproduce: `cargo test --test fail_open_review r2_malformed_execution_noise_is_never_refused`.
 
+**Disposition (repaired on every surface that accepts a knob).** `ExecNoise::validate` is
+the rule; `exec_noise::perturb` returns `Result<Vec<f64>, ExecNoiseError>` and calls it
+before any draw, so a refused config cannot consume the step's stream and shift a later
+valid call. `delay_prob` must be finite in `[0, 1]`; `slippage_bps` must be finite and
+non-negative, with no upper bound, since a basis-point scale has none.
+
+The surfaces that accept these knobs were enumerated rather than assumed, because the last
+repair in this repository found the guarantee restated on a fourth surface nobody had
+checked. There are three, and all three validate now: the pyo3 binding `perturb_action`
+(previously the one boundary in that file that passed its arguments through unchecked,
+unlike `score_run` and `validate_impact_exponent` beside it) re-raises through `relay_err`
+as `InvalidArgument`; `ExecutionNoiseWrapper.__init__` calls the new
+`execution_noise.validate_execution_noise`; and `ExecutionNoiseConfig` gained the
+`__post_init__` its sibling `PreprocessingConfig` already had. There is **no wasm or npm
+export** of either knob: the `#[wasm_bindgen]` surface is `spec_hash`, `run_baseline`,
+`replay_run`, `dataset_synthetic`, `stress_suite`, `walk_forward`, `tag_regime` and
+`generate_scenario`, and `npm/sharpearena/src/index.ts` re-exports a subset of those; the
+`noise` field in `sharpearena-wasm/src/lib.rs:62` is a dataset-generation knob, not this
+one. `ExecutionNoiseConfig.enabled` can no longer report a NaN as live, because the config
+cannot hold one.
+
+`validate_execution_noise` is an `if` and a `raise`, so it survives `python -O`, and
+`scripts/check-optimized-guards.py` drives it there. Isolation: every case names one knob
+and holds the other at an in-range value, including where the review's own reproduction
+used a both-knobs-bad config, which either check would refuse and which therefore
+attributes nothing. Mutating the two branches of `validate` separately fails only the
+matching test; removing the `cfg.validate()?` call fails both; removing it in a rebuilt
+wheel fails only the binding group in a throwaway venv.
+
+`exec_noise.rs` and `mandate.rs` are two of the seven `SPEC_FILES`, so the A5, A8 and A9
+edits together rebind `SPEC_HASH` from `2eca39c3ad45a5f7` to `5518afd039aa5317` with no
+`SPEC_EPOCH` change. The attestation record, both wrapper pins and the committed wasm
+bundle rebind together. The release recipe (wasm-pack 0.15.0, Rust 1.96.0,
+`wasm-pack build crates/sharpearena-wasm --target nodejs --out-name sharpearena`) run on
+the parent commit reproduced all five committed `pkg/` files byte for byte, and on this
+tree only `sharpearena_bg.wasm` differs; the JS glue and type declarations are unchanged.
+
 ### A9. One of the five mandate styles is graded by nothing (medium)
 
 `crates/sharpearena/src/mandate.rs:260`:
@@ -346,6 +445,37 @@ rule, so an agent that ignores it entirely scores a clean mandate. The doc comme
 `:223-224` states this, but the module header at `:5-6` says each scenario draws an
 objective "the episode is graded against", and `EVALUATION.md` does not qualify it. About
 a fifth of sampled mandates therefore present a constraint that is scored by nothing.
+
+**Disposition (established, not repaired: both repairs move published evidence).** The
+question the finding poses has an answer. `Momentum` is not gradeable by
+`mandate_breach` as it stands: the function receives per-bar portfolio weight vectors and
+a pooled per-bar return series, and "lean into recent winners, cut losers" is a statement
+about per-symbol returns, which it never sees. So this is not a grading gap that a missing
+rule would close. It is a style that should not be sampled.
+
+That repair cannot be made here. `MandateStyle::ALL` has five entries and
+`sample_mandate` indexes into the filtered list, so dropping one changes the style drawn
+for every seed, and `paper/evidence/f7-failures.json` records `mandate_style` per (tier,
+policy, seed) for 384 episodes, 217 of them `momentum`. The alternative repair, extending
+the kernel with per-symbol returns and giving `Momentum` a rule, moves the same file's
+`mode` field for those episodes from `clean` to a breach class. Either way a published
+number moves, so per the goal rule that published numerical evidence stays frozen, this is
+reported rather than regenerated.
+
+What was done instead costs no number and removes the silence. The module header and
+`MandateStyle`'s doc comment stated that each drawn style carries a structural rule, which
+was the false claim; both now name `Momentum` as an exception and say why it cannot be
+graded from the kernel's inputs. `mandate.py`'s `STYLES` comment says the same. And
+`only_the_declared_ungraded_styles_carry_no_structural_rule` pins the ungraded set
+behaviourally: a book that breaches every structural rule at once scores `1.0` under each
+graded style and `0.0` under each ungraded one, and the test asserts the zero-scoring set
+is exactly `{Momentum, Unconstrained}`. A sixth style added without a rule fails it, so
+the set cannot grow without a decision. Mutation-checked: giving `Momentum` the long-only
+rule in an isolated copy fails that test and nothing else.
+
+Closing this properly needs a version boundary where the F7 producer is rerun, since the
+mandate draw is part of the tape the evidence describes. It is a sampling decision with a
+frozen-evidence dependency, not a bug fix.
 
 ### A10. Leaderboard ties are broken by declaration order and rendered as ranks (medium)
 
@@ -514,6 +644,52 @@ comment in `build.rs` would satisfy the first check, and the count does not move
 array it claims to track. In practice the `spec_hash` equality assertion at `:53-58` is
 what makes this leg hard to fool, which is the point: the file-set leg is not carrying the
 weight its message implies.
+
+### A22. `evaluate_seeds` manufactured a generalization score out of no evidence (medium)
+
+Raised separately, in Codex's `ARENA-ADJUDICATION.md` handoff, and folded in here because
+it is the same shape as A5 and A6: a published property that quietly does not hold on some
+input, reported as a plausible number instead of a refusal.
+
+`crates/sharpearena-py/python/sharpearena/generalization.py:92-96` bypassed the scoring
+kernel below two pooled observations and wrote `deflated_sharpe: 0.0`:
+
+```python
+    composite = json.loads(score_run(pooled, n_trials)) if len(pooled) >= 2 else {}
+    ...
+        "deflated_sharpe": (
+            kernel_score_or_unavailable(composite) if composite else 0.0
+        ),
+```
+
+`0.0` is the kernel's no-skill floor. `kernel_score.py`'s own module docstring says reading
+it past a typed error "publishes the floor as a score, which is the flattering substitution
+the kernel refused to make", and this wrote the floor without even asking. An empty
+`seeds` list, or a suite in which every episode ends before its second bar, therefore
+produced a scored generalization row for an evaluation that produced no evidence, and
+`kernel_score_difference` would then difference that zero against a real score to yield a
+gap, in both `generalization_gap` and `cross_regime_transfer`.
+
+**Disposition (repaired).** The length bypass is gone. `score_run` is called
+unconditionally and its answer recorded: for fewer than two observations the kernel already
+returns `bootstrap_error` and `deflation_error` reading `at least 2 observations are
+required, got N`, which `kernel_score_or_unavailable` renders as the
+`unavailable_scoring_kernel_error: ...` string the rest of the module uses. No new
+unavailability path was invented; the existing one was simply no longer skipped. Because
+the string is not a number, `kernel_score_difference` propagates it and an unscored split
+can no longer be differenced into a gap. `passed_k_rate` and `mean_return` are plain
+tallies over whatever was observed, not kernel scores, and are documented as staying `0.0`
+on an empty one.
+
+Isolation: the fixture is an env with one bar, a finite reward and a well-formed
+observation, so every other typed error the kernel can raise is unreachable and `at least 2
+observations are required` is the only refusal available; the paired test changes the bar
+count and nothing else, and gets a real float back. Restoring the bypass in the *installed*
+package fails that group and only that group.
+
+No published number moves: `paper/evidence/f3-generalization.json` contains no
+`deflated_sharpe` of `0.0`, no `unavailable_scoring_kernel` string and no `n_seeds: 0`, so
+no row in it ever took the bypass.
 
 ## Tests that could pass for a cause other than the one they name
 

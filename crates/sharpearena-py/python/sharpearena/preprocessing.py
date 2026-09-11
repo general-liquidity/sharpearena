@@ -33,7 +33,7 @@ from .wrappers import (
     FrameStack,
     RecordEpisodeStatistics,
 )
-from .execution_noise import ExecutionNoiseWrapper
+from .execution_noise import ExecutionNoiseWrapper, validate_execution_noise
 from .spaces import FlattenObservation
 from .indicators import CausalIndicatorObservation, INDICATORS
 
@@ -52,6 +52,12 @@ class ExecutionNoiseConfig:
     slippage_bps: float = 0.0
     # Stream seed for the perturbation; None => nondeterministic-but-stable per instance.
     seed: Optional[int] = None
+
+    def __post_init__(self) -> None:
+        # A disclosed integrity knob is refused where it is set, not carried to the first
+        # step. Without this, `enabled` below reported True for a NaN (`nan != 0.0`) on a
+        # config the core would then run as if no noise were configured.
+        validate_execution_noise(self.delay_prob, self.slippage_bps)
 
     @property
     def enabled(self) -> bool:

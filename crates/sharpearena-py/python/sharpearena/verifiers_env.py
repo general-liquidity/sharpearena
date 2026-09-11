@@ -40,7 +40,11 @@ from .gym import SharpeArenaEnv
 from .effective_config import env_effective_config
 from .episode_outcomes import is_process_block
 from .kernel_score import kernel_deflated_sharpe
-from .mandate import mandate_breach, sample_mandate, validate_mandate
+from .mandate import (
+    mandate_breach,
+    require_mandate,
+    sample_mandate,
+)
 from .sharpearena_py import score_run  # the real SharpeBench scorer (pyo3)
 
 try:  # pragma: no cover - exercised only when verifiers is installed
@@ -140,14 +144,21 @@ def process_check_reward(
 
 def _mandate_from_state(state: Optional[dict]) -> Optional[dict]:
     """The scenario's mandate dict, preferring the one threaded into ``state`` at setup,
-    falling back to the dataset row ``info``. ``None`` if the scenario carries none."""
+    falling back to the dataset row ``info``. ``None`` only if the scenario carries none.
+
+    A *present* mandate that does not validate raises
+    :class:`~sharpearena.mandate.MandateError` instead of reading as absent. Absent and
+    malformed had the same consequence here, and since the caller turns absent into full
+    credit, the malformed case was the more rewarding of the two."""
     st = state or {}
     cand = st.get("mandate")
-    if validate_mandate(cand):
-        return cand  # type: ignore[return-value]
+    if cand is not None:
+        return require_mandate(cand)  # type: ignore[return-value]
     info = st.get("info")
-    if isinstance(info, dict) and validate_mandate(info.get("mandate")):
-        return info["mandate"]
+    if isinstance(info, dict):
+        cand = info.get("mandate")
+        if cand is not None:
+            return require_mandate(cand)  # type: ignore[return-value]
     return None
 
 
@@ -162,6 +173,11 @@ def mandate_reward(
     A scenario with no mandate is vacuously satisfied (1.0). Wrong-objective behavior — a
     short under a long-only mandate, a blown drawdown cap — drives this below 1, so the
     agent is rewarded for satisfying the per-scenario objective rather than a fixed one.
+
+    A scenario carrying a mandate that does not validate raises
+    :class:`~sharpearena.mandate.MandateError` rather than collecting the vacuous 1.0:
+    that is not "there is no mandate", and reading it as one made the malformed input the
+    best-scoring one.
     """
     m = _mandate_from_state(state)
     if m is None:
@@ -324,8 +340,13 @@ if _HAS_VERIFIERS:
             # Thread the scenario mandate into state so mandate_reward can read it.
             # Prefer the dataset row's mandate; fall back to the (leak-free) seed-derived
             # one so a hand-built state without info still grades against a real mandate.
+            # A dataset row that carries a mandate which does not validate is refused
+            # rather than quietly swapped for the seed-derived one: the run would then be
+            # scored against an objective the row did not ask for.
             mandate = info.get("mandate")
-            if not validate_mandate(mandate):
+            if mandate is not None:
+                require_mandate(mandate)
+            else:
                 mandate = sample_mandate(
                     seed,
                     n_symbols=int(info.get("n_symbols", self._n_symbols)),

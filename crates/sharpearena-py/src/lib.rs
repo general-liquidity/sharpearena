@@ -858,11 +858,14 @@ fn sample_mandate_json(seed: u64, n_symbols: usize, allow_short: bool) -> PyResu
 
 /// The bounded breach penalty in `[0, 1]` for a mandate (wire JSON) over the recorded
 /// per-bar `returns` and per-bar target-`weights` vectors. `0` = clean, `1` = fully breached.
+/// Raises `InvalidArgument` rather than returning a verdict for a book the kernel cannot
+/// read: a non-finite return or weight, or an unusable drawdown / inventory cap.
 #[pyfunction]
 fn mandate_breach(mandate_json: &str, returns: Vec<f64>, weights: Vec<Vec<f64>>) -> PyResult<f64> {
     let m: Mandate = serde_json::from_str(mandate_json)
         .map_err(|e| engine_err(CODE_INVALID_JSON, format!("invalid mandate JSON: {e}")))?;
-    Ok(sharpearena::mandate::mandate_breach(&m, &returns, &weights))
+    sharpearena::mandate::mandate_breach(&m, &returns, &weights)
+        .map_err(|e| relay_err(CODE_INVALID_ARGUMENT, e))
 }
 
 /// Test hook for the error taxonomy: raise `message` through the same mapper every other
@@ -955,6 +958,11 @@ fn calm_calibration_candidate_scenario_json(seed: u64) -> PyResult<String> {
 /// `delay_prob` the `previous` action is returned (the order lands a bar late); otherwise
 /// each weight gets bounded multiplicative uniform jitter scaled by `slippage_bps`. The
 /// draw is keyed on `(seed, step_index)`, so it is byte-reproducible across runtimes.
+///
+/// Both knobs are reportable benchmark-integrity settings, so an out-of-range value
+/// raises `InvalidArgument` here rather than quietly disabling the noise (negative),
+/// making every step sticky (`delay_prob > 1`) or poisoning the action (NaN). This is
+/// the same boundary validation `score_run` and `validate_impact_exponent` already do.
 #[pyfunction]
 #[pyo3(signature = (seed, step_index, requested, previous, delay_prob = 0.0, slippage_bps = 0.0))]
 fn perturb_action(
@@ -964,7 +972,7 @@ fn perturb_action(
     previous: Vec<f64>,
     delay_prob: f64,
     slippage_bps: f64,
-) -> Vec<f64> {
+) -> PyResult<Vec<f64>> {
     core_perturb_action(
         seed,
         step_index,
@@ -975,6 +983,7 @@ fn perturb_action(
             slippage_bps,
         },
     )
+    .map_err(|e| relay_err(CODE_INVALID_ARGUMENT, e))
 }
 
 /// An endogenous price-impact **shared-book market** (M2): `N` agents trade one book per

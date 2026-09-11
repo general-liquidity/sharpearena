@@ -94,7 +94,12 @@ def evaluate_seeds(
 
     ``deflated_sharpe`` is the kernel's number, or the
     ``unavailable_scoring_kernel_error: ...`` reason string when the kernel withheld it
-    with a typed error; the row never carries the no-skill floor as a score.
+    with a typed error; the row never carries the no-skill floor as a score. That holds
+    for a pooled series too short to score (an empty ``seeds`` list, or every episode
+    ending before its second bar): the kernel is asked and its refusal is recorded,
+    rather than the row reporting a scored ``0.0`` for an evaluation with no evidence in
+    it. ``passed_k_rate`` and ``mean_return`` are plain tallies over whatever was
+    observed and stay ``0.0`` on an empty one.
     """
     policy = policy or _equal_weight_policy
     pooled: list[float] = []
@@ -105,12 +110,17 @@ def evaluate_seeds(
         if len(returns) >= 2:
             comp = json.loads(score_run(returns, n_trials))
             passed.append(1.0 if comp.get("passed_k", False) else 0.0)
-    composite = json.loads(score_run(pooled, n_trials)) if len(pooled) >= 2 else {}
+    # No length bypass. The kernel already refuses a series it cannot score: fewer than
+    # two observations sets `bootstrap_error` and `deflation_error` while
+    # `deflated_sharpe` reads the no-skill 0.0, which is exactly the floor the kernel
+    # declined to publish as an estimate. Short-circuiting to `0.0` here manufactured a
+    # generalization number out of an evaluation that produced no evidence, and
+    # `kernel_score_difference` could then difference it against a real score. Ask the
+    # kernel and record what it says.
+    composite = json.loads(score_run(pooled, n_trials))
     return {
         "n_seeds": len(list(seeds)),
-        "deflated_sharpe": (
-            kernel_score_or_unavailable(composite) if composite else 0.0
-        ),
+        "deflated_sharpe": kernel_score_or_unavailable(composite),
         "passed_k_rate": float(np.mean(passed)) if passed else 0.0,
         "mean_return": float(np.mean(pooled)) if pooled else 0.0,
     }

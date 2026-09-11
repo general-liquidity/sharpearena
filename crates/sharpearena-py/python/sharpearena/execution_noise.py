@@ -25,6 +25,7 @@ they change the difficulty of the task.
 
 from __future__ import annotations
 
+import math
 import os
 from typing import Any, Optional
 
@@ -34,6 +35,32 @@ import gymnasium as gym
 from .sharpearena_py import perturb_action
 
 _U64_MASK = (1 << 64) - 1
+
+
+def validate_execution_noise(delay_prob: float, slippage_bps: float) -> None:
+    """Refuse an out-of-range execution-noise knob at the surface that accepted it.
+
+    These are disclosed benchmark-integrity settings, so each out-of-range shape is a run
+    whose disclosure is false rather than a run that fails: a negative knob takes the Rust
+    core's "no knobs configured" pass-through, so a run reporting ``delay_prob=-0.1`` was
+    noise-free; ``delay_prob > 1`` makes every step replay the previous action, so the
+    agent's decisions never reach the market; and NaN passes every guard, so the realized
+    action is NaN and :func:`numpy.clip` propagates it into ``env.step``. NaN also reads as
+    *enabled* by an ``!= 0.0`` test.
+
+    The Rust core refuses the same ranges, so this is a second copy of one rule rather
+    than the only copy; it exists because these values are accepted here, in a dataclass
+    and a wrapper constructor, long before any action reaches the core. Written as an
+    ``if`` and a ``raise`` so the refusal survives ``python -O``.
+    """
+    if not math.isfinite(delay_prob) or not 0.0 <= delay_prob <= 1.0:
+        raise ValueError(
+            f"[INVALID_ARGUMENT] delay_prob {delay_prob} is outside the finite range [0, 1]"
+        )
+    if not math.isfinite(slippage_bps) or slippage_bps < 0.0:
+        raise ValueError(
+            f"[INVALID_ARGUMENT] slippage_bps {slippage_bps} is negative or not finite"
+        )
 
 
 class ExecutionNoiseWrapper(gym.Wrapper):
@@ -62,6 +89,7 @@ class ExecutionNoiseWrapper(gym.Wrapper):
         super().__init__(env)
         self._delay_prob = float(delay_prob)
         self._slippage_bps = float(slippage_bps)
+        validate_execution_noise(self._delay_prob, self._slippage_bps)
         # A concrete u64 stream seed: explicit when given, otherwise a fixed-per-instance
         # draw (mirrors ``np.random.default_rng(None)`` — nondeterministic across runs but
         # stable within this wrapper instance).
@@ -103,4 +131,4 @@ class ExecutionNoiseWrapper(gym.Wrapper):
         return self.env.step(realized)
 
 
-__all__ = ["ExecutionNoiseWrapper"]
+__all__ = ["ExecutionNoiseWrapper", "validate_execution_noise"]

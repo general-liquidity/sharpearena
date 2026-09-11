@@ -161,7 +161,7 @@ from .eval_seeds import (
     sealed_eval_seeds,
 )
 from .execution import ExecutionEnv, execution_quality, immediate_policy, twap_policy
-from .execution_noise import ExecutionNoiseWrapper
+from .execution_noise import ExecutionNoiseWrapper, validate_execution_noise
 from .failure_taxonomy import (
     FailureMode,
     FailureRollup,
@@ -217,9 +217,11 @@ from .local_agents import (
 from .lookahead_guard import LookaheadGuard, LookaheadViolation, guarded, wrap_policy
 from .mandate import (
     Mandate,
+    MandateError,
     mandate_breach,
     mandate_from_dict,
     mandate_text,
+    require_mandate,
     sample_mandate,
     validate_mandate,
 )
@@ -503,11 +505,14 @@ __all__ = [
     "flat_dim",
     "FlattenObservation",
     "ExecutionNoiseWrapper",
+    "validate_execution_noise",
     "Mandate",
+    "MandateError",
     "sample_mandate",
     "mandate_text",
     "mandate_breach",
     "mandate_from_dict",
+    "require_mandate",
     "validate_mandate",
     "mandate_reward",
     "run_baselines",

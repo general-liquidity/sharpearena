@@ -56,6 +56,70 @@ pub struct ExecNoise {
     pub slippage_bps: f64,
 }
 
+/// An execution-noise setting outside the range its own documentation declares.
+///
+/// These are **reportable benchmark-integrity knobs**: a run that discloses them is
+/// making a claim about the difficulty it was scored under. Left unvalidated the three
+/// out-of-range shapes all fail quietly rather than loudly: a negative knob takes the
+/// "no knobs configured" fast path, so a run disclosing `delay_prob = -0.1` was in fact
+/// noise-free; a probability above one makes `rng.next_unit() < delay_prob` always true,
+/// so the agent's own decisions never reach the market; and a NaN passes every `>` and
+/// `<=` guard, so the realized action is NaN. The `[INVALID_ARGUMENT]` code is the one
+/// the pyo3 boundary re-raises under, since this type crosses it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ExecNoiseError {
+    /// `delay_prob` is not a finite probability in `[0, 1]`.
+    DelayProb {
+        /// The value the caller supplied.
+        delay_prob: f64,
+    },
+    /// `slippage_bps` is not a finite non-negative basis-point scale.
+    SlippageBps {
+        /// The value the caller supplied.
+        slippage_bps: f64,
+    },
+}
+
+impl std::fmt::Display for ExecNoiseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ExecNoiseError::DelayProb { delay_prob } => write!(
+                f,
+                "[INVALID_ARGUMENT] delay_prob {delay_prob} is outside the finite range [0, 1]"
+            ),
+            ExecNoiseError::SlippageBps { slippage_bps } => write!(
+                f,
+                "[INVALID_ARGUMENT] slippage_bps {slippage_bps} is negative or not finite"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ExecNoiseError {}
+
+impl ExecNoise {
+    /// Check both knobs against the ranges their documentation declares, so a caller that
+    /// holds a config before it has an action to perturb can refuse at the boundary where
+    /// the operator set it rather than at the first step.
+    ///
+    /// # Errors
+    ///
+    /// [`ExecNoiseError`] naming the offending knob and its value.
+    pub fn validate(&self) -> Result<(), ExecNoiseError> {
+        if !(self.delay_prob.is_finite() && (0.0..=1.0).contains(&self.delay_prob)) {
+            return Err(ExecNoiseError::DelayProb {
+                delay_prob: self.delay_prob,
+            });
+        }
+        if !(self.slippage_bps.is_finite() && self.slippage_bps >= 0.0) {
+            return Err(ExecNoiseError::SlippageBps {
+                slippage_bps: self.slippage_bps,
+            });
+        }
+        Ok(())
+    }
+}
+
 /// Perturb the `requested` action into a realized one, deterministically from
 /// `(state_rng_seed, step_index)`.
 ///
@@ -65,37 +129,44 @@ pub struct ExecNoise {
 /// in `[-1, 1)`. With both knobs at `0.0` the requested action is returned unchanged
 /// and no draws are taken. The caller is responsible for clipping the result back
 /// into the action space.
+///
+/// # Errors
+///
+/// [`ExecNoiseError`] when either knob is outside its declared range, before any draw is
+/// taken. See [`ExecNoiseError`] for why each shape has to be refused rather than run.
 pub fn perturb(
     state_rng_seed: u64,
     step_index: u64,
     requested: &[f64],
     previous: &[f64],
     cfg: &ExecNoise,
-) -> Vec<f64> {
+) -> Result<Vec<f64>, ExecNoiseError> {
+    cfg.validate()?;
+
     // Default-off fast path: no knobs ⇒ exact pass-through, no draws.
     if cfg.delay_prob <= 0.0 && cfg.slippage_bps <= 0.0 {
-        return requested.to_vec();
+        return Ok(requested.to_vec());
     }
 
     let mut rng = SplitMix64::derive(state_rng_seed, step_index);
 
     // Sticky / delay: with prob `delay_prob` the previous realized action lands this bar.
     if cfg.delay_prob > 0.0 && rng.next_unit() < cfg.delay_prob {
-        return previous.to_vec();
+        return Ok(previous.to_vec());
     }
 
     if cfg.slippage_bps <= 0.0 {
-        return requested.to_vec();
+        return Ok(requested.to_vec());
     }
 
     let scale = cfg.slippage_bps / 10_000.0;
-    requested
+    Ok(requested
         .iter()
         .map(|&x| {
             let u = 2.0 * rng.next_unit() - 1.0; // bounded uniform in [-1, 1)
             x * (1.0 + scale * u)
         })
-        .collect()
+        .collect())
 }
 
 #[cfg(test)]
@@ -109,13 +180,26 @@ mod tests {
         }
     }
 
+    /// The perturbation fixtures below all carry in-range knobs; the refusal path has its
+    /// own tests, one per knob.
+    fn perturbed(
+        state_rng_seed: u64,
+        step_index: u64,
+        requested: &[f64],
+        previous: &[f64],
+        cfg: &ExecNoise,
+    ) -> Vec<f64> {
+        perturb(state_rng_seed, step_index, requested, previous, cfg)
+            .expect("fixture knobs are in range")
+    }
+
     #[test]
     fn same_seed_and_step_is_identical() {
         let req = [0.2, -0.5, 0.7];
         let prev = [0.0, 0.0, 0.0];
         let c = cfg(0.1, 25.0);
-        let a = perturb(42, 9, &req, &prev, &c);
-        let b = perturb(42, 9, &req, &prev, &c);
+        let a = perturbed(42, 9, &req, &prev, &c);
+        let b = perturbed(42, 9, &req, &prev, &c);
         assert_eq!(a, b);
     }
 
@@ -124,8 +208,8 @@ mod tests {
         let req = [0.2, -0.5, 0.7];
         let prev = [0.0, 0.0, 0.0];
         let c = cfg(0.0, 25.0);
-        let a = perturb(42, 9, &req, &prev, &c);
-        let b = perturb(42, 10, &req, &prev, &c);
+        let a = perturbed(42, 9, &req, &prev, &c);
+        let b = perturbed(42, 10, &req, &prev, &c);
         assert_ne!(a, b);
     }
 
@@ -135,7 +219,7 @@ mod tests {
         let prev = [-0.9, 0.1, 0.4];
         // Any seed/step: delay_prob = 1.0 ⇒ `u < 1.0` always holds, so previous is applied.
         for step in 0..16u64 {
-            let out = perturb(7, step, &req, &prev, &cfg(1.0, 50.0));
+            let out = perturbed(7, step, &req, &prev, &cfg(1.0, 50.0));
             assert_eq!(out, prev.to_vec());
         }
     }
@@ -144,7 +228,7 @@ mod tests {
     fn no_knobs_is_exact_passthrough() {
         let req = [0.2, -0.5, 0.7];
         let prev = [-0.9, 0.1, 0.4];
-        let out = perturb(123, 3, &req, &prev, &cfg(0.0, 0.0));
+        let out = perturbed(123, 3, &req, &prev, &cfg(0.0, 0.0));
         assert_eq!(out, req.to_vec());
     }
 
@@ -156,7 +240,7 @@ mod tests {
         let scale = slippage_bps / 10_000.0;
         // delay_prob = 0 ⇒ no sticky branch; every element is jittered.
         for step in 0..64u64 {
-            let out = perturb(99, step, &req, &prev, &cfg(0.0, slippage_bps));
+            let out = perturbed(99, step, &req, &prev, &cfg(0.0, slippage_bps));
             for (o, r) in out.iter().zip(req.iter()) {
                 assert!(
                     (o - r).abs() <= r.abs() * scale + 1e-12,
@@ -172,11 +256,67 @@ mod tests {
     fn slippage_only_perturbs_and_ignores_previous() {
         let req = [0.2, -0.5, 0.7];
         let prev = [9.9, 9.9, 9.9];
-        let out = perturb(5, 1, &req, &prev, &cfg(0.0, 100.0));
+        let out = perturbed(5, 1, &req, &prev, &cfg(0.0, 100.0));
         // No element collapsed onto `previous`; each stayed near its requested weight.
         assert_ne!(out, prev.to_vec());
         for (o, r) in out.iter().zip(req.iter()) {
             assert!((o - r).abs() <= r.abs() * 0.01 + 1e-12);
         }
+    }
+
+    /// Isolation: `slippage_bps` is held at `0.0`, which is in range, so the only knob
+    /// that can be refused is `delay_prob`. Each rejected value previously produced a
+    /// different wrong answer rather than an error: `-1.0` and `-0.1` took the
+    /// "no knobs configured" pass-through, `4.0` made every step sticky, `NaN` poisoned
+    /// the action.
+    #[test]
+    fn an_out_of_range_delay_prob_is_refused() {
+        let req = [0.2, -0.5, 0.7];
+        let prev = [9.9, 9.9, 9.9];
+        for bad in [-1.0, -0.1, 1.000_001, 4.0, f64::NAN, f64::INFINITY] {
+            let err = perturb(5, 1, &req, &prev, &cfg(bad, 0.0)).unwrap_err();
+            assert!(
+                matches!(err, ExecNoiseError::DelayProb { .. }),
+                "delay_prob = {bad} must be refused, got {err:?}"
+            );
+            assert!(err.to_string().contains(&bad.to_string()), "{err}");
+        }
+        // Both ends of the declared range still run.
+        assert_eq!(perturbed(5, 1, &req, &prev, &cfg(0.0, 0.0)), req.to_vec());
+        assert_eq!(perturbed(5, 1, &req, &prev, &cfg(1.0, 0.0)), prev.to_vec());
+    }
+
+    /// Isolation: `delay_prob` is held at `0.0`, which is in range, so the only knob that
+    /// can be refused is `slippage_bps`. There is no upper bound on a basis-point scale,
+    /// so a large finite value is deliberately still accepted.
+    #[test]
+    fn an_out_of_range_slippage_bps_is_refused() {
+        let req = [0.2, -0.5, 0.7];
+        let prev = [9.9, 9.9, 9.9];
+        for bad in [-100.0, -1e-9, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let err = perturb(5, 1, &req, &prev, &cfg(0.0, bad)).unwrap_err();
+            assert!(
+                matches!(err, ExecNoiseError::SlippageBps { .. }),
+                "slippage_bps = {bad} must be refused, got {err:?}"
+            );
+            assert!(err.to_string().contains(&bad.to_string()), "{err}");
+        }
+        assert_eq!(perturbed(5, 1, &req, &prev, &cfg(0.0, 0.0)), req.to_vec());
+        assert_ne!(
+            perturbed(5, 1, &req, &prev, &cfg(0.0, 10_000.0)),
+            req.to_vec()
+        );
+    }
+
+    /// The refusal happens before any draw, so a bad config cannot consume the step's
+    /// stream and shift the perturbation a later, valid call would produce.
+    #[test]
+    fn a_refused_config_takes_no_draw() {
+        let req = [0.2, -0.5, 0.7];
+        let prev = [0.0, 0.0, 0.0];
+        let good = cfg(0.0, 25.0);
+        let before = perturbed(42, 9, &req, &prev, &good);
+        assert!(perturb(42, 9, &req, &prev, &cfg(f64::NAN, 25.0)).is_err());
+        assert_eq!(perturbed(42, 9, &req, &prev, &good), before);
     }
 }
