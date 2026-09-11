@@ -60,8 +60,13 @@ convenience:
   build script.
 - Arena consumes an exact-pinned registry SharpeBench: `sharpebench-core`,
   `sharpebench-sim`, `sharpebench-protocol` and `sharpebench-attest` at
-  `=0.21.0` (the pin is an input to `SPEC_HASH`, so moving it rebinds the
-  attestation record and every wrapper pin). A local Bench repair does not
+  `=0.21.0`. Three of those four are inputs to `SPEC_HASH`: `build_support.rs`
+  canonicalizes `sharpebench-core`, `sharpebench-protocol` and `sharpebench-sim`
+  into `suite-dependencies.v1.toml`, so moving any of those pins rebinds the
+  attestation record and every wrapper pin. `sharpebench-attest` is a
+  dev-dependency and is **outside** the hash; `spec_hash.rs` asserts that all
+  four are exact-pinned, which is a manifest-hygiene check, not hash coverage.
+  The committed record's `note` names the three. A local Bench repair does not
   reach Arena without a Bench release and a pin bump here; record the pending
   propagation instead of claiming parity.
 - Bind provenance on a clean candidate before pushing: `python
