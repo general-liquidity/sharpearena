@@ -291,23 +291,73 @@ tests, and the job runs `npm ci && npm run build && npm test && npm run smoke-in
 against it before `npm publish`. `ci.yml` also triggers on `push: tags: ["v*"]` now, so
 the whole gate covers the tagged commit rather than only the branch it came from.
 
-What that trades away is the guarantee that the bundle matches the tag's source, which the
-rebuild used to provide by construction and provided without checking anything. It is
-replaced by `scripts/check-wasm-bundle.mjs`, which rebuilds into a temporary directory and
-compares byte for byte against the committed bundle, as a CI job on every push and pull
-request and as a release step before publish. That is affordable because the build is
-byte-reproducible from the pinned toolchain: `wasm-pack build crates/sharpearena-wasm
---target nodejs` under rustc 1.96.0 and wasm-pack 0.15.0 reproduced the committed
-`sharpearena_bg.wasm` and `sharpearena.js` hash for hash on a host that is not the one
-that committed them, so no absolute path or timestamp is embedded.
+That is the whole of A4's original point, and it is now a tautology rather than a claim:
+the bytes that publish are the bytes the suite just executed, in the same job, on the same
+checkout. Nothing else has to hold for it.
 
-A bare byte diff would not have been a diagnosis, which is the rule this review's
-companion records: a stale committed artifact and a build that is not reproducible on the
-runner produce the identical outcome. The script classifies before it fails. It loads both
-bundles and compares `spec_hash()`, `crate_version()` and the committed scenario goldens: a
-differing stamp or a missed golden names the committed bundle as stale, and identical
-stamps with identical golden output but differing bytes names the build as
-non-reproducible there. Both fail; only the remedy differs.
+What the rebuild did provide, and this does not provide by construction, is that the
+published bundle came from the tag's source. Note what that guarantee was worth as it
+stood: it was paired with never testing the result, so it bought "built from this source"
+at the price of "and nothing has run it". It is replaced by
+`scripts/check-wasm-bundle.mjs`, a CI job on every push and pull request and a release step
+before publish, which rebuilds into a temporary directory and holds the committed bundle to
+answering the same way. Checked rather than assumed is weaker than by construction, and it
+is the half that was already being checked by nobody.
+
+**The first version of this gate asserted byte equality and was wrong.** It was measured
+on one host, against a bundle committed from that same operating system, and generalized
+from there. CI refused it: on `ubuntu-latest`, at the same pinned rustc 1.96.0 and
+wasm-pack 0.15.0, the rebuild agreed with the committed bundle on the spec hash, the crate
+version and both committed scenario goldens and still differed in bytes. The classification
+did its job and said so, which is the only reason this is a corrected premise rather than a
+misdiagnosed artifact. Byte-for-byte reproducibility of wasm-pack output is a property of
+the build environment, not of the artifact, and an assertion on it is a report about which
+machine ran the gate.
+
+Keeping byte equality and pinning the one environment that can produce those bytes was
+considered and rejected. It is not free: the committed bundle would have to be built on a
+Linux host matching the runner, so no Windows or macOS contributor could regenerate it or
+run the gate locally, `scripts/build-sharpearena-wasm.sh` would be unusable for exactly the
+job it names, and the claim would rest on a second unverified premise, that one Linux
+distribution's wasm-opt matches `ubuntu-latest`'s. That premise could not be established
+here, and asserting an unestablished premise is what produced this correction in the first
+place.
+
+So the gate asserts **differential behavioral equivalence** instead. Both bundles are
+loaded and driven through every export on a fixed 44-call battery, and their returned JSON
+is compared byte for byte: `spec_hash`, `crate_version`, `dataset_synthetic` across panel
+shapes and an unknown field, `generate_scenario` across both committed goldens, all five
+distribution modes, the richness knobs, the clustering and jump-burst knobs and two
+refusal paths, `run_baseline` for all four agents with and without a full cost model plus
+the CSV path, the momentum lookback and two refusal paths, `stress_suite`, `walk_forward`
+including degenerate windows, and `tag_regime` and `replay_run` driven from a dataset each
+bundle generates for itself, so a divergence in the generator cannot hide behind an
+identical replay. The committed bundle is separately anchored against the committed
+scenario goldens, which is an absolute check rather than a comparison against a peer.
+
+This covers strictly more of the artifact than the stamps do. `SPEC_HASH` fingerprints
+seven tape-defining sources and `crate_version` moves only when the version does, so
+neither notices a change in the export layer, the baselines, the replay path or the cost
+model. Demonstrated rather than argued: an isolated copy of the workspace with one line
+changed in `crates/sharpearena-wasm/src/lib.rs`, the default momentum lookback from 10 to
+11, builds a bundle that reports the identical spec hash and crate version and reproduces
+both committed goldens, and the gate fails it on `run_baseline(momentum)` and
+`run_baseline(momentum, costs)` and nothing else. That is precisely the class byte equality
+was covering and the stamps were not.
+
+**What it no longer catches, plainly.** Two bundles that agree on every input in the
+battery are taken as equivalent. A divergence reachable only by an input the battery does
+not contain survives, and byte equality would have caught it. A bundle rebuilt from
+different source that happens to agree on all 44 calls, the two stamps and both goldens
+passes. The battery is therefore the gate's actual scope, not an illustration of it, and it
+has to grow when an export grows a branch; that obligation is written into the script
+header rather than left implicit. Byte equality is still computed and printed, so a bundle
+that does match is reported as matching; only the failure on a mismatch is gone.
+
+All three outcomes were exercised rather than reasoned about. A bundle perturbed in bytes
+that no call reads passes with the environment-difference note (exit 0), reproducing the
+CI shape. The previous committed bundle fails as stale, named by `crate_version` (exit 1).
+The mutated-source build fails with matching stamps and divergent answers (exit 1).
 
 The second-order gap is closed by a stamp in the binary rather than beside it. The wasm
 crate exports `crate_version()` (`env!("CARGO_PKG_VERSION")`), and `golden.test.js` asserts
@@ -323,12 +373,15 @@ which is exactly the drift the stamp catches and the hash cannot.
 
 `scripts/build-sharpearena-wasm.sh` was changed to call wasm-pack in the same shape. It
 used bare `wasm-bindgen`, which skips the `wasm-opt` pass wasm-pack runs, so a developer
-using the repository's own build script produced a different binary from the released one
-and would have turned the new gate red for a reason unrelated to staleness.
+using the repository's own build script produced a different optimization of the same
+source than the release ships.
 
-Not established: byte-reproducibility was measured on one host against the committed
-bundle, not across the CI matrix. The classification above exists so that if `ubuntu-latest`
-disagrees, the failure says "not reproducible here" rather than "the bundle is stale".
+Not established: that the committed bundle is the compilation of the tagged source, as
+opposed to a compilation that answers like it on 44 inputs. Byte equality would have
+established it and cannot hold across hosts; nothing here replaces it. Also not
+established, and no longer relied on, is byte reproducibility of wasm-pack across
+operating systems: it was measured on one host, CI refused it, and the assertion is gone
+rather than retried.
 
 ### A5. `mandate_breach` scores a NaN book as a clean mandate (medium-high)
 
