@@ -116,7 +116,12 @@ jobs:
         with:
           ref: ${{ needs.validate_tag.outputs.validated_commit }}
 
-      # The npm package ships the compiled WASM kernel, so build it fresh first.
+      # The npm package ships the compiled WASM kernel. This job used to delete
+      # npm/sharpearena/pkg and rebuild it, then publish the rebuild without running the
+      # npm suite over it; CI did not run on tags either, so nothing ever tested the
+      # binary users receive (A4 in docs/audits/2026-09-09/ARENA-REVIEW.md). The
+      # COMMITTED bundle is now the published one, and the steps below check it is what
+      # the tagged source builds and then run the full suite against it before publish.
       - name: Install Rust (pinned) + wasm target
         uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # 2026-08-27
         with:
@@ -126,10 +131,6 @@ jobs:
         uses: taiki-e/install-action@37f7c5781271959fb65b6b35224e28652ff2b63d # v2
         with:
           tool: wasm-pack@0.15.0
-      - name: Build the WASM kernel (nodejs target)
-        run: |
-          rm -rf npm/sharpearena/pkg
-          wasm-pack build crates/sharpearena-wasm --target nodejs --out-dir ../../npm/sharpearena/pkg --out-name sharpearena
 
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -159,11 +160,27 @@ jobs:
           fi
           echo "ok   npm manifest is at $V"
 
-      - name: Publish (skip if version exists)
+      # The committed bundle is the one about to be published, so it has to be the one
+      # this tag's source builds. A mismatch is classified (stale artifact vs a build
+      # that is not reproducible on this runner) rather than reported as a bare byte
+      # diff, because the two need different remedies.
+      - name: The committed wasm bundle is what this tag builds
+        run: node scripts/check-wasm-bundle.mjs
+
+      # The gate that the published artifact actually passed. Every one of these reads
+      # the committed pkg/: the scenario goldens, the spec-hash handshake, the crate
+      # version stamped into the .wasm, and the packed-and-installed tarball.
+      - name: Build and test the package that is about to publish
         working-directory: npm/sharpearena
         run: |
           npm ci
           npm run build
+          npm test
+          npm run smoke-install
+
+      - name: Publish (skip if version exists)
+        working-directory: npm/sharpearena
+        run: |
           V=$(node -p "require('./package.json').version")
           if npm view "@general-liquidity/sharpearena@$V" version >/dev/null 2>&1; then
             echo "@general-liquidity/sharpearena@$V already published — skipping"

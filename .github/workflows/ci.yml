@@ -3,6 +3,11 @@ name: CI
 on:
   push:
     branches: [main]
+    # Tags too. The release workflow publishes the artifacts built from the tagged
+    # commit, and until this line existed no gate ran on a tag at all: the npm bundle
+    # users receive was published without the suite that tests it ever seeing that
+    # commit (A4 in docs/audits/2026-09-09/ARENA-REVIEW.md).
+    tags: ["v*"]
   pull_request:
 
 env:
@@ -209,6 +214,38 @@ jobs:
           npm ci
           npm run build
           npm test
+      # `npm test` drives the working tree by relative path, so it says nothing about
+      # what an installer resolves BY PACKAGE NAME. This packs, installs offline from
+      # the tarball and asserts both directions of the exports map, including that the
+      # deep kernel import is refused with ERR_PACKAGE_PATH_NOT_EXPORTED rather than by
+      # a missing file (A3).
+      - name: pack · offline install · subpath refusal
+        working-directory: npm/sharpearena
+        run: npm run smoke-install
+
+  wasm_bundle:
+    name: committed wasm bundle is what this tree builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - name: Install Rust (pinned) + wasm target
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.96.0"
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack@0.15.0
+      # The release publishes the COMMITTED bundle, so this is the gate that keeps it
+      # from falling behind source. The script classifies a mismatch as a stale artifact
+      # or as a non-reproducible build before failing, because the two need different
+      # remedies and a bare byte diff does not distinguish them.
+      - run: node scripts/check-wasm-bundle.mjs
 
   python:
     name: sharpearena-py (fmt, clippy, maturin, pytest)

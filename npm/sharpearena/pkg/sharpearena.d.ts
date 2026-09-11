@@ -1,6 +1,8 @@
 /* tslint:disable */
 /* eslint-disable */
 
+export function crate_version(): string;
+
 export function dataset_synthetic(params_json: string): string;
 
 export function generate_scenario(input_json: string): string;
