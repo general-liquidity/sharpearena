@@ -20,11 +20,14 @@ and are named for it.
 | Finding | Disposition |
 |---|---|
 | A1 | Fixed. A lock document carries the instance that wrote it, and a holder removes only a file still carrying its own |
-| A2 | Fixed for aliases that share a directory, by keying ownership on a `journal_id` inside the document. Cross-directory aliases and pre-identity documents remain, and are now documented rather than silent |
+| A2 | Fixed for aliases that share a directory, by keying ownership on a `journal_id` inside the document, and, from 2026-09-11, for documents written before that field existed, whose identity is derived from their own bytes. Cross-directory aliases remain, deliberately: closing them needs a lock in a namespace the journal's owner does not control, which is a worse trade than the exposure. The reasoning is below and in `HOST-ACCOUNTING.md` |
 | A3 | Fixed. The displaced holder's identity is a value this process cannot produce for itself, and the timestamp is asserted |
 | A6 | Fixed. One directory per test, unique and removed on drop, leaks included |
 | A7 | Fixed. A save whose rename landed no longer rewinds its version, so the sole owner's I/O fault is published as `journal_unwritable` rather than as `journal_ownership_lost` |
-| A4, A5 | Not this branch. They are the Python surface and are handled separately |
+| A4 | Fixed, separately from this branch. `main` checks the retry setting of whatever client it will use, so a caller-supplied one is on the same footing as one the run builds, and the ceiling case that drives a real SDK client now runs through the check rather than around it |
+| A5 | Fixed, separately from this branch. The case's recording constructor reports a compliant setting whatever it was built with, so removing the keyword it names fails its own assertion instead of erroring inside the driver |
+| A8 | Fixed, separately from this branch. An unpriced model refuses the run before the first observation is read, and the rate card is matched by the model-identity rule rather than by a prefix walk. The assembler that publishes the number refuses the same way |
+| A9 | Fixed, separately from this branch. A replay is screened by `is_requested_policy`, the one function that also admits a fresh reply, so a record naming a served model this scaffold would refuse is dropped rather than resurrected |
 
 ## Findings
 
@@ -187,6 +190,99 @@ What remains open, measured rather than assumed:
 - The compare-and-swap is still a read then a write, not an atomic swap. That is
   unchanged, and it is still not a concurrency control.
 
+**Disposition of the pre-identity half: fixed, 2026-09-11.** A document that
+names no identity is no longer given a fresh one. Its identity is a digest of
+its own bytes, `sha256("sharpebench.gateway-journal-derived-identity.v1" ||
+document)` truncated to the same 32 hexadecimal characters a fresh identity
+uses, so every name for one such document derives the same value, `acquire`
+takes its lock before anything is written, and exactly one of two gateways
+opening it concurrently proceeds. The winner writes that derived value into the
+document, which is what keeps the lock's name correct once the save changes the
+bytes it was derived from. The direction this can be wrong in is over-refusal:
+two byte-identical documents that are genuinely separate journals, sharing one
+directory, derive one identity and the second gateway is refused.
+
+Three tests pin it, and they separate the two causes involved.
+`a_second_name_for_one_legacy_journal_document_is_refused_the_lock` covers the
+concurrent window, where neither gateway has written yet: the alias's spelling
+lock is shown free first and the refusal is required to name
+`sb-gateway-journal-<derived>.lock`, so the spelling lock is not what refused,
+and nothing has been written, so no binding or version cause is available.
+`a_legacy_journal_document_is_bound_to_the_identity_derived_from_its_bytes`
+covers the assignment: a fresh identity cannot equal a digest of the bytes, and
+the identity is asserted again after a save that changes those bytes, so it
+cannot be being re-derived rather than stored. The gateway-level
+`a_legacy_journal_document_admits_one_gateway_under_two_names` requires the
+identity the document ends up carrying to be the value derived before either
+gateway opened, which separates "the first gateway wrote some identity" from
+"the first gateway wrote the derived one".
+
+Mutation, the identity no longer derived (`document_identity` back to
+`journal_id_on_disk` alone). Observed `151 passed; 2 failed` in the library
+suite and `2 passed; 1 failed` in the integration file:
+
+```
+panicked at crates\sharpebench-harness\src\gateway_journal.rs:1749:9:
+a document that names no identity is still a document to own
+panicked at crates\sharpebench-harness\src\gateway_journal.rs:1795:9:
+assertion `left == right` failed: the document is given the identity its lock was taken on, not a fresh one
+  left: Some("db94182c87f062fe5f26c241bd4f8626")
+ right: Some("700780fe3b3063a7d5039cc835a46242")
+panicked at crates\sharpebench-harness\tests\journal_ownership_review.rs:280:5:
+assertion `left == right` failed: the document is given the identity derived from it, not a fresh one
+  left: Some("9e57acf4cf936ea955ef312cfcfa8805")
+ right: Some("29b7fefac91feda8504d0ebde51779c0")
+```
+
+A second mutation, the lock still taken on the derived identity but a fresh one
+written into the document, kills the two assignment tests alone and leaves the
+lock test green (`152 passed; 1 failed`):
+
+```
+panicked at crates\sharpebench-harness\src\gateway_journal.rs:1795:9:
+assertion `left == right` failed: the document is given the identity its lock was taken on, not a fresh one
+  left: Some("ec934b06a28834995684127934a54895")
+ right: Some("700780fe3b3063a7d5039cc835a46242")
+```
+
+**Disposition of the cross-directory half: not fixed, and not intended to be.**
+The exposure is real and was re-measured after the change above:
+`ids equal: true`, `cross-directory alias: first=true second=true`, with the two
+lock paths differing only in their parent (`.../a/sb-gateway-journal-<id>.lock`
+against `.../b/sb-gateway-journal-<id>.lock`). Closing it needs one lock per
+document wherever the document is reached from, which means either a lock
+outside the journal's directory or a lock on the file itself. Both were
+evaluated:
+
+- **A lock on the journal file itself**, through `std::fs::File::lock`, is the
+  only option that is keyed on the document with no namespace at all. It is
+  incompatible with the way the journal persists, measured on this host with a
+  standalone probe against the same operations `save` performs: with the lock
+  held, `save`'s own read of the on-disk version fails, `The process cannot
+  access the file because another process has locked a portion of the file. (os
+  error 33)`; the rename over the locked journal then succeeds anyway, and a
+  handle opened on the journal's name immediately afterwards takes the lock,
+  because the rename replaced the entry with a different file. So it breaks the
+  sole owner's own save path and protects nothing past the first save.
+- **A lock in a shared namespace**, a system temp or a per-user state
+  directory, named `sb-gateway-journal-<id>.lock` from the identity alone. The
+  name leaks nothing: the identity is a token, not a path, and carries no
+  journal content. The cost is what it would do to the common case. A system
+  temp is swept by age on many hosts, so a long sweep's lock could be removed
+  while it is held, silently readmitting a second gateway for every journal, to
+  close an exotic one. A per-user directory is not swept, but it is per user,
+  so it does not separate the two users a cross-directory hard link on a shared
+  host would need separating, and it puts durable state outside the journal's
+  own directory that an operator has to know about to take a lock over. Both
+  need a fallback where the directory is absent or unwritable, and a fallback
+  means the guarantee is conditional and silently missing rather than stated.
+
+The exposure this would buy is an operator deliberately hard linking a money
+journal into a second directory and running two gateways over it. The remedy
+weakens ownership for every journal to close that. It is not built, and the
+limit is stated in `JournalLock`'s own documentation, in `HOST-ACCOUNTING.md`
+and in the book instead.
+
 The test is inverted and renamed
 `two_names_for_one_journal_document_admit_one_gateway`. Two causes could refuse
 the second open, the spelling lock and the document lock, so the test shows the
@@ -315,6 +411,34 @@ spawns `python llm_agent.py <model>`, which enters through `if __name__ ==
 uses the bypass deliberately (`test_llm_agent_budget.py:183-193`). Moving the
 assertion into `main` would close the hole without changing that test's shape.
 
+**Disposition: fixed, 2026-09-11.** `main` calls `assert_no_provider_retries`
+on whatever client it will use, supplied or built, so there is no longer a path
+to `client.messages.create` with the retry policy unread. The guarantee, either
+the ceiling bounds provider requests or the run does not start, now covers the
+caller-supplied path as well as the production one.
+
+A supplied client is checked rather than refused. The guarantee is about how the
+client behaves and not about who constructed it, and the case that observes the
+SDK's own retry behaviour has to hand in a real `anthropic.Anthropic` bound to a
+stand-in transport; refusing every supplied client would push that case back
+onto a path with no check on it, which is the shape being removed. Because the
+client it supplies is built with the shim's own setting, that case now passes
+through the check instead of around it, which is what this finding asked for.
+`build_client` keeps its own check: it is reachable on its own, and a new case
+pins it so it cannot be deleted with the suite green.
+
+A new case drives a caller-supplied client that accepts `max_retries` and
+reports two. Four causes could produce a refusal there without the check on that
+path, and each is excluded: a stand-in too thin to dispatch (`Ignoring` answers
+normally, and a compliant client of the same shape completes a run and
+dispatches in the same case), a client the run built for itself (the constructor
+is replaced by one that fails the test if it is called), an exhausted allowance
+(the ledger is asserted empty and the message is the check's), and the supplied
+path refusing anything at all (the compliant control is supplied the same way).
+Deleting the call in `main` fails that case and nothing else, on its own
+`assertRaises`; deleting the call in `build_client` fails the helper's case and
+nothing else. See section 6 of [inherited repairs](INHERITED-REPAIRS.md).
+
 ### A5. `test_the_client_the_run_uses_disables_the_sdk_automatic_retries` does not reach its own assertion when its named cause is broken
 
 Severity: low. The regression gate still holds; the test's stated reason does
@@ -341,6 +465,24 @@ recording constructor so it reports zero regardless, would isolate it.
 Coverage in aggregate is not affected: mutating `PROVIDER_MAX_RETRIES` to 2
 fails three tests, and deleting the guard call fails two others, both for their
 named reasons.
+
+**Disposition: fixed, 2026-09-11.** The case's recording constructor now sets
+the returned stand-in's effective setting to `PROVIDER_MAX_RETRIES` whatever
+keyword it was built with, so the runtime check cannot be what refuses and the
+only thing left to answer the assertion is the keyword the run passed. Removing
+`max_retries=` from `build_client` gives `FAILED (failures=1)` at
+`self.assertEqual(seen[0].get("max_retries"), 0)` with `AssertionError: None !=
+0`, in place of the `ERROR` raised inside `drive` this finding reports. Reading
+the stand-in's setting from the constant rather than writing a literal keeps the
+isolation under a mutation of the constant itself: with `PROVIDER_MAX_RETRIES`
+at 2 the check still passes and the case fails on its own assertion, 2 against
+the literal 0 it asserts.
+
+The suite's default stand-in client now reports the compliant setting, because
+A4's repair means every client `main` is handed is checked; the three classes
+that vary the setting do so deliberately. The same one-line change was needed in
+`test_llm_agent_identity.py`, whose cases are about the model-identity rule and
+would otherwise be refused before reaching it.
 
 ### A6. The gateway regressions are not hermetic, and an inherited journal already produced a misleading failure
 
@@ -462,6 +604,76 @@ panicked at crates\sharpebench-harness\src\gateway.rs:2885:9:
   left: JournalOwnershipLost
  right: JournalUnwritable
 ```
+
+### A8. An unpriced model reports its calls as free
+
+Severity: medium. A plausible wrong number published as what a run spent, on the
+producer behind the money column.
+
+Found while repairing A4, reported in section 6 of
+[inherited repairs](INHERITED-REPAIRS.md) and left for a decision rather than
+fixed silently.
+
+`examples/llm-agent/llm_agent.py:153-157`
+
+```python
+def price_for(model):
+    for prefix, p in PRICING.items():
+        if model.startswith(prefix):
+            return p
+    return (0.0, 0.0)
+```
+
+Two fail-open behaviours in five lines.
+
+The fallback answers a model the table does not name with a zero rate card, so
+every call of such a run priced at nothing, `STATS["cost_usd"]` stayed 0.0 and
+that zero was what the field reported as spend. For a benchmark that prices what
+an agent spent, a plausible zero is worse than an absence: a reader has no way
+to tell it from a run that really cost nothing.
+
+The prefix walk is the model-identity defect in the accounting. It takes any
+continuation, so a model whose name extends a priced one is billed at the other
+model's card: `claude-opus-5-1` prices as `claude-opus-5`, at half the input
+rate, and a table gaining a `claude-haiku-4` would price every
+`claude-haiku-4-5` at whichever key `dict` iteration reached first. That is the
+same shape as the served-id prefix acceptance already repaired in
+`effective_model`, in the file that repaired it.
+
+`paper/evidence/assemble_llm_field.py:39-44` carried an independent copy of both,
+and it is the script that writes the published `cost_usd`.
+
+**Disposition: fixed, 2026-09-11.** Refusal, not a recorded unavailability, and
+the reasoning is in section 7 of [inherited repairs](INHERITED-REPAIRS.md). The
+rate card is matched by `is_dated_snapshot_of`, the rule that decides model
+identity, and an unpriced model raises `UnpricedModel`. `main` establishes it
+through `assert_model_is_priced` before the first observation is read, beside
+the retry guard, so the refusal costs nothing rather than arriving after a field
+has been billed. The assembler refuses the same way, as `SystemExit`, which is
+how every other incompleteness in that script refuses.
+
+### A9. A replay is screened by a shorter rule than a fresh answer
+
+Severity: low, and bounded. Reachable only through a cache file this scaffold
+did not write.
+
+Also found while repairing A4 and reported with it.
+`effective_model` refuses a served id that is not the requested policy, and
+`record_decision` stamps `model_effective` on every record, but `load_cache`
+screened a record on `scaffold_version`, `request_sha256` equal to its own key
+and `model_requested`, and not on `model_effective`. A record naming a served
+model this scaffold would refuse today was replayed rather than dropped.
+
+The bound is real: this scaffold cannot write such a record, so it takes a
+foreign or hand-edited cache file, and the request digest must still match a
+request for the requested model. It is the same shape as A4 either way, a check
+on the writing path and not on the reading one, and a replayed decision is
+published exactly as a fresh one is.
+
+**Disposition: fixed, 2026-09-11.** The rule moved into `is_requested_policy`,
+which `effective_model` and `load_cache` both call, so the replay screen is the
+rule rather than a copy of it that can drift. A record whose `model_effective`
+is absent or null is dropped too, the same absence `effective_model` refuses.
 
 ## Claims checked and found sound
 
@@ -590,21 +802,47 @@ The three stated limits are accurate as far as they go:
 - A crashed holder needs an explicit take-over. Correct; there is no automatic
   break anywhere in `JournalLock`.
 - The ceiling's guarantee is conditional on the runtime assertion. Correct for
-  the production entry point; see A4 for the path where the assertion is absent.
+  the production entry point. It was absent on the caller-supplied client path,
+  which A4 records and which is now fixed: `main` checks whatever client it will
+  use, so the assertion covers every path that can reach a provider request from
+  this module's entry point.
 
 Silently unprevented and undocumented:
 
 1. One journal reached through two directory entries, defeating both the lock
    and the compare-and-swap (A2). **Closed for aliases sharing a directory on
-   2026-09-11, and what remains, cross-directory aliases and pre-identity
-   documents, is now stated in `JournalLock`'s own documentation, in
-   `HOST-ACCOUNTING.md` and in the book.**
+   2026-09-11, pre-identity documents included. Cross-directory aliases remain
+   open deliberately, with the reasoning and the measurements above, and are
+   stated in `JournalLock`'s own documentation, in `HOST-ACCOUNTING.md` and in
+   the book.**
 2. A takeover leaving the path unlocked once the displaced process exits
    normally (A1). **Closed 2026-09-11.**
 3. The compare-and-swap being a read then a write rather than an atomic swap,
    so it is not a concurrency control even where it does fire (A2, last
-   paragraph). **Still true, and now stated in the limits rather than left to
-   be inferred from "second line of defence".**
+   paragraph). **Still true. It is not redundant either: a takeover deliberately
+   adds a second writer to a journal whose first holder may be alive, and
+   nothing in `save` consults a lock, so the version check is what refuses that
+   holder's next write. Pinned on 2026-09-11 by
+   `a_displaced_holder_is_refused_by_the_version_check_once_the_taker_writes`,
+   which rules out an I/O fault by requiring a `Conflict` carrying both
+   versions, and rules out the lock by having the same displaced holder's
+   earlier save land while its lock is already displaced: the only thing that
+   changes between the two is the taker having written in between. Mutation, the
+   version comparison removed: `151 passed; 2 failed`, this test and
+   `a_second_gateway_cannot_spend_the_journal_the_first_owns`, where removing it
+   used to fail the second alone.**
+
+   ```
+   panicked at crates\sharpebench-harness\src\gateway_journal.rs:1869:14:
+   the displaced holder's next write is refused: ()
+   ```
+
+   Making it atomic was considered and not done. No portable file-system
+   operation renames a file only if its target still carries a given version, so
+   an atomic swap would need a per-version claim file taken with `create_new`,
+   which a crashed writer leaves behind: a benign fault turned into a journal
+   its own owner cannot advance without an operator, to narrow a window the lock
+   already covers.
 4. The ceiling's dependence on sequential spawning is documented in the shim's
    own docstring (`llm_agent.py:298-301`) but not in the verification record's
    limits, where the other conditional guarantees are stated.
