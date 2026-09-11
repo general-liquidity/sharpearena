@@ -21,6 +21,7 @@ between episodes.
 
 from __future__ import annotations
 
+import math
 from typing import Callable, Optional, Sequence
 
 import gymnasium as gym
@@ -197,6 +198,14 @@ class AdaptiveScheduler:
     """
 
     def __init__(self, levels: Sequence[int], *, prior: float = 0.5) -> None:
+        prior = float(prior)
+        # `raise`, not `assert`: the domain is load-bearing and `assert` is stripped under
+        # `python -O`. A NaN prior loses every `>` in :meth:`select_next`, so the schedule
+        # silently pins to the first level; a prior outside [0, 1] makes `p * (1 - p)`
+        # negative, which the same scan cannot rank. Mirrors the Rust
+        # ``AdaptiveCurriculum::with_prior`` refusal.
+        if not math.isfinite(prior) or not 0.0 <= prior <= 1.0:
+            raise ValueError(f"prior must be a finite rate in [0, 1] (got {prior})")
         deduped: list[int] = []
         for x in levels:
             xi = int(x)
@@ -207,7 +216,7 @@ class AdaptiveScheduler:
         self._levels = deduped
         self._solves: dict[int, int] = {x: 0 for x in deduped}
         self._attempts: dict[int, int] = {x: 0 for x in deduped}
-        self._prior = float(prior)
+        self._prior = prior
 
     @property
     def levels(self) -> list[int]:

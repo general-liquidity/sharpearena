@@ -46,7 +46,12 @@ touching the held-out band. The split is produced by
 `train_test_seeds(n_train=256, n_test=256, seed_start=0, gap=10000)`, which raises
 `ValueError` rather than returning overlapping bands. The check is a `raise`, not an
 `assert`, so it is still there under `python -O`; the Rust `train_test_split` refuses the
-same two cases with a typed `SplitError` in every build profile.
+same two cases with a typed `SplitError` in every build profile. Asking Rust for zero
+held-out levels is accepted and means *unbounded*, not *empty*: `num_levels == 0` is
+`ScenarioSpec`'s Procgen convention, so the held-out family spans the seed space above the
+gap (still disjoint from train). Python's `train_test_seeds` materializes a `range` and so
+returns an empty list for the same argument. Report the held-out count you actually
+evaluated.
 
 Disjoint is not secret. Because scenarios are deterministic, publishing a bounded
 held-out band lets an adversary enumerate it: the paper's predictability probe
@@ -211,12 +216,14 @@ print(leaderboard_markdown(run_baselines(n_symbols=4, n_days=120, seeds=range(16
 
 | Rank | Policy | Deflated Sharpe | pass^k rate | Mean return |
 |---|---|---|---|---|
-| 1 | kelly_vol_target | 1.0000 | 0.75 | 0.000337 |
-| 2 | equal_weight_long | 1.0000 | 0.62 | 0.000356 |
+| 1~ | kelly_vol_target | 1.0000 | 0.75 | 0.000337 |
+| 2~ | equal_weight_long | 1.0000 | 0.62 | 0.000356 |
 | 3 | min_variance | 0.9849 | 0.44 | 0.000240 |
 | 4 | flat | 0.0007 | 0.00 | 0.000000 |
-| 5 | momentum | 0.0000 | 0.00 | -0.000869 |
-| 6 | max_sharpe | 0.0000 | 0.06 | -0.001002 |
+| 5= | momentum | 0.0000 | 0.00 | -0.000869 |
+| 5= | max_sharpe | 0.0000 | 0.06 | -0.001002 |
+
+`=` exact tie in the ranked estimator (order within a tie is arbitrary); `~` separated only beyond the four displayed decimals. Neither is a claim of statistical separation; use `show_ci=True` and `pairwise_significance`.
 
 Read this honestly: **on Calm, drift is free deflated Sharpe, and rank-eligibility is
 what the baselines fail.** The long-drift policies saturate the deflated Sharpe on the
@@ -240,8 +247,10 @@ near an annualized Sharpe of 18 on daily bars, a bar nothing clears.
 | 2 | kelly_vol_target | 0.0277 | 0.31 | 0.000118 |
 | 3 | min_variance | 0.0024 | 0.19 | 0.000051 |
 | 4 | flat | 0.0007 | 0.00 | 0.000000 |
-| 5 | max_sharpe | 0.0000 | 0.00 | -0.000928 |
-| 6 | momentum | 0.0000 | 0.00 | -0.000844 |
+| 5~ | max_sharpe | 0.0000 | 0.00 | -0.000928 |
+| 6~ | momentum | 0.0000 | 0.00 | -0.000844 |
+
+`=` exact tie in the ranked estimator (order within a tie is arbitrary); `~` separated only beyond the four displayed decimals. Neither is a claim of statistical separation; use `show_ci=True` and `pairwise_significance`.
 
 ### `SharpeArena/Extreme-v1` (n_symbols=4, n_days=120, seeds=range(16))
 
@@ -251,8 +260,10 @@ near an annualized Sharpe of 18 on daily bars, a bar nothing clears.
 | 2 | equal_weight_long | 0.0234 | 0.06 | 0.000473 |
 | 3 | kelly_vol_target | 0.0029 | 0.12 | 0.000139 |
 | 4 | flat | 0.0007 | 0.00 | 0.000000 |
-| 5 | momentum | 0.0000 | 0.06 | -0.000306 |
-| 6 | max_sharpe | 0.0000 | 0.00 | -0.001578 |
+| 5~ | momentum | 0.0000 | 0.06 | -0.000306 |
+| 6~ | max_sharpe | 0.0000 | 0.00 | -0.001578 |
+
+`=` exact tie in the ranked estimator (order within a tie is arbitrary); `~` separated only beyond the four displayed decimals. Neither is a claim of statistical separation; use `show_ci=True` and `pairwise_significance`.
 
 The deflated Sharpe to beat collapses from saturated on Calm to ~0.1 on Hard and ~0.02
 on Extreme, and the **pass^k rate degrades monotonically with difficulty** for the long

@@ -121,6 +121,49 @@ def test_periods_per_year_moves_the_deflation_bar_with_the_kernel():
 
 
 @requires_binding
+def test_python_bootstrap_defaults_are_the_native_defaults():
+    """The four ``confidence`` defaults restate pyo3 signature defaults; drive the pair.
+
+    ``DEFAULT_N_BOOT``, ``DEFAULT_RESAMPLE_SEED``, ``DEFAULT_ALPHA`` and
+    ``DEFAULT_PERIODS_PER_YEAR`` are written once in ``confidence.py`` and once more in
+    the ``#[pyo3(signature = ...)]`` defaults of ``bootstrap_dsr_ci`` / ``paired_dsr_diff``.
+    Asserting one literal against the other passes for any value written on both sides.
+    This calls the native function with the arguments omitted, so the engine supplies its
+    own defaults, and compares against the Python constants passed explicitly. The
+    perturbation leg establishes that each argument moves this fixture, so agreement is
+    evidence of a shared value rather than of an inert parameter.
+    """
+    from sharpearena.confidence import (
+        DEFAULT_ALPHA,
+        DEFAULT_N_BOOT,
+        DEFAULT_PERIODS_PER_YEAR,
+        DEFAULT_RESAMPLE_SEED,
+    )
+    from sharpearena.sharpearena_py import bootstrap_dsr_ci as native_bootstrap_dsr_ci
+    from sharpearena.sharpearena_py import paired_dsr_diff as native_paired_dsr_diff
+
+    per_seed = [_sharpe_series(0.08, 40, s) for s in range(12)]
+    other = [_sharpe_series(0.05, 40, s + 0.5) for s in range(12)]
+    stated = (DEFAULT_N_BOOT, DEFAULT_RESAMPLE_SEED, DEFAULT_ALPHA, DEFAULT_PERIODS_PER_YEAR)
+
+    assert json.loads(native_bootstrap_dsr_ci(per_seed, 6)) == json.loads(
+        native_bootstrap_dsr_ci(per_seed, 6, *stated)
+    )
+    assert json.loads(native_paired_dsr_diff(per_seed, other, 6)) == json.loads(
+        native_paired_dsr_diff(per_seed, other, 6, *stated)
+    )
+
+    # Every one of the four moves this fixture, so the agreement above is not vacuous.
+    for index, moved in enumerate((DEFAULT_N_BOOT + 500, DEFAULT_RESAMPLE_SEED + 1,
+                                   DEFAULT_ALPHA * 2, DEFAULT_PERIODS_PER_YEAR / 2)):
+        perturbed = list(stated)
+        perturbed[index] = moved
+        assert json.loads(native_bootstrap_dsr_ci(per_seed, 6, *perturbed)) != json.loads(
+            native_bootstrap_dsr_ci(per_seed, 6, *stated)
+        ), f"argument {index} does not move the fixture, so it cannot witness its default"
+
+
+@requires_binding
 def test_strong_positive_fixture_saturates_both_estimators():
     per_seed = [_steady_seed(s, 120) for s in range(8)]
     pooled = [x for s in per_seed for x in s]

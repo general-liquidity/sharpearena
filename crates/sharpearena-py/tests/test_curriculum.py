@@ -64,6 +64,22 @@ def test_generated_sequential_and_chained_seeds():
 # -- adaptive scheduler (pure logic, no binding required) ------------------------
 
 
+@pytest.mark.parametrize("prior", [float("nan"), 5.0, -0.5, float("inf")])
+def test_adaptive_scheduler_refuses_an_unrankable_prior(prior):
+    # NaN loses every ">" comparison in select_next, so an unvalidated NaN prior pins the
+    # schedule to the first level; an out-of-range prior makes p*(1-p) negative. `raise`,
+    # not `assert`, so the refusal survives `python -O`.
+    with pytest.raises(ValueError, match=r"prior must be a finite rate in \[0, 1\]"):
+        AdaptiveScheduler([5, 6, 7], prior=prior)
+
+
+@pytest.mark.parametrize("prior", [0.0, 0.5, 1.0])
+def test_adaptive_scheduler_accepts_the_boundary_priors(prior):
+    # In-domain: every unseen weight is zero at the boundaries and the documented
+    # lowest-index tie-break decides.
+    assert AdaptiveScheduler([5, 6, 7], prior=prior).select_next() == 5
+
+
 def test_adaptive_scheduler_zpd_weighting():
     sched = AdaptiveScheduler([10, 20, 30])
     for _ in range(4):

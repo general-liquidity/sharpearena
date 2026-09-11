@@ -19,6 +19,7 @@ from gymnasium import spaces
 
 from .sharpearena_py import TradingEnv
 from ._action_validation import validate_weight_limit, validated_action
+from ._seed_bands import EVAL_SEED_BASE as _EVAL_SEED_BASE
 
 # Action label carried alongside the (signed) target weight. Sizing lives in the
 # weight; the label is descriptive and scored for calibration on the Rust side.
@@ -31,11 +32,6 @@ def _action_label(weight: float) -> str:
     if weight < 0.0:
         return _SELL
     return _HOLD
-
-
-# Eval scenarios live in a disjoint seed band so a held-out eval set never overlaps
-# training. Must match ``dataset.EVAL_SEED_BASE``.
-_EVAL_SEED_BASE = 1_000_000
 
 
 class SharpeArenaEnv(gym.Env):
