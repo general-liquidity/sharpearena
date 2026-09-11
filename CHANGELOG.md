@@ -11,6 +11,7 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 ## [Unreleased]
 
 ### Changed
+- docs: the mirrored audit records now include the checkable-facts round, one shared rate card and a gated gateway test-evidence table.
 - docs: the mirrored audit records now include the fail-open sweep, an unpriced model refused, a rate card no longer chosen by prefix, and a replay screened by the identity rule.
 - docs: the mirrored audit records now include the adversarial verification of the money-accounting repairs and the journal-ownership defects it found.
 - docs: the mirrored audit records now include the money-accounting repairs, one writer per gateway journal, a settlement that fails closed, and a call ceiling that bounds provider requests.
