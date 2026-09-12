@@ -216,7 +216,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "91bde5ac975753a4679491ca7670d754ba372707",
+  "generated_at_head": "9beb25b62f2620e43e75351ba29c4d88f38c0786",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -354,7 +354,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/episode_outcomes.py",
-      "sha256": "c0f9b8fa314eea13df39c12e4923e15c988e7b0b213a85b89e9132af4ef1cdde"
+      "sha256": "26f5cc3b6ca851b1f2fa598b104e35c2afca015ada93d46d6f7f5411b624756e"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/eval_seeds.py",
@@ -562,7 +562,7 @@
     },
     {
       "path": "crates/sharpearena-py/src/lib.rs",
-      "sha256": "c4e4431ff63bf7cd58c4df50ab31e2f7e22520a4a96ba0af5c19eb7147051211"
+      "sha256": "e75e7411c373c0207a50a6bf9c0ebaf4088c8ba0ac231ff2652dfd399daf58eb"
     },
     {
       "path": "crates/sharpearena-wasm/Cargo.toml",
@@ -838,7 +838,7 @@
     },
     {
       "path": "scripts/check-optimized-guards.py",
-      "sha256": "df2520f03b45e15a3e0ee453695d013dfa4b16cde7c5a6c2be5e5ac3cad2e474"
+      "sha256": "5234551b375072e971cb0c874eb22aea46d0325c61e2abde879cf8e8333e88f1"
     },
     {
       "path": "scripts/check-packaged-consumer.py",
@@ -878,6 +878,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "0c6eb6dc974db7970495cea3712b94fc65355b8223989e417fecae9a3912e611",
+  "source_snapshot_sha256": "cbf608296aea0ed4b7f62769499037d114187ba3a0b0bf05dde3abbe61f5aba8",
   "validator": "paper/src/check-provenance.py"
 }
