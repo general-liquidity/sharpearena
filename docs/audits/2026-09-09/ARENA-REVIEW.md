@@ -1162,7 +1162,7 @@ unenforced for `run_baseline`, `replay_run`, `walk_forward`, `stress_suite` and
 `tag_regime`. The npm side has the same shape: `golden.test.js` exercises only
 `generate_scenario`, and `smoke.test.js` asserts shape and determinism rather than values.
 
-**Disposition: repaired for the backtest path; the three remaining exports stand.**
+**Disposition: repaired for the backtest path, then for the three remaining exports.**
 
 `contract/attestation/backtest-goldens.json` is the scenario goldens' counterpart for
 execution and replay: two `run_baseline` entries and two `replay_run` entries, each with
@@ -1204,10 +1204,49 @@ the arena crate's own modules does not. A number that moves here is either a
 of those are the kind of thing a reader of the changelog needs told. Regenerating the
 fixtures to make the suite green would record the opposite.
 
-`walk_forward`, `stress_suite` and `tag_regime` remain uncovered by a committed
-cross-runtime fixture. They were named in the finding alongside the backtest path; the
-backtest path is the one the recompute-to-verify claim rests on, and the other three are
-left open rather than quietly folded in.
+`walk_forward`, `stress_suite` and `tag_regime` are now covered the same way, by
+`contract/attestation/kernel-goldens.json`: three `walk_forward` entries, two
+`stress_suite` entries and four `tag_regime` entries, each with the exact kernel input,
+the FNV-1a/64 fingerprint of the bytes it must return and a committed pre-hash fixture.
+The same three runtimes read it. `kernel_goldens_reproduce_natively` drives the host
+build, `exported_kernel_goldens_reproduce_under_wasm32` drives the `#[wasm_bindgen]`
+exports as WebAssembly, and `npm/sharpearena/test/golden.test.js` drives the committed
+`pkg/sharpearena_bg.wasm`. A `tag_regime` entry's dataset is the kernel's own
+`dataset_synthetic` output passed verbatim, the way a replay entry's is, so the pin is on
+the regime tagging rather than on a re-serialization of the panel. The four regime entries
+are chosen to land on all three labels, and `regime_goldens_cover_every_label` keeps that a
+property of the set rather than a coincidence of the seeds: a set that tags everything the
+same way pins one branch of a three-way classifier while reading as pinning the classifier.
+
+What covered those three before was a shape assertion. `stress_suite_and_walk_forward_and_regime`
+and the npm bridge test check array lengths, the first stress panel's name and that the
+regime label is one of three strings, all of which stay green while every number behind
+them differs between runtimes. That is what the mutation check shows: perturbing one value
+in each export path in turn (the `end` field `walk_forward` reports, the seed
+`Dataset::stress_suite` is called with, the `Regime::Bull` / `Regime::Bear` label mapping)
+fails the new fixtures in all three runtimes on every round, and leaves every pre-existing
+test in all three suites green on every round, including the scenario and backtest goldens
+driven through a bundle rebuilt from the perturbed source.
+
+**No cross-runtime arithmetic mismatch was demonstrated for these three either, before or
+after.** The fingerprints were recorded from the shipped bundle and then reproduced by the
+host build and by a freshly compiled wasm32 build, so this closes an evidence gap and fixes
+no wrong number, exactly as the backtest round did.
+
+These entries carry the same property and the same standing rule as the backtest ones.
+They pin output bytes only, not `SPEC_HASH`, not a wasm digest, nothing a bundle rebuild
+moves: `walk_forward`, `tag_regime` and `Dataset` (whose `stress_suite` builds the named
+adversarial panels) all come from `sharpebench-sim`, pinned at `=0.21.0`, and the facade's
+only contribution is its parameter translation. **If these fixtures ever move, that is a
+finding, not something to regenerate.** A moved number here is a `sharpebench-sim` pin move
+or a facade translation change, and both belong in the changelog.
+
+What remains open is the same thing that remains open for the backtest entries: nine
+entries are nine inputs rather than these exports' whole domain, so a divergence reachable
+only by an input outside them stays invisible in the same way. `tag_regime` is the weakest
+of the three in that respect, because its output is one of three short strings, so an
+arithmetic difference that does not cross a classification boundary on these four inputs
+does not move its fingerprint.
 
 ### T2. The spec-hash record's file-set leg
 

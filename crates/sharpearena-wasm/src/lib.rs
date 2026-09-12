@@ -390,6 +390,170 @@ mod goldens {
         }
     }
 
+    /// The committed pre-hash canonical JSON per **kernel** golden name, for the three
+    /// exports the backtest goldens do not reach. Same role as [`pre_hash_fixture`].
+    pub fn kernel_pre_hash_fixture(name: &str) -> &'static str {
+        match name {
+            "wf_200d_warmup20_test60_step60" => include_str!(
+                "../../sharpearena/contract/attestation/pre-hash/walk-forward-200d-w20-t60-s60.json"
+            ),
+            "wf_365d_warmup30_test45_step20" => include_str!(
+                "../../sharpearena/contract/attestation/pre-hash/walk-forward-365d-w30-t45-s20.json"
+            ),
+            "wf_120d_warmup20_test25_step25" => include_str!(
+                "../../sharpearena/contract/attestation/pre-hash/walk-forward-120d-w20-t25-s25.json"
+            ),
+            "stress_suite_seed0" => include_str!(
+                "../../sharpearena/contract/attestation/pre-hash/stress-suite-seed0.json"
+            ),
+            "stress_suite_seed7" => include_str!(
+                "../../sharpearena/contract/attestation/pre-hash/stress-suite-seed7.json"
+            ),
+            "regime_2x120_seed0_full" => include_str!(
+                "../../sharpearena/contract/attestation/pre-hash/tag-regime-2x120-seed0-0-120.json"
+            ),
+            "regime_2x120_seed7_full" => include_str!(
+                "../../sharpearena/contract/attestation/pre-hash/tag-regime-2x120-seed7-0-120.json"
+            ),
+            "regime_2x120_seed3_full" => include_str!(
+                "../../sharpearena/contract/attestation/pre-hash/tag-regime-2x120-seed3-0-120.json"
+            ),
+            "regime_2x120_seed11_tail" => include_str!(
+                "../../sharpearena/contract/attestation/pre-hash/tag-regime-2x120-seed11-20-60.json"
+            ),
+            other => panic!("kernel golden {other:?} has no committed pre-hash fixture"),
+        }
+    }
+
+    /// One committed kernel golden: the `walk_forward`, `stress_suite` and `tag_regime`
+    /// counterpart of [`BacktestGolden`].
+    ///
+    /// A `TagRegime` entry's dataset is the kernel's own `dataset_synthetic` output for
+    /// `dataset_params`, passed verbatim, for the reason the replay entries do the same:
+    /// it keeps the pin on the regime tagging rather than on a re-serialization of the
+    /// price panel, and it makes the entry identical work in every runtime.
+    pub enum KernelGolden {
+        WalkForward {
+            name: String,
+            params: String,
+            fingerprint: u64,
+        },
+        StressSuite {
+            name: String,
+            params: String,
+            fingerprint: u64,
+        },
+        TagRegime {
+            name: String,
+            dataset_params: String,
+            window: String,
+            fingerprint: u64,
+        },
+    }
+
+    impl KernelGolden {
+        pub fn name(&self) -> &str {
+            match self {
+                Self::WalkForward { name, .. }
+                | Self::StressSuite { name, .. }
+                | Self::TagRegime { name, .. } => name,
+            }
+        }
+
+        /// Drive the kernel call this golden pins, returning its exact output bytes.
+        /// The wasm32 leg deliberately does not use this: it goes through the
+        /// `#[wasm_bindgen]` exports instead, so the exported surface is what is pinned.
+        #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+        pub fn invoke(&self) -> Result<String, String> {
+            match self {
+                Self::WalkForward { params, .. } => super::walk_forward_json(params),
+                Self::StressSuite { params, .. } => super::stress_suite_json(params),
+                Self::TagRegime {
+                    dataset_params,
+                    window,
+                    ..
+                } => {
+                    let dataset = super::dataset_synthetic_json(dataset_params)?;
+                    super::tag_regime_json(&format!(
+                        "{{\"dataset\":{dataset},\"window\":{window}}}"
+                    ))
+                }
+            }
+        }
+
+        pub fn fingerprint(&self) -> u64 {
+            match self {
+                Self::WalkForward { fingerprint, .. }
+                | Self::StressSuite { fingerprint, .. }
+                | Self::TagRegime { fingerprint, .. } => *fingerprint,
+            }
+        }
+    }
+
+    /// The committed kernel goldens: the `walk_forward` entries, then `stress_suite`,
+    /// then `tag_regime`, in file order.
+    pub fn kernel_committed() -> Vec<KernelGolden> {
+        const SOURCE: &str =
+            include_str!("../../sharpearena/contract/attestation/kernel-goldens.json");
+        let doc: serde_json::Value =
+            serde_json::from_str(SOURCE).expect("kernel-goldens.json must be valid JSON");
+
+        let hex = |entry: &serde_json::Value| {
+            u64::from_str_radix(
+                entry["fnv1a64"]
+                    .as_str()
+                    .expect("golden needs an fnv1a64 hex string"),
+                16,
+            )
+            .expect("fnv1a64 must be a hex u64")
+        };
+        let name = |entry: &serde_json::Value| {
+            entry["name"]
+                .as_str()
+                .expect("golden needs a name")
+                .to_string()
+        };
+        let json = |entry: &serde_json::Value, key: &str| {
+            serde_json::to_string(&entry[key]).expect("golden field must serialize")
+        };
+
+        let array = |key: &str| {
+            doc[key]
+                .as_array()
+                .unwrap_or_else(|| panic!("kernel-goldens.json needs a `{key}` array"))
+                .clone()
+        };
+
+        let walk_forward = array("walk_forward");
+        let stress_suite = array("stress_suite");
+        let tag_regime = array("tag_regime");
+        assert!(
+            !walk_forward.is_empty() && !stress_suite.is_empty() && !tag_regime.is_empty(),
+            "kernel-goldens.json must pin at least one entry per export; an empty section \
+             leaves that export exactly as uncovered as T1 found it"
+        );
+
+        walk_forward
+            .iter()
+            .map(|entry| KernelGolden::WalkForward {
+                name: name(entry),
+                params: json(entry, "params"),
+                fingerprint: hex(entry),
+            })
+            .chain(stress_suite.iter().map(|entry| KernelGolden::StressSuite {
+                name: name(entry),
+                params: json(entry, "params"),
+                fingerprint: hex(entry),
+            }))
+            .chain(tag_regime.iter().map(|entry| KernelGolden::TagRegime {
+                name: name(entry),
+                dataset_params: json(entry, "dataset"),
+                window: json(entry, "window"),
+                fingerprint: hex(entry),
+            }))
+            .collect()
+    }
+
     /// One committed backtest golden, resolved to the exact kernel call it pins.
     ///
     /// `Baseline` drives [`super::run_baseline_json`]; `Replay` drives
@@ -856,6 +1020,81 @@ mod tests {
         }
     }
 
+    /// The remaining three exports' cross-runtime pins, on the host-compiled engine.
+    ///
+    /// T1 named `walk_forward`, `stress_suite` and `tag_regime` alongside the backtest
+    /// path. The backtest goldens closed the backtest path and left these three with no
+    /// committed cross-runtime fixture: `stress_suite_and_walk_forward_and_regime` above
+    /// checks array lengths and that the regime label is one of three strings, which is a
+    /// shape assertion that stays green while every number behind it differs between
+    /// runtimes. This is the native leg of the same three-runtime comparison:
+    /// `exported_kernel_goldens_reproduce_under_wasm32` runs the identical entries through
+    /// the wasm32 build and `npm/sharpearena/test/golden.test.js` runs them through the
+    /// committed `.wasm`, all three against `contract/attestation/kernel-goldens.json`.
+    #[test]
+    fn kernel_goldens_reproduce_natively() {
+        for golden in goldens::kernel_committed() {
+            let name = golden.name();
+            let out = golden
+                .invoke()
+                .unwrap_or_else(|e| panic!("{name}: the kernel golden failed: {e}"));
+            assert_eq!(
+                out,
+                goldens::kernel_pre_hash_fixture(name),
+                "{name}: the native engine's bytes drifted from the committed pre-hash fixture"
+            );
+            assert_eq!(
+                goldens::fnv1a64(out.as_bytes()),
+                golden.fingerprint(),
+                "{name}: cross-runtime kernel fingerprint drifted from the committed pin"
+            );
+        }
+    }
+
+    /// A kernel golden set that lost one of the three exports would read as covering T1's
+    /// remainder while covering two thirds of it, so all three are required by name.
+    #[test]
+    fn kernel_goldens_keep_pinning_all_three_remaining_exports() {
+        let names: Vec<String> = goldens::kernel_committed()
+            .iter()
+            .map(|g| g.name().to_string())
+            .collect();
+        for required in [
+            "wf_200d_warmup20_test60_step60",
+            "stress_suite_seed0",
+            "regime_2x120_seed0_full",
+        ] {
+            assert!(
+                names.iter().any(|n| n == required),
+                "kernel-goldens.json must keep pinning {required}; found {names:?}"
+            );
+        }
+    }
+
+    /// A regime golden set that tags every entry the same way pins one branch of a
+    /// three-way classifier and reads as pinning the classifier. The committed entries
+    /// are chosen to land on all three labels, and that is a property of the set worth
+    /// keeping rather than a coincidence of the seeds someone happened to pick.
+    #[test]
+    fn regime_goldens_cover_every_label() {
+        let mut labels: Vec<String> = goldens::kernel_committed()
+            .iter()
+            .filter(|g| g.name().starts_with("regime_"))
+            .map(|g| {
+                let out = g.invoke().expect("regime golden");
+                let value: serde_json::Value = serde_json::from_str(&out).unwrap();
+                value["regime"].as_str().expect("regime label").to_string()
+            })
+            .collect();
+        labels.sort();
+        labels.dedup();
+        assert_eq!(
+            labels,
+            vec!["bear".to_string(), "bull".to_string(), "chop".to_string()],
+            "the committed regime goldens must land on all three labels; got {labels:?}"
+        );
+    }
+
     /// A backtest golden set with no replay entry would leave the exact gap T1 names while
     /// reading as covered, so the replay names are required by name the way the scenario
     /// names are.
@@ -976,6 +1215,53 @@ mod wasm32_tests {
                 super::goldens::fnv1a64(out.as_bytes()),
                 golden.fingerprint(),
                 "{name}: the wasm32 build's backtest bytes drifted from the committed golden"
+            );
+        }
+    }
+
+    /// The remaining three exports' cross-runtime pins, executed as WebAssembly through
+    /// the `#[wasm_bindgen]` exports. The native leg is `kernel_goldens_reproduce_natively`
+    /// and the shipped-binary leg is `npm/sharpearena/test/golden.test.js`; all three read
+    /// `contract/attestation/kernel-goldens.json`, so an arithmetic difference between the
+    /// host build and the wasm32 build in `walk_forward`, `stress_suite` or `tag_regime`
+    /// turns one of them red instead of shipping (the remainder of T1).
+    #[wasm_bindgen_test]
+    fn exported_kernel_goldens_reproduce_under_wasm32() {
+        use super::goldens::KernelGolden;
+
+        for golden in super::goldens::kernel_committed() {
+            let name = golden.name().to_string();
+            let out = match &golden {
+                KernelGolden::WalkForward { params, .. } => crate::wasm::walk_forward(params),
+                KernelGolden::StressSuite { params, .. } => crate::wasm::stress_suite(params),
+                KernelGolden::TagRegime {
+                    dataset_params,
+                    window,
+                    ..
+                } => {
+                    let dataset = crate::wasm::dataset_synthetic(dataset_params);
+                    assert!(
+                        !dataset.starts_with("{\"error\""),
+                        "{name}: the wasm32 dataset export failed: {dataset}"
+                    );
+                    crate::wasm::tag_regime(&format!(
+                        "{{\"dataset\":{dataset},\"window\":{window}}}"
+                    ))
+                }
+            };
+            assert!(
+                !out.starts_with("{\"error\""),
+                "{name}: the wasm32 export failed: {out}"
+            );
+            assert_eq!(
+                out,
+                super::goldens::kernel_pre_hash_fixture(&name),
+                "{name}: the wasm32 build's bytes drifted from the committed pre-hash fixture"
+            );
+            assert_eq!(
+                super::goldens::fnv1a64(out.as_bytes()),
+                golden.fingerprint(),
+                "{name}: the wasm32 build's kernel bytes drifted from the committed golden"
             );
         }
     }

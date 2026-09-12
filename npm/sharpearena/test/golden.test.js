@@ -193,6 +193,91 @@ test("every backtest golden is reachable through the wrapper, not only through p
   }
 });
 
+const KERNEL = JSON.parse(
+  fs.readFileSync(
+    path.join(REPO, "crates/sharpearena/contract/attestation/kernel-goldens.json"),
+    "utf8",
+  ),
+);
+
+test("the committed .wasm reproduces every cross-runtime kernel golden", () => {
+  // The remainder of T1. The backtest goldens above cover run_baseline and replay_run;
+  // walk_forward, stress_suite and tag_regime were named in the same finding and had no
+  // committed cross-runtime fixture. smoke.test.js checks their shapes, which stays green
+  // while every number behind the shape differs between runtimes. These entries are the
+  // same ones the native suite (`kernel_goldens_reproduce_natively`) and the wasm32 suite
+  // (`exported_kernel_goldens_reproduce_under_wasm32`) drive, read from the same file.
+  const names = [...KERNEL.walk_forward, ...KERNEL.stress_suite, ...KERNEL.tag_regime].map(
+    (e) => e.name,
+  );
+  for (const required of [
+    "wf_200d_warmup20_test60_step60",
+    "stress_suite_seed0",
+    "regime_2x120_seed0_full",
+  ]) {
+    assert.ok(names.includes(required), `kernel-goldens.json must keep pinning ${required}`);
+  }
+
+  const check = (entry, out) => {
+    assert.ok(!out.startsWith('{"error"'), `${entry.name}: the wasm export failed: ${out}`);
+    assert.equal(
+      out,
+      preHash(entry.pre_hash),
+      `${entry.name}: the committed .wasm's bytes drifted from the pre-hash fixture`,
+    );
+    assert.equal(
+      fingerprint(out),
+      entry.fnv1a64,
+      `${entry.name}: the committed pkg/sharpearena_bg.wasm has drifted from the kernel golden`,
+    );
+  };
+
+  for (const entry of KERNEL.walk_forward) {
+    check(entry, kernel.walk_forward(JSON.stringify(entry.params)));
+  }
+  for (const entry of KERNEL.stress_suite) {
+    check(entry, kernel.stress_suite(JSON.stringify(entry.params)));
+  }
+  for (const entry of KERNEL.tag_regime) {
+    // The dataset argument is the kernel's own dataset_synthetic output, passed verbatim,
+    // so what is pinned is the regime tagging and not a JS re-serialization of the panel.
+    const dataset = kernel.dataset_synthetic(JSON.stringify(entry.dataset));
+    assert.ok(!dataset.startsWith('{"error"'), `${entry.name}: dataset_synthetic failed: ${dataset}`);
+    check(
+      entry,
+      kernel.tag_regime(`{"dataset":${dataset},"window":${JSON.stringify(entry.window)}}`),
+    );
+  }
+});
+
+test("every kernel golden is reachable through the wrapper, not only through pkg/", () => {
+  const api = require("../dist/index.js");
+  for (const entry of KERNEL.walk_forward) {
+    assert.deepEqual(
+      api.walkForward(entry.params),
+      JSON.parse(kernel.walk_forward(JSON.stringify(entry.params))),
+      `${entry.name}: the wrapper's walkForward is not the golden export`,
+    );
+  }
+  for (const entry of KERNEL.stress_suite) {
+    assert.deepEqual(
+      api.stressSuite(entry.params.seed),
+      JSON.parse(kernel.stress_suite(JSON.stringify(entry.params))),
+      `${entry.name}: the wrapper's stressSuite is not the golden export`,
+    );
+  }
+  for (const entry of KERNEL.tag_regime) {
+    const dataset = kernel.dataset_synthetic(JSON.stringify(entry.dataset));
+    assert.deepEqual(
+      api.tagRegime(JSON.parse(dataset), entry.window),
+      JSON.parse(
+        kernel.tag_regime(`{"dataset":${dataset},"window":${JSON.stringify(entry.window)}}`),
+      ).regime,
+      `${entry.name}: the wrapper's tagRegime is not the golden export`,
+    );
+  }
+});
+
 test("the shipped wasm package carries the crate version", () => {
   const wrapper = JSON.parse(fs.readFileSync(path.join(__dirname, "../package.json"), "utf8"));
   const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, "../pkg/package.json"), "utf8"));
