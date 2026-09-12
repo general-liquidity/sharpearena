@@ -191,6 +191,45 @@ def version_problems(root: Path, commit: str, expected: str) -> list[str]:
     return problems
 
 
+def bundle_problems(root: Path, commit: str, expected: str) -> list[str]:
+    """The committed wasm bundle carries the version compiled into it.
+
+    Every other version this release checks is a literal in a metadata file that
+    the bump rewrites. The bundle's is `CARGO_PKG_VERSION` baked into the
+    binary, so bumping the crate updates `pkg/package.json` and leaves the
+    `.wasm` reporting the previous release. Nothing here caught that, and the
+    npm publish of 0.26.0 failed on the bundle gate after crates.io and PyPI had
+    already published, which is the worst moment to learn it: the tag is pushed
+    and two registries are committed.
+
+    The gate that does catch it is `scripts/check-wasm-bundle.mjs`, which loads
+    the committed module and a fresh build and compares what they answer. This
+    runs it against the release tree so a stale bundle stops the release before
+    the tag exists rather than after.
+    """
+    gate = root / "scripts" / "check-wasm-bundle.mjs"
+    if not gate.is_file():
+        return [f"{gate} is missing: the committed bundle cannot be checked"]
+    completed = subprocess.run(
+        ["node", str(gate)],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode == 0:
+        return []
+    detail = (completed.stdout + completed.stderr).strip().splitlines()
+    tail = detail[-6:] if detail else ["no output"]
+    return [
+        f"the committed wasm bundle does not answer like the tree at {commit[:12]} "
+        f"(tag requires {expected}); rebuild and commit it with "
+        "`wasm-pack build crates/sharpearena-wasm --target nodejs "
+        "--out-dir ../../npm/sharpearena/pkg --out-name sharpearena`",
+        *(f"    {line}" for line in tail),
+    ]
+
+
 def _is_excluded(path: str, excludes: set[str]) -> bool:
     return any(part in excludes for part in PurePosixPath(path).parts)
 
@@ -408,6 +447,7 @@ def verify_tag(
 
     problems += manifest_problems(root, commit, manifest)
     problems += version_problems(root, commit, expected_version)
+    problems += bundle_problems(root, commit, expected_version)
     return problems, commit
 
 
