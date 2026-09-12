@@ -104,7 +104,8 @@ use sharpearena::market::{EllipticUncertaintySet, MarketClearing, MarketParams};
 use sharpearena::vec_env::AutoresetMode;
 use sharpearena::{
     generate_scenario, CostModel, Dataset, Decision, DistributionMode, LaneConfig, Mandate,
-    RichnessTier, ScenarioSpec, TradingEnv as CoreEnv, VecTradingEnv as CoreVecEnv, Window,
+    MandateStyle, RichnessTier, ScenarioSpec, TradingEnv as CoreEnv, VecTradingEnv as CoreVecEnv,
+    Window,
 };
 use sharpebench_core::process::process_score;
 use sharpebench_core::{
@@ -861,6 +862,46 @@ fn process_event_samples() -> Vec<ProcessEvent> {
     out
 }
 
+/// The native `MandateStyle` vocabulary: every style the kernel can draw, under the wire
+/// labels it serializes to, in the canonical draw order.
+///
+/// `sample_mandate` picks a style by indexing `MandateStyle::ALL`, so the *order* is part of
+/// the contract and not only the set. A consumer that restates the labels by hand drifts
+/// from the enum silently, which is ARENA-REVIEW A7: the Python `STYLES` tuple was a hand
+/// copy with nothing cross-checking it. This emits the list instead, so the wrapper's table
+/// is derived from the engine rather than agreeing with it by inspection.
+///
+/// Returned as `{"schema_version": 1, "styles": ["long_only", ...]}`.
+#[pyfunction]
+fn mandate_style_contract() -> PyResult<String> {
+    let styles: Vec<serde_json::Value> = mandate_style_samples()
+        .into_iter()
+        .map(|style| serde_json::to_value(style).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e)))
+        .collect::<PyResult<_>>()?;
+    Ok(serde_json::json!({ "schema_version": 1, "styles": styles }).to_string())
+}
+
+/// `MandateStyle::ALL`, carried through a wildcard-free exhaustive match.
+///
+/// The match has no wildcard arm on purpose: a style added to the enum stops this crate from
+/// compiling, which is what keeps the emitted list from falling behind the way a
+/// hand-maintained tuple did. Iterating `ALL` rather than listing the variants a second time
+/// also means a style that reaches the enum without reaching the draw order is a compile
+/// error here rather than a difference nothing reads.
+fn mandate_style_samples() -> Vec<MandateStyle> {
+    let mut out = Vec::new();
+    for seed in MandateStyle::ALL {
+        match seed {
+            carried @ (MandateStyle::LongOnly
+            | MandateStyle::MarketNeutral
+            | MandateStyle::Momentum
+            | MandateStyle::Unconstrained
+            | MandateStyle::PairsConvergence) => out.push(carried),
+        }
+    }
+    out
+}
+
 /// Seed-paired bootstrap confidence interval on the **deflated Sharpe** the leaderboard
 /// ranks on. `per_seed_returns` is one per-bar return series per held-out seed (the
 /// independent sampling units). `n_trials` is the agent's *declared* in-sample search
@@ -1465,6 +1506,7 @@ fn sharpearena_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyOrderBook>()?;
     m.add_function(wrap_pyfunction!(score_run, m)?)?;
     m.add_function(wrap_pyfunction!(process_event_contract, m)?)?;
+    m.add_function(wrap_pyfunction!(mandate_style_contract, m)?)?;
     m.add_function(wrap_pyfunction!(bootstrap_dsr_ci, m)?)?;
     m.add_function(wrap_pyfunction!(paired_dsr_diff, m)?)?;
     m.add_function(wrap_pyfunction!(validate_decision_json, m)?)?;

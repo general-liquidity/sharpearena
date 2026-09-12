@@ -148,7 +148,7 @@ def main() -> None:
         MalformedTargetWeights,
         target_weight_vectors,
     )
-    from sharpearena.mandate import Mandate, mandate_breach
+    from sharpearena.mandate import STYLES, Mandate, mandate_breach
 
     # ARENA-REVIEW A20. One event contract for the per-bar target weights, so the mandate
     # path and the reward path cannot read the same stream by different rules. The refusal
@@ -172,6 +172,11 @@ def main() -> None:
         fail("a short under a long-only mandate stopped scoring a structural breach")
     if target_weight_vectors([short_bar]) != [[-0.5, 0.2]]:
         fail("the canonical target-weight event stopped being read")
+
+    # ARENA-REVIEW A7. The style table is derived from the native enum at import, which is
+    # a plain module-level call rather than an assertion, so -O must still produce it.
+    if not STYLES or "long_only" not in STYLES:
+        fail("the derived mandate-style table is empty or missing a known style")
 
     print("OK: published guarantees still refuse under -O")
 

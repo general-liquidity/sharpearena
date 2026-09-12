@@ -27,15 +27,48 @@ from typing import Any, Optional, Union
 
 from .event_contract import target_weight_vectors
 from .sharpearena_py import mandate_breach as _rs_mandate_breach
+from .sharpearena_py import mandate_style_contract as _rs_mandate_style_contract
 from .sharpearena_py import sample_mandate_json as _rs_sample_mandate_json
 
-# The constraint families a scenario can draw. ``long_only``, ``market_neutral`` and
-# ``pairs_convergence`` each carry a distinct structural rule. ``unconstrained`` is the
-# declared permissive control, and ``momentum`` carries no structural rule either despite
-# rendering one in its prompt text: the breach checker has no per-symbol returns to read
-# "lean into recent winners" off. See docs/audits/2026-09-09/ARENA-REVIEW.md A9.
-# Kept in sync with the Rust ``MandateStyle`` wire labels (canonical draw order).
-STYLES = ("long_only", "market_neutral", "momentum", "unconstrained", "pairs_convergence")
+
+class MandateError(ValueError):
+    """A present mandate that cannot be parsed or is outside its declared ranges.
+
+    Distinct from *no mandate*. A scenario carrying no mandate is genuinely unconstrained
+    and is vacuously satisfied; a scenario carrying an unparseable payload, an unrecognized
+    style or an unusable cap is a scenario nothing can be graded against, and grading it as
+    unconstrained hands full credit to the malformed input. The Rust kernel refuses the
+    same shapes with :class:`~sharpearena.MandateError`'s engine counterpart rather than
+    defaulting, and :mod:`sharpearena.failure_taxonomy` already classifies a present-but-
+    invalid mandate as ``INVALID_EVIDENCE``; this is that rule at the reward boundary.
+    """
+
+
+def _load_style_contract() -> tuple[str, ...]:
+    """The constraint families a scenario can draw, as the native enum names them.
+
+    ``long_only``, ``market_neutral`` and ``pairs_convergence`` each carry a distinct
+    structural rule. ``unconstrained`` is the declared permissive control, and ``momentum``
+    carries no structural rule either despite rendering one in its prompt text: the breach
+    checker has no per-symbol returns to read "lean into recent winners" off. See
+    ``docs/audits/2026-09-09/ARENA-REVIEW.md`` A9.
+
+    The list is the native ``MandateStyle`` vocabulary, emitted by the extension through a
+    wildcard-free exhaustive match and read here rather than restated. It was a hand-copied
+    tuple with nothing cross-checking it (ARENA-REVIEW A7); the labels agreed, but a style
+    added upstream would have landed in only one of the two lists. Order matters as much as
+    membership: ``sample_mandate`` draws by indexing the canonical order.
+    """
+    document = json.loads(_rs_mandate_style_contract())
+    if document.get("schema_version") != 1:
+        raise MandateError("the native mandate-style contract is not schema_version 1")
+    styles = tuple(str(label) for label in document["styles"])
+    if not styles:
+        raise MandateError("the native mandate-style contract names no styles")
+    return styles
+
+
+STYLES = _load_style_contract()
 
 
 @dataclass(frozen=True)
@@ -103,19 +136,6 @@ def mandate_text(m: Union[Mandate, dict]) -> str:
 def mandate_from_dict(d: dict[str, Any]) -> Mandate:
     """Reconstruct a :class:`Mandate` from its plain-JSON form (trace/replay)."""
     return Mandate.from_dict(d)
-
-
-class MandateError(ValueError):
-    """A present mandate that cannot be parsed or is outside its declared ranges.
-
-    Distinct from *no mandate*. A scenario carrying no mandate is genuinely unconstrained
-    and is vacuously satisfied; a scenario carrying an unparseable payload, an unrecognized
-    style or an unusable cap is a scenario nothing can be graded against, and grading it as
-    unconstrained hands full credit to the malformed input. The Rust kernel refuses the
-    same shapes with :class:`~sharpearena.MandateError`'s engine counterpart rather than
-    defaulting, and :mod:`sharpearena.failure_taxonomy` already classifies a present-but-
-    invalid mandate as ``INVALID_EVIDENCE``; this is that rule at the reward boundary.
-    """
 
 
 def validate_mandate(obj: Union[Mandate, dict, None]) -> bool:
