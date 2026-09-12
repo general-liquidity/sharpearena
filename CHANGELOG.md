@@ -10,6 +10,10 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ## [Unreleased]
 
+### Added
+
+- `crates/sharpearena/contract/attestation/kernel-goldens.json`, the backtest goldens' counterpart for the three exports they do not reach: three `walk_forward` entries, two `stress_suite` entries and four `tag_regime` entries, each carrying the exact kernel input and the FNV-1a/64 fingerprint of the bytes it must return, with a committed pre-hash fixture per entry. The same three runtimes read the one file: `kernel_goldens_reproduce_natively` on the host build, `exported_kernel_goldens_reproduce_under_wasm32` through the `#[wasm_bindgen]` exports compiled to WebAssembly, and `npm/sharpearena/test/golden.test.js` against the committed `pkg/sharpearena_bg.wasm`. What covered these three before was a shape assertion, array lengths plus the first stress panel's name plus the regime label being one of three strings, all of which stay green while every number behind them differs between the host build and the wasm32 build. A `tag_regime` entry's dataset is the kernel's own `dataset_synthetic` output passed verbatim, so the pin is on the regime tagging and not on a re-serialization of the panel, and `regime_goldens_cover_every_label` keeps the committed entries landing on all three labels rather than pinning one branch of a three-way classifier. No mismatch was found: all nine entries reproduce byte for byte in all three runtimes, so this closes an evidence gap and moves no number. Like the backtest entries, these pin output bytes only, not `SPEC_HASH` and not a wasm digest, and `walk_forward`, `tag_regime` and `Dataset` all come from `sharpebench-sim` at `=0.21.0`; if a fingerprint here ever moves, that is a finding and not something to regenerate.
+
 ## [0.28.0] - 2026-09-12
 
 ### Fixed
