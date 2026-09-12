@@ -75,9 +75,16 @@ try {
       return relative !== "node_modules" && relative !== path.join("pkg", ".gitignore");
     },
   });
-  const packed = JSON.parse(
+  // npm 11 prints an array of packed tarballs; npm 12 prints an object keyed by
+  // package name. The release job pins npm 12 and CI uses the Node-bundled npm
+  // 11, so reading `.length` off the parsed value passed every CI run and failed
+  // every release, which is how v0.27.0 reached crates.io and PyPI and not npm.
+  // Measured on this package: npm@11.15.0 gives `[{...}]`, npm@12.0.2 gives
+  // `{"@general-liquidity/sharpearena": {...}}`.
+  const packedRaw = JSON.parse(
     npm(["pack", "--json", "--pack-destination", workDir], { cwd: stageDir }),
   );
+  const packed = Array.isArray(packedRaw) ? packedRaw : Object.values(packedRaw);
   assert.strictEqual(
     packed.length,
     1,

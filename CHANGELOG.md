@@ -10,6 +10,17 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ## [Unreleased]
 
+### Fixed
+
+- npm: the install smoke test reads `npm pack --json` in either shape. npm 11
+  prints an array of packed tarballs and npm 12 prints an object keyed by package
+  name, so reading `.length` off the parsed value gave `undefined` under npm 12.
+  The release job pins npm 12 and CI uses the Node-bundled npm 11, so this passed
+  every CI run and failed every release: it is why v0.26.0 and v0.27.0 reached
+  crates.io and PyPI without reaching npm. Measured on this package,
+  npm@11.15.0 gives `[{...}]` and npm@12.0.2 gives
+  `{"@general-liquidity/sharpearena": {...}}`.
+
 ## [0.27.0] - 2026-09-12
 
 ### Fixed
