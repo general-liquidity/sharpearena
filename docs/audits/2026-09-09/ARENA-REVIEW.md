@@ -887,11 +887,19 @@ Two qualifications, stated rather than papered over:
   `regime_label`, so the labels in the generated artifact are a second authoring of them and
   only the variant list is genuinely derived. An added variant is a compile error; a renamed
   label would need `Regime` to carry its own serde representation upstream.
-* `BaselineAgent` stays open, and not as a scoping preference. It has no Rust enum anywhere:
-  the four names exist only as a string dispatch in `crates/sharpearena-wasm/src/lib.rs`, so
-  there is no declaration to generate from. Giving it one is a change to the wasm export
-  surface rather than to `types.ts`, and that surface was being changed concurrently by the
-  cross-runtime fixture work when this was written.
+* `BaselineAgent` stays open, and not as a scoping preference. It has no Rust enum anywhere.
+  The four names exist only as string literals in `build_agent`
+  (`crates/sharpearena-wasm/src/lib.rs`), matched against a `BaselineConfig.agent` field
+  typed `String`, so there is no declaration to generate a contract from. Closing it means
+  adding a `BaselineAgent` enum to the published `sharpearena` crate, since the generator
+  lives there and cannot depend on the wasm crate, and then routing the wasm dispatch
+  through it. That is a public API addition plus a change to the export layer whose
+  cross-runtime goldens have just been pinned (T1), and it has to leave `run_baseline`
+  byte-identical and preserve the existing `unknown baseline agent ... (expected
+  buy_and_hold | hold | momentum | random)` refusal that `an unknown baseline agent throws`
+  asserts. It is a clean piece of work and it is not this change; recording it as open with
+  the shape it would take is better than folding a surface change into a repair about
+  restatements.
 
 Mutation-checked in an isolated copy. Renaming `"regime_shift"` to `"regime_shifted"` in
 `types.ts` fails `the engine-output unions are the generated contract, not hand copies`;
