@@ -628,6 +628,80 @@ def remove_release_worktree(root: Path, parent: Path, tree: Path) -> tuple[str, 
     return steps
 
 
+def rebuild_committed_bundle(root: Path, target: str) -> None:
+    """Rebuild the committed wasm bundle so it names the version being released.
+
+    This release publishes the committed bundle rather than a fresh build, by
+    design: what ships is what the gate tested. The cost is that the bundle
+    carries its own version, compiled in from `CARGO_PKG_VERSION`, and the
+    version bump cannot rewrite it the way it rewrites a literal in a manifest.
+    Cutting v0.26.0 therefore tagged a tree whose bundle still said 0.25.0, and
+    the npm job refused it after crates.io and PyPI had already published.
+
+    A pre-tag check cannot solve that: before the bump there is no version for
+    the bundle to name. The bundle has to be rebuilt after the bump and inside
+    the release tree, which is here. It is folded into the version-bump commit
+    so the tag still points at a provenance-only rebind whose parent carries
+    every version change together.
+    """
+    pkg = root / "npm" / "sharpearena" / "pkg"
+    if not (pkg / "sharpearena.js").is_file():
+        return
+    if shutil.which("wasm-pack") is None:
+        raise ReleaseError(
+            "wasm-pack is required to cut a release: this release publishes the "
+            "committed wasm bundle, which must be rebuilt for the release version"
+        )
+    run(
+        root,
+        "wasm-pack",
+        "build",
+        "crates/sharpearena-wasm",
+        "--target",
+        "nodejs",
+        "--out-dir",
+        "../../npm/sharpearena/pkg",
+        "--out-name",
+        "sharpearena",
+    )
+    reported = bundle_version(root)
+    if reported != target:
+        raise ReleaseError(
+            f"the rebuilt wasm bundle reports {reported}, expected {target}"
+        )
+    changed = git(root, "status", "--porcelain", str(pkg)).splitlines()
+    if not changed:
+        return
+    run(root, "git", "add", "--", str(pkg))
+    run(root, "git", "commit", "--amend", "--no-edit")
+
+
+def bundle_version(root: Path) -> str:
+    """Ask the committed module for the crate version compiled into it."""
+    entry = root / "npm" / "sharpearena" / "pkg" / "sharpearena.js"
+    completed = subprocess.run(
+        [
+            "node",
+            "-e",
+            "const k = require(process.argv[1]);"
+            "process.stdout.write(typeof k.crate_version === 'function'"
+            " ? String(k.crate_version()) : '');",
+            str(entry),
+        ],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout).strip().splitlines()
+        raise ReleaseError(
+            "could not read the rebuilt bundle's version: "
+            + (detail[-1] if detail else "no output")
+        )
+    return completed.stdout.strip()
+
+
 def execute_release(
     root: Path,
     bump: str,
@@ -722,6 +796,7 @@ def cut_release(
         release_branch,
     )
     require_clean(root)
+    rebuild_committed_bundle(root, target)
     release_commit = git(root, "rev-parse", "HEAD")
     version = workspace_version(root)
     tag = f"v{version}"
