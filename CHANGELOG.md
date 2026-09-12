@@ -10,6 +10,19 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ## [Unreleased]
 
+### Fixed
+
+- release: the committed wasm bundle is rebuilt for the release version. Every
+  other version the release checks is a literal in a metadata file that the
+  version bump rewrites; the one inside the wasm binary comes from
+  `CARGO_PKG_VERSION` at compile time, so the bump left the committed bundle
+  reporting 0.25.0 against a 0.26.0 tag. This release publishes the committed
+  bundle rather than a rebuild, by design, so the npm job refused it after
+  crates.io and PyPI had already published and v0.26.0 is partial across the
+  registries. `scripts/release.py` now asks the committed module for its own
+  `crate_version` before tagging, so the next stale bundle stops the release
+  instead of splitting it.
+
 ## [0.26.0] - 2026-09-12
 
 ### Breaking

@@ -195,39 +195,50 @@ def bundle_problems(root: Path, commit: str, expected: str) -> list[str]:
     """The committed wasm bundle carries the version compiled into it.
 
     Every other version this release checks is a literal in a metadata file that
-    the bump rewrites. The bundle's is `CARGO_PKG_VERSION` baked into the
-    binary, so bumping the crate updates `pkg/package.json` and leaves the
-    `.wasm` reporting the previous release. Nothing here caught that, and the
-    npm publish of 0.26.0 failed on the bundle gate after crates.io and PyPI had
-    already published, which is the worst moment to learn it: the tag is pushed
-    and two registries are committed.
+    the bump rewrites. The bundle's comes from `CARGO_PKG_VERSION` at compile
+    time, so bumping the crate updates `npm/sharpearena/pkg/package.json` and
+    leaves the `.wasm` reporting the previous release. This release publishes the
+    committed bundle rather than a rebuild, so that mismatch fails the npm job
+    after crates.io and PyPI have already published, which is how v0.26.0 became
+    partial.
 
-    The gate that does catch it is `scripts/check-wasm-bundle.mjs`, which loads
-    the committed module and a fresh build and compares what they answer. This
-    runs it against the release tree so a stale bundle stops the release before
-    the tag exists rather than after.
+    This loads the committed module and asks it, rather than running the full
+    `check-wasm-bundle.mjs` gate: the gate compares against a fresh build and so
+    needs wasm-pack and a compile, which a release job need not have. What has to
+    hold before tagging is that the artifact about to ship names this release.
     """
-    gate = root / "scripts" / "check-wasm-bundle.mjs"
-    if not gate.is_file():
-        return [f"{gate} is missing: the committed bundle cannot be checked"]
+    pkg = root / "npm" / "sharpearena" / "pkg" / "sharpearena.js"
+    if not pkg.is_file():
+        return []
+    script = (
+        "const k = require(process.argv[1]);"
+        "process.stdout.write(typeof k.crate_version === 'function'"
+        " ? String(k.crate_version()) : '');"
+    )
     completed = subprocess.run(
-        ["node", str(gate)],
+        ["node", "-e", script, str(pkg)],
         cwd=root,
         capture_output=True,
         text=True,
         check=False,
     )
-    if completed.returncode == 0:
-        return []
-    detail = (completed.stdout + completed.stderr).strip().splitlines()
-    tail = detail[-6:] if detail else ["no output"]
-    return [
-        f"the committed wasm bundle does not answer like the tree at {commit[:12]} "
-        f"(tag requires {expected}); rebuild and commit it with "
-        "`wasm-pack build crates/sharpearena-wasm --target nodejs "
-        "--out-dir ../../npm/sharpearena/pkg --out-name sharpearena`",
-        *(f"    {line}" for line in tail),
-    ]
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout).strip().splitlines()
+        return [
+            "the committed wasm bundle could not be loaded: "
+            + (detail[-1] if detail else "no output")
+        ]
+    reported = completed.stdout.strip()
+    if not reported:
+        return ["the committed wasm bundle does not export crate_version"]
+    if reported != expected:
+        return [
+            f"the committed wasm bundle reports {reported}, tag requires {expected}; "
+            "rebuild and commit it with `wasm-pack build crates/sharpearena-wasm "
+            "--target nodejs --out-dir ../../npm/sharpearena/pkg "
+            "--out-name sharpearena`"
+        ]
+    return []
 
 
 def _is_excluded(path: str, excludes: set[str]) -> bool:
