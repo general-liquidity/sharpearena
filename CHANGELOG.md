@@ -20,17 +20,17 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
   by design, so the npm job refused it after crates.io and PyPI had already
   published. v0.26.0 is therefore on crates.io and PyPI and not on npm.
 
-### Known
+### Changed
 
-- release: nothing in `scripts/release.py` yet rebuilds the committed wasm
-  bundle as part of the version bump, so the next release repeats this unless
-  the bundle is rebuilt by hand first. A pre-tag check was written and removed
-  again: the committed bundle cannot name a version the bump has not yet chosen,
-  so checking alone refuses every release. The fix is a rebuild step inside the
-  release tree after the bump, which needs wasm-pack in the release environment;
-  that is not done here. Until it is, rebuild the bundle and commit it before
-  cutting a release. The npm workflow's bundle gate catches a stale bundle on
-  main, which is how this one was found.
+- release: the release now rebuilds the committed wasm bundle after the version
+  bump, inside the release tree, and folds it into the version-bump commit. The
+  bundle carries its own version compiled in from `CARGO_PKG_VERSION`, which the
+  bump cannot rewrite the way it rewrites a literal in a manifest, so cutting
+  v0.26.0 tagged a tree whose bundle still said 0.25.0 and the npm job refused it
+  after crates.io and PyPI had published. A pre-tag check cannot close this,
+  because before the bump there is no version for the bundle to name; the rebuild
+  has to happen after it. `wasm-pack` is now required to cut a release, and the
+  release refuses rather than tagging a bundle it could not rebuild.
 
 ## [0.26.0] - 2026-09-12
 

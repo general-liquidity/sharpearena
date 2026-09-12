@@ -69,6 +69,16 @@ jobs:
         if: steps.release-head.outputs.released != 'true'
         with:
           tool: cargo-release@0.25.18
+      # The release rebuilds the committed wasm bundle after the version bump,
+      # because the bundle carries its own CARGO_PKG_VERSION and the bump cannot
+      # rewrite it. The rehearsal runs that same path, so it needs the same tool.
+      - uses: taiki-e/install-action@37f7c5781271959fb65b6b35224e28652ff2b63d # v2
+        if: steps.release-head.outputs.released != 'true'
+        with:
+          tool: wasm-pack@0.15.0
+      - name: Add the wasm32 target the bundle rebuild compiles for
+        if: steps.release-head.outputs.released != 'true'
+        run: rustup target add wasm32-unknown-unknown
       # This performs a real patch bump, clean provenance rebind, annotated tag
       # creation and tag validation in an isolated local clone. It never pushes.
       # A stale-by-one release therefore fails on every PR, before a public tag
