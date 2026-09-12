@@ -183,6 +183,7 @@ def score_run(
     n_trials: int = 0,
     periods_per_year: float = 252.0,
 ) -> str: ...
+def process_event_contract() -> str: ...
 def bootstrap_dsr_ci(
     per_seed_returns: Sequence[Sequence[float]],
     n_trials: int = 0,

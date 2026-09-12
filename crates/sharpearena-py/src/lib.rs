@@ -106,7 +106,11 @@ use sharpearena::{
     generate_scenario, CostModel, Dataset, Decision, DistributionMode, LaneConfig, Mandate,
     RichnessTier, ScenarioSpec, TradingEnv as CoreEnv, VecTradingEnv as CoreVecEnv, Window,
 };
-use sharpebench_core::{score_agent, AgentSubmission, Run, ScoreConfig, Trace};
+use sharpebench_core::process::process_score;
+use sharpebench_core::{
+    score_agent, AgentSubmission, LifecycleStep, Phase, ProcessEvent, Run, ScoreConfig, Subject,
+    Trace,
+};
 
 /// Parse the wire `distribution_mode` label, rejecting unknown tiers with a `ValueError`.
 fn parse_distribution_mode(mode: &str) -> PyResult<DistributionMode> {
@@ -767,6 +771,96 @@ fn score_run(returns: Vec<f64>, n_trials: u32, periods_per_year: f64) -> PyResul
     serde_json::to_string(&score).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))
 }
 
+/// The pinned engine's process-event vocabulary, each sample labelled with the severity
+/// the pinned engine's own scorer gives it.
+///
+/// `sharpebench_core::ProcessEvent` is internally tagged (`{"event": "order_placed",
+/// "risk_gate_passed": false}`) and carries **no** severity field, so block severity is a
+/// property of the variant and of its boolean discriminant, recoverable only by asking the
+/// kernel. A consumer that names the block-severity events by hand therefore drifts from
+/// the enum silently, which is ARENA-REVIEW A13: four of the five block variants read as
+/// clean to the Python reward gate. This emits one sample per variant, per boolean
+/// discriminant, with the severity obtained by running `process_score` over a one-event
+/// trace, so the wrapper's classifier is derived from the pin instead of restating it.
+///
+/// Returned as `{"schema_version": 1, "events": [{"event": {...}, "severity":
+/// "block"|"warn"|"none"}]}`.
+#[pyfunction]
+fn process_event_contract() -> PyResult<String> {
+    let entries: Vec<serde_json::Value> = process_event_samples()
+        .into_iter()
+        .map(|event| {
+            let score = process_score(&Trace {
+                events: vec![event.clone()],
+            });
+            let severity = if score.block_violations > 0 {
+                "block"
+            } else if score.warn_violations > 0 {
+                "warn"
+            } else {
+                "none"
+            };
+            serde_json::to_value(&event)
+                .map(|value| serde_json::json!({ "event": value, "severity": severity }))
+                .map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))
+        })
+        .collect::<PyResult<_>>()?;
+    Ok(serde_json::json!({ "schema_version": 1, "events": entries }).to_string())
+}
+
+/// One sample per `ProcessEvent` variant, expanded over every boolean discriminant that
+/// changes the variant's severity.
+///
+/// The `match` is exhaustive on purpose and has no wildcard arm: a variant added by a
+/// SharpeBench pin bump stops this crate from compiling, which is what keeps the sample
+/// list from falling behind the enum the way a hand-maintained string list did.
+fn process_event_samples() -> Vec<ProcessEvent> {
+    let mut out = Vec::new();
+    for seed in [
+        ProcessEvent::OrderPlaced {
+            risk_gate_passed: true,
+        },
+        ProcessEvent::DrawdownHalt { respected: true },
+        ProcessEvent::DenylistBypass,
+        ProcessEvent::ConcentrationBreach,
+        ProcessEvent::ManipulativeOrder,
+        ProcessEvent::TailSellingExposure { hedged: true },
+        ProcessEvent::DecisionRationale {
+            symbol: "SYM0".to_string(),
+            rationale: "contract sample".to_string(),
+        },
+        ProcessEvent::Lifecycle(LifecycleStep::new(
+            Subject::Instrument("SYM0".to_string()),
+            Phase::Observation,
+        )),
+    ] {
+        match seed {
+            ProcessEvent::OrderPlaced { .. } => {
+                out.push(ProcessEvent::OrderPlaced {
+                    risk_gate_passed: true,
+                });
+                out.push(ProcessEvent::OrderPlaced {
+                    risk_gate_passed: false,
+                });
+            }
+            ProcessEvent::DrawdownHalt { .. } => {
+                out.push(ProcessEvent::DrawdownHalt { respected: true });
+                out.push(ProcessEvent::DrawdownHalt { respected: false });
+            }
+            ProcessEvent::TailSellingExposure { .. } => {
+                out.push(ProcessEvent::TailSellingExposure { hedged: true });
+                out.push(ProcessEvent::TailSellingExposure { hedged: false });
+            }
+            carried @ (ProcessEvent::DenylistBypass
+            | ProcessEvent::ConcentrationBreach
+            | ProcessEvent::ManipulativeOrder
+            | ProcessEvent::DecisionRationale { .. }
+            | ProcessEvent::Lifecycle(_)) => out.push(carried),
+        }
+    }
+    out
+}
+
 /// Seed-paired bootstrap confidence interval on the **deflated Sharpe** the leaderboard
 /// ranks on. `per_seed_returns` is one per-bar return series per held-out seed (the
 /// independent sampling units). `n_trials` is the agent's *declared* in-sample search
@@ -1370,6 +1464,7 @@ fn sharpearena_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyMarketClearing>()?;
     m.add_class::<PyOrderBook>()?;
     m.add_function(wrap_pyfunction!(score_run, m)?)?;
+    m.add_function(wrap_pyfunction!(process_event_contract, m)?)?;
     m.add_function(wrap_pyfunction!(bootstrap_dsr_ci, m)?)?;
     m.add_function(wrap_pyfunction!(paired_dsr_diff, m)?)?;
     m.add_function(wrap_pyfunction!(validate_decision_json, m)?)?;

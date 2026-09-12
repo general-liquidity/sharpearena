@@ -102,6 +102,48 @@ def main() -> None:
     if ExecutionNoiseConfig(slippage_bps=25.0).enabled is not True:
         fail("a legal execution-noise knob was mangled by the refusal")
 
+    from sharpearena.episode_outcomes import (
+        UnsupportedProcessEvent,
+        is_process_block,
+        reward_eligible,
+    )
+
+    # ARENA-REVIEW A13. Block severity is a property of the pinned engine's enum, and
+    # an event this boundary cannot classify is refused rather than read as clean.
+    # Both directions run here: the refusal, and the control that shows the classifier
+    # is not simply blocking everything it is handed.
+    completed = {
+        "episode": {
+            "schema_version": 1,
+            "requested_bars": 2,
+            "available_bars": 2,
+            "planned_bars": 2,
+            "realized_bars": 2,
+            "status": "completed",
+        },
+        "returns": [0.01, -0.02],
+        "events": [],
+    }
+    for event in (
+        {"event": "order_placed", "risk_gate_passed": False},
+        {"event": "drawdown_halt", "respected": False},
+        {"event": "denylist_bypass"},
+        {"event": "tail_selling_exposure", "hedged": False},
+        {"event": "manipulative_order"},
+    ):
+        if reward_eligible({**completed, "events": [event]}):
+            fail(f"{event} kept its training reward")
+    for event in ({"event": "risk_refusal", "severity": "block"}, {"event": "order_placed"}):
+        try:
+            is_process_block(event)
+        except UnsupportedProcessEvent:
+            continue
+        fail(f"{event} was classified instead of refused")
+    if not reward_eligible(
+        {**completed, "events": [{"event": "order_placed", "risk_gate_passed": True}]}
+    ):
+        fail("a rollout whose orders cleared the risk gate lost its reward")
+
     print("OK: published guarantees still refuse under -O")
 
 

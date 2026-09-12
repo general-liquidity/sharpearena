@@ -732,6 +732,49 @@ Any event whose name merely contains `manipulative` blocks; a manipulation event
 without that token does not. This gates `reward_eligible` and `process_check_reward`, and
 `EVALUATION.md` makes process-check cleanliness part of rank eligibility.
 
+**Disposition: repaired, as a helper/schema mismatch.** The mismatch is confirmed by
+execution. The pinned `sharpebench-core 0.21.0` `ProcessEvent` is internally tagged
+(`#[serde(tag = "event", rename_all = "snake_case")]`) and serializes **no** severity
+field, so of the five block-severity variants only `manipulative_order` carried a token
+the helper matched. Driving the pre-repair module over an otherwise valid completed
+two-bar record, `order_placed` with `risk_gate_passed: false`, `drawdown_halt` with
+`respected: false`, `denylist_bypass` and unhedged `tail_selling_exposure` each read as
+non-blocking and stayed reward eligible; `order_placed` with a passing risk gate, the
+control, was correctly eligible.
+
+What this does **not** establish: that an ordinary current simulator rollout emits those
+events, or that a live scoring exploit exists. It is a boundary that would misclassify
+them if they arrived, which is a different and smaller claim.
+
+The repair is the fail-closed option, and the classification is no longer restated in
+Python. `process_event_contract` in `crates/sharpearena-py/src/lib.rs` emits one sample
+per `ProcessEvent` variant, per boolean discriminant, each labelled with the severity
+`sharpebench_core::process::process_score` gives it over a one-event trace, and the
+sample list is built through a wildcard-free exhaustive `match`, so a variant added by a
+pin bump fails to compile rather than reappearing as a silent gap. `is_process_block`
+derives its table from that contract at import, and an event neither the engine nor this
+package defines is refused with `UnsupportedProcessEvent` instead of read as clean. The
+`severity` escape hatch is gone, because the engine never writes such a field.
+
+The cost of refusing: a caller passing an event this boundary does not know now gets an
+error where it previously got silent eligibility. The vocabulary therefore also covers
+the events this package itself writes into the same list, which the engine's enum does
+not describe: `protocol_error` and `target_weights` from `verifiers_env`, and
+`margin_call`, `forced_reduce` and `cascade_impact` from the liquidation-cascade wrapper.
+That short list is hand-maintained because those names are ours;
+`crates/sharpearena-py/tests/test_process_event_contract.py` drives the cascade producer
+and classifies every event it emits so the list cannot quietly fall behind, and the same
+file carries the block rows, the non-block control rows and the refusal rows.
+`tests/test_verifiers_episode_outcomes.py` now parametrizes the reward gate over all five
+engine block variants rather than over `manipulative_order` and a fabricated
+`severity: block` event, and `scripts/check-optimized-guards.py` re-runs the refusal and
+its control under `python -O`.
+
+Not covered: per-event severity is all `process_score` decides. Ordering violations are a
+property of the event *sequence* (`check_lifecycle`), and this boundary does not compute
+them. Nothing published moved: the 52 artifact digests are unchanged and `SPEC_HASH`
+stays `460811a8d810c454`, since no `SPEC_FILES` source is touched.
+
 ### A14. `sharpebench-attest` is documented as a `SPEC_HASH` input and is not one (low-medium)
 
 `AGENTS.md` states that Arena pins "`sharpebench-core`, `sharpebench-sim`,
