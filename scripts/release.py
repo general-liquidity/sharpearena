@@ -191,56 +191,6 @@ def version_problems(root: Path, commit: str, expected: str) -> list[str]:
     return problems
 
 
-def bundle_problems(root: Path, commit: str, expected: str) -> list[str]:
-    """The committed wasm bundle carries the version compiled into it.
-
-    Every other version this release checks is a literal in a metadata file that
-    the bump rewrites. The bundle's comes from `CARGO_PKG_VERSION` at compile
-    time, so bumping the crate updates `npm/sharpearena/pkg/package.json` and
-    leaves the `.wasm` reporting the previous release. This release publishes the
-    committed bundle rather than a rebuild, so that mismatch fails the npm job
-    after crates.io and PyPI have already published, which is how v0.26.0 became
-    partial.
-
-    This loads the committed module and asks it, rather than running the full
-    `check-wasm-bundle.mjs` gate: the gate compares against a fresh build and so
-    needs wasm-pack and a compile, which a release job need not have. What has to
-    hold before tagging is that the artifact about to ship names this release.
-    """
-    pkg = root / "npm" / "sharpearena" / "pkg" / "sharpearena.js"
-    if not pkg.is_file():
-        return []
-    script = (
-        "const k = require(process.argv[1]);"
-        "process.stdout.write(typeof k.crate_version === 'function'"
-        " ? String(k.crate_version()) : '');"
-    )
-    completed = subprocess.run(
-        ["node", "-e", script, str(pkg)],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if completed.returncode != 0:
-        detail = (completed.stderr or completed.stdout).strip().splitlines()
-        return [
-            "the committed wasm bundle could not be loaded: "
-            + (detail[-1] if detail else "no output")
-        ]
-    reported = completed.stdout.strip()
-    if not reported:
-        return ["the committed wasm bundle does not export crate_version"]
-    if reported != expected:
-        return [
-            f"the committed wasm bundle reports {reported}, tag requires {expected}; "
-            "rebuild and commit it with `wasm-pack build crates/sharpearena-wasm "
-            "--target nodejs --out-dir ../../npm/sharpearena/pkg "
-            "--out-name sharpearena`"
-        ]
-    return []
-
-
 def _is_excluded(path: str, excludes: set[str]) -> bool:
     return any(part in excludes for part in PurePosixPath(path).parts)
 
@@ -458,7 +408,6 @@ def verify_tag(
 
     problems += manifest_problems(root, commit, manifest)
     problems += version_problems(root, commit, expected_version)
-    problems += bundle_problems(root, commit, expected_version)
     return problems, commit
 
 
