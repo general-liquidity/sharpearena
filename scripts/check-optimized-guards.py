@@ -144,6 +144,40 @@ def main() -> None:
     ):
         fail("a rollout whose orders cleared the risk gate lost its reward")
 
+    from sharpearena.event_contract import (
+        MalformedTargetWeights,
+        target_weight_vectors,
+    )
+    from sharpearena.mandate import STYLES, Mandate, mandate_breach
+
+    # ARENA-REVIEW A20. One event contract for the per-bar target weights, so the mandate
+    # path and the reward path cannot read the same stream by different rules. The refusal
+    # is an `if` and a `raise`, not an assertion, so it is here rather than absent under -O.
+    short_bar = {"event": "target_weights", "weights": [-0.5, 0.2]}
+    misnamed = {"event": "weights_update", "weights": [-0.5, 0.2]}
+    for events in ([misnamed], [short_bar, misnamed]):
+        try:
+            target_weight_vectors(events)
+        except MalformedTargetWeights:
+            pass
+        else:
+            fail(f"{events} was read instead of refused")
+        try:
+            mandate_breach(Mandate(style="long_only"), [], events)
+        except MalformedTargetWeights:
+            continue
+        fail(f"{events} was graded instead of refused")
+    # Control: the canonical event still grades, so the contract is not refusing everything.
+    if mandate_breach(Mandate(style="long_only"), [], [short_bar]) != 1.0:
+        fail("a short under a long-only mandate stopped scoring a structural breach")
+    if target_weight_vectors([short_bar]) != [[-0.5, 0.2]]:
+        fail("the canonical target-weight event stopped being read")
+
+    # ARENA-REVIEW A7. The style table is derived from the native enum at import, which is
+    # a plain module-level call rather than an assertion, so -O must still produce it.
+    if not STYLES or "long_only" not in STYLES:
+        fail("the derived mandate-style table is empty or missing a known style")
+
     print("OK: published guarantees still refuse under -O")
 
 

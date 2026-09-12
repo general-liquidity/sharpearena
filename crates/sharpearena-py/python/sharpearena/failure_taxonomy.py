@@ -38,6 +38,7 @@ import math
 from numbers import Real
 from typing import Any, Iterable, Optional, Sequence, Union
 
+from .event_contract import TARGET_WEIGHTS_EVENT, finite_target_weights
 from .mandate import Mandate, mandate_breach, validate_mandate
 
 
@@ -76,10 +77,8 @@ def _valid_events(events: list[Any]) -> bool:
         required = {"margin_call": "nav", "cascade_impact": "mark_drop"}.get(name)
         if required is not None and not _finite_real(event.get(required)):
             return False
-        if name == "target_weights":
-            weights = event.get("weights")
-            if not isinstance(weights, (list, tuple)) or not weights or not all(map(_finite_real, weights)):
-                return False
+        if name == TARGET_WEIGHTS_EVENT and not finite_target_weights(event):
+            return False
     return True
 
 

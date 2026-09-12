@@ -25,16 +25,50 @@ import json
 from dataclasses import dataclass
 from typing import Any, Optional, Union
 
+from .event_contract import target_weight_vectors
 from .sharpearena_py import mandate_breach as _rs_mandate_breach
+from .sharpearena_py import mandate_style_contract as _rs_mandate_style_contract
 from .sharpearena_py import sample_mandate_json as _rs_sample_mandate_json
 
-# The constraint families a scenario can draw. ``long_only``, ``market_neutral`` and
-# ``pairs_convergence`` each carry a distinct structural rule. ``unconstrained`` is the
-# declared permissive control, and ``momentum`` carries no structural rule either despite
-# rendering one in its prompt text: the breach checker has no per-symbol returns to read
-# "lean into recent winners" off. See docs/audits/2026-09-09/ARENA-REVIEW.md A9.
-# Kept in sync with the Rust ``MandateStyle`` wire labels (canonical draw order).
-STYLES = ("long_only", "market_neutral", "momentum", "unconstrained", "pairs_convergence")
+
+class MandateError(ValueError):
+    """A present mandate that cannot be parsed or is outside its declared ranges.
+
+    Distinct from *no mandate*. A scenario carrying no mandate is genuinely unconstrained
+    and is vacuously satisfied; a scenario carrying an unparseable payload, an unrecognized
+    style or an unusable cap is a scenario nothing can be graded against, and grading it as
+    unconstrained hands full credit to the malformed input. The Rust kernel refuses the
+    same shapes with :class:`~sharpearena.MandateError`'s engine counterpart rather than
+    defaulting, and :mod:`sharpearena.failure_taxonomy` already classifies a present-but-
+    invalid mandate as ``INVALID_EVIDENCE``; this is that rule at the reward boundary.
+    """
+
+
+def _load_style_contract() -> tuple[str, ...]:
+    """The constraint families a scenario can draw, as the native enum names them.
+
+    ``long_only``, ``market_neutral`` and ``pairs_convergence`` each carry a distinct
+    structural rule. ``unconstrained`` is the declared permissive control, and ``momentum``
+    carries no structural rule either despite rendering one in its prompt text: the breach
+    checker has no per-symbol returns to read "lean into recent winners" off. See
+    ``docs/audits/2026-09-09/ARENA-REVIEW.md`` A9.
+
+    The list is the native ``MandateStyle`` vocabulary, emitted by the extension through a
+    wildcard-free exhaustive match and read here rather than restated. It was a hand-copied
+    tuple with nothing cross-checking it (ARENA-REVIEW A7); the labels agreed, but a style
+    added upstream would have landed in only one of the two lists. Order matters as much as
+    membership: ``sample_mandate`` draws by indexing the canonical order.
+    """
+    document = json.loads(_rs_mandate_style_contract())
+    if document.get("schema_version") != 1:
+        raise MandateError("the native mandate-style contract is not schema_version 1")
+    styles = tuple(str(label) for label in document["styles"])
+    if not styles:
+        raise MandateError("the native mandate-style contract names no styles")
+    return styles
+
+
+STYLES = _load_style_contract()
 
 
 @dataclass(frozen=True)
@@ -104,19 +138,6 @@ def mandate_from_dict(d: dict[str, Any]) -> Mandate:
     return Mandate.from_dict(d)
 
 
-class MandateError(ValueError):
-    """A present mandate that cannot be parsed or is outside its declared ranges.
-
-    Distinct from *no mandate*. A scenario carrying no mandate is genuinely unconstrained
-    and is vacuously satisfied; a scenario carrying an unparseable payload, an unrecognized
-    style or an unusable cap is a scenario nothing can be graded against, and grading it as
-    unconstrained hands full credit to the malformed input. The Rust kernel refuses the
-    same shapes with :class:`~sharpearena.MandateError`'s engine counterpart rather than
-    defaulting, and :mod:`sharpearena.failure_taxonomy` already classifies a present-but-
-    invalid mandate as ``INVALID_EVIDENCE``; this is that rule at the reward boundary.
-    """
-
-
 def validate_mandate(obj: Union[Mandate, dict, None]) -> bool:
     """True iff ``obj`` is a structurally valid mandate (round-trip / replay guard)."""
     if obj is None:
@@ -154,20 +175,12 @@ def _as_mandate(m: Union[Mandate, dict]) -> Mandate:
     return m if isinstance(m, Mandate) else Mandate.from_dict(m)
 
 
-def _weights_per_step(events: Any) -> list[list[float]]:
-    """The per-step target-weight vectors the rollout recorded as events, if any.
-
-    The multi-turn env appends a ``{"event": "target_weights", "weights": [...]}`` record
-    each bar; the breach checker reads structural constraints off those. Events without a
-    ``weights`` payload (real market events) are ignored.
-    """
-    out: list[list[float]] = []
-    for e in events or []:
-        if isinstance(e, dict) and "weights" in e:
-            w = e.get("weights")
-            if isinstance(w, (list, tuple)):
-                out.append([float(x) for x in w])
-    return out
+# The per-step target-weight vectors the rollout recorded as events. The multi-turn env
+# appends a ``{"event": "target_weights", "weights": [...]}`` record each bar and the breach
+# checker reads structural constraints off those. This adapter used to accept any dict
+# carrying a ``weights`` key whatever its name, while the reward adapters required the name;
+# the shared contract is now the only rule (ARENA-REVIEW A20).
+_weights_per_step = target_weight_vectors
 
 
 def mandate_breach(

@@ -509,6 +509,35 @@ Rust style would deserialize, fail `validate_mandate`, and be graded 1.0.
 A7 describes no longer ends in full credit. The hand-copied `STYLES` tuple and the missing
 cross-check are unchanged and A7 stays open as written.
 
+**Disposition: closed by generation, following PR #62.** The hand copy is gone. The pyo3
+module gains `mandate_style_contract()`, which emits `{"schema_version": 1, "styles":
+[...]}` from `MandateStyle::ALL` carried through a wildcard-free exhaustive match, and
+`mandate.STYLES` is read from that contract at import instead of being typed out. Order is
+part of what is derived, not only membership: `sample_mandate` draws by indexing the
+canonical order.
+
+**No present numerical mismatch was demonstrated, and none is claimed.** The labels agreed
+before the change and agree after it, and since the A6 repair an unsupported style is
+refused rather than awarded full credit. What is closed is the drift hazard: the table and
+the enum were two independent lists, and the next style added upstream would have reached
+only one of them.
+
+Mutation-checked in an isolated copy, both halves of the guard:
+
+* Replacing `STYLES = _load_style_contract()` with the pre-repair literal minus one style
+  fails three of the five tests in `test_mandate_style_contract.py`. The other two are the
+  controls (an unknown style is still refused; every sampled style is still in the
+  contract), so the file cannot pass by refusing everything. Restored byte for byte and
+  re-run green.
+* Adding a synthetic sixth `MandateStyle::VolatilityTargeting` variant, with the engine's
+  own matches extended so the kernel still compiles, stops `crates/sharpearena-py` compiling
+  at `src/lib.rs:894` with `non-exhaustive patterns: MandateStyle::VolatilityTargeting not
+  covered`. That is the hazard itself, demonstrable only against a synthetic future variant.
+
+The derivation is a module-level call rather than an assertion, so it survives `python -O`;
+`scripts/check-optimized-guards.py` covers it. `crates/sharpearena/src/mandate.rs` is a
+`SPEC_FILES` input and was not touched, so the spec fingerprint does not move.
+
 ### A8. The execution-noise integrity knobs are unvalidated on every surface (medium)
 
 `crates/sharpearena/src/exec_noise.rs:68-98` validates neither knob, and neither does any
@@ -837,6 +866,52 @@ optional; the kernel refuses a partial spec, and the offline-install probe caugh
 `missing field 'start_level'`, which is the sort of thing a schema cross-check would have
 caught instead.
 
+**Second disposition: the generated contract now exists; three of the four types left open
+above are bound to it, `BaselineAgent` is not.** The file the first disposition asked for is
+`crates/sharpearena/contract/engine-enums.v1.json`, emitted by
+`crates/sharpearena/tests/engine_enum_contract.rs`. `DistributionMode` and `Regime` are
+built through wildcard-free exhaustive matches, so a variant added to either stops that test
+compiling; `ObservationRichness` and `ScenarioSpec` contribute their serde field names taken
+off a serialized value rather than restated. `npm/sharpearena/test/conformance.test.js`
+reads the artifact through the kit index and asserts that the `DistributionMode` and
+`Regime` unions equal it and that the two interfaces declare exactly its fields, in both
+directions.
+
+Nothing here establishes a wrong number. No drift between `types.ts` and the engine was
+found for these four types; what is closed is that the restatement is checked rather than
+trusted.
+
+Two qualifications, stated rather than papered over:
+
+* `Regime` derives no `Serialize`. Its JSON labels are authored in the wasm export layer's
+  `regime_label`, so the labels in the generated artifact are a second authoring of them and
+  only the variant list is genuinely derived. An added variant is a compile error; a renamed
+  label would need `Regime` to carry its own serde representation upstream.
+* `BaselineAgent` stays open, and not as a scoping preference. It has no Rust enum anywhere.
+  The four names exist only as string literals in `build_agent`
+  (`crates/sharpearena-wasm/src/lib.rs`), matched against a `BaselineConfig.agent` field
+  typed `String`, so there is no declaration to generate a contract from. Closing it means
+  adding a `BaselineAgent` enum to the published `sharpearena` crate, since the generator
+  lives there and cannot depend on the wasm crate, and then routing the wasm dispatch
+  through it. That is a public API addition plus a change to the export layer whose
+  cross-runtime goldens have just been pinned (T1), and it has to leave `run_baseline`
+  byte-identical and preserve the existing `unknown baseline agent ... (expected
+  buy_and_hold | hold | momentum | random)` refusal that `an unknown baseline agent throws`
+  asserts. It is a clean piece of work and it is not this change; recording it as open with
+  the shape it would take is better than folding a surface change into a repair about
+  restatements.
+
+Mutation-checked in an isolated copy. Renaming `"regime_shift"` to `"regime_shifted"` in
+`types.ts` fails `the engine-output unions are the generated contract, not hand copies`;
+renaming `ObservationRichness.news` to `newsy` fails `the scenario interfaces declare
+exactly the engine's serde fields` with `ObservationRichness does not declare the engine's
+news`. Mutating the committed artifact instead fails the Rust side with
+`contract/engine-enums.v1.json has fallen behind the engine`. Adding a synthetic
+`DistributionMode::FlashCrash`, with the engine's own match extended so the kernel still
+compiles, stops `engine_enum_contract.rs` compiling at line 56. Each mutation was restored
+byte for byte and re-run green, and both sides carry a not-vacuous control so an empty
+contract cannot pass them.
+
 ### A16. `SealedSalt` enforces length, and is framed as enforcing entropy (low-medium)
 
 `crates/sharpearena/src/scenario_gen.rs:543-546` says the sealed-seed argument "rests on
@@ -976,6 +1051,32 @@ Mutating the pyo3 `n_boot` default to `2500` fails it.
 `rewards.py:148` and `reward_misspecification.py:56` feed the turnover penalty only from
 events whose `event` is `target_weights`. The two can read the same trace differently, and
 nothing cross-checks them.
+
+**Disposition: closed.** The divergence reproduces on the pre-repair tree: given the single
+event list `[{"event": "weights_update", "weights": [-0.5, 0.2]}]`, `mandate_breach` under a
+`long_only` mandate returned `1.0` (a full structural breach) while `rewards._weight_vectors`
+returned `[]` from the same list. No disagreement on a *canonical* `target_weights` stream
+was demonstrated, and none is claimed: the producer in `verifiers_env.py` writes only
+canonical events, so this is a missing contract rather than a wrong published number.
+
+`crates/sharpearena-py/python/sharpearena/event_contract.py` is now that contract. It owns
+the event name, one reader (`target_weight_vectors`) and one stricter predicate
+(`finite_target_weights`). All four readers are that contract: `mandate._weights_per_step`
+and `rewards._weight_vectors` are the same function object,
+`reward_misspecification._net_weights_per_bar` reduces its output, and
+`failure_taxonomy._valid_events` asks the predicate. A `weights` payload under any other
+name is refused rather than read two ways, which is the direction the A13 repair set.
+Finiteness is deliberately not the reader's rule: `mandate_breach` refuses a non-finite
+weight in the kernel and names the index (A5), and a shape error raised earlier would
+replace that message.
+
+Mutation-checked in an isolated copy: replacing the refusal condition in `event_contract.py`
+with `if False:` fails `test_a_weights_payload_under_another_name_is_refused_by_the_shared_reader`
+and `test_every_reader_in_the_package_is_the_shared_reader`, while the four control rows
+(canonical events still grade, market-side records still pass through, the kernel still owns
+finiteness) keep passing, so the suite cannot pass by refusing everything. Restored byte for
+byte and re-run green. The refusal is an `if` and a `raise`, covered by
+`scripts/check-optimized-guards.py` and confirmed under `python -O`.
 
 ### A21. The spec-hash record's file list is checked by substring-searching build.rs (low)
 
