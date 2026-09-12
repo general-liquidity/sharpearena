@@ -235,6 +235,56 @@ test("the Action union is the schema's enum, not a hand copy that drifted", () =
   assert.deepEqual(unionMembers("Action"), [...schema("decision").$defs.Order.properties.action.enum].sort());
 });
 
+// --- The TypeScript restatement of the engine-output enums ------------------------
+//
+// The checks above cover the two wire-contract types, which have published schemas. The
+// engine-output enums have none: they restate Rust declarations, which is the part of A15
+// left open ("that would need a generated contract file rather than a test"). That file now
+// exists at contract/engine-enums.v1.json, emitted by
+// crates/sharpearena/tests/engine_enum_contract.rs through wildcard-free exhaustive matches,
+// so a variant added to the engine fails that crate's compile and a union that drifts from
+// it fails here. `BaselineAgent` is still not covered: it has no Rust enum to generate from,
+// only a string dispatch in the wasm export layer.
+
+const ENGINE_ENUMS = readJson(CONTRACT, KIT.engine_enums);
+
+test("the engine-output unions are the generated contract, not hand copies", () => {
+  for (const [name, labels] of Object.entries(ENGINE_ENUMS.enums)) {
+    assert.deepEqual(
+      unionMembers(name),
+      [...labels].sort(),
+      `the ${name} union in src/types.ts has drifted from the engine`,
+    );
+  }
+});
+
+test("the scenario interfaces declare exactly the engine's serde fields", () => {
+  for (const [name, fields] of Object.entries(ENGINE_ENUMS.structs)) {
+    const declared = interfaceFields(name);
+    for (const field of fields) {
+      assert.ok(declared.has(field), `${name} does not declare the engine's \`${field}\``);
+    }
+    for (const field of declared) {
+      assert.ok(
+        fields.includes(field),
+        `${name} declares \`${field}\`, which the engine does not serialize`,
+      );
+    }
+  }
+});
+
+test("the generated enum contract is not vacuous", () => {
+  // A contract that named nothing would make both cross-checks above pass for free.
+  assert.equal(ENGINE_ENUMS.schema_version, 1);
+  assert.ok(Object.keys(ENGINE_ENUMS.enums).length >= 2);
+  for (const labels of Object.values(ENGINE_ENUMS.enums)) {
+    assert.ok(labels.length > 0);
+  }
+  for (const fields of Object.values(ENGINE_ENUMS.structs)) {
+    assert.ok(fields.length > 0);
+  }
+});
+
 test("a malformed decision is rejected, so the validator is not vacuous", () => {
   const root = schema("decision");
   const bad = { orders: [{ symbol: "SPY", action: "liquidate", target_weight: "0.5" }] };
