@@ -6,17 +6,109 @@ The record is runner-owned accounting, not an attestation from an untrusted agen
 
 from __future__ import annotations
 
+import json
 import math
 from functools import wraps
 from typing import Any, Callable
 
+from .sharpearena_py import process_event_contract
+
+
+class UnsupportedProcessEvent(ValueError):
+    """An event this boundary cannot classify against the pinned engine's contract.
+
+    Refusing is the whole point. The previous classifier matched the substring
+    ``manipulative``, the exact name ``protocol_error`` and an explicit ``severity``
+    field, and returned False for everything else. The pinned engine's ``ProcessEvent``
+    serializes with neither that token nor a severity field, so four of its five
+    block-severity variants read as clean and kept their training reward
+    (ARENA-REVIEW A13). An event whose severity is not established is therefore an
+    error here, never a pass.
+    """
+
+
+# The engine's own vocabulary and its own severities, obtained from the pinned
+# sharpebench-core through the native extension rather than restated. `_DISCRIMINANTS`
+# maps each event name to the boolean fields that decide its severity (`order_placed`
+# is clean or block depending on `risk_gate_passed`); `_SEVERITY` is keyed by the name
+# plus those fields' values.
+def _load_engine_contract() -> tuple[dict[str, tuple[str, ...]], dict[tuple, str]]:
+    document = json.loads(process_event_contract())
+    if document.get("schema_version") != 1:
+        raise UnsupportedProcessEvent(
+            "the native process-event contract is not schema_version 1"
+        )
+    discriminants: dict[str, set[str]] = {}
+    severity: dict[tuple, str] = {}
+    for entry in document["events"]:
+        event = entry["event"]
+        name = event["event"]
+        fields = tuple(
+            sorted(
+                key
+                for key, value in event.items()
+                if key != "event" and isinstance(value, bool)
+            )
+        )
+        discriminants.setdefault(name, set()).update(fields)
+        severity[(name, tuple((key, event[key]) for key in fields))] = entry["severity"]
+    return {name: tuple(sorted(f)) for name, f in discriminants.items()}, severity
+
+
+_DISCRIMINANTS, _SEVERITY = _load_engine_contract()
+
+# Events this package writes into the same list, which the engine's enum therefore does
+# not describe: the rollout layer's own protocol failure and its record of the decided
+# target weights (`verifiers_env`), and the liquidation-cascade wrapper's chain
+# (`cascade`). Only the protocol failure is a process block; the rest are bookkeeping or
+# market-side consequences and must not cost an agent its reward. This list is
+# hand-maintained because these names are ours, and `tests/test_process_event_contract.py`
+# drives the producers to check it stays complete.
+_ARENA_SEVERITY = {
+    "protocol_error": "block",
+    "target_weights": "none",
+    "margin_call": "none",
+    "forced_reduce": "none",
+    "cascade_impact": "none",
+}
+
+if set(_ARENA_SEVERITY) & set(_DISCRIMINANTS):
+    raise UnsupportedProcessEvent(
+        "an Arena-owned event name collides with the engine's: "
+        f"{sorted(set(_ARENA_SEVERITY) & set(_DISCRIMINANTS))}"
+    )
+
 
 def is_process_block(event: dict) -> bool:
-    name = str(event.get("event", "")).lower()
-    return (
-        "manipulative" in name
-        or name == "protocol_error"
-        or str(event.get("severity", "")).lower() == "block"
+    """Whether `event` is a block-severity process violation.
+
+    Raises :class:`UnsupportedProcessEvent` for an event the contract does not define,
+    and for an engine event missing the boolean discriminant its severity depends on.
+    """
+    if not isinstance(event, dict):
+        raise UnsupportedProcessEvent(f"a process event must be a dict, got {event!r}")
+    name = event.get("event")
+    if not isinstance(name, str):
+        raise UnsupportedProcessEvent(f"a process event must be named, got {event!r}")
+    if name in _DISCRIMINANTS:
+        key = []
+        for field in _DISCRIMINANTS[name]:
+            value = event.get(field)
+            if not isinstance(value, bool):
+                raise UnsupportedProcessEvent(
+                    f"{name} carries no boolean {field}, so its severity is undecided"
+                )
+            key.append((field, value))
+        severity = _SEVERITY.get((name, tuple(key)))
+        if severity is None:
+            raise UnsupportedProcessEvent(
+                f"the engine contract defines no severity for {event!r}"
+            )
+        return severity == "block"
+    if name in _ARENA_SEVERITY:
+        return _ARENA_SEVERITY[name] == "block"
+    raise UnsupportedProcessEvent(
+        f"{name!r} is not an event the pinned engine or this package defines"
     )
 
 
@@ -54,7 +146,7 @@ def reward_eligible(state: dict | None) -> bool:
     events = state.get("events")
     if not isinstance(events, list):
         return False
-    return all(isinstance(e, dict) and not is_process_block(e) for e in events)
+    return not any(is_process_block(e) for e in events)
 
 
 def eligible_reward(

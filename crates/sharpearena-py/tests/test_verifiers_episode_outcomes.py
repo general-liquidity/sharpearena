@@ -136,11 +136,18 @@ def test_missing_outcome_cannot_be_submitted_as_a_completed_rollout():
     assert score({"returns": [0.2] * 4, "events": []}) == -1.0
 
 
+# Every block-severity variant the pinned engine can write, not only the one whose
+# name happens to contain "manipulative". `severity` is gone from this list because the
+# engine never writes such a field; an event carrying one is refused now, which
+# `tests/test_process_event_contract.py` covers.
 @pytest.mark.parametrize(
     "event",
     [
         {"event": "manipulative_order"},
-        {"event": "risk_refusal", "severity": "block"},
+        {"event": "order_placed", "risk_gate_passed": False},
+        {"event": "drawdown_halt", "respected": False},
+        {"event": "denylist_bypass"},
+        {"event": "tail_selling_exposure", "hedged": False},
     ],
 )
 def test_process_block_is_a_reward_gate_not_only_a_metric(market, event):
