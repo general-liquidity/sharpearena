@@ -27,6 +27,7 @@ from typing import Any, Optional
 import numpy as np
 
 from .decision_parser import format_reward
+from .event_contract import target_weight_vectors
 from .episode_outcomes import eligible_reward
 from .verifiers_env import (
     _HAS_VERIFIERS,
@@ -141,15 +142,9 @@ def drawdown_penalized(
     return float(max(-1.0, min(1.0, val)))
 
 
-def _weight_vectors(events: Any) -> list[list[float]]:
-    """Per-bar target-weight vectors from ``{"event": "target_weights", "weights": [...]}``."""
-    out: list[list[float]] = []
-    for e in events or []:
-        if isinstance(e, dict) and e.get("event") == "target_weights":
-            w = e.get("weights")
-            if isinstance(w, (list, tuple)):
-                out.append([float(x) for x in w])
-    return out
+# Per-bar target-weight vectors from ``{"event": "target_weights", "weights": [...]}``, read
+# through the one contract every consumer of this stream shares (ARENA-REVIEW A20).
+_weight_vectors = target_weight_vectors
 
 
 def turnover_penalized(

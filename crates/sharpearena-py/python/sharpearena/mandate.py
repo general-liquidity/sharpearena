@@ -25,6 +25,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Optional, Union
 
+from .event_contract import target_weight_vectors
 from .sharpearena_py import mandate_breach as _rs_mandate_breach
 from .sharpearena_py import sample_mandate_json as _rs_sample_mandate_json
 
@@ -154,20 +155,12 @@ def _as_mandate(m: Union[Mandate, dict]) -> Mandate:
     return m if isinstance(m, Mandate) else Mandate.from_dict(m)
 
 
-def _weights_per_step(events: Any) -> list[list[float]]:
-    """The per-step target-weight vectors the rollout recorded as events, if any.
-
-    The multi-turn env appends a ``{"event": "target_weights", "weights": [...]}`` record
-    each bar; the breach checker reads structural constraints off those. Events without a
-    ``weights`` payload (real market events) are ignored.
-    """
-    out: list[list[float]] = []
-    for e in events or []:
-        if isinstance(e, dict) and "weights" in e:
-            w = e.get("weights")
-            if isinstance(w, (list, tuple)):
-                out.append([float(x) for x in w])
-    return out
+# The per-step target-weight vectors the rollout recorded as events. The multi-turn env
+# appends a ``{"event": "target_weights", "weights": [...]}`` record each bar and the breach
+# checker reads structural constraints off those. This adapter used to accept any dict
+# carrying a ``weights`` key whatever its name, while the reward adapters required the name;
+# the shared contract is now the only rule (ARENA-REVIEW A20).
+_weights_per_step = target_weight_vectors
 
 
 def mandate_breach(

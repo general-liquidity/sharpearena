@@ -27,6 +27,7 @@ from typing import Any, Callable, Optional, Sequence
 
 import numpy as np
 
+from .event_contract import target_weight_vectors
 from .kernel_score import kernel_score_difference, kernel_score_or_unavailable
 from .sharpearena_py import score_run
 
@@ -50,14 +51,14 @@ def _returns_from_state(state: Optional[dict]) -> list[float]:
 
 
 def _net_weights_per_bar(state: Optional[dict]) -> list[float]:
-    """Net signed weight per ``target_weights`` event (the agent's directional bet)."""
-    out: list[float] = []
-    for e in (state or {}).get("events", []) or []:
-        if isinstance(e, dict) and e.get("event") == "target_weights":
-            w = e.get("weights")
-            if isinstance(w, (list, tuple)):
-                out.append(float(sum(float(x) for x in w)))
-    return out
+    """Net signed weight per ``target_weights`` event (the agent's directional bet).
+
+    The vectors come from the shared event contract, so this control reads the stream by the
+    same rule the mandate and turnover paths do (ARENA-REVIEW A20).
+    """
+    return [
+        float(sum(w)) for w in target_weight_vectors((state or {}).get("events", []))
+    ]
 
 
 def raw_pnl_unpenalized(
