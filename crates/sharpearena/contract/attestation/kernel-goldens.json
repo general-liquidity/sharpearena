@@ -1,0 +1,115 @@
+{
+  "note": "Cross-runtime goldens for the three exports the backtest goldens next door do not reach: walk_forward, stress_suite and tag_regime. Each entry is the exact JSON input the kernel takes and the FNV-1a/64 fingerprint of the bytes it must return. Native Rust, the wasm32 export layer and the published npm package all read this one file, so an arithmetic difference between the host build and the wasm32 build in one of these three exports fails a gate instead of shipping. A tag_regime entry's dataset is the kernel's own dataset_synthetic output for `dataset`, passed verbatim, so the pin is on the regime tagging rather than on a re-serialization of the panel. These entries pin output bytes only: not SPEC_HASH, not a wasm digest, nothing a bundle rebuild moves. walk_forward, tag_regime and Dataset (whose stress_suite builds the named adversarial panels) all come from sharpebench-sim, pinned at =0.21.0, so a spec-hash rebind and the rebuild that follows it leave them alone, and a change confined to the arena crate's own modules does too. If a fingerprint here ever moves it is a sharpebench-sim pin move or a change in the wasm facade's parameter translation, both of which belong in the changelog. That makes a moved fingerprint a finding, not something to regenerate: do not re-record these values to turn the suite green.",
+  "fingerprint": "fnv1a-64",
+  "walk_forward": [
+    {
+      "name": "wf_200d_warmup20_test60_step60",
+      "fnv1a64": "3f420a5cdab06264",
+      "pre_hash": "walk-forward-200d-w20-t60-s60.json",
+      "params": {
+        "n_days": 200,
+        "warmup": 20,
+        "test": 60,
+        "step": 60
+      }
+    },
+    {
+      "name": "wf_365d_warmup30_test45_step20",
+      "fnv1a64": "0c466fc89fcb5805",
+      "pre_hash": "walk-forward-365d-w30-t45-s20.json",
+      "params": {
+        "n_days": 365,
+        "warmup": 30,
+        "test": 45,
+        "step": 20
+      }
+    },
+    {
+      "name": "wf_120d_warmup20_test25_step25",
+      "fnv1a64": "0abc9334e4f75f5e",
+      "pre_hash": "walk-forward-120d-w20-t25-s25.json",
+      "params": {
+        "n_days": 120,
+        "warmup": 20,
+        "test": 25,
+        "step": 25
+      }
+    }
+  ],
+  "stress_suite": [
+    {
+      "name": "stress_suite_seed0",
+      "fnv1a64": "ade8f34210937f34",
+      "pre_hash": "stress-suite-seed0.json",
+      "params": {
+        "seed": 0
+      }
+    },
+    {
+      "name": "stress_suite_seed7",
+      "fnv1a64": "ab2f47fd83ea4083",
+      "pre_hash": "stress-suite-seed7.json",
+      "params": {
+        "seed": 7
+      }
+    }
+  ],
+  "tag_regime": [
+    {
+      "name": "regime_2x120_seed0_full",
+      "fnv1a64": "767cb8a1ed9ac5f4",
+      "pre_hash": "tag-regime-2x120-seed0-0-120.json",
+      "dataset": {
+        "n_symbols": 2,
+        "n_days": 120,
+        "seed": 0
+      },
+      "window": {
+        "start": 0,
+        "end": 120
+      }
+    },
+    {
+      "name": "regime_2x120_seed7_full",
+      "fnv1a64": "2d89050c3ee1559f",
+      "pre_hash": "tag-regime-2x120-seed7-0-120.json",
+      "dataset": {
+        "n_symbols": 2,
+        "n_days": 120,
+        "seed": 7
+      },
+      "window": {
+        "start": 0,
+        "end": 120
+      }
+    },
+    {
+      "name": "regime_2x120_seed3_full",
+      "fnv1a64": "a8f0273daee059a6",
+      "pre_hash": "tag-regime-2x120-seed3-0-120.json",
+      "dataset": {
+        "n_symbols": 2,
+        "n_days": 120,
+        "seed": 3
+      },
+      "window": {
+        "start": 0,
+        "end": 120
+      }
+    },
+    {
+      "name": "regime_2x120_seed11_tail",
+      "fnv1a64": "2d89050c3ee1559f",
+      "pre_hash": "tag-regime-2x120-seed11-20-60.json",
+      "dataset": {
+        "n_symbols": 2,
+        "n_days": 120,
+        "seed": 11
+      },
+      "window": {
+        "start": 20,
+        "end": 60
+      }
+    }
+  ]
+}
