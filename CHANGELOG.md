@@ -6,9 +6,11 @@ version covers the Rust crates, the npm package and the PyPI package; each
 section is one `v*` tag and links the commits it was built from. The wire
 contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
-[Unreleased]: https://github.com/general-liquidity/sharpearena/compare/v0.26.0...HEAD
+[Unreleased]: https://github.com/general-liquidity/sharpearena/compare/v0.27.0...HEAD
 
 ## [Unreleased]
+
+## [0.27.0] - 2026-09-12
 
 ### Fixed
 
@@ -477,6 +479,7 @@ First published release, as OpenOutcry.
 ### Fixed
 - ci: toolchain pinned to 1.96.0 for the wasm32 target; a virtualenv for maturin ([bb0ee4d](https://github.com/general-liquidity/sharpearena/commit/bb0ee4d)).
 
+[0.27.0]: https://github.com/general-liquidity/sharpearena/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/general-liquidity/sharpearena/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/general-liquidity/sharpearena/compare/v0.24.1...v0.25.0
 [0.24.1]: https://github.com/general-liquidity/sharpearena/compare/v0.24.0...v0.24.1
