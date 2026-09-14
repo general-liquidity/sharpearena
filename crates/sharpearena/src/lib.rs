@@ -135,6 +135,16 @@ pub use sharpebench_sim::{
 // exposes it at module level only (hence the `agent::` path).
 pub use sharpebench_sim::agent::RiskManaged;
 
+// --- The JSON label vocabularies the export layers write ----------------------------------
+//
+// The two vocabularies that cannot carry their own serde representation: `BaselineAgent`,
+// which had no Rust declaration at all, and `Regime`, which is a foreign type this crate
+// cannot derive `Serialize` for. Both are authored once here so the generated contract in
+// `contract/engine-enums.v1.json` and the bytes the export layers emit cannot disagree.
+
+pub mod vocabulary;
+pub use vocabulary::{regime_label, BaselineAgent, REGIMES};
+
 // --- The language-agnostic wire contract (the standard SharpeArena governs) -----------------
 
 pub use sharpebench_protocol::{

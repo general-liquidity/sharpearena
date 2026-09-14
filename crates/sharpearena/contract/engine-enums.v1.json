@@ -1,5 +1,11 @@
 {
   "enums": {
+    "BaselineAgent": [
+      "buy_and_hold",
+      "hold",
+      "momentum",
+      "random"
+    ],
     "DistributionMode": [
       "calm",
       "hard",

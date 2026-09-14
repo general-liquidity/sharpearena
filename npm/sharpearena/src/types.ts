@@ -156,7 +156,13 @@ export interface DatasetSource {
   csv?: string;
 }
 
-/** The named baseline agents shipped in-process by the engine. */
+/**
+ * The named baseline agents shipped in-process by the engine.
+ *
+ * Checked against `contract/engine-enums.v1.json`, which is generated from the
+ * `sharpearena::BaselineAgent` enum the wasm dispatch resolves through, so this union is a
+ * restatement that fails a test when it drifts rather than one that is trusted.
+ */
 export type BaselineAgent = "buy_and_hold" | "hold" | "momentum" | "random";
 
 /** Config for {@link runBaseline}. */
@@ -181,7 +187,13 @@ export interface WalkForwardParams {
   step: number;
 }
 
-/** A coarse market-regime label over a window. */
+/**
+ * A coarse market-regime label over a window.
+ *
+ * Checked against `contract/engine-enums.v1.json`, which takes these labels from
+ * `sharpearena::regime_label` — the same function `tagRegime` emits through, so the
+ * published label and the emitted label are one declaration.
+ */
 export type Regime = "bull" | "bear" | "chop";
 
 /** One named adversarial stress scenario. */
