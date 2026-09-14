@@ -130,6 +130,43 @@ run smoke-install` (30 tests), `cargo fmt`/`cargo clippy` inside
 paper/src/check-provenance.py`. This change adds no new refusal path, so the `-O`
 leg is a regression check here rather than a new guarantee being validated.
 
+### Merging the concurrent round
+
+PR #70 landed on `main` while this branch was open, adding
+`crates/sharpearena/src/vocabulary.rs` to the published crate, routing
+`build_agent` through `BaselineAgent::parse`, adding a `BaselineAgent` entry to
+`contract/engine-enums.v1.json`, and making `regime_label` the one site the
+contract generator and the export layer both read. It established that `SPEC_HASH`
+did not move for its change and deliberately did not rebuild the bundle.
+
+One conflict, `paper/evidence/provenance.json`, resolved to the incoming side and
+then regenerated at the tip on a clean tree in its own commit, so the manifest is a
+fresh snapshot rather than a three-way splice. The bundle was rebuilt after the
+merge rather than resolved to either side, so it carries both changes.
+
+The post-merge fingerprint was established rather than inherited.
+`committed_spec_hash_record_is_current` compares the committed record against the
+value `build.rs` computes on the merged tree and passes at `bbaaff0cf9b9e1f4`, so
+`src/vocabulary.rs` does not enter the seven spec inputs and no second rebind was
+needed. That test is not vacuous: it failed with `left: 460811a8d810c454 / right:
+bbaaff0cf9b9e1f4` before the pins were rebound.
+
+A stale branch and a branch that reverts a file produce the same diff, so #70's
+work is asserted present rather than assumed: `vocabulary.rs` exists,
+`engine-enums.v1.json` carries exactly one `BaselineAgent` entry, `grep -c
+'Regime::Bull => "bull"'` across tracked Rust sources is 1 and it is in
+`vocabulary.rs`, #70's `Breaking` changelog entry survives, and its third A15
+disposition survives alongside the first two. One reconciling sentence was added to
+that Breaking entry: its claim that `SPEC_HASH` is unaffected by `src/vocabulary.rs`
+is true and stands, and the sentence records that the fingerprint has since moved
+elsewhere in the same unreleased cycle, so the two entries do not read as
+disagreeing about the current value.
+
+All checks were re-run on the merged head rather than inherited from the
+pre-merge run, and the F7 artifact reproduces byte for byte at the merged tip. The
+provenance manifest moves exactly two of its 52 artifact digests, with none added
+and none removed.
+
 ### Not established
 
 The ledger under `docs/audits/2026-09-09/` is mirrored byte for byte into
@@ -137,10 +174,17 @@ SharpeBench. This round edits `ARENA-REVIEW.md`, `IMPLEMENTATION.md` and this fi
 on the SharpeArena side only, so the mirror is out of date until it is restored
 there. Nothing in the sibling repository was touched from here.
 
-The pre-existing staleness of the other seven evidence artifacts is not addressed.
-F7 was regenerated because this change required it; F1, F2, F3, F4, F5, F6 and F8
-were not rerun, so whether they still reproduce at the current tip is untested and
-unclaimed. The F7 result makes it likely at least some of them do not.
+The pre-existing staleness of the other seven evidence artifacts is an unverified
+observation, deliberately not investigated here. The evidence for it is indirect
+but specific: rerunning `make-f7-failures.py` at the parent commit, with no code
+change in the tree, produced an artifact differing from the committed bytes in an
+added `effective_config` block, two added rollup counters, 30 `mode` values and 5
+`n_bars` values. That is drift accumulated since `70fb02c`, where all eight
+artifacts were generated in one run, and F1 through F6 and F8 come from that same
+run and have not been regenerated since. `03-environment.tex` already records that
+the committed evidence predates `effective_config` for several of them, which is
+consistent. No other producer was run, so nothing here is claimed as established;
+it is recorded so it is not lost and is being taken separately.
 
 ## Verifying the verification, 2026-09-12
 
