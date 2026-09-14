@@ -141,7 +141,7 @@ The transfer matrix (\cref{fig:f3}) is where regime structure appears, and every
 
 \begin{table}[t]
 \centering
-\caption{Failure-mode counts per tier, 128 episodes each (8 policies $\times$ 16 seeds). No episode reaches bankruptcy or a cascade wipe; failure is dominated by mandate breaches, and drawdown breaches triple from Calm to Extreme.}
+\caption{Failure-mode counts per tier, 128 episodes each (8 policies $\times$ 16 seeds). No episode reaches bankruptcy or a cascade wipe; failure is dominated by structural mandate breaches, which are flat across tiers, while the stress-sensitive modes are the drawdown family.}
 \label{tab:f7}
 \small
 \setlength{\tabcolsep}{5pt}
@@ -149,16 +149,16 @@ The transfer matrix (\cref{fig:f3}) is where regime structure appears, and every
 \toprule
 Tier & Clean & Stopped out & Mandate struct. & Mandate DD & Mandate inv. & Bankrupt & Clean rate \\
 \midrule
-Calm & 72 & 0 & 36 & 11 & 9 & 0 & 0.56 \\
-Hard & 68 & 0 & 36 & 14 & 10 & 0 & 0.53 \\
-Extreme & 50 & 5 & 31 & 32 & 10 & 0 & 0.39 \\
+Calm & 51 & 0 & 50 & 19 & 8 & 0 & 0.40 \\
+Hard & 49 & 0 & 50 & 21 & 8 & 0 & 0.38 \\
+Extreme & 43 & 10 & 43 & 25 & 7 & 0 & 0.34 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Mandates are sampled per scenario and assigned to fixed policies that cannot observe or adapt to them, so a structural breach is guaranteed whenever the draw pairs, say, a shorting policy with a long-only mandate. The flat structural-breach counts across tiers (36, 36, 31) are the signature of that assignment mechanism, not a behavioral finding about agents; a mandate-aware field could invert the distribution entirely, and measuring one is the interesting follow-up.
+Mandates are sampled per scenario and assigned to fixed policies that cannot observe or adapt to them, so a structural breach is guaranteed whenever the draw pairs, say, a shorting policy with a long-only mandate. The flat structural-breach counts across tiers (50, 50, 43) are the signature of that assignment mechanism, not a behavioral finding about agents; a mandate-aware field could invert the distribution entirely, and measuring one is the interesting follow-up. The draw itself changed with this revision: the momentum style is no longer sampled, because \texttt{mandate\_breach} reads per-bar portfolio weights and pooled returns and has no per-symbol returns to grade "lean into recent winners" against (\cref{sec:mandates}). Episodes that previously drew it are redrawn as styles that do carry a rule, so 264 of the 384 episodes are now graded against a structural constraint where 168 were before, and the structural counts rise accordingly. The remaining 120 draw the declared permissive control, which is scored by its optional caps alone and says so in its prompt text.
 
-\Cref{tab:f7} and \cref{fig:f7} show the shape of failure as stress rises. The clean rate falls from 0.56 on Calm to 0.39 on Extreme. Each rate is 128 episodes, so a difference between two tiers carries a nominal binomial 95\% half-width of about $0.12$; the episodes sharing a seed or a policy are not independent, so that width is a floor. The Calm-to-Hard step (0.56 versus 0.53) sits inside it and is not interpreted; the drop to Extreme is the only step that clears it. Structural mandate breaches are roughly flat across tiers, as the mechanism above dictates: a shorting policy under a sampled long-only mandate breaks the rule on every tier. The stress-sensitive modes are the drawdown family: mandate drawdown breaches triple from 11 on Calm to 32 on Extreme, and hard stop-outs at the 50\% line appear only on Extreme (5 episodes, four of them \texttt{max\_sharpe}). No policy in this field ever reaches bankruptcy or a cascade wipe; the taxonomy's worst states are reachable but not by these baselines at this stop level. Per policy, \texttt{flat} is clean 48/48 by construction, while \texttt{overconfident} accounts for the most Calm failures (7 of its 16 episodes end in a drawdown breach) and \texttt{max\_sharpe} is the worst on Extreme (3 clean of 16). On this mandate-blind reference field, roughly half of all episodes end in a process failure that a return-ranked board does not record: 189 of 384. Counted against failures rather than episodes the share is 189 of 194, because only five episodes fail on PnL at all, every one of them a stop-out.
+\Cref{tab:f7} and \cref{fig:f7} show the shape of failure as stress rises. The clean rate falls from 0.40 on Calm to 0.34 on Extreme. Each rate is 128 episodes, so a difference between two tiers carries a nominal binomial 95\% half-width of about $0.12$; the episodes sharing a seed or a policy are not independent, so that width is a floor. Every tier-to-tier step, including Calm to Extreme at 0.40 versus 0.34, sits inside that width, so the monotone ordering of clean rates describes these 16 seeds and is not a resolved difference. What the tiers do separate is the composition of failure rather than its rate. Structural mandate breaches are flat, as the mechanism above dictates: a shorting policy under a sampled long-only mandate breaks the rule on every tier. The stress-sensitive modes are the drawdown family: mandate drawdown breaches rise from 19 on Calm to 25 on Extreme, and hard stop-outs at the 50\% line appear only on Extreme (10 episodes: 5 \texttt{overconfident}, 4 \texttt{max\_sharpe}, 1 \texttt{disposition\_effect}). No policy in this field ever reaches bankruptcy or a cascade wipe; the taxonomy's worst states are reachable but not by these baselines at this stop level. Per policy, \texttt{flat} is clean 48/48 by construction, while \texttt{overconfident} and the \texttt{momentum} policy are the worst on Calm (3 clean of 16 each, 8 of each one's failures a drawdown breach) and \texttt{overconfident} is the worst on Extreme (2 clean of 16). On this mandate-blind reference field, most episodes end in a process failure that a return-ranked board does not record: 231 of 384. Counted against failures rather than episodes the share is 231 of 241, because only ten episodes fail on PnL at all, every one of them a stop-out.
 
 \begin{figure}[t]
 \centering
