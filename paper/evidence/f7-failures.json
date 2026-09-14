@@ -39,6 +39,86 @@
       "overconfident"
     ]
   },
+  "effective_config": {
+    "calm": {
+      "n_symbols": 4,
+      "n_bars": 120,
+      "window_start": 0,
+      "window_end": 120,
+      "verified": true,
+      "readback": "panel dimensions, window and tape fingerprint read from the environment that consumed the configuration; the generation knobs are bound by the fingerprint, not echoed",
+      "dataset_fnv1a64": {
+        "0": "655f219fadf7b970",
+        "1": "bc27f670c98df2df",
+        "2": "fe76e0632948c7bf",
+        "3": "db2131cdfef66e56",
+        "4": "f40f3bc7db283460",
+        "5": "4e4e60a8dba227a4",
+        "6": "25f9558983d45452",
+        "7": "8fde829e52d8edde",
+        "8": "5a0fe41510acb467",
+        "9": "f123346341dc56f5",
+        "10": "405042d92a31f397",
+        "11": "c6cb1ab285b862ef",
+        "12": "7ae75645166c26be",
+        "13": "3881cf9c47961123",
+        "14": "50f5892f6541f94f",
+        "15": "57cf8ba5b55dab4e"
+      }
+    },
+    "hard": {
+      "n_symbols": 4,
+      "n_bars": 120,
+      "window_start": 0,
+      "window_end": 120,
+      "verified": true,
+      "readback": "panel dimensions, window and tape fingerprint read from the environment that consumed the configuration; the generation knobs are bound by the fingerprint, not echoed",
+      "dataset_fnv1a64": {
+        "0": "a58b9feea5fdf70e",
+        "1": "01075fcd5b71c317",
+        "2": "0f9c2b30fc2dba67",
+        "3": "960473f2d9d6d54b",
+        "4": "9b979413e08cfe12",
+        "5": "12fb56358912bea9",
+        "6": "bde46292244b7a3f",
+        "7": "fe57367ad43c48e1",
+        "8": "152c88d2d3186865",
+        "9": "f4733f9047fc245c",
+        "10": "628b12e277c0ac42",
+        "11": "b00c7bec9b3e42ab",
+        "12": "d83d9e22327a3b79",
+        "13": "d21a21710ca7d2e2",
+        "14": "2cd63570d1f58476",
+        "15": "776ab3b6abe14b8f"
+      }
+    },
+    "extreme": {
+      "n_symbols": 4,
+      "n_bars": 120,
+      "window_start": 0,
+      "window_end": 120,
+      "verified": true,
+      "readback": "panel dimensions, window and tape fingerprint read from the environment that consumed the configuration; the generation knobs are bound by the fingerprint, not echoed",
+      "dataset_fnv1a64": {
+        "0": "f1351d988f2c3772",
+        "1": "5f2d03f1c1f1b06c",
+        "2": "7d916c9a7662233f",
+        "3": "a30d54a216c253ee",
+        "4": "5c6477e5b3a2a1cf",
+        "5": "82fd2a7cc13d1bb7",
+        "6": "7dd50f3ee850ce87",
+        "7": "71e4f877b238e609",
+        "8": "6ad92fbd002f86e9",
+        "9": "1fbcc3a695e3ffc1",
+        "10": "a0f14fb40d5ffb30",
+        "11": "1843c8b8cc847674",
+        "12": "489ea43a059ba8b5",
+        "13": "ac00958c10a9da50",
+        "14": "37f4461715ea48d0",
+        "15": "79569de4de0c4b04"
+      }
+    }
+  },
   "episodes": [
     {
       "tier": "calm",
@@ -61,7 +141,7 @@
       "policy": "flat",
       "seed": 2,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "market_neutral",
       "mode": "clean"
     },
     {
@@ -69,7 +149,7 @@
       "policy": "flat",
       "seed": 3,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "market_neutral",
       "mode": "clean"
     },
     {
@@ -77,7 +157,7 @@
       "policy": "flat",
       "seed": 4,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "market_neutral",
       "mode": "clean"
     },
     {
@@ -85,7 +165,7 @@
       "policy": "flat",
       "seed": 5,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "market_neutral",
       "mode": "clean"
     },
     {
@@ -101,7 +181,7 @@
       "policy": "flat",
       "seed": 7,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -117,7 +197,7 @@
       "policy": "flat",
       "seed": 9,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -141,7 +221,7 @@
       "policy": "flat",
       "seed": 12,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -157,7 +237,7 @@
       "policy": "flat",
       "seed": 14,
       "n_bars": 120,
-      "mandate_style": "market_neutral",
+      "mandate_style": "long_only",
       "mode": "clean"
     },
     {
@@ -189,32 +269,32 @@
       "policy": "equal_weight_long",
       "seed": 2,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "calm",
       "policy": "equal_weight_long",
       "seed": 3,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "calm",
       "policy": "equal_weight_long",
       "seed": 4,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "calm",
       "policy": "equal_weight_long",
       "seed": 5,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "calm",
@@ -229,7 +309,7 @@
       "policy": "equal_weight_long",
       "seed": 7,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "mandate_inventory"
     },
     {
@@ -245,7 +325,7 @@
       "policy": "equal_weight_long",
       "seed": 9,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -269,7 +349,7 @@
       "policy": "equal_weight_long",
       "seed": 12,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -285,8 +365,8 @@
       "policy": "equal_weight_long",
       "seed": 14,
       "n_bars": 120,
-      "mandate_style": "market_neutral",
-      "mode": "mandate_structural"
+      "mandate_style": "long_only",
+      "mode": "clean"
     },
     {
       "tier": "calm",
@@ -317,32 +397,32 @@
       "policy": "momentum",
       "seed": 2,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_drawdown"
     },
     {
       "tier": "calm",
       "policy": "momentum",
       "seed": 3,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_drawdown"
     },
     {
       "tier": "calm",
       "policy": "momentum",
       "seed": 4,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_drawdown"
     },
     {
       "tier": "calm",
       "policy": "momentum",
       "seed": 5,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "calm",
@@ -350,14 +430,14 @@
       "seed": 6,
       "n_bars": 120,
       "mandate_style": "market_neutral",
-      "mode": "mandate_inventory"
+      "mode": "mandate_drawdown"
     },
     {
       "tier": "calm",
       "policy": "momentum",
       "seed": 7,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "mandate_inventory"
     },
     {
@@ -366,14 +446,14 @@
       "seed": 8,
       "n_bars": 120,
       "mandate_style": "pairs_convergence",
-      "mode": "mandate_structural"
+      "mode": "mandate_drawdown"
     },
     {
       "tier": "calm",
       "policy": "momentum",
       "seed": 9,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -390,15 +470,15 @@
       "seed": 11,
       "n_bars": 120,
       "mandate_style": "pairs_convergence",
-      "mode": "mandate_structural"
+      "mode": "mandate_drawdown"
     },
     {
       "tier": "calm",
       "policy": "momentum",
       "seed": 12,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "unconstrained",
+      "mode": "mandate_drawdown"
     },
     {
       "tier": "calm",
@@ -406,14 +486,14 @@
       "seed": 13,
       "n_bars": 120,
       "mandate_style": "long_only",
-      "mode": "mandate_structural"
+      "mode": "mandate_drawdown"
     },
     {
       "tier": "calm",
       "policy": "momentum",
       "seed": 14,
       "n_bars": 120,
-      "mandate_style": "market_neutral",
+      "mandate_style": "long_only",
       "mode": "mandate_structural"
     },
     {
@@ -445,32 +525,32 @@
       "policy": "min_variance",
       "seed": 2,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "calm",
       "policy": "min_variance",
       "seed": 3,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "calm",
       "policy": "min_variance",
       "seed": 4,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "calm",
       "policy": "min_variance",
       "seed": 5,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "calm",
@@ -485,7 +565,7 @@
       "policy": "min_variance",
       "seed": 7,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "mandate_inventory"
     },
     {
@@ -501,7 +581,7 @@
       "policy": "min_variance",
       "seed": 9,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -525,7 +605,7 @@
       "policy": "min_variance",
       "seed": 12,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -541,8 +621,8 @@
       "policy": "min_variance",
       "seed": 14,
       "n_bars": 120,
-      "mandate_style": "market_neutral",
-      "mode": "mandate_structural"
+      "mandate_style": "long_only",
+      "mode": "clean"
     },
     {
       "tier": "calm",
@@ -573,32 +653,32 @@
       "policy": "max_sharpe",
       "seed": 2,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "calm",
       "policy": "max_sharpe",
       "seed": 3,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "calm",
       "policy": "max_sharpe",
       "seed": 4,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "mandate_drawdown"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "calm",
       "policy": "max_sharpe",
       "seed": 5,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "calm",
@@ -613,7 +693,7 @@
       "policy": "max_sharpe",
       "seed": 7,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "mandate_inventory"
     },
     {
@@ -629,7 +709,7 @@
       "policy": "max_sharpe",
       "seed": 9,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -653,7 +733,7 @@
       "policy": "max_sharpe",
       "seed": 12,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "mandate_drawdown"
     },
     {
@@ -669,8 +749,8 @@
       "policy": "max_sharpe",
       "seed": 14,
       "n_bars": 120,
-      "mandate_style": "market_neutral",
-      "mode": "mandate_structural"
+      "mandate_style": "long_only",
+      "mode": "clean"
     },
     {
       "tier": "calm",
@@ -701,32 +781,32 @@
       "policy": "kelly_vol_target",
       "seed": 2,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "calm",
       "policy": "kelly_vol_target",
       "seed": 3,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "calm",
       "policy": "kelly_vol_target",
       "seed": 4,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "calm",
       "policy": "kelly_vol_target",
       "seed": 5,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "calm",
@@ -741,7 +821,7 @@
       "policy": "kelly_vol_target",
       "seed": 7,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "mandate_inventory"
     },
     {
@@ -757,7 +837,7 @@
       "policy": "kelly_vol_target",
       "seed": 9,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -781,7 +861,7 @@
       "policy": "kelly_vol_target",
       "seed": 12,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -797,7 +877,7 @@
       "policy": "kelly_vol_target",
       "seed": 14,
       "n_bars": 120,
-      "mandate_style": "market_neutral",
+      "mandate_style": "long_only",
       "mode": "mandate_structural"
     },
     {
@@ -829,32 +909,32 @@
       "policy": "disposition_effect",
       "seed": 2,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "calm",
       "policy": "disposition_effect",
       "seed": 3,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "calm",
       "policy": "disposition_effect",
       "seed": 4,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "calm",
       "policy": "disposition_effect",
       "seed": 5,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "calm",
@@ -869,7 +949,7 @@
       "policy": "disposition_effect",
       "seed": 7,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "mandate_inventory"
     },
     {
@@ -885,7 +965,7 @@
       "policy": "disposition_effect",
       "seed": 9,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -909,7 +989,7 @@
       "policy": "disposition_effect",
       "seed": 12,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -925,8 +1005,8 @@
       "policy": "disposition_effect",
       "seed": 14,
       "n_bars": 120,
-      "mandate_style": "market_neutral",
-      "mode": "mandate_structural"
+      "mandate_style": "long_only",
+      "mode": "clean"
     },
     {
       "tier": "calm",
@@ -957,7 +1037,7 @@
       "policy": "overconfident",
       "seed": 2,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "market_neutral",
       "mode": "mandate_drawdown"
     },
     {
@@ -965,7 +1045,7 @@
       "policy": "overconfident",
       "seed": 3,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "market_neutral",
       "mode": "mandate_drawdown"
     },
     {
@@ -973,7 +1053,7 @@
       "policy": "overconfident",
       "seed": 4,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "market_neutral",
       "mode": "mandate_drawdown"
     },
     {
@@ -981,8 +1061,8 @@
       "policy": "overconfident",
       "seed": 5,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "calm",
@@ -997,7 +1077,7 @@
       "policy": "overconfident",
       "seed": 7,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "mandate_inventory"
     },
     {
@@ -1013,7 +1093,7 @@
       "policy": "overconfident",
       "seed": 9,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -1030,14 +1110,14 @@
       "seed": 11,
       "n_bars": 120,
       "mandate_style": "pairs_convergence",
-      "mode": "mandate_structural"
+      "mode": "mandate_drawdown"
     },
     {
       "tier": "calm",
       "policy": "overconfident",
       "seed": 12,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "mandate_drawdown"
     },
     {
@@ -1053,7 +1133,7 @@
       "policy": "overconfident",
       "seed": 14,
       "n_bars": 120,
-      "mandate_style": "market_neutral",
+      "mandate_style": "long_only",
       "mode": "mandate_structural"
     },
     {
@@ -1085,7 +1165,7 @@
       "policy": "flat",
       "seed": 2,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "market_neutral",
       "mode": "clean"
     },
     {
@@ -1093,7 +1173,7 @@
       "policy": "flat",
       "seed": 3,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "market_neutral",
       "mode": "clean"
     },
     {
@@ -1101,7 +1181,7 @@
       "policy": "flat",
       "seed": 4,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "market_neutral",
       "mode": "clean"
     },
     {
@@ -1109,7 +1189,7 @@
       "policy": "flat",
       "seed": 5,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "market_neutral",
       "mode": "clean"
     },
     {
@@ -1125,7 +1205,7 @@
       "policy": "flat",
       "seed": 7,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -1141,7 +1221,7 @@
       "policy": "flat",
       "seed": 9,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -1165,7 +1245,7 @@
       "policy": "flat",
       "seed": 12,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -1181,7 +1261,7 @@
       "policy": "flat",
       "seed": 14,
       "n_bars": 120,
-      "mandate_style": "market_neutral",
+      "mandate_style": "long_only",
       "mode": "clean"
     },
     {
@@ -1213,32 +1293,32 @@
       "policy": "equal_weight_long",
       "seed": 2,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "hard",
       "policy": "equal_weight_long",
       "seed": 3,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "hard",
       "policy": "equal_weight_long",
       "seed": 4,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "hard",
       "policy": "equal_weight_long",
       "seed": 5,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "hard",
@@ -1253,7 +1333,7 @@
       "policy": "equal_weight_long",
       "seed": 7,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "mandate_inventory"
     },
     {
@@ -1269,7 +1349,7 @@
       "policy": "equal_weight_long",
       "seed": 9,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -1293,7 +1373,7 @@
       "policy": "equal_weight_long",
       "seed": 12,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -1309,8 +1389,8 @@
       "policy": "equal_weight_long",
       "seed": 14,
       "n_bars": 120,
-      "mandate_style": "market_neutral",
-      "mode": "mandate_structural"
+      "mandate_style": "long_only",
+      "mode": "clean"
     },
     {
       "tier": "hard",
@@ -1341,32 +1421,32 @@
       "policy": "momentum",
       "seed": 2,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_drawdown"
     },
     {
       "tier": "hard",
       "policy": "momentum",
       "seed": 3,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_drawdown"
     },
     {
       "tier": "hard",
       "policy": "momentum",
       "seed": 4,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_drawdown"
     },
     {
       "tier": "hard",
       "policy": "momentum",
       "seed": 5,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "hard",
@@ -1374,14 +1454,14 @@
       "seed": 6,
       "n_bars": 120,
       "mandate_style": "market_neutral",
-      "mode": "mandate_inventory"
+      "mode": "mandate_drawdown"
     },
     {
       "tier": "hard",
       "policy": "momentum",
       "seed": 7,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "mandate_inventory"
     },
     {
@@ -1390,14 +1470,14 @@
       "seed": 8,
       "n_bars": 120,
       "mandate_style": "pairs_convergence",
-      "mode": "mandate_structural"
+      "mode": "mandate_drawdown"
     },
     {
       "tier": "hard",
       "policy": "momentum",
       "seed": 9,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -1414,15 +1494,15 @@
       "seed": 11,
       "n_bars": 120,
       "mandate_style": "pairs_convergence",
-      "mode": "mandate_structural"
+      "mode": "mandate_drawdown"
     },
     {
       "tier": "hard",
       "policy": "momentum",
       "seed": 12,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "unconstrained",
+      "mode": "mandate_drawdown"
     },
     {
       "tier": "hard",
@@ -1430,14 +1510,14 @@
       "seed": 13,
       "n_bars": 120,
       "mandate_style": "long_only",
-      "mode": "mandate_structural"
+      "mode": "mandate_drawdown"
     },
     {
       "tier": "hard",
       "policy": "momentum",
       "seed": 14,
       "n_bars": 120,
-      "mandate_style": "market_neutral",
+      "mandate_style": "long_only",
       "mode": "mandate_structural"
     },
     {
@@ -1469,32 +1549,32 @@
       "policy": "min_variance",
       "seed": 2,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "hard",
       "policy": "min_variance",
       "seed": 3,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "hard",
       "policy": "min_variance",
       "seed": 4,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "hard",
       "policy": "min_variance",
       "seed": 5,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "hard",
@@ -1509,7 +1589,7 @@
       "policy": "min_variance",
       "seed": 7,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "mandate_inventory"
     },
     {
@@ -1525,7 +1605,7 @@
       "policy": "min_variance",
       "seed": 9,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -1549,7 +1629,7 @@
       "policy": "min_variance",
       "seed": 12,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -1565,8 +1645,8 @@
       "policy": "min_variance",
       "seed": 14,
       "n_bars": 120,
-      "mandate_style": "market_neutral",
-      "mode": "mandate_structural"
+      "mandate_style": "long_only",
+      "mode": "clean"
     },
     {
       "tier": "hard",
@@ -1597,32 +1677,32 @@
       "policy": "max_sharpe",
       "seed": 2,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "mandate_drawdown"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "hard",
       "policy": "max_sharpe",
       "seed": 3,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "hard",
       "policy": "max_sharpe",
       "seed": 4,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "mandate_drawdown"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "hard",
       "policy": "max_sharpe",
       "seed": 5,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "hard",
@@ -1637,7 +1717,7 @@
       "policy": "max_sharpe",
       "seed": 7,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "mandate_inventory"
     },
     {
@@ -1653,7 +1733,7 @@
       "policy": "max_sharpe",
       "seed": 9,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -1677,7 +1757,7 @@
       "policy": "max_sharpe",
       "seed": 12,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "mandate_drawdown"
     },
     {
@@ -1693,8 +1773,8 @@
       "policy": "max_sharpe",
       "seed": 14,
       "n_bars": 120,
-      "mandate_style": "market_neutral",
-      "mode": "mandate_structural"
+      "mandate_style": "long_only",
+      "mode": "clean"
     },
     {
       "tier": "hard",
@@ -1725,32 +1805,32 @@
       "policy": "kelly_vol_target",
       "seed": 2,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "hard",
       "policy": "kelly_vol_target",
       "seed": 3,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "hard",
       "policy": "kelly_vol_target",
       "seed": 4,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "hard",
       "policy": "kelly_vol_target",
       "seed": 5,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "hard",
@@ -1765,7 +1845,7 @@
       "policy": "kelly_vol_target",
       "seed": 7,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "mandate_inventory"
     },
     {
@@ -1781,7 +1861,7 @@
       "policy": "kelly_vol_target",
       "seed": 9,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -1805,7 +1885,7 @@
       "policy": "kelly_vol_target",
       "seed": 12,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -1821,7 +1901,7 @@
       "policy": "kelly_vol_target",
       "seed": 14,
       "n_bars": 120,
-      "mandate_style": "market_neutral",
+      "mandate_style": "long_only",
       "mode": "mandate_structural"
     },
     {
@@ -1853,32 +1933,32 @@
       "policy": "disposition_effect",
       "seed": 2,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "mandate_drawdown"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "hard",
       "policy": "disposition_effect",
       "seed": 3,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "hard",
       "policy": "disposition_effect",
       "seed": 4,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "mandate_drawdown"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "hard",
       "policy": "disposition_effect",
       "seed": 5,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "hard",
@@ -1893,7 +1973,7 @@
       "policy": "disposition_effect",
       "seed": 7,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "mandate_inventory"
     },
     {
@@ -1909,7 +1989,7 @@
       "policy": "disposition_effect",
       "seed": 9,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -1933,7 +2013,7 @@
       "policy": "disposition_effect",
       "seed": 12,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -1949,8 +2029,8 @@
       "policy": "disposition_effect",
       "seed": 14,
       "n_bars": 120,
-      "mandate_style": "market_neutral",
-      "mode": "mandate_structural"
+      "mandate_style": "long_only",
+      "mode": "clean"
     },
     {
       "tier": "hard",
@@ -1981,7 +2061,7 @@
       "policy": "overconfident",
       "seed": 2,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "market_neutral",
       "mode": "mandate_drawdown"
     },
     {
@@ -1989,15 +2069,15 @@
       "policy": "overconfident",
       "seed": 3,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_drawdown"
     },
     {
       "tier": "hard",
       "policy": "overconfident",
       "seed": 4,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "market_neutral",
       "mode": "mandate_drawdown"
     },
     {
@@ -2005,8 +2085,8 @@
       "policy": "overconfident",
       "seed": 5,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "hard",
@@ -2014,14 +2094,14 @@
       "seed": 6,
       "n_bars": 120,
       "mandate_style": "market_neutral",
-      "mode": "mandate_inventory"
+      "mode": "mandate_drawdown"
     },
     {
       "tier": "hard",
       "policy": "overconfident",
       "seed": 7,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "mandate_inventory"
     },
     {
@@ -2037,7 +2117,7 @@
       "policy": "overconfident",
       "seed": 9,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -2054,14 +2134,14 @@
       "seed": 11,
       "n_bars": 120,
       "mandate_style": "pairs_convergence",
-      "mode": "mandate_structural"
+      "mode": "mandate_drawdown"
     },
     {
       "tier": "hard",
       "policy": "overconfident",
       "seed": 12,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "mandate_drawdown"
     },
     {
@@ -2077,7 +2157,7 @@
       "policy": "overconfident",
       "seed": 14,
       "n_bars": 120,
-      "mandate_style": "market_neutral",
+      "mandate_style": "long_only",
       "mode": "mandate_structural"
     },
     {
@@ -2109,7 +2189,7 @@
       "policy": "flat",
       "seed": 2,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "market_neutral",
       "mode": "clean"
     },
     {
@@ -2117,7 +2197,7 @@
       "policy": "flat",
       "seed": 3,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "market_neutral",
       "mode": "clean"
     },
     {
@@ -2125,7 +2205,7 @@
       "policy": "flat",
       "seed": 4,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "market_neutral",
       "mode": "clean"
     },
     {
@@ -2133,7 +2213,7 @@
       "policy": "flat",
       "seed": 5,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "market_neutral",
       "mode": "clean"
     },
     {
@@ -2149,7 +2229,7 @@
       "policy": "flat",
       "seed": 7,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -2165,7 +2245,7 @@
       "policy": "flat",
       "seed": 9,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -2189,7 +2269,7 @@
       "policy": "flat",
       "seed": 12,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -2205,7 +2285,7 @@
       "policy": "flat",
       "seed": 14,
       "n_bars": 120,
-      "mandate_style": "market_neutral",
+      "mandate_style": "long_only",
       "mode": "clean"
     },
     {
@@ -2237,32 +2317,32 @@
       "policy": "equal_weight_long",
       "seed": 2,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "mandate_drawdown"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "extreme",
       "policy": "equal_weight_long",
       "seed": 3,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "extreme",
       "policy": "equal_weight_long",
       "seed": 4,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "mandate_drawdown"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "extreme",
       "policy": "equal_weight_long",
       "seed": 5,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "extreme",
@@ -2277,7 +2357,7 @@
       "policy": "equal_weight_long",
       "seed": 7,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "mandate_inventory"
     },
     {
@@ -2293,7 +2373,7 @@
       "policy": "equal_weight_long",
       "seed": 9,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -2317,7 +2397,7 @@
       "policy": "equal_weight_long",
       "seed": 12,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -2333,8 +2413,8 @@
       "policy": "equal_weight_long",
       "seed": 14,
       "n_bars": 120,
-      "mandate_style": "market_neutral",
-      "mode": "mandate_structural"
+      "mandate_style": "long_only",
+      "mode": "clean"
     },
     {
       "tier": "extreme",
@@ -2365,7 +2445,7 @@
       "policy": "momentum",
       "seed": 2,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "market_neutral",
       "mode": "mandate_drawdown"
     },
     {
@@ -2373,7 +2453,7 @@
       "policy": "momentum",
       "seed": 3,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "market_neutral",
       "mode": "mandate_drawdown"
     },
     {
@@ -2381,7 +2461,7 @@
       "policy": "momentum",
       "seed": 4,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "market_neutral",
       "mode": "mandate_drawdown"
     },
     {
@@ -2389,8 +2469,8 @@
       "policy": "momentum",
       "seed": 5,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "extreme",
@@ -2398,14 +2478,14 @@
       "seed": 6,
       "n_bars": 120,
       "mandate_style": "market_neutral",
-      "mode": "mandate_inventory"
+      "mode": "mandate_drawdown"
     },
     {
       "tier": "extreme",
       "policy": "momentum",
       "seed": 7,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "mandate_inventory"
     },
     {
@@ -2421,7 +2501,7 @@
       "policy": "momentum",
       "seed": 9,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -2438,14 +2518,14 @@
       "seed": 11,
       "n_bars": 120,
       "mandate_style": "pairs_convergence",
-      "mode": "mandate_structural"
+      "mode": "mandate_drawdown"
     },
     {
       "tier": "extreme",
       "policy": "momentum",
       "seed": 12,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "mandate_drawdown"
     },
     {
@@ -2461,7 +2541,7 @@
       "policy": "momentum",
       "seed": 14,
       "n_bars": 120,
-      "mandate_style": "market_neutral",
+      "mandate_style": "long_only",
       "mode": "mandate_structural"
     },
     {
@@ -2493,32 +2573,32 @@
       "policy": "min_variance",
       "seed": 2,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "mandate_drawdown"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "extreme",
       "policy": "min_variance",
       "seed": 3,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "extreme",
       "policy": "min_variance",
       "seed": 4,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "mandate_drawdown"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "extreme",
       "policy": "min_variance",
       "seed": 5,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "extreme",
@@ -2533,7 +2613,7 @@
       "policy": "min_variance",
       "seed": 7,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "mandate_inventory"
     },
     {
@@ -2549,7 +2629,7 @@
       "policy": "min_variance",
       "seed": 9,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -2573,7 +2653,7 @@
       "policy": "min_variance",
       "seed": 12,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "mandate_drawdown"
     },
     {
@@ -2589,8 +2669,8 @@
       "policy": "min_variance",
       "seed": 14,
       "n_bars": 120,
-      "mandate_style": "market_neutral",
-      "mode": "mandate_structural"
+      "mandate_style": "long_only",
+      "mode": "clean"
     },
     {
       "tier": "extreme",
@@ -2621,23 +2701,23 @@
       "policy": "max_sharpe",
       "seed": 2,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "mandate_drawdown"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "extreme",
       "policy": "max_sharpe",
       "seed": 3,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "mandate_drawdown"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "extreme",
       "policy": "max_sharpe",
       "seed": 4,
       "n_bars": 42,
-      "mandate_style": "momentum",
+      "mandate_style": "market_neutral",
       "mode": "stopped_out"
     },
     {
@@ -2645,7 +2725,7 @@
       "policy": "max_sharpe",
       "seed": 5,
       "n_bars": 109,
-      "mandate_style": "momentum",
+      "mandate_style": "market_neutral",
       "mode": "stopped_out"
     },
     {
@@ -2661,7 +2741,7 @@
       "policy": "max_sharpe",
       "seed": 7,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "mandate_inventory"
     },
     {
@@ -2677,7 +2757,7 @@
       "policy": "max_sharpe",
       "seed": 9,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -2701,7 +2781,7 @@
       "policy": "max_sharpe",
       "seed": 12,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "mandate_drawdown"
     },
     {
@@ -2717,8 +2797,8 @@
       "policy": "max_sharpe",
       "seed": 14,
       "n_bars": 120,
-      "mandate_style": "market_neutral",
-      "mode": "mandate_structural"
+      "mandate_style": "long_only",
+      "mode": "clean"
     },
     {
       "tier": "extreme",
@@ -2749,7 +2829,7 @@
       "policy": "kelly_vol_target",
       "seed": 2,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "market_neutral",
       "mode": "mandate_drawdown"
     },
     {
@@ -2757,24 +2837,24 @@
       "policy": "kelly_vol_target",
       "seed": 3,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "extreme",
       "policy": "kelly_vol_target",
       "seed": 4,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "mandate_drawdown"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "extreme",
       "policy": "kelly_vol_target",
       "seed": 5,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "extreme",
@@ -2782,14 +2862,14 @@
       "seed": 6,
       "n_bars": 120,
       "mandate_style": "market_neutral",
-      "mode": "mandate_inventory"
+      "mode": "mandate_drawdown"
     },
     {
       "tier": "extreme",
       "policy": "kelly_vol_target",
       "seed": 7,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "mandate_inventory"
     },
     {
@@ -2805,7 +2885,7 @@
       "policy": "kelly_vol_target",
       "seed": 9,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -2829,7 +2909,7 @@
       "policy": "kelly_vol_target",
       "seed": 12,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "mandate_drawdown"
     },
     {
@@ -2845,7 +2925,7 @@
       "policy": "kelly_vol_target",
       "seed": 14,
       "n_bars": 120,
-      "mandate_style": "market_neutral",
+      "mandate_style": "long_only",
       "mode": "mandate_structural"
     },
     {
@@ -2877,32 +2957,32 @@
       "policy": "disposition_effect",
       "seed": 2,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "mandate_drawdown"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "extreme",
       "policy": "disposition_effect",
       "seed": 3,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "extreme",
       "policy": "disposition_effect",
       "seed": 4,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "mandate_drawdown"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "extreme",
       "policy": "disposition_effect",
       "seed": 5,
       "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "mandate_style": "market_neutral",
+      "mode": "mandate_structural"
     },
     {
       "tier": "extreme",
@@ -2917,7 +2997,7 @@
       "policy": "disposition_effect",
       "seed": 7,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "mandate_inventory"
     },
     {
@@ -2933,7 +3013,7 @@
       "policy": "disposition_effect",
       "seed": 9,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -2957,7 +3037,7 @@
       "policy": "disposition_effect",
       "seed": 12,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "mandate_drawdown"
     },
     {
@@ -2973,8 +3053,8 @@
       "policy": "disposition_effect",
       "seed": 14,
       "n_bars": 120,
-      "mandate_style": "market_neutral",
-      "mode": "mandate_structural"
+      "mandate_style": "long_only",
+      "mode": "clean"
     },
     {
       "tier": "extreme",
@@ -3005,7 +3085,7 @@
       "policy": "overconfident",
       "seed": 2,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "market_neutral",
       "mode": "mandate_drawdown"
     },
     {
@@ -3013,24 +3093,24 @@
       "policy": "overconfident",
       "seed": 3,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "market_neutral",
       "mode": "mandate_drawdown"
     },
     {
       "tier": "extreme",
       "policy": "overconfident",
       "seed": 4,
-      "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "mandate_drawdown"
+      "n_bars": 78,
+      "mandate_style": "market_neutral",
+      "mode": "stopped_out"
     },
     {
       "tier": "extreme",
       "policy": "overconfident",
       "seed": 5,
-      "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "clean"
+      "n_bars": 106,
+      "mandate_style": "market_neutral",
+      "mode": "stopped_out"
     },
     {
       "tier": "extreme",
@@ -3038,30 +3118,30 @@
       "seed": 6,
       "n_bars": 120,
       "mandate_style": "market_neutral",
-      "mode": "mandate_inventory"
+      "mode": "mandate_drawdown"
     },
     {
       "tier": "extreme",
       "policy": "overconfident",
       "seed": 7,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "mandate_inventory"
     },
     {
       "tier": "extreme",
       "policy": "overconfident",
       "seed": 8,
-      "n_bars": 120,
+      "n_bars": 96,
       "mandate_style": "pairs_convergence",
-      "mode": "mandate_drawdown"
+      "mode": "stopped_out"
     },
     {
       "tier": "extreme",
       "policy": "overconfident",
       "seed": 9,
       "n_bars": 120,
-      "mandate_style": "momentum",
+      "mandate_style": "unconstrained",
       "mode": "clean"
     },
     {
@@ -3078,15 +3158,15 @@
       "seed": 11,
       "n_bars": 120,
       "mandate_style": "pairs_convergence",
-      "mode": "mandate_structural"
+      "mode": "mandate_drawdown"
     },
     {
       "tier": "extreme",
       "policy": "overconfident",
       "seed": 12,
-      "n_bars": 120,
-      "mandate_style": "momentum",
-      "mode": "mandate_drawdown"
+      "n_bars": 68,
+      "mandate_style": "unconstrained",
+      "mode": "stopped_out"
     },
     {
       "tier": "extreme",
@@ -3101,82 +3181,90 @@
       "policy": "overconfident",
       "seed": 14,
       "n_bars": 120,
-      "mandate_style": "market_neutral",
+      "mandate_style": "long_only",
       "mode": "mandate_structural"
     },
     {
       "tier": "extreme",
       "policy": "overconfident",
       "seed": 15,
-      "n_bars": 120,
+      "n_bars": 88,
       "mandate_style": "unconstrained",
-      "mode": "clean"
+      "mode": "stopped_out"
     }
   ],
   "rollup_by_tier": {
     "calm": {
       "counts": {
-        "clean": 72,
+        "clean": 51,
         "bankrupt": 0,
         "stopped_out": 0,
         "cascade_wiped": 0,
-        "mandate_structural": 36,
-        "mandate_drawdown": 11,
-        "mandate_inventory": 9
+        "mandate_structural": 50,
+        "mandate_drawdown": 19,
+        "mandate_inventory": 8,
+        "invalid_evidence": 0,
+        "execution_failed": 0
       },
       "total": 128,
-      "clean": 72,
-      "failures": 56,
-      "clean_rate": 0.5625,
-      "failure_rate": 0.4375
+      "clean": 51,
+      "failures": 77,
+      "clean_rate": 0.3984375,
+      "failure_rate": 0.6015625
     },
     "hard": {
       "counts": {
-        "clean": 68,
+        "clean": 49,
         "bankrupt": 0,
         "stopped_out": 0,
         "cascade_wiped": 0,
-        "mandate_structural": 36,
-        "mandate_drawdown": 14,
-        "mandate_inventory": 10
+        "mandate_structural": 50,
+        "mandate_drawdown": 21,
+        "mandate_inventory": 8,
+        "invalid_evidence": 0,
+        "execution_failed": 0
       },
       "total": 128,
-      "clean": 68,
-      "failures": 60,
-      "clean_rate": 0.53125,
-      "failure_rate": 0.46875
+      "clean": 49,
+      "failures": 79,
+      "clean_rate": 0.3828125,
+      "failure_rate": 0.6171875
     },
     "extreme": {
       "counts": {
-        "clean": 50,
+        "clean": 43,
         "bankrupt": 0,
-        "stopped_out": 5,
+        "stopped_out": 10,
         "cascade_wiped": 0,
-        "mandate_structural": 31,
-        "mandate_drawdown": 32,
-        "mandate_inventory": 10
+        "mandate_structural": 43,
+        "mandate_drawdown": 25,
+        "mandate_inventory": 7,
+        "invalid_evidence": 0,
+        "execution_failed": 0
       },
       "total": 128,
-      "clean": 50,
-      "failures": 78,
-      "clean_rate": 0.390625,
-      "failure_rate": 0.609375
+      "clean": 43,
+      "failures": 85,
+      "clean_rate": 0.3359375,
+      "failure_rate": 0.6640625
     }
   },
   "rollup_overall": {
     "counts": {
-      "clean": 190,
+      "clean": 143,
       "bankrupt": 0,
-      "stopped_out": 5,
+      "stopped_out": 10,
       "cascade_wiped": 0,
-      "mandate_structural": 103,
-      "mandate_drawdown": 57,
-      "mandate_inventory": 29
+      "mandate_structural": 143,
+      "mandate_drawdown": 65,
+      "mandate_inventory": 23,
+      "invalid_evidence": 0,
+      "execution_failed": 0
     },
     "total": 384,
-    "clean": 190,
-    "failures": 194,
-    "clean_rate": 0.4947916666666667,
-    "failure_rate": 0.5052083333333334
+    "clean": 143,
+    "failures": 241,
+    "clean_rate": 0.3723958333333333,
+    "failure_rate": 0.6276041666666666
   }
 }

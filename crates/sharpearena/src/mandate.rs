@@ -3,10 +3,12 @@
 //! In MiniGrid's *Fetch* task each episode ships a per-episode objective ("pick up the
 //! red key") and the agent is graded on satisfying *that* objective. The trading analogue:
 //! each scenario draws a [`Mandate`] (a sampled trading objective — a style constraint, an
-//! optional drawdown cap, an optional benchmark) the episode is graded against. With one
-//! stated exception: [`MandateStyle::Momentum`] renders a constraint in the prompt text and
-//! carries no structural rule, so it is graded only by whatever caps it also drew. See
-//! [`MandateStyle`] and `docs/audits/2026-09-09/ARENA-REVIEW.md` A9.
+//! optional drawdown cap, an optional benchmark) the episode is graded against. Every style
+//! a scenario can draw carries a structural rule [`mandate_breach`] can read off the book.
+//! [`MandateStyle::Momentum`] cannot, so it is not drawn: it stays in the wire vocabulary
+//! ([`MandateStyle::ALL`]) because recorded traces carry the label, and is absent from the
+//! draw set ([`MandateStyle::SAMPLED`]). See [`MandateStyle`] and
+//! `docs/audits/2026-09-09/ARENA-REVIEW.md` A9.
 //!
 //! [`sample_mandate`] is **deterministic and leak-free**: it derives the whole mandate from
 //! the scenario `seed` (known at `reset`), never from future bars, via the same SplitMix64
@@ -20,16 +22,20 @@
 
 use serde::{Deserialize, Serialize};
 
-/// The constraint families a scenario can draw. `LongOnly`, `MarketNeutral` and
-/// `PairsConvergence` each carry a distinct structural rule. `Unconstrained` is the
-/// declared permissive control (no structural breach), and `Momentum` carries no
-/// structural rule either despite rendering one in its prompt text, because the breach
-/// checker sees per-bar portfolio weights and pooled returns but no per-symbol returns and
-/// so cannot read "lean into recent winners" off them. That asymmetry is recorded in
-/// `docs/audits/2026-09-09/ARENA-REVIEW.md` A9 and pinned by
-/// `only_the_declared_ungraded_styles_carry_no_structural_rule`; do not add a sixth style
-/// without a rule on the assumption that this list grades everything it draws. Serializes
-/// to the wire labels the Python contract speaks (`long_only` / `market_neutral` / …).
+/// The constraint families the wire vocabulary names. `LongOnly`, `MarketNeutral` and
+/// `PairsConvergence` each carry a distinct structural rule; `Unconstrained` is the declared
+/// permissive control, which carries none by definition and says so in its prompt text.
+///
+/// `Momentum` is the one label that is neither: it renders "lean into recent winners" in its
+/// prompt text, and the breach checker sees per-bar portfolio weights and pooled returns but
+/// no per-symbol returns, so it cannot read that constraint off any book. A style nothing can
+/// grade must not be the objective an episode is scored against, so `Momentum` is excluded
+/// from [`MandateStyle::SAMPLED`] and is never drawn. It remains in [`MandateStyle::ALL`]
+/// because recorded traces and hand-authored mandates carry the label and must still
+/// deserialize. `docs/audits/2026-09-09/ARENA-REVIEW.md` A9 records the decision;
+/// `only_the_sampled_styles_are_gradeable` pins it, so a sixth style added without a rule
+/// fails the suite rather than joining the draw. Serializes to the wire labels the Python
+/// contract speaks (`long_only` / `market_neutral` / …).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MandateStyle {
@@ -45,11 +51,22 @@ pub enum MandateStyle {
 }
 
 impl MandateStyle {
-    /// All styles, in the canonical draw order (mirrors the Python `STYLES` tuple).
+    /// The whole wire vocabulary, in canonical order (mirrors the Python `STYLES` tuple).
+    /// Every label a `Mandate` may carry, including labels no longer drawn.
     pub const ALL: [MandateStyle; 5] = [
         MandateStyle::LongOnly,
         MandateStyle::MarketNeutral,
         MandateStyle::Momentum,
+        MandateStyle::Unconstrained,
+        MandateStyle::PairsConvergence,
+    ];
+
+    /// The styles [`sample_mandate`] draws from, in draw order: [`MandateStyle::ALL`] minus
+    /// [`MandateStyle::Momentum`], whose relative order the rest keep. Narrower than the
+    /// vocabulary on purpose — see the [`MandateStyle`] docs for why the two differ.
+    pub const SAMPLED: [MandateStyle; 4] = [
+        MandateStyle::LongOnly,
+        MandateStyle::MarketNeutral,
         MandateStyle::Unconstrained,
         MandateStyle::PairsConvergence,
     ];
@@ -164,10 +181,16 @@ fn render_text(
 /// `allow_short` is `false` the short-requiring styles are dropped so the mandate stays
 /// satisfiable on a long-only market. The draw order matches the Python: style, then the
 /// drawdown coin/value, then the benchmark coin/value.
+///
+/// The style is drawn from [`MandateStyle::SAMPLED`], not from the full
+/// [`MandateStyle::ALL`] vocabulary: a scenario is graded on the objective it draws, so a
+/// label the grader cannot read must not be drawable. The draw consumes exactly one unit
+/// either way, so the drawdown, benchmark and inventory draws for a given seed are
+/// unchanged by that narrowing; only the style they accompany moves.
 pub fn sample_mandate(seed: u64, n_symbols: usize, allow_short: bool) -> Mandate {
     let mut rng = SplitMix64::new(seed);
 
-    let styles: Vec<MandateStyle> = MandateStyle::ALL
+    let styles: Vec<MandateStyle> = MandateStyle::SAMPLED
         .iter()
         .copied()
         .filter(|s| allow_short || !s.requires_short())
@@ -298,8 +321,10 @@ impl std::error::Error for MandateError {}
 ///
 /// * **structural** — a short under `LongOnly` (fraction of bars holding a short); net
 ///   exposure away from zero under `MarketNeutral` *or* `PairsConvergence` (mean
-///   `|net| / gross`). Read off the per-bar target-weight vectors. `Momentum` /
-///   `Unconstrained` carry no structural rule.
+///   `|net| / gross`). Read off the per-bar target-weight vectors. `Unconstrained` carries
+///   no structural rule, and neither does `Momentum`, which is why it is not drawn
+///   ([`MandateStyle::SAMPLED`]); a hand-authored or replayed `Momentum` mandate is still
+///   scored here by whatever caps it carries.
 /// * **inventory** — per-bar gross exposure `Σ|w_i|` over `max_inventory`, normalized by the
 ///   cap and *squared* (the Avellaneda-Stoikov inventory penalty), saturated at 1 per bar,
 ///   then meaned across bars.
@@ -727,24 +752,54 @@ mod tests {
         }
     }
 
-    /// ARENA-REVIEW A9. `Unconstrained` is the declared permissive control; `Momentum` is
-    /// sampled with the same probability, renders a constraint in the prompt text, and is
-    /// scored by nothing. That is recorded as a disposition rather than repaired, because
-    /// both candidate repairs move `paper/evidence/f7-failures.json`. This pins the set of
-    /// styles that carry no structural rule so it cannot grow without a decision: a book
-    /// that breaches every structural rule at once scores 1.0 under each graded style and
-    /// 0.0 under each ungraded one.
+    /// ARENA-REVIEW A9, closed. The predecessor of this test pinned the ungraded set over
+    /// the whole vocabulary at `{Momentum, Unconstrained}` and recorded that as a
+    /// disposition, because repairing it moves `paper/evidence/f7-failures.json`. The repair
+    /// has now landed, so the pin moves with it rather than being deleted: over the
+    /// vocabulary the ungraded set is unchanged, since `Momentum` is still a label a
+    /// replayed trace may carry, and the property that changed is which of those labels a
+    /// scenario can be *given*. A book that breaches every structural rule at once scores
+    /// 1.0 under each graded style and 0.0 under each ungraded one, so the filter below
+    /// reads the grading rule off the kernel rather than restating it.
     #[test]
-    fn only_the_declared_ungraded_styles_carry_no_structural_rule() {
+    fn only_the_sampled_styles_are_gradeable() {
         let violating = vec![vec![-1.0, -1.0]];
-        let ungraded: Vec<MandateStyle> = MandateStyle::ALL
-            .iter()
-            .copied()
-            .filter(|s| breach(&styled(*s), &[], &violating) == 0.0)
-            .collect();
+        let ungraded = |set: &[MandateStyle]| -> Vec<MandateStyle> {
+            set.iter()
+                .copied()
+                .filter(|s| breach(&styled(*s), &[], &violating) == 0.0)
+                .collect()
+        };
+        // The vocabulary still carries both, so an old trace labelled `momentum` parses.
         assert_eq!(
-            ungraded,
+            ungraded(&MandateStyle::ALL),
             vec![MandateStyle::Momentum, MandateStyle::Unconstrained]
         );
+        // Of the styles a scenario can draw, only the declared permissive control is
+        // ungraded. `Momentum` is not drawn, so no episode is scored against an objective
+        // the grader cannot read.
+        assert_eq!(
+            ungraded(&MandateStyle::SAMPLED),
+            vec![MandateStyle::Unconstrained]
+        );
+    }
+
+    /// The draw set, exercised through the real generator rather than through the constant
+    /// it is declared in. `Momentum` is in the vocabulary and would be drawn by any code
+    /// still indexing `ALL`, so this fails if `sample_mandate` is pointed back at it.
+    #[test]
+    fn a_sampled_mandate_never_draws_an_ungradeable_style() {
+        let drawn: std::collections::HashSet<MandateStyle> = (0..1024)
+            .flat_map(|s| {
+                [
+                    sample_mandate(s, 4, true).style,
+                    sample_mandate(s, 4, false).style,
+                ]
+            })
+            .collect();
+        let declared: std::collections::HashSet<MandateStyle> =
+            MandateStyle::SAMPLED.iter().copied().collect();
+        assert_eq!(drawn, declared);
+        assert!(!drawn.contains(&MandateStyle::Momentum));
     }
 }

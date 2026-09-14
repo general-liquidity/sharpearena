@@ -862,11 +862,14 @@ fn process_event_samples() -> Vec<ProcessEvent> {
     out
 }
 
-/// The native `MandateStyle` vocabulary: every style the kernel can draw, under the wire
-/// labels it serializes to, in the canonical draw order.
+/// The native `MandateStyle` vocabulary: every style label a mandate may carry, under the
+/// wire labels it serializes to, in canonical order.
 ///
-/// `sample_mandate` picks a style by indexing `MandateStyle::ALL`, so the *order* is part of
-/// the contract and not only the set. A consumer that restates the labels by hand drifts
+/// This is `MandateStyle::ALL`, the parse-side vocabulary, which is wider than the set
+/// `sample_mandate` draws from (`MandateStyle::SAMPLED`): `momentum` is still a label a
+/// recorded trace carries and `validate_mandate` must accept, and is no longer drawn
+/// (ARENA-REVIEW A9). Order is part of the contract and not only the set, because the draw
+/// indexes a canonically ordered list. A consumer that restates the labels by hand drifts
 /// from the enum silently, which is ARENA-REVIEW A7: the Python `STYLES` tuple was a hand
 /// copy with nothing cross-checking it. This emits the list instead, so the wrapper's table
 /// is derived from the engine rather than agreeing with it by inspection.
