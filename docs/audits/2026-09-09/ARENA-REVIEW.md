@@ -617,36 +617,62 @@ rule, so an agent that ignores it entirely scores a clean mandate. The doc comme
 objective "the episode is graded against", and `EVALUATION.md` does not qualify it. About
 a fifth of sampled mandates therefore present a constraint that is scored by nothing.
 
-**Disposition (established, not repaired: both repairs move published evidence).** The
-question the finding poses has an answer. `Momentum` is not gradeable by
-`mandate_breach` as it stands: the function receives per-bar portfolio weight vectors and
-a pooled per-bar return series, and "lean into recent winners, cut losers" is a statement
-about per-symbol returns, which it never sees. So this is not a grading gap that a missing
-rule would close. It is a style that should not be sampled.
+**Disposition (repaired at the version boundary; option (a), momentum is no longer
+sampled).** The reasoning four rounds carried is unchanged and was not re-opened.
+`Momentum` is not gradeable by `mandate_breach` as it stands: the function receives per-bar
+portfolio weight vectors and a pooled per-bar return series, and "lean into recent winners,
+cut losers" is a statement about per-symbol returns, which it never sees. So this is not a
+grading gap that a missing rule would close. It is a style that should not be sampled.
 
-That repair cannot be made here. `MandateStyle::ALL` has five entries and
-`sample_mandate` indexes into the filtered list, so dropping one changes the style drawn
-for every seed, and `paper/evidence/f7-failures.json` records `mandate_style` per (tier,
-policy, seed) for 384 episodes, 217 of them `momentum`. The alternative repair, extending
-the kernel with per-symbol returns and giving `Momentum` a rule, moves the same file's
-`mode` field for those episodes from `clean` to a breach class. Either way a published
-number moves, so per the goal rule that published numerical evidence stays frozen, this is
-reported rather than regenerated.
+The number those rounds carried was wrong. The ledger said 217 of the 384 episodes were
+`momentum`. Counted directly out of the committed `paper/evidence/f7-failures.json` the
+figure is **168**, and the whole distribution is `long_only` 48, `market_neutral` 48,
+`momentum` 168, `pairs_convergence` 72, `unconstrained` 48. 168 is confirmed three
+independent ways: by counting the committed artifact, by reproducing the draw from an
+independent reimplementation of the `SplitMix64` stream outside the crate, and by rerunning
+the producer at the parent commit, which leaves the style column identical. 217 appears in
+no artifact; it was carried forward by restatement. It is corrected here, in
+`IMPLEMENTATION.md` G27 and in the `CHANGELOG.md` entry that repeated it.
 
-What was done instead costs no number and removes the silence. The module header and
-`MandateStyle`'s doc comment stated that each drawn style carries a structural rule, which
-was the false claim; both now name `Momentum` as an exception and say why it cannot be
-graded from the kernel's inputs. `mandate.py`'s `STYLES` comment says the same. And
-`only_the_declared_ungraded_styles_carry_no_structural_rule` pins the ungraded set
-behaviourally: a book that breaches every structural rule at once scores `1.0` under each
-graded style and `0.0` under each ungraded one, and the test asserts the zero-scoring set
-is exactly `{Momentum, Unconstrained}`. A sixth style added without a rule fails it, so
-the set cannot grow without a decision. Mutation-checked: giving `Momentum` the long-only
-rule in an isolated copy fails that test and nothing else.
+The repair is option (a): the style is not drawn. Option (b), giving `Momentum` a rule,
+was rejected for the reason the earlier rounds gave. The grader's inputs do not contain
+per-symbol returns, so any rule written against what it does see would be a rule about
+something other than momentum, chosen for looking like a constraint rather than for being
+one. Extending the kernel to carry per-symbol returns would be a wire-contract change to
+the reward path made for one style's benefit, which is a larger and less honest change than
+removing an objective nothing can grade.
 
-Closing this properly needs a version boundary where the F7 producer is rerun, since the
-mandate draw is part of the tape the evidence describes. It is a sampling decision with a
-frozen-evidence dependency, not a bug fix.
+`MandateStyle` now separates the two lists it had conflated. `ALL` is the wire vocabulary,
+unchanged at five labels, so a recorded trace or a hand-authored mandate carrying
+`momentum` still deserializes and still validates. `SAMPLED` is the draw set, the same four
+labels minus `Momentum`, and `sample_mandate` indexes that. The style draw consumes exactly
+one unit of the stream either way, so the drawdown, benchmark and inventory draws for a
+given seed are untouched; only the style they accompany moves.
+
+What moved in the evidence, and why that is not a loss of coverage: the 8 of 16 seeds whose
+style changed carry 192 of the 384 `mandate_style` values with them, and the distribution
+becomes `long_only` 72, `market_neutral` 120, `pairs_convergence` 72, `unconstrained` 120.
+Episodes graded against a structural rule rise from 168 to 264; episodes drawing a style
+with no structural rule fall from 216 to 120, and every one of the remaining 120 is the
+declared permissive control, which says so in its prompt text. Coverage of the property the
+finding is about therefore increases. Eight seeds rather than seven change style, because
+the draw indexes a list of four instead of five: seed 14 moves `market_neutral` to
+`long_only` without ever having been `momentum`.
+
+`only_the_declared_ungraded_styles_carry_no_structural_rule` is not deleted. It is renamed
+`only_the_sampled_styles_are_gradeable` and now pins both halves of the distinction it used
+to state as one: over `ALL` the zero-scoring set is still exactly `{Momentum,
+Unconstrained}`, which is what keeps the trace-parsing label honest, and over `SAMPLED` it
+is exactly `{Unconstrained}`, which is the property the repair establishes. A sixth style
+added without a rule still fails it. A second test drives the real generator over 1024
+seeds under both `allow_short` settings and asserts the drawn set equals `SAMPLED` exactly,
+so pointing `sample_mandate` back at `ALL` fails by behaviour rather than by inspection.
+
+`mandate.rs` is a `SPEC_FILES` input, so `SPEC_HASH` moves from `460811a8d810c454` to
+`bbaaff0cf9b9e1f4` with no `SPEC_EPOCH` change; the attestation record, both wrapper pins
+and the committed wasm bundle are rebound together, and only `sharpearena_bg.wasm` differs
+in the rebuilt bundle. The regeneration and the field-by-field diff are recorded in
+`VERIFICATION.md` under 2026-09-14.
 
 ### A10. Leaderboard ties are broken by declaration order and rendered as ranks (medium)
 
