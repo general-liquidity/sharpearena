@@ -32,7 +32,7 @@
     },
     {
       "path": "paper/evidence/f7-failures.json",
-      "sha256": "a7285e32eda5661bc86f3ef3bafbd88f7d1e0acc9e9856c0c8ecd13d88303779"
+      "sha256": "e30fc65eafc183df18bc5f7e0b6c80a4194889af2cbd3388786926b167f86bfc"
     },
     {
       "path": "paper/evidence/f8-ecology.json",
@@ -196,7 +196,7 @@
     },
     {
       "path": "paper/figures/f7-failures.pdf",
-      "sha256": "5ab6de3fb67c1862061c7bb8861a6b3c3739ce9b823ffdb335c7a04e71762ff9"
+      "sha256": "4476e624d7a8e9da8858a56cafba6db786da1cecce8d1ef13db1f432a23a5f97"
     },
     {
       "path": "paper/figures/f8-ecology-control.pdf",
@@ -216,7 +216,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "72d45afd61518c48c7c8d883dc6a4d383f57c18a",
+  "generated_at_head": "53d4ef79b3055e1e548c66b3a5902789eed08b7b",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -274,7 +274,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/_spec_hash.py",
-      "sha256": "493be723f7e9223d8208a958ae7d84fac8203280ec1de5f7654154c53e037251"
+      "sha256": "f93734e01753f21a95741e4b89569d2539f23837935c88efe9e261dc6c735883"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/adverse_selection.py",
@@ -426,7 +426,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/mandate.py",
-      "sha256": "c2d647907cd7bceb4a75e054799333a1bad8063c2bbcf54ac592956055342357"
+      "sha256": "3f167723c3472f1103332aceb74e9e87953d6a36d8eb38e9ed26db5809a11b3a"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/manipulation.py",
@@ -566,7 +566,7 @@
     },
     {
       "path": "crates/sharpearena-py/src/lib.rs",
-      "sha256": "9a4322766c5ffef3934cae8b863a25a549254a9553fa7e0d86c860e67602d561"
+      "sha256": "589fe5d51a495d4c8dabef538dfd8f4ff6ae8f03b1de1529945162dc3bc83239"
     },
     {
       "path": "crates/sharpearena-wasm/Cargo.toml",
@@ -626,7 +626,7 @@
     },
     {
       "path": "crates/sharpearena/src/mandate.rs",
-      "sha256": "f6adfae4bdabe4b53ceb81c3f337e51a191c1133a2fb133b7022a859a036ab8d"
+      "sha256": "db8a89d05f124e814f82f2d67581a220da587e9811df3282302c4c12335d83e7"
     },
     {
       "path": "crates/sharpearena/src/market.rs",
@@ -718,7 +718,7 @@
     },
     {
       "path": "paper/sections/03-environment.tex",
-      "sha256": "8c44e8f8d9689c18b847c761bc77f10d5525e43db88a2f347e44c1ebcb72f450"
+      "sha256": "0701fa02af5550d20e7739a6c13501cf283d0e2cbcc3e7f7dad7b523392f4c19"
     },
     {
       "path": "paper/sections/04-contract.tex",
@@ -738,7 +738,7 @@
     },
     {
       "path": "paper/sections/07-findings.tex",
-      "sha256": "64aee426cad3529a82f5b0a06f26678d45856f00f9592dd39db0ff24d5483969"
+      "sha256": "e0d5caceb259babffefa4c58b10abb9adce6381587a7513840d14ea8f49af78d"
     },
     {
       "path": "paper/sections/08-related.tex",
@@ -886,6 +886,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "d12d998412879a976f95c2b3f591f639c046c50f16141fa4ab3922c62253e2db",
+  "source_snapshot_sha256": "aadad7e2d33eff27a2473435b2f2f381bea3d190cd02888a185d70ac13068bf1",
   "validator": "paper/src/check-provenance.py"
 }
