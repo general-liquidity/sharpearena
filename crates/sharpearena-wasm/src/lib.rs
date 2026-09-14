@@ -22,8 +22,9 @@
 use serde::Deserialize;
 use sharpearena::scenario_gen::generate_scenario;
 use sharpearena::{
-    replay_run, run_backtest, tag_regime, walk_forward, Agent, BuyAndHold, CostModel, Dataset,
-    HoldAgent, Momentum, RandomAgent, Regime, RunTrajectory, ScenarioSpec, Window,
+    regime_label, replay_run, run_backtest, tag_regime, walk_forward, Agent, BaselineAgent,
+    BuyAndHold, CostModel, Dataset, HoldAgent, Momentum, RandomAgent, RunTrajectory, ScenarioSpec,
+    Window,
 };
 
 /// Parse an optional config blob: blank → `T::default()`.
@@ -176,7 +177,11 @@ pub fn crate_version_json() -> String {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct BaselineConfig {
-    /// `"buy_and_hold" | "hold" | "momentum" | "random"`.
+    /// A [`BaselineAgent`] label, resolved by [`BaselineAgent::parse`].
+    ///
+    /// Deliberately `String` rather than `BaselineAgent`: the field carries a published
+    /// refusal wording for an unrecognized name, and deserializing straight into the enum
+    /// would hand that wording to serde's `unknown variant` message instead.
     agent: String,
     #[serde(default)]
     dataset: DatasetSource,
@@ -202,17 +207,19 @@ fn build_agent(
     seed: u64,
     momentum_lookback: Option<usize>,
 ) -> Result<Box<dyn Agent>, String> {
-    match name {
-        "buy_and_hold" => Ok(Box::new(BuyAndHold)),
-        "hold" => Ok(Box::new(HoldAgent)),
-        "momentum" => Ok(Box::new(Momentum {
+    // The name is resolved by the engine's own vocabulary rather than matched here, so the
+    // labels this surface accepts and the labels `contract/engine-enums.v1.json` publishes
+    // are the same declaration. The match below is over the enum and carries no wildcard
+    // arm: a baseline added to `BaselineAgent` stops this crate compiling until it is
+    // dispatched, rather than being advertised by the contract and refused at runtime.
+    Ok(match BaselineAgent::parse(name)? {
+        BaselineAgent::BuyAndHold => Box::new(BuyAndHold),
+        BaselineAgent::Hold => Box::new(HoldAgent),
+        BaselineAgent::Momentum => Box::new(Momentum {
             lookback: momentum_lookback.unwrap_or(10),
-        })),
-        "random" => Ok(Box::new(RandomAgent::new(seed))),
-        other => Err(format!(
-            "unknown baseline agent {other:?} (expected buy_and_hold | hold | momentum | random)"
-        )),
-    }
+        }),
+        BaselineAgent::Random => Box::new(RandomAgent::new(seed)),
+    })
 }
 
 /// Run a named in-process baseline over a dataset for a window + seed + costs,
@@ -309,11 +316,11 @@ pub fn tag_regime_json(input_json: &str) -> Result<String, String> {
     }
     let input: TagInput = serde_json::from_str(input_json).map_err(|e| e.to_string())?;
     let regime = tag_regime(&input.dataset, input.window.into());
-    let label = match regime {
-        Regime::Bull => "bull",
-        Regime::Bear => "bear",
-        Regime::Chop => "chop",
-    };
+    // The label comes from the engine's vocabulary rather than a match here, so the bytes
+    // this export emits and the labels `contract/engine-enums.v1.json` publishes are the
+    // same authoring. `Regime` is a foreign type with no `Serialize`, so a shared function
+    // is the only way to have one.
+    let label = regime_label(regime);
     serde_json::to_string(&serde_json::json!({ "regime": label })).map_err(|e| e.to_string())
 }
 

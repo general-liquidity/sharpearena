@@ -938,6 +938,72 @@ compiles, stops `engine_enum_contract.rs` compiling at line 56. Each mutation wa
 byte for byte and re-run green, and both sides carry a not-vacuous control so an empty
 contract cannot pass them.
 
+**Third disposition: both qualifications above are closed. `BaselineAgent` now exists and
+is bound; the `Regime` rename gap was narrower than the second disposition stated, and what
+was actually open is shut.** Both were a missing type binding rather than a wrong value, and
+no label moved.
+
+`crates/sharpearena/src/vocabulary.rs` is one authoring site for the two vocabularies that
+cannot carry their own serde representation, and the reason differs for each. `Regime` is
+re-exported from `sharpebench-sim` and derives no `Serialize`; the second disposition said
+a renamed label "would need `Regime` to carry its own serde representation upstream", and
+that is not so, because the orphan rule blocks deriving it here but nothing blocks a shared
+function. `BaselineAgent` had no declaration anywhere. The enum lives in the published
+crate for the reason the second disposition gave, that the generator cannot depend on the
+wasm crate, and `build_agent` now resolves through `BaselineAgent::parse` under a
+wildcard-free match on the enum, so a baseline added to the vocabulary and left undispatched
+stops the wasm crate compiling. The enum deliberately carries no `#[non_exhaustive]` and no
+`Serialize`: the first would force a wildcard arm in the wasm crate and give up exactly that
+compile error, and the second would be a second authoring of the same four labels, which is
+what this module exists to remove.
+
+The generated artifact gains a `BaselineAgent` entry.
+`npm/sharpearena/test/conformance.test.js` needed no change to pick it up, because the
+union cross-check iterates the artifact's enums.
+
+What the rename gap actually was, measured rather than assumed. The two `Regime` authorings
+were not equally exposed. Renaming the label in the wasm export layer alone fails three
+tests already, because the committed `tag_regime` goldens pin the emitted bytes; that was
+checked by mutation before anything was changed. The unguarded side was the contract
+generator's own copy. Renaming `"bull"` to `"bullish"` there, regenerating the artifact with
+the documented `UPDATE_ENGINE_ENUM_CONTRACT=1` and editing `types.ts` to agree left the
+entire suite green, 227 Rust tests and 30 npm tests, while the engine went on emitting
+`"bull"` and TypeScript consumers were told otherwise. That is the demonstration the gap
+needed, and it is why regeneration was the dangerous step rather than the remedy. With
+`regime_label` as the single site, the same intent fails: the rename now changes what
+`tag_regime` emits, so `regime_goldens_cover_every_label`,
+`kernel_goldens_reproduce_natively` and `stress_suite_and_walk_forward_and_regime` fail, and
+regenerating the artifact does not quiet them. The label the artifact publishes and the
+label the engine emits are one declaration, so they cannot disagree.
+
+No published number moves. `run_baseline` is byte-identical: `scripts/check-wasm-bundle.mjs`
+drives the committed bundle and this tree's build through 44 calls across every export,
+including all four baselines with and without costs, the CSV path, the momentum lookback,
+the unknown-agent error path and three `tag_regime` windows, and reports byte-identical
+returns throughout. The committed backtest and kernel goldens reproduce on the host build
+and through the `#[wasm_bindgen]` exports compiled to wasm32. The refusal wording is
+preserved verbatim and is now built from the variant list rather than typed out, so a
+baseline added later is offered to the caller without a second edit; it is pinned by a unit
+test asserting the full string, not only by the npm suite's regex. `SPEC_HASH` is untouched,
+established rather than assumed: `src/vocabulary.rs` is not one of the seven `SPEC_FILES`
+inputs, none of those seven were edited, and the freshly built bundle reports the committed
+`460811a8d810c454`, so `contract/attestation/spec-hash.json`, `_spec_hash.py`,
+`npm/sharpearena/src/specHash.ts` and the committed bundle needed no rebinding. The 52
+evidence artifact digests are unchanged.
+
+Mutation-checked, each mutation restored and re-run green, each with passing controls
+alongside. Misspelling `"momentum"` as `"momentun"` in the `types.ts` `BaselineAgent` union
+fails `the engine-output unions are the generated contract, not hand copies` with `the
+BaselineAgent union in src/types.ts has drifted from the engine`; restoring only the
+pre-change artifact, which has no `BaselineAgent` entry, and leaving the misspelling in place
+passes 30 of 30, which isolates the new artifact entry as the cause rather than anything
+incidental. Changing the refusal wording to `unrecognized`, and separately the `expected`
+separator from `" | "` to `", "`, each fails
+`an_unknown_baseline_label_is_refused_with_the_published_wording` and nothing else, with the
+module's five other tests passing. Renaming the `Momentum` label to `"momentum_agent"` fails
+eight tests across three binaries, including `backtest_goldens_reproduce_natively`, which is
+what shows the dispatch genuinely routes through the enum rather than being decorated by it.
+
 ### A16. `SealedSalt` enforces length, and is framed as enforcing entropy (low-medium)
 
 `crates/sharpearena/src/scenario_gen.rs:543-546` says the sealed-seed argument "rests on
