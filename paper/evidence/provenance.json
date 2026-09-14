@@ -216,7 +216,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "f3d853a086d9fe09b791a6229d0f4a57a391650e",
+  "generated_at_head": "24e9e508f2750dd1f1f09c8be1e1d8b591456164",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -246,23 +246,23 @@
     },
     {
       "path": "Cargo.lock",
-      "sha256": "2af3fac4acf3afe154e28c5f98aef51ac6bbb40d2a356120d782cb93128944ab"
+      "sha256": "b5f9c114162d80fa2b1a94789189caf50a4076a0ed5ae660b90a44974b92e13d"
     },
     {
       "path": "Cargo.toml",
-      "sha256": "7de62ffea80ed4e31ea6b5eca844e62f67ad8ba810e797d5cedbcb0772a9d737"
+      "sha256": "4c0bb41f1b8c5d370de0526b9ef7c95e1e1faab07c71462af5c65480b9e9ea51"
     },
     {
       "path": "crates/sharpearena-py/Cargo.toml",
-      "sha256": "2baa8b01f7c20736998acb9e2cbe56bec4498f072d3f07da8eb617c4fe1ae1b2"
+      "sha256": "923d654d3a3dcec79cb875813be55d8a07f1517a59d5c1a64af164f60ba1123f"
     },
     {
       "path": "crates/sharpearena-py/pyproject.toml",
-      "sha256": "61ac8ac581cc920f1a055f40b8701e96763639cf1b034c6112770c8d7dd16cbf"
+      "sha256": "a3b3439afc7e5050a464adb63762ae724e9e6150ddd796eba24d2d8ee4ce2f47"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/__init__.py",
-      "sha256": "495c27955e6b05be16c4db7e4e9256a2ceda4456e63fc94a292978095b44eef2"
+      "sha256": "2205802eb23b8a4ec035a5c7564f03e826ac22c3efdac256a4d79e7616901fc9"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/_action_validation.py",
@@ -570,7 +570,7 @@
     },
     {
       "path": "crates/sharpearena-wasm/Cargo.toml",
-      "sha256": "cfff3e73636d2a39312f733feb32cf598a599f907128a7196b390400eace9514"
+      "sha256": "77c68f5e995978477c96e9b7d63ae21a02ee631bb18c68a3158bdddf7df9ca67"
     },
     {
       "path": "crates/sharpearena-wasm/src/lib.rs",
@@ -698,7 +698,7 @@
     },
     {
       "path": "npm/sharpearena/package.json",
-      "sha256": "7032a13a06165e0929874113a37004919bb4de564e16dc048b925a37220225c0"
+      "sha256": "3ae1be52b49ab9c00c40a174a741672bc01a22112f9322acc8b7efb1b00ca75e"
     },
     {
       "path": "paper/main.tex",
@@ -890,6 +890,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "2c4b951cd4ae86b5d8db294404b897579678b6dc9237ddd075835a5e33445811",
+  "source_snapshot_sha256": "063d763674446bd3ecccdb7df66adf675087ba0f37205a3431905d89cb2d2e52",
   "validator": "paper/src/check-provenance.py"
 }
