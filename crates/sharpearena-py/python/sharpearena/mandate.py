@@ -45,12 +45,14 @@ class MandateError(ValueError):
 
 
 def _load_style_contract() -> tuple[str, ...]:
-    """The constraint families a scenario can draw, as the native enum names them.
+    """The constraint families a mandate may carry, as the native enum names them.
 
     ``long_only``, ``market_neutral`` and ``pairs_convergence`` each carry a distinct
-    structural rule. ``unconstrained`` is the declared permissive control, and ``momentum``
-    carries no structural rule either despite rendering one in its prompt text: the breach
-    checker has no per-symbol returns to read "lean into recent winners" off. See
+    structural rule and ``unconstrained`` is the declared permissive control. ``momentum``
+    carries no structural rule despite rendering one in its prompt text, because the breach
+    checker has no per-symbol returns to read "lean into recent winners" off, so it is no
+    longer *drawn*: this table is the parse-side vocabulary, wider than the draw set, and
+    ``momentum`` stays in it so a recorded trace still validates. See
     ``docs/audits/2026-09-09/ARENA-REVIEW.md`` A9.
 
     The list is the native ``MandateStyle`` vocabulary, emitted by the extension through a
@@ -195,9 +197,11 @@ def mandate_breach(
 
     * **structural** — a short under ``long_only`` (fraction of bars holding a short), or
       net exposure away from zero under ``market_neutral`` *or* ``pairs_convergence`` (mean
-      ``|net| / gross``). Read off the per-step weight events. ``momentum`` /
-      ``unconstrained`` carry no structural rule. (``pairs_convergence`` uses a beta-free
-      dollar-neutrality proxy — see the Rust ``mandate_breach`` docs.)
+      ``|net| / gross``). Read off the per-step weight events. ``unconstrained`` carries no
+      structural rule, and neither does ``momentum``, which is why it is no longer drawn;
+      a replayed ``momentum`` mandate is still scored by whatever caps it carries.
+      (``pairs_convergence`` uses a beta-free dollar-neutrality proxy — see the Rust
+      ``mandate_breach`` docs.)
     * **inventory** — per-bar gross exposure ``Σ|w_i|`` over ``max_inventory``, normalized
       by the cap and *squared* (Avellaneda-Stoikov), saturated at 1 per bar then meaned.
     * **drawdown** — realized max drawdown over the cap, normalized by the cap and
