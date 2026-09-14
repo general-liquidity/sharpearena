@@ -243,8 +243,9 @@ test("the Action union is the schema's enum, not a hand copy that drifted", () =
 // exists at contract/engine-enums.v1.json, emitted by
 // crates/sharpearena/tests/engine_enum_contract.rs through wildcard-free exhaustive matches,
 // so a variant added to the engine fails that crate's compile and a union that drifts from
-// it fails here. `BaselineAgent` is still not covered: it has no Rust enum to generate from,
-// only a string dispatch in the wasm export layer.
+// it fails here. `BaselineAgent` is covered too, since the round that added
+// `sharpearena::vocabulary`: it now has a Rust enum, and the wasm export layer's dispatch
+// resolves names through it rather than matching string literals of its own.
 
 const ENGINE_ENUMS = readJson(CONTRACT, KIT.engine_enums);
 

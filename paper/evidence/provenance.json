@@ -216,7 +216,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "72d45afd61518c48c7c8d883dc6a4d383f57c18a",
+  "generated_at_head": "8f62c4a8d86dbef801f06335cd6b58bef7de39b1",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -574,7 +574,7 @@
     },
     {
       "path": "crates/sharpearena-wasm/src/lib.rs",
-      "sha256": "6ddcf2ea3207167dd17d27353211862a0215e27176dab2f4c4a7baa40e6d093b"
+      "sha256": "c1b2979dbe3f1441d14586f87afc9c240c4090e8ae4e5bba75ea3e66bcc4e61d"
     },
     {
       "path": "crates/sharpearena/Cargo.toml",
@@ -618,7 +618,7 @@
     },
     {
       "path": "crates/sharpearena/src/lib.rs",
-      "sha256": "a3c8e11ea39034d43617cda7b361e1a0dfeba94320a598040c2698fa19b25d36"
+      "sha256": "ca3fa33d21d8253a5445dcdc182632c1147bfa6fe220b7e4ef823912ad9ba1ad"
     },
     {
       "path": "crates/sharpearena/src/lob_market.rs",
@@ -653,6 +653,10 @@
       "sha256": "d062c694bbdc5c01c041eabb29373bee947672afe77e465b4de297729ce52ade"
     },
     {
+      "path": "crates/sharpearena/src/vocabulary.rs",
+      "sha256": "0e48cf032b6376647dc96d091add61d8772fc819fc9f49ab8f7e45827722e57f"
+    },
+    {
       "path": "crates/sharpearena/tests/conformance.rs",
       "sha256": "dd1e9493b69ffc51467ca42a327f818a8713ec2c3c1bc2e3088b0e5a9711a664"
     },
@@ -662,7 +666,7 @@
     },
     {
       "path": "crates/sharpearena/tests/engine_enum_contract.rs",
-      "sha256": "4fd60ec443ced58fa516d10b92a54067dbfff5c7ad1bb238bd453dc913ccb849"
+      "sha256": "b17ed3123e5dbfe9b74633af4f2a3f46306bcb25bd522da4fabca98fdadf9096"
     },
     {
       "path": "crates/sharpearena/tests/error_style.rs",
@@ -886,6 +890,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "d12d998412879a976f95c2b3f591f639c046c50f16141fa4ab3922c62253e2db",
+  "source_snapshot_sha256": "b87b16a102293a34aa0561720be245741fceb6290869b2b5f008bb907dc24cbc",
   "validator": "paper/src/check-provenance.py"
 }

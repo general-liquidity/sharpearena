@@ -11,24 +11,31 @@
 //! Two guarantees, and only two:
 //!
 //! * **Variant drift fails to compile.** Each vocabulary is built through a match with no
-//!   wildcard arm, so a variant added to `DistributionMode` or `Regime` stops this test
-//!   compiling rather than going unnamed. Same device as the process-event contract.
+//!   wildcard arm, so a variant added to `DistributionMode`, `Regime` or `BaselineAgent`
+//!   stops this test compiling rather than going unnamed. Same device as the process-event
+//!   contract. For the latter two the match lives in `sharpearena::vocabulary`, so the
+//!   compile failure lands on the crate rather than on this file.
 //! * **Restatement drift fails a test.** The committed artifact is what the npm suite reads,
 //!   so a `types.ts` union or interface that disagrees with the engine fails there.
 //!
 //! What it does *not* establish: `DistributionMode`, `ObservationRichness` and `ScenarioSpec`
 //! carry their wire form in serde, so their labels and field names here are the engine's own.
-//! `Regime` derives no `Serialize` — its JSON labels are authored in the wasm export layer's
-//! `regime_label`, so the labels below are a second authoring of them and only the variant
-//! list is derived. `BaselineAgent` is not covered at all: it has no Rust enum anywhere, only
-//! a string dispatch in the wasm export layer. See the A15 disposition.
+//! `Regime` and `BaselineAgent` cannot — the first is a foreign type this crate cannot derive
+//! `Serialize` for, the second exists to name a dispatch rather than to be serialized — so
+//! their labels come from `sharpearena::vocabulary`, which is also what the wasm export layer
+//! reads. That shared authoring is the whole of the guarantee for those two: the labels below
+//! are not a restatement of what the engine emits, they *are* what the engine emits, so a
+//! renamed label moves this artifact and the committed `tag_regime` / `run_baseline` goldens
+//! together and cannot be regenerated away. See the A15 disposition.
 
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
 use serde_json::{json, Map, Value};
-use sharpearena::{DistributionMode, ObservationRichness, Regime, ScenarioSpec};
+use sharpearena::{
+    regime_label, BaselineAgent, DistributionMode, ObservationRichness, ScenarioSpec, REGIMES,
+};
 
 const CONTRACT: &str = "contract/engine-enums.v1.json";
 
@@ -69,20 +76,27 @@ fn distribution_modes() -> Vec<String> {
 
 /// Every `Regime`, under the label the JSON surface writes.
 ///
-/// `Regime` derives no `Serialize`, so unlike the modes above the strings are authored here
-/// rather than read off the type. The exhaustive match still makes an added variant a
-/// compile error, which is the drift a hand-maintained union cannot notice.
+/// `Regime` derives no `Serialize` and is a foreign type, so its labels cannot be read off
+/// the type the way the modes above are. They come from `sharpearena::regime_label`, which
+/// is the same function the wasm export layer's `tag_regime` emits through — so these are
+/// the engine's own bytes rather than a second authoring of them. `regime_label`'s match is
+/// wildcard-free, so an added variant is still a compile error.
 fn regimes() -> Vec<String> {
-    [Regime::Bull, Regime::Bear, Regime::Chop]
+    REGIMES
         .into_iter()
-        .map(|regime| {
-            match regime {
-                Regime::Bull => "bull",
-                Regime::Bear => "bear",
-                Regime::Chop => "chop",
-            }
-            .to_string()
-        })
+        .map(|regime| regime_label(regime).to_string())
+        .collect()
+}
+
+/// Every `BaselineAgent`, under the label `run_baseline` dispatches on.
+///
+/// Same shape as `regimes` and for a related reason: the enum names a dispatch rather than
+/// a serialized value, so `BaselineAgent::label` is the authoring and the wasm export
+/// layer's `build_agent` resolves through it.
+fn baseline_agents() -> Vec<String> {
+    BaselineAgent::ALL
+        .into_iter()
+        .map(|agent| agent.label().to_string())
         .collect()
 }
 
@@ -96,6 +110,7 @@ fn serialized_fields<T: serde::Serialize>(value: &T) -> Vec<String> {
 
 fn build_contract() -> Value {
     let mut enums = Map::new();
+    enums.insert("BaselineAgent".into(), json!(baseline_agents()));
     enums.insert("DistributionMode".into(), json!(distribution_modes()));
     enums.insert("Regime".into(), json!(regimes()));
 
@@ -151,6 +166,10 @@ fn the_contract_is_not_vacuous() {
         5
     );
     assert_eq!(contract["enums"]["Regime"].as_array().unwrap().len(), 3);
+    assert_eq!(
+        contract["enums"]["BaselineAgent"].as_array().unwrap().len(),
+        4
+    );
     assert!(contract["structs"]["ScenarioSpec"]
         .as_array()
         .unwrap()
@@ -159,4 +178,29 @@ fn the_contract_is_not_vacuous() {
         .as_array()
         .unwrap()
         .contains(&json!("lookback")));
+}
+
+/// A published label that the dispatch refuses would be worse than no contract: consumers
+/// would type against a name `run_baseline` rejects. The artifact's `BaselineAgent` list is
+/// therefore required to resolve, entry for entry, through the same function the wasm export
+/// layer calls, and a name that is not in the list is required not to.
+#[test]
+fn every_published_baseline_label_resolves_through_the_dispatch() {
+    let contract = build_contract();
+    let labels = contract["enums"]["BaselineAgent"]
+        .as_array()
+        .unwrap()
+        .clone();
+    for label in &labels {
+        let label = label.as_str().expect("a baseline label is a string");
+        assert_eq!(
+            BaselineAgent::parse(label).map(|agent| agent.label()),
+            Ok(label),
+            "{label} is published in the contract but does not resolve to itself"
+        );
+    }
+    assert!(
+        BaselineAgent::parse("not_a_baseline").is_err(),
+        "the resolver accepts a name the contract does not publish, so resolving proves nothing"
+    );
 }
