@@ -85,7 +85,9 @@ def deflated_sharpe_ci(
     0.21.0 ``score_run``. That shared convention is not parity by itself:
     :func:`~sharpearena.baselines.run_baselines` attaches the interval to a kernel row only
     when the kernel reproduces ``point`` bit for bit. Inputs that support no interval,
-    including an invalid ``periods_per_year``, raise ``ValueError``. Returns
+    including an invalid ``periods_per_year`` and a pooled band with no Sharpe ratio
+    (a constant one, refused as ``returns must not be constant: a constant series has no
+    Sharpe ratio``), raise ``ValueError``. Returns
     ``{point, lo, hi, width, confidence, n_boot}``.
     """
     arguments = _bootstrap_arguments(n_trials, n_boot, resample_seed, alpha,

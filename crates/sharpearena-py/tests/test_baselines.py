@@ -32,6 +32,12 @@ requires_binding = pytest.mark.skipif(
     not _HAVE_BINDING, reason="native sharpearena binding not built"
 )
 
+# `flat` never trades: its track is constant, has no Sharpe ratio, and is withheld.
+FLAT_WITHHELD = (
+    "unavailable_scoring_kernel_error: deflation_error: "
+    "returns must not be constant: a constant series has no Sharpe ratio"
+)
+
 
 # -- logic that needs no native binding -------------------------------------
 
@@ -138,14 +144,21 @@ def test_run_baselines_returns_scored_rows():
     assert {"flat", "equal_weight_long", "momentum"} <= names
     for r in rows:
         assert set(r) == {"policy", "deflated_sharpe", "passed_k_rate", "mean_return"}
+        assert np.isfinite(r["mean_return"])
+        if r["policy"] == "flat":
+            assert r["deflated_sharpe"] == r["passed_k_rate"] == FLAT_WITHHELD
+            continue
         assert np.isfinite(r["deflated_sharpe"])
         assert 0.0 <= r["passed_k_rate"] <= 1.0
-        assert np.isfinite(r["mean_return"])
 
 
 @requires_binding
 def test_run_baselines_attaches_confidence_the_kernel_reproduces_bit_for_bit():
     rows = run_baselines(n_symbols=3, n_days=40, seeds=range(4))
+    flat = next(r for r in rows if r["policy"] == "flat")
+    assert flat["deflated_sharpe_ci"] is None and flat["arena_deflated_sharpe_ci"] is None
+    assert flat["confidence_status"] == FLAT_WITHHELD
+    rows = [r for r in rows if r is not flat]
     for r in rows:
         assert "per_seed_returns" in r
         ci = r["arena_deflated_sharpe_ci"]
@@ -179,6 +192,10 @@ def test_run_baselines_withholds_confidence_when_the_kernel_disagrees(monkeypatc
 
     monkeypatch.setattr(baselines, "score_run", shifted)
     rows = baselines.run_baselines(n_symbols=3, n_days=40, seeds=range(2))
+    flat = next(r for r in rows if r["policy"] == "flat")
+    assert flat["deflated_sharpe_ci"] is None
+    assert flat["confidence_status"] == FLAT_WITHHELD
+    rows = [r for r in rows if r is not flat]
     for r in rows:
         assert r["deflated_sharpe_ci"] is None
         assert r["confidence_status"] == "unavailable_scoring_kernel_mismatch"
@@ -248,7 +265,10 @@ def test_absent_confidence_is_not_rendered_as_a_zero_width_interval():
 
 def test_a_single_seed_keeps_its_point_but_withholds_between_seed_confidence():
     rows = run_baselines(n_symbols=2, n_days=12, seeds=[0])
-    for row in rows:
+    flat = next(r for r in rows if r["policy"] == "flat")
+    assert flat["deflated_sharpe"] == flat["confidence_status"] == FLAT_WITHHELD
+    assert flat["deflated_sharpe_ci"] is None and flat["arena_deflated_sharpe_ci"] is None
+    for row in (r for r in rows if r is not flat):
         assert isinstance(row["deflated_sharpe"], float)
         assert row["deflated_sharpe_ci"] is None
         assert row["arena_deflated_sharpe_ci"] is None

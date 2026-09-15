@@ -103,15 +103,12 @@ use sharpearena::lob_market::{OrderBook, OrderKind, Side};
 use sharpearena::market::{EllipticUncertaintySet, MarketClearing, MarketParams};
 use sharpearena::vec_env::AutoresetMode;
 use sharpearena::{
-    generate_scenario, CostModel, Dataset, Decision, DistributionMode, LaneConfig, Mandate,
-    MandateStyle, RichnessTier, ScenarioSpec, TradingEnv as CoreEnv, VecTradingEnv as CoreVecEnv,
-    Window,
+    generate_scenario, score_returns, CostModel, Dataset, Decision, DistributionMode, LaneConfig,
+    Mandate, MandateStyle, RichnessTier, ScenarioSpec, TradingEnv as CoreEnv,
+    VecTradingEnv as CoreVecEnv, Window,
 };
 use sharpebench_core::process::process_score;
-use sharpebench_core::{
-    score_agent, AgentSubmission, LifecycleStep, Phase, ProcessEvent, Run, ScoreConfig, Subject,
-    Trace,
-};
+use sharpebench_core::{LifecycleStep, Phase, ProcessEvent, Subject, Trace};
 
 /// Parse the wire `distribution_mode` label, rejecting unknown tiers with a `ValueError`.
 fn parse_distribution_mode(mode: &str) -> PyResult<DistributionMode> {
@@ -740,7 +737,9 @@ impl PyVecTradingEnv {
 /// budget (more search ⇒ more deflation). `periods_per_year` is explicit so a
 /// historical hourly, daily, or weekly field cannot silently inherit the daily-equity
 /// default. Returns the `CompositeScore` as a JSON string. This is what lets the
-/// `verifiers` rubric reward be *calibrated* rather than approximate.
+/// `verifiers` rubric reward be *calibrated* rather than approximate. A track with no
+/// Sharpe ratio (a constant one) is withheld with a `deflation_error` naming why, which
+/// the pinned kernel does not do itself (see `sharpearena::score_returns`).
 #[pyfunction]
 #[pyo3(signature = (returns, n_trials = 0, periods_per_year = 252.0))]
 fn score_run(returns: Vec<f64>, n_trials: u32, periods_per_year: f64) -> PyResult<String> {
@@ -750,25 +749,7 @@ fn score_run(returns: Vec<f64>, n_trials: u32, periods_per_year: f64) -> PyResul
             "periods_per_year must be finite and positive",
         ));
     }
-    let outcomes: Vec<bool> = returns.iter().map(|r| *r > 0.0).collect();
-    let confidences = vec![0.5_f64; returns.len()];
-    let run = Run {
-        returns,
-        trace: Trace::default(),
-        confidences,
-        outcomes,
-        cost: 0.0,
-    };
-    let submission = AgentSubmission {
-        agent_id: "verifiers-rollout".to_string(),
-        runs: vec![run],
-        in_sample_trials: n_trials,
-        candidates: Vec::new(),
-    };
-    let score = score_agent(
-        &submission,
-        &ScoreConfig::for_periods_per_year(periods_per_year),
-    );
+    let score = score_returns(returns, n_trials, periods_per_year);
     serde_json::to_string(&score).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))
 }
 

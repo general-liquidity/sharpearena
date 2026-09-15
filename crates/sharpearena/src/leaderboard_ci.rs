@@ -180,7 +180,12 @@ fn norm_ppf(p: f64) -> f64 {
     }
 }
 
-/// Per-period Sharpe ratio. 0.0 if volatility is 0.
+/// Per-period Sharpe ratio. 0.0 if the computed volatility is 0.
+///
+/// That 0.0 is a sentinel, not a Sharpe ratio, and a constant nonzero track does not
+/// reach it: its rounded mean sits a few ULPs off its value, so the computed volatility
+/// is tiny but nonzero and this returns a number near 1e15. Every statistic this module
+/// reports refuses such a track through [`check_sharpe_defined`] first.
 pub fn sharpe_ratio(returns: &[f64]) -> f64 {
     let s = std_dev(returns);
     if s == 0.0 {
@@ -211,6 +216,43 @@ fn probabilistic_sharpe_ratio(returns: &[f64], sr_benchmark: f64) -> f64 {
 const DISPERSION_REFUSAL: &str = "trials_sr_std must be finite and nonnegative";
 const TRIALS_REFUSAL: &str = "n_trials must be at least one";
 const PERIODS_REFUSAL: &str = "periods_per_year must be finite and positive";
+
+/// Why a constant track has no deflated Sharpe: its sample variance is zero, so its
+/// Sharpe ratio is 0/0 or c/0. Worded as the unreleased SharpeBench kernel words the
+/// same refusal, so both products report one reason for one track.
+pub const CONSTANT_TRACK_REFUSAL: &str =
+    "returns must not be constant: a constant series has no Sharpe ratio";
+
+/// Why a track that is not refused as constant still has no Sharpe ratio: an observation
+/// is not finite, or the computed standard deviation is exactly zero (squared deviations
+/// below the smallest subnormal), so the ratio does not stay finite.
+pub const NON_FINITE_SHARPE_REFUSAL: &str = "Sharpe ratio is not finite";
+
+/// Refuse an observed track that has no per-period Sharpe ratio.
+///
+/// A track with a non-finite observation is refused with [`NON_FINITE_SHARPE_REFUSAL`].
+/// A track of at least two observations, every one equal to the first, is constant and
+/// refused with [`CONSTANT_TRACK_REFUSAL`]. The predicate is value equality rather than
+/// the computed variance, because the computed variance of a constant nonzero track is
+/// not zero (see [`sharpe_ratio`]), and it is not a tolerance, so no dispersed track is
+/// refused however small its volatility. A track that is not constant but whose Sharpe
+/// ratio still does not stay finite is refused with [`NON_FINITE_SHARPE_REFUSAL`]. Fewer
+/// than two observations are left to the caller, as SharpeBench leaves them.
+pub fn check_sharpe_defined(returns: &[f64]) -> Result<(), ConfidenceError> {
+    if returns.len() < 2 {
+        return Ok(());
+    }
+    if returns.iter().any(|r| !r.is_finite()) {
+        return Err(ConfidenceError(NON_FINITE_SHARPE_REFUSAL));
+    }
+    if returns.iter().all(|&r| r == returns[0]) {
+        return Err(ConfidenceError(CONSTANT_TRACK_REFUSAL));
+    }
+    if !(mean(returns) / std_dev(returns)).is_finite() {
+        return Err(ConfidenceError(NON_FINITE_SHARPE_REFUSAL));
+    }
+    Ok(())
+}
 
 /// Expected maximum Sharpe under `n_trials` independent trials given cross-trial Sharpe
 /// dispersion `trials_sr_std` (Bailey & López de Prado, E[max SR_N]).
@@ -255,7 +297,8 @@ fn per_period_dispersion(
 /// `periods_per_year`, so this matches the scoring kernel given the same `n_trials`,
 /// `trials_sr_std` and `periods_per_year`, and a bootstrap over it brackets the
 /// leaderboard point. Refuses a negative or non-finite dispersion, zero trials and a
-/// non-finite or non-positive `periods_per_year`.
+/// non-finite or non-positive `periods_per_year`, and then a track with no Sharpe ratio
+/// (see [`check_sharpe_defined`]).
 pub fn deflated_sharpe(
     returns: &[f64],
     n_trials: u32,
@@ -264,6 +307,7 @@ pub fn deflated_sharpe(
 ) -> Result<f64, ConfidenceError> {
     let per_period_sr_std = per_period_dispersion(trials_sr_std, periods_per_year)?;
     let sr_star = expected_max_sharpe(per_period_sr_std, n_trials)?;
+    check_sharpe_defined(returns)?;
     Ok(probabilistic_sharpe_ratio(returns, sr_star))
 }
 
@@ -363,10 +407,24 @@ fn validate_seed_bootstrap(
     Ok(())
 }
 
+/// What the series handed to [`checked_dsr`] is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Track {
+    /// A pooled seed band a reported point is computed on. One with no Sharpe ratio is
+    /// refused (see [`check_sharpe_defined`]).
+    Observed,
+    /// A bootstrap resample of an observed band that was not refused. A resample that
+    /// happens to be constant (it drew only seeds of one repeated value) is computed as
+    /// it always has been: refusing it would withdraw the whole interval of an estimable
+    /// band, and SharpeBench keeps the same convention for its resamples.
+    Resample,
+}
+
 fn checked_dsr(
     returns: &[f64],
     n_trials: u32,
     per_period_sr_std: f64,
+    track: Track,
 ) -> Result<f64, ConfidenceError> {
     // Check before floors or CDF saturation can conceal failed intermediates.
     let sr = sharpe_ratio(returns);
@@ -379,6 +437,9 @@ fn checked_dsr(
         .any(|v| !v.is_finite())
     {
         return Err(ConfidenceError("seed-bootstrap statistic is not finite"));
+    }
+    if track == Track::Observed {
+        check_sharpe_defined(returns)?;
     }
     let value = probabilistic_sharpe_ratio(returns, sr_star);
     if !value.is_finite() {
@@ -433,9 +494,11 @@ pub struct PairedDiff {
 /// percentile interval. `resample_seed` fixes the RNG so the report is reproducible.
 /// Requires at least two seed units, two bootstrap draws, finite observations and
 /// a confidence level strictly between zero and one, and it refuses the deflation
-/// inputs [`deflated_sharpe`] refuses. `trials_sr_std` is annualized and converted at
-/// the caller's `periods_per_year`. These are necessary input conditions, not a
-/// guarantee of independence or finite-sample coverage.
+/// inputs [`deflated_sharpe`] refuses, including a pooled band with no Sharpe ratio
+/// (see [`check_sharpe_defined`]): an interval of zero width around a number that is
+/// not a deflated Sharpe would read as perfect precision. `trials_sr_std` is annualized
+/// and converted at the caller's `periods_per_year`. These are necessary input
+/// conditions, not a guarantee of independence or finite-sample coverage.
 pub fn bootstrap_dsr_ci(
     per_seed: &[Vec<f64>],
     n_trials: u32,
@@ -449,7 +512,7 @@ pub fn bootstrap_dsr_ci(
     let per_period_sr_std = per_period_dispersion(trials_sr_std, periods_per_year)?;
     let n = per_seed.len();
     let full: Vec<f64> = per_seed.iter().flatten().copied().collect();
-    let point = checked_dsr(&full, n_trials, per_period_sr_std)?;
+    let point = checked_dsr(&full, n_trials, per_period_sr_std, Track::Observed)?;
     let confidence = 1.0 - alpha;
 
     let mut rng = SplitMix64(resample_seed);
@@ -460,7 +523,12 @@ pub fn bootstrap_dsr_ci(
             *slot = rng.below(n);
         }
         let pooled = pool_selected(per_seed, &idx);
-        samples.push(checked_dsr(&pooled, n_trials, per_period_sr_std)?);
+        samples.push(checked_dsr(
+            &pooled,
+            n_trials,
+            per_period_sr_std,
+            Track::Resample,
+        )?);
     }
 
     let lo = quantile(&samples, alpha / 2.0);
@@ -516,8 +584,8 @@ pub fn paired_dsr_diff(
     let n = a_per_seed.len();
     let a_full: Vec<f64> = a_per_seed[..n].iter().flatten().copied().collect();
     let b_full: Vec<f64> = b_per_seed[..n].iter().flatten().copied().collect();
-    let point_diff = checked_dsr(&a_full, n_trials, per_period_sr_std)?
-        - checked_dsr(&b_full, n_trials, per_period_sr_std)?;
+    let point_diff = checked_dsr(&a_full, n_trials, per_period_sr_std, Track::Observed)?
+        - checked_dsr(&b_full, n_trials, per_period_sr_std, Track::Observed)?;
     let confidence = 1.0 - alpha;
 
     let mut rng = SplitMix64(resample_seed);
@@ -531,8 +599,8 @@ pub fn paired_dsr_diff(
         }
         let a_pool = pool_selected(&a_per_seed[..n], &idx);
         let b_pool = pool_selected(&b_per_seed[..n], &idx);
-        let d = checked_dsr(&a_pool, n_trials, per_period_sr_std)?
-            - checked_dsr(&b_pool, n_trials, per_period_sr_std)?;
+        let d = checked_dsr(&a_pool, n_trials, per_period_sr_std, Track::Resample)?
+            - checked_dsr(&b_pool, n_trials, per_period_sr_std, Track::Resample)?;
         if d <= 0.0 {
             n_le += 1;
         }
@@ -906,6 +974,153 @@ mod tests {
                 expected
             );
         }
+    }
+
+    /// Paper audit 2026-09-14: the `flat` reference policy never trades, so its pooled
+    /// band is identically zero and has no Sharpe ratio. The estimator scored it at the
+    /// sentinel Sharpe of 0: on the committed F1 band (16 seeds of 120 zeros, six
+    /// declared trials) a point of 0.000686601376451601 with a zero-width interval there,
+    /// the value the F1 evidence prints. A constant nonzero band was worse: its rounded
+    /// mean leaves a computed standard deviation just above zero, so it scored a point and
+    /// an interval of 1.0 and won a paired comparison. Every entry point now refuses both
+    /// with the constant-track reason, and a paired test refuses on either side.
+    #[test]
+    fn a_constant_band_has_no_deflated_sharpe_interval_or_paired_difference() {
+        let constant = vec![0.001; 120];
+        // Why the predicate is value equality: the computed variance is not zero here.
+        assert!(std_dev(&constant) > 0.0 && sharpe_ratio(&constant) > 1e12);
+        let f1_flat: Vec<Vec<f64>> = (0..16).map(|_| vec![0.0; 120]).collect();
+        assert_eq!(
+            bootstrap_dsr_ci(
+                &f1_flat,
+                KERNEL_BASE_TRIALS + 6,
+                TRIALS_SR_STD_DEFAULT,
+                PERIODS_PER_YEAR,
+                2000,
+                0x5BA7_2026,
+                0.05
+            )
+            .unwrap_err(),
+            ConfidenceError(CONSTANT_TRACK_REFUSAL)
+        );
+        let dispersed: Vec<Vec<f64>> = (0..6).map(|k| wobble(k, 60)).collect();
+        for value in [0.0, 0.001, -0.002] {
+            for len in [2, 60, 408] {
+                assert_eq!(
+                    deflated_sharpe(&vec![value; len], 56, 0.5, PERIODS_PER_YEAR),
+                    refused(CONSTANT_TRACK_REFUSAL),
+                    "value {value} len {len}"
+                );
+            }
+            let band: Vec<Vec<f64>> = (0..6).map(|_| vec![value; 60]).collect();
+            let expected = ConfidenceError(CONSTANT_TRACK_REFUSAL);
+            assert_eq!(
+                bootstrap_dsr_ci(&band, 56, 0.5, PERIODS_PER_YEAR, 500, 0x00C1, 0.05).unwrap_err(),
+                expected,
+                "value {value}"
+            );
+            for (a, b) in [(&dispersed, &band), (&band, &dispersed), (&band, &band)] {
+                assert_eq!(
+                    paired_dsr_diff(a, b, 56, 0.5, PERIODS_PER_YEAR, 500, 0x5EED, 0.05)
+                        .unwrap_err(),
+                    expected,
+                    "value {value}"
+                );
+            }
+        }
+    }
+
+    /// A track that is not constant but whose squared deviations underflow has a computed
+    /// standard deviation of exactly zero, and one with a non-finite observation has no
+    /// finite moments. Neither has a Sharpe ratio; both are refused under that name rather
+    /// than as constant, and the bootstrap's own finiteness refusal keeps its precedence.
+    #[test]
+    fn an_underflowing_or_non_finite_track_has_no_sharpe_ratio() {
+        let underflow: Vec<f64> = (0..60).map(|i| (i % 2) as f64 * 1e-170).collect();
+        assert_eq!(std_dev(&underflow), 0.0);
+        assert_eq!(
+            deflated_sharpe(&underflow, 56, 0.5, PERIODS_PER_YEAR),
+            refused(NON_FINITE_SHARPE_REFUSAL)
+        );
+        let band = vec![underflow.clone(), underflow];
+        assert_eq!(
+            bootstrap_dsr_ci(&band, 56, 0.5, PERIODS_PER_YEAR, 10, 1, 0.05).unwrap_err(),
+            ConfidenceError(NON_FINITE_SHARPE_REFUSAL)
+        );
+        for bad in [
+            vec![0.01, f64::NAN, 0.02],
+            vec![f64::INFINITY, f64::INFINITY],
+        ] {
+            assert_eq!(
+                deflated_sharpe(&bad, 56, 0.5, PERIODS_PER_YEAR),
+                refused(NON_FINITE_SHARPE_REFUSAL),
+                "{bad:?}"
+            );
+        }
+        assert_eq!(
+            bootstrap_dsr_ci(
+                &[vec![1e308, 1e308], vec![0.01, 0.02]],
+                56,
+                0.5,
+                PERIODS_PER_YEAR,
+                10,
+                1,
+                0.05
+            )
+            .unwrap_err(),
+            ConfidenceError("seed-bootstrap statistic is not finite")
+        );
+    }
+
+    /// The controls. A dispersed track keeps its value whatever its volatility, because
+    /// the predicate is not a tolerance: tracks that differ from a constant only in the
+    /// twelfth decimal, by one blip in 120 bars, or by a factor of 1e-9 in scale, are
+    /// scored exactly as the unguarded estimator scores them.
+    #[test]
+    fn a_low_volatility_or_sparse_track_stays_available() {
+        let per_period = TRIALS_SR_STD_DEFAULT / PERIODS_PER_YEAR.sqrt();
+        let sr_star = expected_max_sharpe(per_period, 56).unwrap();
+        let tiny: Vec<f64> = (0..250)
+            .map(|i| 0.001 + 1e-12 * ((i % 5) as f64 - 2.0))
+            .collect();
+        let mut blip = vec![0.0; 120];
+        blip[119] = 1e-9;
+        let scaled: Vec<f64> = wobble(1, 250).iter().map(|r| r * 1e-9).collect();
+        for track in [&tiny, &blip, &scaled] {
+            let value = deflated_sharpe(track, 56, 0.5, PERIODS_PER_YEAR).unwrap();
+            assert_eq!(
+                value.to_bits(),
+                probabilistic_sharpe_ratio(track, sr_star).to_bits()
+            );
+        }
+        assert!(deflated_sharpe(&blip, 56, 0.5, PERIODS_PER_YEAR).unwrap() < 1.0);
+    }
+
+    /// The resample convention, as SharpeBench keeps it. A band whose pooled track
+    /// disperses keeps its interval even when a resample happens to be constant: here a
+    /// quarter of the resamples draw the all-zero seed twice, and the lower bound is
+    /// exactly the unguarded estimate of that constant resample. Refusing resamples would
+    /// withdraw the interval of an estimable band instead.
+    #[test]
+    fn a_constant_resample_of_an_estimable_band_keeps_its_interval() {
+        let band = vec![vec![0.0; 60], wobble(2, 60)];
+        let ci = bootstrap_dsr_ci(&band, 56, 0.5, PERIODS_PER_YEAR, 500, 0x00C1, 0.05).unwrap();
+        let per_period = TRIALS_SR_STD_DEFAULT / PERIODS_PER_YEAR.sqrt();
+        let sr_star = expected_max_sharpe(per_period, 56).unwrap();
+        let constant_resample = probabilistic_sharpe_ratio(&[0.0; 120], sr_star);
+        assert_eq!(ci.lo.to_bits(), constant_resample.to_bits());
+        assert!(ci.point > ci.lo && ci.width > 0.0);
+        let d = paired_dsr_diff(
+            &band,
+            &[wobble(3, 60), wobble(4, 60)],
+            56,
+            0.5,
+            PERIODS_PER_YEAR,
+            500,
+            0x5EED,
+            0.05,
+        );
+        assert!(d.is_ok(), "{d:?}");
     }
 
     // Recorded from the pre-repair estimator (merge 1380156) on these inputs,

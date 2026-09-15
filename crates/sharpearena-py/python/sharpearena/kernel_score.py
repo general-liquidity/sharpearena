@@ -7,7 +7,12 @@ Sharpe, its bar and its interval are the floor), ``bootstrap_error`` (the bootst
 p-value is the conservative 1.0 sentinel) and ``selection_error`` (the selection
 diagnostic is absent). A non-finite observation sets both ``deflation_error`` and
 ``bootstrap_error`` and nulls ``psr``; fewer than two observations set
-``bootstrap_error`` alone while ``deflated_sharpe`` reads ``0.0``. Reading
+``bootstrap_error`` alone while ``deflated_sharpe`` reads ``0.0``. A track with no
+Sharpe ratio, which the pinned kernel would score, is withheld by Arena's ``score_run``
+in the same shape: ``deflation_error`` reads ``returns must not be constant: a constant
+series has no Sharpe ratio`` for a constant track (or ``Sharpe ratio is not finite``
+when the computed standard deviation underflows), ``deflated_sharpe`` and ``psr`` read
+``0.0``, the interval is absent and ``passed_k`` is false. Reading
 ``composite["deflated_sharpe"]`` past such a key publishes the floor as a score,
 which is the flattering substitution the kernel refused to make.
 
