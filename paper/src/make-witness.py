@@ -19,8 +19,10 @@ policy's hands:
     signal_t = s * z_t + sqrt(1 - s^2) * eps_t,   z_t = standardized true next-bar return,
                                                   eps_t ~ N(0, 1), seeded,
 
-so ``s`` is the correlation between the signal and the truth (``s = 0`` is a pure noise
-trader, ``s = 1`` is omniscience). Two policy variants consume the signal. ``sign_follow``
+so ``s`` is a nominal signal strength (``s = 0`` is a pure noise trader, ``s = 1`` is
+omniscience), not the realized per-path correlation: ``z_t`` divides each return by the
+episode's own sample standard deviation without centering, and ``eps_t`` is one finite
+draw. Two policy variants consume the signal. ``sign_follow``
 trades sign(signal) at 1/n gross per symbol every bar, the momentum baseline's exposure
 convention; it pays the round-trip cost of flipping every bar, which on Calm exceeds
 even the oracle's edge. ``deadband_hold`` trades sign(signal) only when |signal| > 1
@@ -38,9 +40,11 @@ exactly 1.00) AND the kernel's ``rank_eligible`` conjunction holds on the pooled
 the boundary is refined by bisection to a resolution of 0.005 in ``s`` and the gate(s)
 still failing on the ineligible side of the boundary are named: that is the binding gate.
 
-Bands: the primary band is the canonical held-out band (16 seeds, 10,000-seed gap from
-the train band, as in F3); the F1 table band (seeds 0-15) is rerun as a cross-check so
-the reader can place the witness next to Table 1. Tiers: Calm, Hard, Extreme.
+Bands: the primary band, keyed ``held_out`` in the evidence, is the 16-seed gap-band
+subset [10016, 10032) that ``train_test_seeds(16, 16, 0, 10_000)`` returns, as in F3; it
+is separated from the train band but is not the canonical held-out band [10256, 10512).
+The F1 table band (seeds 0-15) is rerun as a cross-check so the reader can place the
+witness next to Table 1. Tiers: Calm, Hard, Extreme.
 
 Noise replication (audit M-13). A threshold located under one ``eps`` path is a
 functional of that draw, and the bisection bracket is numerical resolution, not a
@@ -68,6 +72,10 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import to_rgba
+from matplotlib.legend_handler import HandlerTuple
+from matplotlib.patches import Patch
+from figure_style import TIER_COLOR, TIER_HATCH, TIER_MARKER, save_pdf
 
 try:
     from sharpearena import (
@@ -365,7 +373,9 @@ def run_cell(task: tuple[str, str, str, int]) -> tuple[tuple[str, str, str, int]
 
 def _crossing(boundary: dict) -> float | None:
     """Point estimate of the crossing: the midpoint of the bisection bracket. Its
-    half-width is BISECT_RESOLUTION/2 (numerical), separate from the noise range."""
+    half-width is at most BISECT_RESOLUTION/2; realized 0.0015625 on this grid (0.00156
+    or 0.001565 as recorded, after bisection midpoints are rounded to five decimals). It
+    is numerical resolution, separate from the noise range."""
     if not boundary.get("threshold_identified"):
         return None
     if boundary.get("lo") is None:
@@ -410,6 +420,8 @@ def summarize_replicates(cells: list[dict]) -> dict:
         "max": float(max(crossings)) if crossings else None,
         "range": float(max(crossings) - min(crossings)) if crossings else None,
         "sd_ddof1": float(np.std(crossings, ddof=1)) if len(crossings) > 1 else None,
+        # The stopping bound, at most BISECT_RESOLUTION/2; realized 0.0015625 on this grid,
+        # because every bracket starts on a 0.05, 0.1 or 0.2 grid interval.
         "bracket_half_width": BISECT_RESOLUTION / 2.0,
         "binding_gates_consistent": len(set(binding)) <= 1,
         "binding_gates": sorted({g for bg in binding for g in bg}),
@@ -559,11 +571,13 @@ def make_figure(out: dict) -> None:
     FIGURES.mkdir(parents=True, exist_ok=True)
     results = out["results"]
     noise_replicates = out["noise_replicates"]
-    # Figure: held-out band, one row per policy variant. Left, pooled DSR with CI against
-    # s (filled markers where eligible, boundary marked). Right, pass^k rate against s.
+    # Figure: gap-band subset (keyed held_out), one row per policy variant. Left, pooled
+    # DSR with CI against s (filled markers where eligible, boundary marked). Right, pass^k
+    # rate against s.
     # The shaded band and the horizontal error bar are the min..max crossing range over
     # the noise replicates; the dashed line is the primary-path bracket.
-    colors = {"calm": "#1a73e8", "hard": "#d93025", "extreme": "#5f6368"}
+    # Tiers differ by marker and by the hatch on their noise-range band as well as colour.
+    colors = TIER_COLOR
     fig, axes = plt.subplots(len(VARIANTS), 2, figsize=(9.0, 3.1 * len(VARIANTS)))
     for row_i, variant in enumerate(VARIANTS):
         ax_d, ax_p = axes[row_i]
@@ -572,12 +586,15 @@ def make_figure(out: dict) -> None:
             summ = noise_replicates["by_cell"][variant]["held_out"][tier]["summary"]
             if summ["n_threshold_identified"] > 0:
                 for ax in (ax_d, ax_p):
-                    ax.axvspan(summ["min"], summ["max"], color=colors[tier], alpha=0.15,
-                               linewidth=0)
+                    # The PDF backend paints a hatch tile in the face colour at the face
+                    # alpha, so the hatch lines must be a different colour to show.
+                    ax.axvspan(summ["min"], summ["max"], facecolor=to_rgba(colors[tier], 0.18),
+                               edgecolor="black", hatch=TIER_HATCH[tier], linewidth=0)
                 ax_p.errorbar(
                     [summ["mean"]], [0.15 + 0.12 * tier_i],
                     xerr=[[summ["mean"] - summ["min"]], [summ["max"] - summ["mean"]]],
-                    fmt="|", color=colors[tier], capsize=3, linewidth=1.0, zorder=4,
+                    fmt=TIER_MARKER[tier], markersize=4, color=colors[tier], capsize=3,
+                    linewidth=1.0, zorder=4,
                 )
             rows = sorted(
                 res["sweep"] + res["boundary"].get("points", []),
@@ -588,37 +605,50 @@ def make_figure(out: dict) -> None:
             lo = [r["deflated_sharpe_ci"]["lo"] for r in rows]
             hi = [r["deflated_sharpe_ci"]["hi"] for r in rows]
             ax_d.plot(xs, ys, color=colors[tier], linewidth=1.0, label=tier)
-            ax_d.fill_between(xs, lo, hi, color=colors[tier], alpha=0.12)
+            ax_d.fill_between(xs, lo, hi, color=colors[tier], alpha=0.12, linewidth=0)
             el = [r for r in rows if r["eligible"]]
             ne = [r for r in rows if not r["eligible"]]
             ax_d.scatter([r["strength"] for r in ne], [r["deflated_sharpe"] for r in ne],
-                         facecolors="white", edgecolors=colors[tier], s=18, zorder=3)
+                         marker=TIER_MARKER[tier], facecolors="white",
+                         edgecolors=colors[tier], s=18, zorder=3)
             ax_d.scatter([r["strength"] for r in el], [r["deflated_sharpe"] for r in el],
-                         color=colors[tier], s=18, zorder=3)
+                         marker=TIER_MARKER[tier], color=colors[tier], s=18, zorder=3)
             b = res["boundary"]
             if b.get("attained") and b.get("hi") is not None:
                 ax_d.axvline(b["hi"], color=colors[tier], linestyle="--", linewidth=0.8)
                 ax_p.axvline(b["hi"], color=colors[tier], linestyle="--", linewidth=0.8)
             ax_p.plot(xs, [r["pass_k_rate"] for r in rows], color=colors[tier],
-                      marker="o", markersize=3, linewidth=1.0, label=tier)
+                      marker=TIER_MARKER[tier], markersize=3, linewidth=1.0, label=tier)
         ax_d.axhline(KERNEL_GATES["dsr_bar"], color="black", linestyle=":", linewidth=0.8)
         ax_d.set_ylabel(f"{variant}\npooled deflated Sharpe")
-        ax_d.set_title("filled = rank-eligible; dotted = DSR bar; shaded = noise range",
-                       fontsize=9)
+        ax_d.set_title("filled = rank-eligible; dotted = DSR bar\n"
+                       "band on curve = 95% bootstrap CI; column = noise range", fontsize=8)
         ax_p.axhline(1.0, color="black", linestyle=":", linewidth=0.8)
-        ax_p.set_ylabel("pass^k rate (16 held-out seeds)")
-        ax_p.set_title(f"bars = crossing mean, min..max over {N_NOISE_REPS} noise paths",
-                       fontsize=9)
+        ax_p.set_ylabel(r"pass$^{k}$ rate (16 gap-band seeds)")
+        ax_p.set_title(f"column and bar = crossing min..max over {N_NOISE_REPS} noise paths\n"
+                       "bar marker = crossing mean; dotted = all seeds pass", fontsize=8)
         ax_p.set_ylim(-0.02, 1.05)
-        if row_i == 0:
-            ax_d.legend(fontsize=8, frameon=False)
         if row_i == len(VARIANTS) - 1:
-            ax_d.set_xlabel("signal strength s (corr. with true next-bar return)")
-            ax_p.set_xlabel("signal strength s")
+            ax_d.set_xlabel("nominal signal strength s")
+            ax_p.set_xlabel("nominal signal strength s")
         for ax in (ax_d, ax_p):
             ax.spines[["top", "right"]].set_visible(False)
-    fig.tight_layout()
-    fig.savefig(FIGURES / "witness.pdf")
+    # One tier legend above the grid: inside the first panel it sat on the Calm interval band.
+    # Each entry overlays the tier's line and marker on its noise-range band.
+    handles, labels = axes[0][1].get_legend_handles_labels()
+    handles = [
+        (
+            Patch(facecolor=to_rgba(colors[tier], 0.18), edgecolor="black",
+                  hatch=TIER_HATCH[tier], linewidth=0),
+            handle,
+        )
+        for tier, handle in zip(TIERS, handles)
+    ]
+    fig.legend(handles, labels, handler_map={tuple: HandlerTuple(ndivide=None)},
+               title="tier", fontsize=8, title_fontsize=8, frameon=False,
+               ncol=len(TIERS), loc="upper center", bbox_to_anchor=(0.5, 1.0))
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    save_pdf(fig, FIGURES / "witness.pdf")
     print(f"wrote {FIGURES / 'witness.pdf'}")
     plt.close(fig)
 

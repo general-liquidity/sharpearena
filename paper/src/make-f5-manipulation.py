@@ -53,6 +53,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from figure_style import BLUE, GREEN, ORANGE, VERMILLION, save_pdf
 
 try:
     from sharpearena import (
@@ -597,9 +598,22 @@ def make_figures(out: dict, wanted: list[str] | None = None) -> None:
 
     def _save(fig, name: str) -> None:
         if wanted is None or name in wanted:
-            fig.savefig(FIGURES / name)
+            save_pdf(fig, FIGURES / name)
             print(f"wrote {FIGURES / name}")
         plt.close(fig)
+
+    # One style per impact exponent across the concave and extended figures, and one per
+    # size split in the positive control: colour plus marker plus line style.
+    exponent_style = {
+        "1.0": {"color": BLUE, "marker": "o", "linestyle": "-"},
+        "0.7": {"color": GREEN, "marker": "^", "linestyle": ":"},
+        "0.5": {"color": ORANGE, "marker": "s", "linestyle": "--"},
+    }
+    split_style = {
+        "uniform": {"color": BLUE, "marker": "o", "linestyle": "-"},
+        "0.5": {"color": ORANGE, "marker": "s", "linestyle": "--"},
+        "0.9": {"color": GREEN, "marker": "^", "linestyle": ":"},
+    }
 
     # Figure 1: impact P&L along each swept axis, boundary marked where found.
     # A 2+1 grid sized for its 0.55-linewidth subfigure slot (about 3.0 in),
@@ -612,10 +626,10 @@ def make_figures(out: dict, wanted: list[str] | None = None) -> None:
         ax = fig.add_subplot(slot, sharey=first_ax)
         first_ax = first_ax or ax
         ax.plot(rep["values"], rep["impact_pnl"], marker="o", markersize=3,
-                linewidth=1.2)
+                linewidth=1.2, color=BLUE)
         ax.axhline(0.0, color="black", linewidth=0.8)
         if rep["boundary"] is not None:
-            ax.axvline(rep["boundary"], linestyle="--", color="red", linewidth=0.8)
+            ax.axvline(rep["boundary"], linestyle="--", color=VERMILLION, linewidth=0.8)
         ax.set_xlabel(axis, fontsize=9)
         ax.xaxis.set_major_locator(plt.MaxNLocator(3))
         ax.ticklabel_format(axis="y", style="sci", scilimits=(-2, 2))
@@ -632,9 +646,9 @@ def make_figures(out: dict, wanted: list[str] | None = None) -> None:
     # 0.42-linewidth slot and matched in height to Figure 1.
     fig, ax = plt.subplots(figsize=(2.35, 3.5))
     ax.plot(size["push_weights"], size["impact_pnl"], marker="o", markersize=3,
-            linewidth=1.2)
+            linewidth=1.2, color=BLUE)
     ax.axhline(0.0, color="black", linewidth=0.8)
-    ax.axvline(size["peak_push_weight"], linestyle="--", color="red", linewidth=0.8)
+    ax.axvline(size["peak_push_weight"], linestyle="--", color=VERMILLION, linewidth=0.8)
     verdict = "bounded" if size["bounded"] else "UNBOUNDED"
     ax.set_title(f"size response ({verdict})", fontsize=9)
     ax.set_xlabel("push weight", fontsize=9)
@@ -647,35 +661,40 @@ def make_figures(out: dict, wanted: list[str] | None = None) -> None:
     _save(fig, "f5-size-response.pdf")
 
     # Figure 3: the concavity ablation. Impact P&L (with 95% CIs) along the permanent-
-    # impact axis and the push-size axis, linear vs each concave exponent.
-    fig, (ax_l, ax_s) = plt.subplots(1, 2, figsize=(8, 3.2), sharey=True)
+    # impact axis and the push-size axis, linear vs each concave exponent. Each panel has
+    # its own y axis: on a shared one the lambda arm's -0.1 flattened every push-size
+    # interval onto the zero line.
+    fig, (ax_l, ax_s) = plt.subplots(1, 2, figsize=(8, 3.2))
 
-    def _with_ci(ax, values, disp, label):
+    def _with_ci(ax, values, disp, label, style):
         means = [s["mean"] for s in disp["stats"]]
         lo = [s["ci95_lo"] for s in disp["stats"]]
         hi = [s["ci95_hi"] for s in disp["stats"]]
-        ax.plot(values, means, marker="o", label=label)
-        ax.fill_between(values, lo, hi, alpha=0.2)
+        ax.plot(values, means, label=label, markersize=5, **style)
+        ax.fill_between(values, lo, hi, alpha=0.2, color=style["color"], linewidth=0)
 
-    _with_ci(ax_l, dispersion["kyle_lambda"]["values"], dispersion["kyle_lambda"], "linear")
-    _with_ci(ax_s, dispersion["push_weight"]["values"], dispersion["push_weight"], "linear")
+    linear = exponent_style["1.0"]
+    _with_ci(ax_l, dispersion["kyle_lambda"]["values"], dispersion["kyle_lambda"], "linear", linear)
+    _with_ci(ax_s, dispersion["push_weight"]["values"], dispersion["push_weight"], "linear", linear)
     for key, arm in concave.items():
         _with_ci(
             ax_l,
             arm["dispersion"]["kyle_lambda"]["values"],
             arm["dispersion"]["kyle_lambda"],
             f"exponent {key}",
+            exponent_style[key],
         )
         _with_ci(
             ax_s,
             arm["dispersion"]["push_weight"]["values"],
             arm["dispersion"]["push_weight"],
             f"exponent {key}",
+            exponent_style[key],
         )
     for ax, xlabel in ((ax_l, "kyle_lambda"), (ax_s, "push weight")):
         ax.axhline(0.0, color="black", linewidth=0.8)
         ax.set_xlabel(xlabel)
-    ax_l.set_ylabel("impact P&L")
+        ax.set_ylabel("impact P&L")
     ax_l.legend(fontsize=8)
     fig.tight_layout()
     _save(fig, "f5-concave.pdf")
@@ -699,8 +718,9 @@ def make_figures(out: dict, wanted: list[str] | None = None) -> None:
                 ys = [pt["stats"]["mean"] for pt in sel]
                 lo = [pt["stats"]["ci95_lo"] for pt in sel]
                 hi = [pt["stats"]["ci95_hi"] for pt in sel]
-                ax.plot(xs, ys, marker="o", markersize=3, label=f"split {label}")
-                ax.fill_between(xs, lo, hi, alpha=0.15)
+                style = split_style[str(label)]
+                ax.plot(xs, ys, markersize=3.5, label=f"split {label}", **style)
+                ax.fill_between(xs, lo, hi, alpha=0.15, color=style["color"], linewidth=0)
             ax.axhline(0.0, color="black", linewidth=0.8)
             ax.set_xscale("log")
             if i == 0:
@@ -741,8 +761,8 @@ def make_figures(out: dict, wanted: list[str] | None = None) -> None:
             hi = [c["stats"]["ci95_hi"] for c in cells]
             fw_lo = [c["familywise_inference"]["ci95_lo"] for c in cells]
             fw_hi = [c["familywise_inference"]["ci95_hi"] for c in cells]
-            line, = ax.plot(xs, ys, marker="o", markersize=3, label=f"exponent {e}")
-            ax.fill_between(xs, lo, hi, alpha=0.15, color=line.get_color())
+            line, = ax.plot(xs, ys, markersize=3.5, label=f"exponent {e}", **exponent_style[e])
+            ax.fill_between(xs, lo, hi, alpha=0.15, color=line.get_color(), linewidth=0)
             ax.errorbar(
                 xs, ys,
                 yerr=[[y - l for y, l in zip(ys, fw_lo)], [h - y for y, h in zip(ys, fw_hi)]],
@@ -751,7 +771,7 @@ def make_figures(out: dict, wanted: list[str] | None = None) -> None:
             if axis == "short_side":
                 ref = [c["long_side_reference"]["stats"]["mean"] for c in cells]
                 ax.plot(
-                    xs, ref, linestyle="--", marker="x", markersize=3,
+                    xs, ref, linestyle="-.", marker="x", markersize=3,
                     color=line.get_color(), label=f"long side, exponent {e}",
                 )
         ax.axhline(0.0, color="black", linewidth=0.8)

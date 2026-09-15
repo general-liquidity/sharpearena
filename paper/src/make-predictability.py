@@ -51,6 +51,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+from figure_style import BLUE, SKY, VERMILLION, save_pdf
 
 try:
     from sharpearena import (
@@ -369,7 +370,8 @@ def make_figure(per_tier: dict) -> None:
     FIGURES.mkdir(parents=True, exist_ok=True)
     names = ("baseline", "honest", "oracle")
     labels = ("baseline (prefix mean)", "honest (ridge AR)", "oracle (known seed)")
-    colors = ("#9aa0a6", "#1a73e8", "#d93025")
+    colors = (SKY, BLUE, VERMILLION)
+    hatches = ("", "///", "...")
     fig, axes = plt.subplots(1, 2, figsize=(5.5, 3.3))
     x = np.arange(len(TIERS))
     w = 0.26
@@ -378,11 +380,11 @@ def make_figure(per_tier: dict) -> None:
         (axes[1], "dsr_mean", "Deflated Sharpe (sign policy)"),
     ):
         err_key = "accuracy_std" if metric == "accuracy_mean" else "dsr_std"
-        for k, (name, label, color) in enumerate(zip(names, labels, colors)):
+        for k, (name, label, color, hatch) in enumerate(zip(names, labels, colors, hatches)):
             vals = [per_tier[t]["adversaries"][name][metric] for t in TIERS]
             errs = [per_tier[t]["adversaries"][name][err_key] for t in TIERS]
             ax.bar(x + (k - 1) * w, vals, w, yerr=errs, capsize=2,
-                   label=label, color=color)
+                   label=label, color=color, hatch=hatch, edgecolor="black", linewidth=0.5)
         ax.set_xticks(x)
         ax.set_xticklabels(TIERS, fontsize=9)
         ax.tick_params(labelsize=9)
@@ -394,8 +396,9 @@ def make_figure(per_tier: dict) -> None:
     fig.legend(handles, labels_, fontsize=8.5, frameon=False, ncol=3,
                loc="lower center", bbox_to_anchor=(0.5, 0.0))
     fig.tight_layout(rect=(0, 0.07, 1, 1))
-    fig.savefig(FIGURES / "predictability.pdf")
+    save_pdf(fig, FIGURES / "predictability.pdf")
     print(f"wrote {FIGURES / 'predictability.pdf'}")
+    plt.close(fig)
 
 
 if __name__ == "__main__":

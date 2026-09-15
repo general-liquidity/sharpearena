@@ -26,6 +26,9 @@ REPO = SRC.parents[1]
 _PY_PKG = REPO / "crates" / "sharpearena-py" / "python"
 if _PY_PKG.is_dir() and str(_PY_PKG) not in sys.path:
     sys.path.insert(0, str(_PY_PKG))
+# Producers import their sibling modules (figure_style) as a script run from paper/src does.
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
 
 
 def _load(stem: str):

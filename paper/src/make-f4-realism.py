@@ -5,7 +5,8 @@ Rolls a flat (zero-weight) policy through seeded episodes per tier, collecting
 the point-in-time ``closes`` vector each bar into a (T, n_symbols) price panel,
 then grades each panel with ``sharpearena.certify_realism`` against the
 directional Cont-stylized-facts bounds. Writes per-seed reports, per-tier
-aggregates, and a grouped-bar figure of the mean fact values.
+aggregates, and a figure with one panel per fact showing per-seed values, tier
+means and, for gated facts, the certification bound.
 
 Also certifies the same tiers with the generator's opt-in volatility-clustering
 driver enabled (``vol_clustering = VOL_CLUSTERING``) under ``clustered_tiers``,
@@ -30,6 +31,17 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.ticker import FuncFormatter
+from figure_style import (
+    BLUE,
+    GREEN,
+    OKABE_ITO,
+    ORANGE,
+    TIER_COLOR,
+    TIER_MARKER,
+    VERMILLION,
+    save_pdf,
+)
 
 try:
     from sharpearena import (
@@ -298,6 +310,7 @@ def _plot_calm_calibration(calib: dict) -> None:
     else:
         fig, (ax, bx) = plt.subplots(2, 1, figsize=(5.5, 6.6))
     markers = {0.0: "o", 0.3: "s", 0.5: "^"}
+    colors = {0.0: BLUE, 0.3: ORANGE, 0.5: GREEN}
     for vc in CALM_VC_GRID:
         sub = [c for c in cells if c["knobs"]["vol_clustering"] == vc]
         xs = [c["diagnostic"]["mean_rms_perturbation"] for c in sub]
@@ -307,6 +320,7 @@ def _plot_calm_calibration(calib: dict) -> None:
             [x for x, b in zip(xs, inb) if b],
             [y for y, b in zip(ys, inb) if b],
             marker=markers[vc],
+            color=colors[vc],
             label=f"vol_clustering={vc} (within vol bound)",
             alpha=0.85,
         )
@@ -319,13 +333,22 @@ def _plot_calm_calibration(calib: dict) -> None:
             alpha=0.6,
         )
     ax.axhline(CALM_RULE["min_pass_of_8"] - 0.5, color="black", linewidth=0.8, ls="--")
+    ax.text(
+        1.0, CALM_RULE["min_pass_of_8"] - 0.45,
+        f"rule: ≥ {CALM_RULE['min_pass_of_8']} of 8 ",
+        transform=ax.get_yaxis_transform(), ha="right", va="bottom", fontsize=8,
+    )
+    ax.scatter(
+        [], [], marker="o", facecolors="none", edgecolors="gray",
+        label="hollow: exceeds vol bound",
+    )
     if chosen is not None:
         ax.scatter(
             [chosen["diagnostic"]["mean_rms_perturbation"]],
             [chosen["diagnostic"]["n_pass"]],
             marker="*",
             s=220,
-            color="red",
+            color=VERMILLION,
             zorder=5,
             label="chosen preset",
         )
@@ -333,8 +356,10 @@ def _plot_calm_calibration(calib: dict) -> None:
     ax.set_ylabel("diagnostic seeds passing (of 8)", fontsize=10)
     ax.set_yticks(range(0, 9))
     ax.tick_params(labelsize=9)
-    ax.legend(fontsize=9, frameon=True, facecolor="white", framealpha=0.85,
-              edgecolor="0.85")
+    # Above the axes: inside, the legend box hid the 7-of-8 low-volatility candidate
+    # the text discusses.
+    ax.legend(fontsize=8, frameon=False, ncol=2, loc="lower center",
+              bbox_to_anchor=(0.5, 1.0))
 
     if chosen is not None:
         bands = ("diagnostic", "confirmation", "final", "wide")
@@ -344,7 +369,11 @@ def _plot_calm_calibration(calib: dict) -> None:
             rep = chosen[band]
             xs = [i + (j - (len(bands) - 1) / 2) * width for i in range(len(gated))]
             ys = [rep["check_pass_counts"][g] / rep["n_seeds"] for g in gated]
-            bx.bar(xs, ys, width=width, label=f"{band} ({rep['n_pass']}/{rep['n_seeds']})")
+            bx.bar(
+                xs, ys, width=width, color=OKABE_ITO[j], hatch=("", "///", "...", "xx")[j],
+                edgecolor="black", linewidth=0.5,
+                label=f"{band} ({rep['n_pass']}/{rep['n_seeds']})",
+            )
         bx.set_xticks(range(len(gated)))
         bx.set_xticklabels(gated, rotation=20, ha="right", fontsize=9)
         bx.set_ylim(0, 1.05)
@@ -352,7 +381,93 @@ def _plot_calm_calibration(calib: dict) -> None:
         bx.set_ylabel("per-check pass fraction, chosen preset", fontsize=10)
         bx.legend(frameon=False, fontsize=9, title="band (conjunction)")
     fig.tight_layout()
-    fig.savefig(FIGURES / "f4-calm-calibration.pdf")
+    save_pdf(fig, FIGURES / "f4-calm-calibration.pdf")
+    plt.close(fig)
+
+
+def _plot_realism(tiers: dict) -> None:
+    # One panel per stylized fact on its own y axis, so a fact near zero is not flattened
+    # beside one in the tens. Points are per-seed values and the black bar the tier mean.
+    # A gated fact draws its certification bound dashed with the passing side shaded and
+    # states the rule in its title; the x labels count passing seeds per tier. The two
+    # kurtosis-scale facts use a symmetric-log axis, linear within +-1, so Calm's
+    # platykurtic values stay visibly on the failing side of zero.
+    FIGURES.mkdir(parents=True, exist_ok=True)
+    first = tiers[TIERS[0]]["per_seed"][0]
+    thresholds = first["thresholds"]
+    for tier in TIERS:
+        for rec in tiers[tier]["per_seed"]:
+            assert rec["thresholds"] == thresholds, (tier, rec["seed"])
+    facts = list(thresholds) + sorted(f for f in first["facts"] if f not in thresholds)
+    # Neutral values of the ungated facts, from the definitions in sharpearena.realism:
+    # zero skew and zero Zumbach gap for a symmetric process, Fano ratio one under IID.
+    neutral = {"fano_factor": 1.0, "gain_loss_skew": 0.0, "zumbach_asymmetry": 0.0}
+    symlog = {"excess_kurtosis", "aggregational_gaussianity"}
+
+    fig, axes = plt.subplots(2, 3, figsize=(5.5, 4.6))
+    for ax, fact in zip(axes.flat, facts):
+        ticklabels = []
+        for i, tier in enumerate(TIERS):
+            recs = tiers[tier]["per_seed"]
+            n = len(recs)
+            xs = [i + 0.36 * (k / (n - 1) - 0.5) for k in range(n)]
+            ax.scatter(
+                xs,
+                [r["facts"][fact] for r in recs],
+                s=14,
+                marker=TIER_MARKER[tier],
+                color=TIER_COLOR[tier],
+                edgecolors="black",
+                linewidths=0.4,
+                zorder=3,
+            )
+            ax.hlines(
+                tiers[tier]["mean_facts"][fact], i - 0.3, i + 0.3,
+                color="black", linewidth=1.6, zorder=4,
+            )
+            if fact in thresholds:
+                passed = sum(bool(r["checks"][fact]) for r in recs)
+                ticklabels.append(f"{tier}\n{passed}/{n}")
+            else:
+                ticklabels.append(tier)
+        if fact in symlog:
+            ax.set_yscale("symlog", linthresh=1.0)
+            ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _pos: f"{v:g}"))
+        if fact in thresholds:
+            lo, hi = thresholds[fact]
+            for bound in (lo, hi):
+                if bound is not None:
+                    ax.update_datalim([(0.0, bound)])
+            ax.autoscale_view()
+            ymin, ymax = ax.get_ylim()
+            ax.axhspan(
+                ymin if lo is None else lo, ymax if hi is None else hi,
+                color=GREEN, alpha=0.2, linewidth=0, zorder=0,
+            )
+            for bound in (lo, hi):
+                if bound is not None:
+                    ax.axhline(bound, color="black", linestyle="--", linewidth=0.9, zorder=2)
+            ax.set_ylim(ymin, ymax)
+            rule = " and ".join(
+                part
+                for part in (
+                    None if lo is None else f"≥ {lo:.3g}",
+                    None if hi is None else f"≤ {hi:.3g}",
+                )
+                if part is not None
+            )
+            ax.set_title(f"{fact}\ngated: pass if {rule}", fontsize=7.5)
+            ax.set_xlabel("tier (seeds passing)", fontsize=7)
+        else:
+            ax.axhline(neutral[fact], color="0.55", linewidth=0.7, zorder=1)
+            ax.set_title(f"{fact}\nnot gated", fontsize=7.5)
+        ax.set_xlim(-0.55, len(TIERS) - 0.45)
+        ax.set_xticks(range(len(TIERS)))
+        ax.set_xticklabels(ticklabels, fontsize=7)
+        ax.tick_params(axis="y", labelsize=7)
+        ax.spines[["top", "right"]].set_visible(False)
+    fig.tight_layout(h_pad=1.2, w_pad=0.8)
+    save_pdf(fig, FIGURES / "f4-realism.pdf")
     plt.close(fig)
 
 
@@ -416,23 +531,7 @@ def main() -> None:
     }
     (EVIDENCE / "f4-realism.json").write_text(json.dumps(out, indent=2))
     _plot_calm_calibration(calib)
-
-    # Figure: mean fact value per tier, grouped by fact.
-    fact_names = sorted(tiers[TIERS[0]]["mean_facts"])
-    fig, ax = plt.subplots(figsize=(8, 4))
-    width = 0.8 / len(TIERS)
-    for j, tier in enumerate(TIERS):
-        xs = [i + (j - (len(TIERS) - 1) / 2) * width for i in range(len(fact_names))]
-        ys = [tiers[tier]["mean_facts"][f] for f in fact_names]
-        ax.bar(xs, ys, width=width, label=f"{tier} (pass {tiers[tier]['pass_rate']:.0%})")
-    ax.axhline(0.0, color="black", linewidth=0.8)
-    ax.set_xticks(range(len(fact_names)))
-    ax.set_xticklabels(fact_names, rotation=30, ha="right")
-    ax.set_ylabel("mean stylized-fact value")
-    ax.legend(frameon=False)
-    fig.tight_layout()
-    fig.savefig(FIGURES / "f4-realism.pdf")
-    plt.close(fig)
+    _plot_realism(tiers)
 
 
 if __name__ == "__main__":
@@ -440,5 +539,7 @@ if __name__ == "__main__":
         data = json.loads((EVIDENCE / "f4-realism.json").read_text())
         _plot_calm_calibration(data["calm_calibration"])
         print(f"wrote {FIGURES / 'f4-calm-calibration.pdf'}")
+        _plot_realism(data["tiers"])
+        print(f"wrote {FIGURES / 'f4-realism.pdf'}")
     else:
         main()

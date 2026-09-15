@@ -13,20 +13,26 @@ from __future__ import annotations
 
 import json
 import math
+import sys
 from pathlib import Path
 
 import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from figure_style import BLUE, save_pdf
 
-from sharpearena import (
-    MarketMakingEnv,
-    MMParams,
-    closed_form_reference_policy,
-    fixed_spread_policy,
-    mm_regret,
-)
+try:
+    from sharpearena import (
+        MarketMakingEnv,
+        MMParams,
+        closed_form_reference_policy,
+        fixed_spread_policy,
+        mm_regret,
+    )
+except ImportError:  # --figures-only reads the committed JSON and needs no bindings
+    MarketMakingEnv = MMParams = closed_form_reference_policy = None
+    fixed_spread_policy = mm_regret = None
 
 PAPER = Path(__file__).resolve().parents[1]
 EVIDENCE = PAPER / "evidence"
@@ -124,17 +130,26 @@ def main() -> None:
         "regret_dispersion": {str(k): v for k, v in dispersion.items()},
     }
     (EVIDENCE / "f2-regret.json").write_text(json.dumps(out, indent=2))
+    make_figure(out)
 
+
+def make_figure(out: dict) -> None:
+    """Regret curve with t-based 95% CIs, from the evidence dict (the committed JSON shape)."""
+    FIGURES.mkdir(parents=True, exist_ok=True)
+    fixed = out["fixed_spread_regret"]
+    dispersion = out["regret_dispersion"]
+    keys = sorted(fixed, key=float)
+    xs = [float(k) for k in keys]
+    ys = [fixed[k] for k in keys]
+    lo = [y - dispersion[k]["ci95_lo"] for y, k in zip(ys, keys)]
+    hi = [dispersion[k]["ci95_hi"] - y for y, k in zip(ys, keys)]
     fig, ax = plt.subplots(figsize=(6, 4))
-    xs = list(HALF_SPREADS)
-    ys = [fixed[h] for h in HALF_SPREADS]
-    lo = [ys[i] - dispersion[h]["ci95_lo"] for i, h in enumerate(HALF_SPREADS)]
-    hi = [dispersion[h]["ci95_hi"] - ys[i] for i, h in enumerate(HALF_SPREADS)]
     ax.errorbar(
-        xs, ys, yerr=[lo, hi], marker="o", capsize=3, label="fixed-spread quoter"
+        xs, ys, yerr=[lo, hi], marker="o", capsize=3, color=BLUE,
+        label="fixed-spread quoter",
     )
     ax.axhline(
-        optimal_regret, linestyle="--", color="black", linewidth=0.8,
+        out["optimal_regret"], linestyle="--", color="black", linewidth=0.8,
         label="A-S closed-form reference",
     )
     ax.set_xscale("log")
@@ -142,9 +157,13 @@ def main() -> None:
     ax.set_ylabel("mean regret vs closed-form reference")
     ax.legend(frameon=False)
     fig.tight_layout()
-    fig.savefig(FIGURES / "f2-regret.pdf")
+    save_pdf(fig, FIGURES / "f2-regret.pdf")
     plt.close(fig)
 
 
 if __name__ == "__main__":
-    main()
+    if "--figures-only" in sys.argv:
+        make_figure(json.loads((EVIDENCE / "f2-regret.json").read_text()))
+        print(f"wrote {FIGURES / 'f2-regret.pdf'}")
+    else:
+        main()
