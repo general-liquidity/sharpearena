@@ -54,6 +54,11 @@ pub use leaderboard_ci::{
     bootstrap_dsr_ci, deflated_sharpe, paired_dsr_diff, ConfidenceError, DsrCi, PairedDiff,
 };
 
+// --- One track scored by the pinned kernel, withheld where it has no Sharpe ratio ---------
+
+pub mod kernel_score;
+pub use kernel_score::score_returns;
+
 // --- Vectorized, batched environment (gym3's "vectorized-first" design) -------------------
 
 pub mod vec_env;

@@ -185,9 +185,13 @@ def test_run_baselines_includes_new_policies():
     assert {"min_variance", "max_sharpe", "kelly_vol_target"} <= names
     assert len(rows) == len(BASELINE_POLICIES)
     for r in rows:
+        assert np.isfinite(r["mean_return"])
+        if r["policy"] == "flat":
+            # Constant track: no Sharpe ratio, withheld (tests/test_constant_track.py).
+            assert "returns must not be constant" in r["deflated_sharpe"]
+            continue
         assert np.isfinite(r["deflated_sharpe"])
         assert 0.0 <= r["passed_k_rate"] <= 1.0
-        assert np.isfinite(r["mean_return"])
 
 
 def _make_env_for_seed(seed):
