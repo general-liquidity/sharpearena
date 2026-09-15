@@ -19,7 +19,7 @@
 //!
 //! The deflated-Sharpe math is the Bailey & López de Prado estimator, ported here
 //! self-contained (no `sharpebench-stats` dependency). Its empirical moments use the
-//! n-normalized second moment the exact-pinned SharpeBench 0.26.0 scoring kernel also
+//! n-normalized second moment the exact-pinned SharpeBench 0.27.0 scoring kernel also
 //! uses; the Python `run_baselines` still attaches an interval to a kernel row only
 //! where the kernel reproduces this estimator's point bit-for-bit. The resample RNG is
 //! a fixed-seed SplitMix64, so a confidence report replays bit-for-bit from its
@@ -218,8 +218,9 @@ const TRIALS_REFUSAL: &str = "n_trials must be at least one";
 const PERIODS_REFUSAL: &str = "periods_per_year must be finite and positive";
 
 /// Why a constant track has no deflated Sharpe: its sample variance is zero, so its
-/// Sharpe ratio is 0/0 or c/0. Worded as the unreleased SharpeBench kernel words the
-/// same refusal, so both products report one reason for one track.
+/// Sharpe ratio is 0/0 or c/0. Worded exactly as the pinned SharpeBench kernel words
+/// the same refusal, which it has carried since 0.27.0, so both products report one
+/// reason for one track.
 pub const CONSTANT_TRACK_REFUSAL: &str =
     "returns must not be constant: a constant series has no Sharpe ratio";
 

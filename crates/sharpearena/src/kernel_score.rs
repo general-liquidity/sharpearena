@@ -2,19 +2,27 @@
 //! Sharpe ratio.
 //!
 //! [`score_returns`] is the score behind the Python `score_run` binding: the pinned
-//! kernel's `CompositeScore` for a one-run submission. SharpeBench `=0.26.0` scores a
-//! constant track as if it had a Sharpe ratio. An all-zero track (the `flat` reference
-//! policy) gets a Sharpe of 0, a PSR of 0.5000000005 and a deflated Sharpe that moves
-//! with the deflation bar alone; a constant nonzero track, whose rounded mean leaves a
-//! computed standard deviation near 1e-18, gets a Sharpe near 1e15, a PSR and deflated
-//! Sharpe of 1.0, a zero-width interval at 1.0, a per-run pass and rank eligibility.
-//! A constant track has a sample variance of zero, so none of those numbers exists.
+//! kernel's `CompositeScore` for a one-run submission. A constant track has a sample
+//! variance of zero, so it has no Sharpe ratio and none of the statistics read off one
+//! exists for it.
 //!
-//! The kernel release that refuses such a track is not pinned here, so Arena refuses it
-//! at its own boundary, in the shape that kernel reports: `deflation_error` names the
-//! refusal and the statistics it covers read their no-skill floor or are absent. The
-//! Python `sharpearena.kernel_score` helpers read any `*_error` key as unavailability, so
-//! every consumer that reads a ranked number through them records the reason instead.
+//! SharpeBench `=0.27.0` refuses such a track itself: `deflation_error` names the
+//! refusal, the deflated Sharpe, PSR and deflation bar read the 0.0 floor, the
+//! interval, the per-cost and percentile figures and the rolling-Sharpe summary are
+//! absent, and the run clears no per-run PSR bar, so it is neither pass^k nor
+//! rank-eligible. Arena's own refusal below was written against `=0.26.0`, whose
+//! scorer substituted a Sharpe of zero for an all-zero track and a Sharpe near 1e15
+//! for a constant nonzero one, and it predates that release. Under the pin it is a
+//! second line rather than the only one: on every input [`check_sharpe_defined`]
+//! covers, the kernel has already recorded a `deflation_error` with the same wording
+//! and the same fields, so the withholding branch does not fire and `score_returns`
+//! returns the kernel's score verbatim. It is kept because it is the boundary that
+//! makes the behaviour Arena's own rather than a property of whichever kernel is
+//! pinned, and because it would fire again on a pin that lost the refusal.
+//!
+//! The Python `sharpearena.kernel_score` helpers read any `*_error` key as
+//! unavailability, so every consumer that reads a ranked number through them records
+//! the reason instead, whichever of the two boundaries wrote it.
 
 use sharpebench_core::{score_agent, AgentSubmission, CompositeScore, Run, ScoreConfig, Trace};
 
@@ -37,6 +45,14 @@ use crate::leaderboard_ci::check_sharpe_defined;
 /// bar. A `deflation_error` the kernel recorded itself is kept, since it names the input
 /// the kernel refused first. Every other field is the kernel's, and a track with a Sharpe
 /// ratio is returned exactly as the kernel scored it.
+///
+/// Under the `=0.27.0` pin the first condition never holds: the kernel refuses every
+/// track [`check_sharpe_defined`] refuses, before this function is asked, and writes the
+/// same reason into the same fields, so what this function returns is the kernel's own
+/// score for every input. The tests below still assert the withheld shape rather than
+/// that identity, because the shape is what consumers read and what a pin that lost the
+/// refusal would have to keep. The branch is the boundary, not the behaviour; see the
+/// module note.
 pub fn score_returns(returns: Vec<f64>, n_trials: u32, periods_per_year: f64) -> CompositeScore {
     let refusal = check_sharpe_defined(&returns).err();
     let outcomes: Vec<bool> = returns.iter().map(|r| *r > 0.0).collect();
