@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 /// dependency semantics. Git/alternate registries are refused: this contract is
 /// for the suite's crates.io dependencies, not an assertion about arbitrary sources.
 pub fn dependency_contract(manifest: &str) -> Result<String, String> {
-    let parsed: toml::Value = manifest.parse().map_err(|e| format!("manifest: {e}"))?;
+    let parsed: toml::Value = toml::from_str(manifest).map_err(|e| format!("manifest: {e}"))?;
     let dependencies = parsed
         .get("dependencies")
         .and_then(toml::Value::as_table)

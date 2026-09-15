@@ -84,7 +84,7 @@ mod tests {
     #[test]
     fn suite_dependencies_that_feed_tape_semantics_are_exact_pinned() {
         let manifest = include_str!("../Cargo.toml");
-        let manifest: toml::Value = manifest.parse().unwrap();
+        let manifest: toml::Value = toml::from_str(manifest).unwrap();
         for dependency in [
             "sharpebench-sim",
             "sharpebench-protocol",

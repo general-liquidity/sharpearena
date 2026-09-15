@@ -60,7 +60,7 @@ convenience:
   build script.
 - Arena consumes an exact-pinned registry SharpeBench: `sharpebench-core`,
   `sharpebench-sim`, `sharpebench-protocol` and `sharpebench-attest` at
-  `=0.21.0`. Three of those four are inputs to `SPEC_HASH`: `build_support.rs`
+  `=0.26.0`. Three of those four are inputs to `SPEC_HASH`: `build_support.rs`
   canonicalizes `sharpebench-core`, `sharpebench-protocol` and `sharpebench-sim`
   into `suite-dependencies.v1.toml`, so moving any of those pins rebinds the
   attestation record and every wrapper pin. `sharpebench-attest` is a

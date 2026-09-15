@@ -10,7 +10,7 @@
  * instead of a silently wrong number. Rebind this constant (and rebuild `pkg/`)
  * whenever the committed spec-hash record moves.
  */
-export const SPEC_HASH = "bbaaff0cf9b9e1f4";
+export const SPEC_HASH = "1058b61aa2b6637f";
 
 /**
  * Compare an engine-reported spec hash against **this wrapper's pin**, throwing the
