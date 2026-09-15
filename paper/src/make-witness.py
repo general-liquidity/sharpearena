@@ -68,6 +68,10 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import to_rgba
+from matplotlib.legend_handler import HandlerTuple
+from matplotlib.patches import Patch
+from figure_style import TIER_COLOR, TIER_HATCH, TIER_MARKER, save_pdf
 
 try:
     from sharpearena import (
@@ -563,7 +567,8 @@ def make_figure(out: dict) -> None:
     # s (filled markers where eligible, boundary marked). Right, pass^k rate against s.
     # The shaded band and the horizontal error bar are the min..max crossing range over
     # the noise replicates; the dashed line is the primary-path bracket.
-    colors = {"calm": "#1a73e8", "hard": "#d93025", "extreme": "#5f6368"}
+    # Tiers differ by marker and by the hatch on their noise-range band as well as colour.
+    colors = TIER_COLOR
     fig, axes = plt.subplots(len(VARIANTS), 2, figsize=(9.0, 3.1 * len(VARIANTS)))
     for row_i, variant in enumerate(VARIANTS):
         ax_d, ax_p = axes[row_i]
@@ -572,12 +577,15 @@ def make_figure(out: dict) -> None:
             summ = noise_replicates["by_cell"][variant]["held_out"][tier]["summary"]
             if summ["n_threshold_identified"] > 0:
                 for ax in (ax_d, ax_p):
-                    ax.axvspan(summ["min"], summ["max"], color=colors[tier], alpha=0.15,
-                               linewidth=0)
+                    # The PDF backend paints a hatch tile in the face colour at the face
+                    # alpha, so the hatch lines must be a different colour to show.
+                    ax.axvspan(summ["min"], summ["max"], facecolor=to_rgba(colors[tier], 0.18),
+                               edgecolor="black", hatch=TIER_HATCH[tier], linewidth=0)
                 ax_p.errorbar(
                     [summ["mean"]], [0.15 + 0.12 * tier_i],
                     xerr=[[summ["mean"] - summ["min"]], [summ["max"] - summ["mean"]]],
-                    fmt="|", color=colors[tier], capsize=3, linewidth=1.0, zorder=4,
+                    fmt=TIER_MARKER[tier], markersize=4, color=colors[tier], capsize=3,
+                    linewidth=1.0, zorder=4,
                 )
             rows = sorted(
                 res["sweep"] + res["boundary"].get("points", []),
@@ -588,37 +596,50 @@ def make_figure(out: dict) -> None:
             lo = [r["deflated_sharpe_ci"]["lo"] for r in rows]
             hi = [r["deflated_sharpe_ci"]["hi"] for r in rows]
             ax_d.plot(xs, ys, color=colors[tier], linewidth=1.0, label=tier)
-            ax_d.fill_between(xs, lo, hi, color=colors[tier], alpha=0.12)
+            ax_d.fill_between(xs, lo, hi, color=colors[tier], alpha=0.12, linewidth=0)
             el = [r for r in rows if r["eligible"]]
             ne = [r for r in rows if not r["eligible"]]
             ax_d.scatter([r["strength"] for r in ne], [r["deflated_sharpe"] for r in ne],
-                         facecolors="white", edgecolors=colors[tier], s=18, zorder=3)
+                         marker=TIER_MARKER[tier], facecolors="white",
+                         edgecolors=colors[tier], s=18, zorder=3)
             ax_d.scatter([r["strength"] for r in el], [r["deflated_sharpe"] for r in el],
-                         color=colors[tier], s=18, zorder=3)
+                         marker=TIER_MARKER[tier], color=colors[tier], s=18, zorder=3)
             b = res["boundary"]
             if b.get("attained") and b.get("hi") is not None:
                 ax_d.axvline(b["hi"], color=colors[tier], linestyle="--", linewidth=0.8)
                 ax_p.axvline(b["hi"], color=colors[tier], linestyle="--", linewidth=0.8)
             ax_p.plot(xs, [r["pass_k_rate"] for r in rows], color=colors[tier],
-                      marker="o", markersize=3, linewidth=1.0, label=tier)
+                      marker=TIER_MARKER[tier], markersize=3, linewidth=1.0, label=tier)
         ax_d.axhline(KERNEL_GATES["dsr_bar"], color="black", linestyle=":", linewidth=0.8)
         ax_d.set_ylabel(f"{variant}\npooled deflated Sharpe")
-        ax_d.set_title("filled = rank-eligible; dotted = DSR bar; shaded = noise range",
-                       fontsize=9)
+        ax_d.set_title("filled = rank-eligible; dotted = DSR bar\n"
+                       "band on curve = 95% bootstrap CI; column = noise range", fontsize=8)
         ax_p.axhline(1.0, color="black", linestyle=":", linewidth=0.8)
-        ax_p.set_ylabel("pass^k rate (16 held-out seeds)")
-        ax_p.set_title(f"bars = crossing mean, min..max over {N_NOISE_REPS} noise paths",
-                       fontsize=9)
+        ax_p.set_ylabel(r"pass$^{k}$ rate (16 held-out seeds)")
+        ax_p.set_title(f"column and bar = crossing min..max over {N_NOISE_REPS} noise paths\n"
+                       "bar marker = crossing mean; dotted = all seeds pass", fontsize=8)
         ax_p.set_ylim(-0.02, 1.05)
-        if row_i == 0:
-            ax_d.legend(fontsize=8, frameon=False)
         if row_i == len(VARIANTS) - 1:
             ax_d.set_xlabel("signal strength s (corr. with true next-bar return)")
             ax_p.set_xlabel("signal strength s")
         for ax in (ax_d, ax_p):
             ax.spines[["top", "right"]].set_visible(False)
-    fig.tight_layout()
-    fig.savefig(FIGURES / "witness.pdf")
+    # One tier legend above the grid: inside the first panel it sat on the Calm interval band.
+    # Each entry overlays the tier's line and marker on its noise-range band.
+    handles, labels = axes[0][1].get_legend_handles_labels()
+    handles = [
+        (
+            Patch(facecolor=to_rgba(colors[tier], 0.18), edgecolor="black",
+                  hatch=TIER_HATCH[tier], linewidth=0),
+            handle,
+        )
+        for tier, handle in zip(TIERS, handles)
+    ]
+    fig.legend(handles, labels, handler_map={tuple: HandlerTuple(ndivide=None)},
+               title="tier", fontsize=8, title_fontsize=8, frameon=False,
+               ncol=len(TIERS), loc="upper center", bbox_to_anchor=(0.5, 1.0))
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    save_pdf(fig, FIGURES / "witness.pdf")
     print(f"wrote {FIGURES / 'witness.pdf'}")
     plt.close(fig)
 

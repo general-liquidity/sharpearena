@@ -11,6 +11,7 @@ overall. Writes JSON plus a grouped-bar figure of the mode counts per tier.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import matplotlib
@@ -18,18 +19,25 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+from figure_style import TIER_COLOR, TIER_HATCH, save_pdf
 
-from sharpearena import (
-    DrawdownStopper,
-    FailureMode,
-    SharpeArenaEnv,
-    check_env_effective_config,
-    classify_episode_failure,
-    merge_effective_configs,
-    rollup_failure_modes,
-    sample_mandate,
-)
-from sharpearena.baselines import BASELINE_POLICIES, BEHAVIORAL_POLICIES
+try:
+    from sharpearena import (
+        DrawdownStopper,
+        FailureMode,
+        SharpeArenaEnv,
+        check_env_effective_config,
+        classify_episode_failure,
+        merge_effective_configs,
+        rollup_failure_modes,
+        sample_mandate,
+    )
+    from sharpearena.baselines import BASELINE_POLICIES, BEHAVIORAL_POLICIES
+except ImportError:  # --figures-only reads the committed JSON and needs no bindings
+    DrawdownStopper = FailureMode = SharpeArenaEnv = check_env_effective_config = None
+    classify_episode_failure = merge_effective_configs = None
+    rollup_failure_modes = sample_mandate = None
+    BASELINE_POLICIES = BEHAVIORAL_POLICIES = ()
 
 PAPER = Path(__file__).resolve().parents[1]
 EVIDENCE = PAPER / "evidence"
@@ -132,23 +140,39 @@ def main() -> None:
         "rollup_overall": overall,
     }
     (EVIDENCE / "f7-failures.json").write_text(json.dumps(out, indent=2))
+    make_figure(out)
 
-    # Figure: mode counts per tier.
-    mode_names = [m.value for m in FailureMode]
+
+def make_figure(out: dict) -> None:
+    """Mode counts per tier, from the evidence dict (the committed JSON shape).
+
+    The rollup's count keys are every ``FailureMode`` value in declaration order, so
+    reading the order from the record needs no bindings.
+    """
+    FIGURES.mkdir(parents=True, exist_ok=True)
+    rollups = out["rollup_by_tier"]
+    mode_names = list(rollups[TIERS[0]]["counts"])
     fig, ax = plt.subplots(figsize=(8, 4))
     width = 0.8 / len(TIERS)
     for j, tier in enumerate(TIERS):
         counts = rollups[tier]["counts"]
         xs = [i + (j - (len(TIERS) - 1) / 2) * width for i in range(len(mode_names))]
-        ax.bar(xs, [counts[m] for m in mode_names], width=width, label=tier)
+        ax.bar(
+            xs, [counts[m] for m in mode_names], width=width, label=tier,
+            color=TIER_COLOR[tier], hatch=TIER_HATCH[tier], edgecolor="black", linewidth=0.5,
+        )
     ax.set_xticks(range(len(mode_names)))
     ax.set_xticklabels(mode_names, rotation=30, ha="right")
     ax.set_ylabel("episodes")
     ax.legend(title="tier", frameon=False)
     fig.tight_layout()
-    fig.savefig(FIGURES / "f7-failures.pdf")
+    save_pdf(fig, FIGURES / "f7-failures.pdf")
     plt.close(fig)
 
 
 if __name__ == "__main__":
-    main()
+    if "--figures-only" in sys.argv:
+        make_figure(json.loads((EVIDENCE / "f7-failures.json").read_text()))
+        print(f"wrote {FIGURES / 'f7-failures.pdf'}")
+    else:
+        main()

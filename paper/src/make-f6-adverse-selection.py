@@ -44,6 +44,8 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.colors import to_rgba
+from figure_style import BLUE, ORANGE, save_pdf
 
 try:
     from sharpearena import (
@@ -295,14 +297,18 @@ def endogenous_figure(block: dict) -> None:
 
     width = 0.2
     xs = list(range(len(horizons)))
+    # Leg is colour plus dot hatching (uninformed), path is tint plus diagonal hatching
+    # (endogenous), so all four bars stay distinct in greyscale.
     spec = [
-        ("exogenous", "informed", "C0", None, "informed, exogenous path"),
-        ("exogenous", "uninformed", "C1", None, "uninformed, exogenous path"),
-        ("endogenous", "informed", "C0", "//", "informed, endogenous path"),
-        ("endogenous", "uninformed", "C1", "//", "uninformed, endogenous path"),
+        ("exogenous", "informed", BLUE, "", "informed, exogenous path"),
+        ("exogenous", "uninformed", ORANGE, "...", "uninformed, exogenous path"),
+        ("endogenous", "informed", BLUE, "///", "informed, endogenous path"),
+        ("endogenous", "uninformed", ORANGE, "///...", "uninformed, endogenous path"),
     ]
+    tallest = 0.0
     for k, (arm, leg, color, hatch, label) in enumerate(spec):
         cells = [arms[arm][leg]["markout_per_unit"][h] for h in horizons]
+        tallest = max([tallest] + [c["ci95_hi"] for c in cells])
         means = [c["mean"] for c in cells]
         err = [
             [c["mean"] - c["ci95_lo"] for c in cells],
@@ -312,10 +318,10 @@ def endogenous_figure(block: dict) -> None:
             [x + (k - 1.5) * width for x in xs],
             means,
             width=width * 0.9,
-            color=color,
-            alpha=0.55 if hatch else 0.9,
+            color=to_rgba(color, 0.5 if arm == "endogenous" else 0.95),
             hatch=hatch,
-            edgecolor=color,
+            edgecolor="black",
+            linewidth=0.5,
             yerr=err,
             capsize=2,
             error_kw={"linewidth": 0.8},
@@ -326,18 +332,25 @@ def endogenous_figure(block: dict) -> None:
     ax.set_xticklabels(horizons)
     ax.set_xlabel("markout horizon (bars)")
     ax.set_ylabel("maker markout per filled unit (price units)")
-    ax.set_title(f"lambda = {block['config']['kyle_lambda']}, V = {block['config']['volume_scale']:.0f}")
-    ax.legend(frameon=False, fontsize=8)
+    ax.set_title(
+        f"lambda = {block['config']['kyle_lambda']}, V = {block['config']['volume_scale']:.0f}",
+        fontsize=10,
+    )
+    # Headroom above the tallest interval keeps the legend off the bars.
+    ax.set_ylim(top=1.3 * tallest)
+    ax.legend(frameon=False, fontsize=7.5, ncol=2, loc="upper center", columnspacing=1.0,
+              handlelength=1.6)
 
     lams = [row["kyle_lambda"] for row in block["lambda_sweep"]]
-    for key, color, label in (
-        ("informed_markout_per_unit", "C0", "informed"),
-        ("uninformed_markout_per_unit", "C1", "uninformed"),
+    for key, color, marker, ls, label in (
+        ("informed_markout_per_unit", BLUE, "o", "-", "informed"),
+        ("uninformed_markout_per_unit", ORANGE, "s", "--", "uninformed"),
     ):
         mean = [row[key]["mean"] for row in block["lambda_sweep"]]
         lo = [row[key]["ci95_lo"] for row in block["lambda_sweep"]]
         hi = [row[key]["ci95_hi"] for row in block["lambda_sweep"]]
-        bx.plot(lams, mean, color=color, marker="o", markersize=4, linewidth=1.5, label=label)
+        bx.plot(lams, mean, color=color, marker=marker, linestyle=ls, markersize=4,
+                linewidth=1.5, label=label)
         bx.fill_between(lams, lo, hi, color=color, alpha=0.2, linewidth=0)
     bx.axhline(0.0, color="black", linewidth=0.8)
     bx.axvline(
@@ -345,10 +358,10 @@ def endogenous_figure(block: dict) -> None:
     )
     bx.set_xlabel("Kyle lambda (permanent impact per unit dimensionless flow)")
     bx.set_ylabel(f"markout per filled unit at h = {block['config']['sweep_horizon']}")
-    bx.set_title("endogenous path, exploratory pointwise 95% CI bands")
+    bx.set_title("endogenous path, exploratory pointwise 95% CI bands", fontsize=10)
     bx.legend(frameon=False, fontsize=8)
     fig.tight_layout()
-    fig.savefig(FIGURES / "f6-endogenous.pdf")
+    save_pdf(fig, FIGURES / "f6-endogenous.pdf")
     plt.close(fig)
 
 
@@ -432,24 +445,38 @@ def main() -> None:
     out["endogenous"] = endogenous_block(params, per_episode)
     FROZEN_REFERENCE.write_text(json.dumps(out, indent=2, default=str))
     endogenous_figure(out["endogenous"])
+    markouts_figure(out["comparison"])
 
-    # Figure: markout per filled unit by horizon, informed vs uninformed legs.
-    horizons = list(comparison["horizons"])
+
+def markouts_figure(comparison: dict) -> None:
+    """Markout per filled unit by horizon, informed vs uninformed legs.
+
+    Takes the ``comparison`` block in its committed JSON shape (string horizon keys).
+    The legend sits above the axes, clear of the tallest bars.
+    """
+    FIGURES.mkdir(parents=True, exist_ok=True)
+    horizons = [str(h) for h in comparison["horizons"]]
     informed = [comparison["informed_markout_per_unit"][h] for h in horizons]
     uninformed = [comparison["uninformed_markout_per_unit"][h] for h in horizons]
     fig, ax = plt.subplots(figsize=(6, 4))
     width = 0.35
     xs = range(len(horizons))
-    ax.bar([x - width / 2 for x in xs], informed, width=width, label="informed flow")
-    ax.bar([x + width / 2 for x in xs], uninformed, width=width, label="uninformed flow")
+    ax.bar(
+        [x - width / 2 for x in xs], informed, width=width, label="informed flow",
+        color=BLUE, edgecolor="black", linewidth=0.5,
+    )
+    ax.bar(
+        [x + width / 2 for x in xs], uninformed, width=width, label="uninformed flow",
+        color=ORANGE, hatch="///", edgecolor="black", linewidth=0.5,
+    )
     ax.axhline(0.0, color="black", linewidth=0.8)
     ax.set_xticks(list(xs))
-    ax.set_xticklabels([str(h) for h in horizons])
+    ax.set_xticklabels(horizons)
     ax.set_xlabel("markout horizon (steps)")
     ax.set_ylabel("maker markout per filled unit")
-    ax.legend(frameon=False)
+    ax.legend(frameon=False, ncol=2, loc="lower center", bbox_to_anchor=(0.5, 1.0))
     fig.tight_layout()
-    fig.savefig(FIGURES / "f6-markouts.pdf")
+    save_pdf(fig, FIGURES / "f6-markouts.pdf")
     plt.close(fig)
 
 
@@ -458,5 +485,7 @@ if __name__ == "__main__":
         data = json.loads(FROZEN_REFERENCE.read_text())
         endogenous_figure(data["endogenous"])
         print(f"wrote {FIGURES / 'f6-endogenous.pdf'}")
+        markouts_figure(data["comparison"])
+        print(f"wrote {FIGURES / 'f6-markouts.pdf'}")
     else:
         main()
