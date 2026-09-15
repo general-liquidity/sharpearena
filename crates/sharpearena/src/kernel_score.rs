@@ -2,7 +2,7 @@
 //! Sharpe ratio.
 //!
 //! [`score_returns`] is the score behind the Python `score_run` binding: the pinned
-//! kernel's `CompositeScore` for a one-run submission. SharpeBench `=0.21.0` scores a
+//! kernel's `CompositeScore` for a one-run submission. SharpeBench `=0.26.0` scores a
 //! constant track as if it had a Sharpe ratio. An all-zero track (the `flat` reference
 //! policy) gets a Sharpe of 0, a PSR of 0.5000000005 and a deflated Sharpe that moves
 //! with the deflation bar alone; a constant nonzero track, whose rounded mean leaves a
