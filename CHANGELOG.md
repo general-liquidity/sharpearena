@@ -10,6 +10,10 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ## [Unreleased]
 
+### Changed
+
+- docs: the mirrored audit records add the round that stopped a track with no Sharpe ratio from voting on the deflation bar the rest of the field is judged against, and that settled the two dependency items the preceding round had refused or left standing. The preceding round's open item is dated rather than left reading as though it still stands.
+
 ## [0.30.0] - 2026-09-15
 
 ### Changed
