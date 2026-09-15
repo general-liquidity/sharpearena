@@ -38,7 +38,7 @@ The opt-in volatility-clustering driver (\texttt{vol\_clustering}) adds determin
 \begin{figure}[t]
 \centering
 \includegraphics[width=\linewidth]{f4-realism}
-\caption{Stylized-fact statistics by tier, one small panel per statistic, each with its own vertical axis. Points are per-seed values over the eight seeded panels of each tier, and a short bar marks the tier mean. Dashed lines mark the certification thresholds, with the passing side indicated in each gated panel. Excess kurtosis, absolute-return autocorrelation and aggregational Gaussianity are gated; gain/loss skew, timescale asymmetry and the exploratory Fano ratio are reported but not gated, and their panel titles say so.}
+\caption{Stylized-fact statistics for the canonical zero-knob tiers only, one panel per statistic, each with its own vertical axis. Points are per-seed values over the eight seeded panels of each tier (Calm circles, Hard squares, Extreme triangles), and black bars are tier means. The three gated statistics carry their inclusive rule in the panel title: excess kurtosis $\ge 0$, absolute-return autocorrelation $\ge 0.0146$ (the 95th percentile of the fixed IID null for this estimator, 0.014556 before rounding) and aggregational Gaussianity $\ge 0$. In those panels a dashed line marks the bound, the shaded region marks the passing side, and the count under each tier is the number of its 8 seeds that pass. The kurtosis and aggregation panels use a symmetric-logarithmic vertical axis that is linear within $\pm 1$. The Fano ratio, gain/loss skew and timescale asymmetry are reported but not gated, and their panel titles say so; thin grey lines mark their neutral values, 1 for the Fano ratio and 0 for skew and asymmetry.}
 \label{fig:f4}
 \end{figure}
 
@@ -51,10 +51,7 @@ The closest low-volatility candidate is \texttt{vol\_clustering}$=0.5$, burst pr
 \begin{figure}[t]
 \centering
 \includegraphics[width=\linewidth]{f4-calm-calibration}
-\caption{Calm calibration sweep. Each point is one of 99 configurations; the dashed line
-is 7 of 8 diagnostic passes and hollow points exceed the 1.25 volatility constraint. No
-configuration meets the full diagnostic--confirmation--volatility rule under the
-finite-panel-calibrated ACF gate.}
+\caption{Calm calibration sweep. Each point is one of 99 configurations, placed by its normalized tape perturbation and its number of passing diagnostic seeds out of 8; marker shape encodes the \texttt{vol\_clustering} setting, and the legend sits above the axes. Filled points satisfy the 1.25 volatility constraint and hollow grey points exceed it. The dashed line labelled ``rule: $\ge$ 7 of 8'' is the diagnostic threshold. No configuration meets the full diagnostic--confirmation--volatility rule under the finite-panel-calibrated ACF gate.}
 \label{fig:calm-calibration}
 \end{figure}
 
@@ -100,16 +97,19 @@ Push wt. & PnL & 95\% CI \\
 
 \begin{figure}[tbp]
 \centering
-\includegraphics[width=0.92\linewidth]{f5-boundaries}
-\caption{The manipulation probe, boundary sweeps per impact axis: impact-attributed PnL is negative at every sampled coefficient on every axis.}
-\label{fig:f5}
-\end{figure}
-
-\begin{figure}[tbp]
+\begin{subfigure}[b]{0.55\linewidth}
 \centering
-\includegraphics[width=0.92\linewidth]{f5-size-response}
-\caption{The manipulation probe, size response in the push weight: the loss is bounded and decreasing in size, so the least-bad push is the smallest one sampled.}
+\includegraphics[width=\linewidth]{f5-boundaries}
+\caption{Boundary sweeps, one panel per axis on a shared vertical scale.}
+\label{fig:f5}
+\end{subfigure}\hfill
+\begin{subfigure}[b]{0.42\linewidth}
+\centering
+\includegraphics[width=\linewidth]{f5-size-response}
+\caption{Size response in the push weight.}
 \label{fig:f5-size}
+\end{subfigure}
+\caption{The manipulation probe, mean impact-attributed PnL over 8 seeds (intervals are in \cref{tab:f5}). (a) Impact-attributed PnL is negative at every sampled coefficient on every axis, so no profitability boundary is drawn. (b) The loss is bounded and decreasing in size; the dashed line marks the least-bad push, which is the smallest one sampled.}
 \end{figure}
 
 \subsubsection{Normalized-flow concavity: a falsifiable symmetric probe}\label{sec:f5-concave}
@@ -126,7 +126,7 @@ We rerun the symmetric push-and-unwind sweep at $\beta\in\{0.5,0.7\}$, eight see
 \begin{figure}[t]
 \centering
 \includegraphics[width=\linewidth]{f5-concave}
-\caption{Pointwise impact-attributed P\&L intervals for the sampled symmetric schedule under linear and normalized-flow concave impact.}
+\caption{Impact-attributed P\&L for the sampled symmetric schedule under linear and normalized-flow concave impact, against the permanent-impact coefficient (left) and the push weight (right). Lines are means and shading is the pointwise 95\% interval; exponents differ by colour, marker and line style. The two panels have independent vertical scales, so their magnitudes are not comparable by eye.}
 \label{fig:f5-concave}
 \end{figure}
 
@@ -281,7 +281,7 @@ The impact model is the engine's stylized linear permanent impact with a single 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\linewidth]{predictability}
-\caption{Next-bar directional accuracy by tier. The causal AR adversary remains near the unconditional baseline; knowing or recovering the seed gives perfect prediction.}
+\caption{Generator predictability by tier for the unconditional baseline (prefix mean), the causal ridge AR(5) adversary and the known-seed oracle, distinguished by colour and hatching. Left: next-bar directional accuracy; the dotted line is 0.5 accuracy. Right: the kernel's deflated Sharpe of the frictionless sign-following policy driven by each predictor. Error bars are $\pm 1$ population standard deviation over the 16 seeds, not confidence intervals. The causal AR adversary remains near the unconditional baseline; knowing or recovering the seed gives perfect prediction.}
 \label{fig:predictability}
 \end{figure}
 
