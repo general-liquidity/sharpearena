@@ -212,7 +212,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "50a29dbff1a5f874bb068622d8adbb321258777c",
+  "generated_at_head": "eb4910e6dc96296ffaca6d689ede444035bd67ff",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -242,7 +242,7 @@
     },
     {
       "path": "Cargo.lock",
-      "sha256": "924b6f6c36085a7c27cc6b752cf01e667efca5d91fa83df81a17f2793da536fe"
+      "sha256": "58bb1dc0135d5d7ae67b5f528d04a9b7218b5587c7d444167b553daec6941476"
     },
     {
       "path": "Cargo.toml",
@@ -250,7 +250,7 @@
     },
     {
       "path": "crates/sharpearena-py/Cargo.toml",
-      "sha256": "62b61a9ed36249265c3099cb2420ce3589f42eee61634a028cc07d11218e857f"
+      "sha256": "6a4825d78db264d779cf0de0462e8393a59cdd231e05a6c8ba6d28e6fb022254"
     },
     {
       "path": "crates/sharpearena-py/pyproject.toml",
@@ -270,7 +270,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/_spec_hash.py",
-      "sha256": "f0bea0509b7c8293c7ec08c42ee7583d50c6fc74d3cd2e84f98128399deeccaa"
+      "sha256": "f887911dc48b10526d9a41c813ed246c3d2964c77fd20a6799d246411668e8fb"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/adverse_selection.py",
@@ -278,7 +278,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/baselines.py",
-      "sha256": "d2d458718dfa93ca61a34f3fe922837ec0b18a3eddb36dd8ac98f109367525d0"
+      "sha256": "9007884470f553940302c396147eb24089eed03b936a63ea86374af2f4f03679"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/bench_bridge.py",
@@ -302,7 +302,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/confidence.py",
-      "sha256": "df11e6f1283d1013c362f132c75765a9f7b6f52349e2b9085b2a5e3cee0e42ae"
+      "sha256": "fdd19d28e44be47747cbd59016163f9cdc29df7b3441858bfad2b3478aba95a1"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/counterfactual.py",
@@ -402,7 +402,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/kernel_score.py",
-      "sha256": "69fb636053c212a8035e106e103cedb11d088e319741876eaf236b03d7482238"
+      "sha256": "09d1028a0f0c4d3dedb278c1caa08cb195531c32cf75b553470036d0c51ac809"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/lob_env.py",
@@ -574,7 +574,7 @@
     },
     {
       "path": "crates/sharpearena/Cargo.toml",
-      "sha256": "327d0d7044c71ae8b047acf2e451c04960360c7d40902d98229d96f15aafef04"
+      "sha256": "46ee9623085c80beab158a305d0211776fe14947f352f638b26fea226b8e5766"
     },
     {
       "path": "crates/sharpearena/build.rs",
@@ -610,11 +610,11 @@
     },
     {
       "path": "crates/sharpearena/src/kernel_score.rs",
-      "sha256": "d0e0255f021c399b362c5a32400c069e16d1a307dee587cfe23029dd03234766"
+      "sha256": "b663234bc2783675e4f2ec667b0593c529c2c1d152dabc5034a00705b555cbf5"
     },
     {
       "path": "crates/sharpearena/src/leaderboard_ci.rs",
-      "sha256": "a18e0de3b58277b0d3c226fc5b06cdd42e31df8ddefd008634d0a66d526e9348"
+      "sha256": "e890b4896037522f54f2ffac46dc4259e141f5d0a807772e1ad1ed7a2ffdf463"
     },
     {
       "path": "crates/sharpearena/src/lib.rs",
@@ -706,7 +706,7 @@
     },
     {
       "path": "paper/refs.bib",
-      "sha256": "59d98753a115959e30501c138c1902f07e72fc31ffc494077b40055b04163ce7"
+      "sha256": "37d65f2e0d76436c187203fcc1adca96bf526ae9991aff34f72ebc0ffc020ba7"
     },
     {
       "path": "paper/sections/00-abstract.tex",
@@ -742,7 +742,7 @@
     },
     {
       "path": "paper/sections/08-findings.tex",
-      "sha256": "bf1f39ec9cfb9d9e65be603974ae6f37958cf1b2747e0274b56ddabcb2e88b71"
+      "sha256": "e918f81d586c7d822855890358f9304b53d4a4794bc25e43ff88588cbcefb7e0"
     },
     {
       "path": "paper/sections/09-related.tex",
@@ -750,7 +750,7 @@
     },
     {
       "path": "paper/sections/10-limitations.tex",
-      "sha256": "f7f251eed7cf72ee546953474a4bfc3389acb28bdec73cc135373570a7d1f0cb"
+      "sha256": "9cae73a088eeaba0ce64d66f77ef448d61445030e60b0123170bd90fe3cf17a6"
     },
     {
       "path": "paper/sections/11-conclusion.tex",
@@ -902,6 +902,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "bc0bb316cad3094edad23bc226ec138c3f525ec3428741096267549d854c2fb1",
+  "source_snapshot_sha256": "aa7763946fa965eb457adb3343a2140f23a058970cfabda9299b55ddfe8abfc7",
   "validator": "paper/src/check-provenance.py"
 }
