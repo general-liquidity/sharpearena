@@ -356,7 +356,7 @@ def endogenous_figure(block: dict) -> None:
     bx.axvline(
         block["config"]["kyle_lambda"], color="gray", linewidth=0.8, linestyle="--"
     )
-    bx.set_xlabel("Kyle lambda (permanent impact per unit dimensionless flow)")
+    bx.set_xlabel("Kyle-style lambda (linear permanent impact)")
     bx.set_ylabel(f"markout per filled unit at h = {block['config']['sweep_horizon']}")
     bx.set_title("endogenous path, exploratory pointwise 95% CI bands", fontsize=10)
     bx.legend(frameon=False, fontsize=8)
