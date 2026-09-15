@@ -75,6 +75,17 @@ p-value is the conservative `1.0` sentinel) and `selection_error` (the selection
 diagnostic is absent). Reading `deflated_sharpe` past such a key publishes the
 floor as a score.
 
+A constant track (every return equal, such as the `flat` baseline's all-zero
+series) has a sample variance of zero and so no Sharpe ratio. The pinned kernel
+would still score it, so `score_run` withholds it: `deflation_error` reads
+`returns must not be constant: a constant series has no Sharpe ratio` (or
+`Sharpe ratio is not finite` for a track whose computed standard deviation
+underflows to zero), `deflated_sharpe` and `psr` read the `0.0` floor, the
+interval and rolling Sharpe fields are absent or null, and `passed_k` and
+`rank_eligible` are false. The seed bootstrap (`deflated_sharpe_ci`,
+`paired_dsr_diff`) raises `ValueError` with the same reason. The predicate is
+value equality, not a volatility tolerance, so a dispersed track keeps its score.
+
 `sharpearena.kernel_score` is the one place a consumer reads the ranked numbers:
 
 - `kernel_deflated_sharpe(composite)` and `kernel_psr(composite)` return the

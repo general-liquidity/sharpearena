@@ -11,6 +11,7 @@ Deterministic: seeds, tiers and bootstrap parameters are fixed below.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import matplotlib
@@ -18,8 +19,13 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-import sharpearena
 from confidence_support import require_scoring_intervals
+from figure_style import TIER_COLOR, TIER_HATCH, save_pdf
+
+try:
+    import sharpearena
+except ImportError:  # --figures-only reads the committed JSON and needs no bindings
+    sharpearena = None
 
 PAPER = Path(__file__).resolve().parents[1]
 EVIDENCE = PAPER / "evidence"
@@ -92,8 +98,19 @@ def main() -> None:
         "tiers": tiers,
     }
     (EVIDENCE / "f1-baselines.json").write_text(json.dumps(out, indent=2))
+    make_figure(out)
 
-    # Figure: deflated Sharpe per policy, grouped by tier, with bootstrap CI bars.
+
+def make_figure(out: dict) -> None:
+    """Deflated Sharpe per policy, grouped by tier, with bootstrap CI bars.
+
+    Takes the evidence dict (the committed JSON shape), so the central renderer
+    rebuilds this figure from paper/evidence/f1-baselines.json with no bindings.
+    """
+    FIGURES.mkdir(parents=True, exist_ok=True)
+    tiers = out["tiers"]
+    for tier in TIERS:
+        require_scoring_intervals(tiers[tier]["rows"])
     policies = [r["policy"] for r in tiers[TIERS[0]]["rows"]]
     fig, ax = plt.subplots(figsize=(8, 4))
     width = 0.8 / len(TIERS)
@@ -104,16 +121,23 @@ def main() -> None:
         ci = [rows[p].get("deflated_sharpe_ci") or {} for p in policies]
         lo = [y - c.get("lo", y) for y, c in zip(ys, ci)]
         hi = [c.get("hi", y) - y for y, c in zip(ys, ci)]
-        ax.bar(xs, ys, width=width, yerr=[lo, hi], capsize=2, label=tier)
+        ax.bar(
+            xs, ys, width=width, yerr=[lo, hi], capsize=2, label=tier,
+            color=TIER_COLOR[tier], hatch=TIER_HATCH[tier], edgecolor="black", linewidth=0.5,
+        )
     ax.axhline(0.0, color="black", linewidth=0.8)
     ax.set_xticks(range(len(policies)))
     ax.set_xticklabels(policies, rotation=30, ha="right")
     ax.set_ylabel("deflated Sharpe (score_run)")
     ax.legend(title="tier", frameon=False)
     fig.tight_layout()
-    fig.savefig(FIGURES / "f1-baselines.pdf")
+    save_pdf(fig, FIGURES / "f1-baselines.pdf")
     plt.close(fig)
 
 
 if __name__ == "__main__":
-    main()
+    if "--figures-only" in sys.argv:
+        make_figure(json.loads((EVIDENCE / "f1-baselines.json").read_text()))
+        print(f"wrote {FIGURES / 'f1-baselines.pdf'}")
+    else:
+        main()

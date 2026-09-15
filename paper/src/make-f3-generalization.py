@@ -10,7 +10,8 @@ through the public ``SharpeArenaEnv`` and ``score_run`` to serialize per-seed
 return series and seed-resampled bootstrap 95% CIs: per-band pooled DSR CIs for
 the within-tier gaps, and seed-paired resampling for each transfer-matrix cell
 (the same resampled seed indices feed both regimes, cancelling shared path
-luck). Writes JSON plus a transfer-matrix heatmap.
+luck). Writes JSON only: the transfer-matrix heatmap duplicated ``tab:f3`` and
+was removed from the paper, so this script draws no figure.
 """
 from __future__ import annotations
 
@@ -18,10 +19,6 @@ import json
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
-import matplotlib
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import numpy as np
 
 from sharpearena import (
@@ -37,7 +34,6 @@ from sharpearena import (
 
 PAPER = Path(__file__).resolve().parents[1]
 EVIDENCE = PAPER / "evidence"
-FIGURES = PAPER / "figures"
 
 TIERS = ("calm", "hard", "extreme")
 N_SYMBOLS = 4
@@ -134,7 +130,6 @@ def _paired_gap_ci(args: tuple[int, list[list[float]], list[list[float]]]) -> di
 
 def main() -> None:
     EVIDENCE.mkdir(parents=True, exist_ok=True)
-    FIGURES.mkdir(parents=True, exist_ok=True)
 
     gaps = {
         tier: generalization_gap(
@@ -237,25 +232,6 @@ def main() -> None:
         "transfer_gap_ci": transfer_cis,
     }
     (EVIDENCE / "f3-generalization.json").write_text(json.dumps(out, indent=2))
-
-    # Figure: 3x3 heatmap of transfer_gap_deflated_sharpe.
-    grid = [
-        [matrix[f"{a}->{b}"]["transfer_gap_deflated_sharpe"] for b in TIERS]
-        for a in TIERS
-    ]
-    fig, ax = plt.subplots(figsize=(4.5, 4))
-    im = ax.imshow(grid, cmap="coolwarm")
-    ax.set_xticks(range(len(TIERS)), labels=TIERS)
-    ax.set_yticks(range(len(TIERS)), labels=TIERS)
-    ax.set_xlabel("scored on (zero-shot)")
-    ax.set_ylabel("selected on")
-    for i in range(len(TIERS)):
-        for j in range(len(TIERS)):
-            ax.text(j, i, f"{grid[i][j]:.3f}", ha="center", va="center", fontsize=8)
-    fig.colorbar(im, ax=ax, label="transfer gap (deflated Sharpe)")
-    fig.tight_layout()
-    fig.savefig(FIGURES / "f3-transfer-matrix.pdf")
-    plt.close(fig)
 
 
 if __name__ == "__main__":

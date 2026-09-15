@@ -1,8 +1,8 @@
 \section{Instrument validation}\label{sec:validation}
 
-A simulator paper that reports a stylized-facts battery it passes has, in this literature, reported very little. \Citet{cont2001empirical} says so in the founding paper: the stylized facts are ``usually formulated in terms of qualitative properties of asset returns and may not be precise enough to distinguish among different parametric models.'' The objection has been restated at every subsequent methodological turn. \Citet{fagiolo2019validation} grade empirical validity on four levels, from a Level 0 caricature through qualitative and then quantitative agreement with macro structures to Level 3 quantitative agreement with micro structures, observe that publishing standards now require at least Level 1, and survey the techniques built to ``better discriminate among different ABMs reproducing the same set of stylized facts.'' \Citet{lamperti2018information} is blunter, that ``moments are poor representations of time series' behaviour'': two series can agree on every stylized fact and every moment while their dynamics diverge point for point. Twenty-four years after Cont, LOB-Bench restates the objection for machine learning, that prior work ``relied on qualitative comparisons of stylized facts, making rigorous model comparisons infeasible and hindering research progress'' \citep{nagy2025lobbench}. The standard failure mode of this genre is therefore not a simulator that fails its realism check. It is a simulator that passes one and is degenerate anyway, because the check cannot tell models apart.
+A simulator paper that reports a stylized-facts battery it passes has not, in this literature, shown that its simulator is market-like. \Citet{cont2001empirical} says so in the founding paper: the stylized facts are ``usually formulated in terms of qualitative properties of asset returns and may not be precise enough to distinguish among different parametric models.'' The objection has been restated at every subsequent methodological turn. The four-level empirical-validity scheme of \citet{axtell1994agent} (see also \citealp{barde2017empirical}), as surveyed by \citet{fagiolo2019validation}, runs from a Level 0 caricature through qualitative and then quantitative agreement with macro structures to Level 3 quantitative agreement with micro structures; \citet{fagiolo2019validation} observe that publishing standards now require at least Level 1, and survey the techniques built to ``better discriminate among different ABMs reproducing the same set of stylized facts.'' \Citet{lamperti2018information} is blunter, that ``moments are poor representations of time series' behaviour'': two series can agree on every stylized fact and every moment while their dynamics diverge point for point. Twenty-four years after Cont, LOB-Bench restates the objection for machine learning, that prior work ``relied on qualitative comparisons of stylized facts, making rigorous model comparisons infeasible and hindering research progress'' \citep{nagy2025lobbench}. The standard failure mode of this genre is therefore not a simulator that fails its realism check. It is a simulator that passes one and is degenerate anyway, because the check cannot tell models apart.
 
-Read against that, the headline result of this section is evidence about the instrument rather than a shortfall in it. A public, committed, deterministic generator fails a calibrated three-check conjunction on 23 of 24 seeded panels, against an IID null fixed in source and tuned to no market panel, and the failure is reproducible from a command in \cref{app:commands} by anyone who disbelieves it. A gate a generator can fail is a gate with discriminating power, and in this literature that is rarer than a generator that passes an uncalibrated one. We therefore report the result the way \citet{vyetrenko2020getreal} and \citet{nagy2025lobbench} report theirs: we name the fact that fails (absolute-return autocorrelation, on all three tiers), name the configurations that fail it (the canonical generator everywhere, and the Calm tier on excess kurtosis besides), report the opt-in driver's relative improvement without promoting it to a realism claim, and locate the contribution in the measuring instrument rather than in the thing measured. \Citet{vyetrenko2020getreal} set the register in one sentence: ``there are still significant discrepancies between simulated markets and real ones. However, this work serves as a benchmark against which we can measure future improvement.'' \Citet{platt2018agent} reach the same conclusion from the other direction, that ``traditional stylized fact-centric validation seems unable to detect these potential problems, suggesting that such methods of validation are simply not sufficient.'' On the Fagiolo ladder the canonical tape sits at Level 0 on the axis this section gates and makes no claim above it.
+Read against that, the headline result of this section is evidence about the instrument as well as a shortfall in the generator. A public, committed, deterministic generator fails a calibrated three-check conjunction on 23 of 24 seeded panels, against an IID null fixed in source and tuned to no market panel, and the failure is reproducible from a command in \cref{app:commands} by anyone who disbelieves it. No pass rate that would have counted as a realism claim was declared before the gate was run, so the result cannot be read as a test the generator could have passed on a stated criterion. What the failure does show is narrower: this gate can refuse this generator. It does not establish the gate's discriminating power in general, which would need generators known to be market-like and known not to be, graded against a threshold fixed in advance. We therefore report the result the way \citet{vyetrenko2020getreal} and \citet{nagy2025lobbench} report theirs: we name the fact that fails (absolute-return autocorrelation, on all three tiers), name the configurations that fail it (the canonical generator everywhere, and the Calm tier on excess kurtosis besides), report the opt-in driver's relative improvement without promoting it to a realism claim, and locate the contribution in the measuring instrument rather than in the thing measured. \Citet{vyetrenko2020getreal} set the register in one sentence: ``there are still significant discrepancies between simulated markets and real ones. However, this work serves as a benchmark against which we can measure future improvement.'' \Citet{platt2018agent} reach the same conclusion from the other direction, that ``traditional stylized fact-centric validation seems unable to detect these potential problems, suggesting that such methods of validation are simply not sufficient for the validation of intraday ABMs employing realistic matching procedures.'' Their conclusion is scoped to intraday agent-based models with realistic matching, not to a daily-bar procedural generator like this one, so we cite it for the general point rather than as a finding about this tape. On the four-level scheme above, the canonical tape sits at Level 0 on the axis this section gates and makes no claim above it.
 
 Validation runs on four axes, and the section is organized by them, because the environment fails the first and passes structural checks on the other three. A single verdict about ``realism'' would misreport all four. \Cref{sec:f4} is \emph{unconditional} realism, whether the marginal and autocorrelation structure of the tape resembles the classical catalogue. \Cref{sec:f5} is \emph{response} realism, whether the price responds to flow the way a no-manipulation model requires. \Cref{sec:f6} is \emph{mechanism} realism, whether informed flow costs a maker what the microstructure literature says it should. \Cref{sec:predictability} is \emph{adversarial} realism, whether a public deterministic generator withstands an adversary who attacks the generator rather than the interface. Within each axis, every follow-up unit sits directly after the finding it extends.
 
@@ -38,7 +38,7 @@ The opt-in volatility-clustering driver (\texttt{vol\_clustering}) adds determin
 \begin{figure}[t]
 \centering
 \includegraphics[width=\linewidth]{f4-realism}
-\caption{Per-seed stylized-fact values by tier. Only kurtosis, absolute-return autocorrelation and aggregational Gaussianity are gated; Fano is exploratory.}
+\caption{Stylized-fact statistics for the canonical zero-knob tiers only, one panel per statistic, each with its own vertical axis. Points are per-seed values over the eight seeded panels of each tier (Calm circles, Hard squares, Extreme triangles), and black bars are tier means. The three gated statistics carry their inclusive rule in the panel title: excess kurtosis $\ge 0$, absolute-return autocorrelation $\ge 0.0146$ (the 95th percentile of the fixed IID null for this estimator, 0.014556 before rounding) and aggregational Gaussianity $\ge 0$. In those panels a dashed line marks the bound, the shaded region marks the passing side, and the count under each tier is the number of its 8 seeds that pass. The kurtosis and aggregation panels use a symmetric-logarithmic vertical axis that is linear within $\pm 1$. The Fano ratio, gain/loss skew and timescale asymmetry are reported but not gated, and their panel titles say so; thin grey lines mark their neutral values, 1 for the Fano ratio and 0 for skew and asymmetry.}
 \label{fig:f4}
 \end{figure}
 
@@ -51,10 +51,7 @@ The closest low-volatility candidate is \texttt{vol\_clustering}$=0.5$, burst pr
 \begin{figure}[t]
 \centering
 \includegraphics[width=\linewidth]{f4-calm-calibration}
-\caption{Calm calibration sweep. Each point is one of 99 configurations; the dashed line
-is 7 of 8 diagnostic passes and hollow points exceed the 1.25 volatility constraint. No
-configuration meets the full diagnostic--confirmation--volatility rule under the
-finite-panel-calibrated ACF gate.}
+\caption{Calm calibration sweep. Each point is one of 99 configurations, placed by its normalized tape perturbation and its number of passing diagnostic seeds out of 8; marker shape encodes the \texttt{vol\_clustering} setting, and the legend sits above the axes. Filled points satisfy the 1.25 volatility constraint and hollow grey points exceed it. The dashed line labelled ``rule: $\ge$ 7 of 8'' is the diagnostic threshold. No configuration meets the full diagnostic--confirmation--volatility rule under the finite-panel-calibrated ACF gate.}
 \label{fig:calm-calibration}
 \end{figure}
 
@@ -62,25 +59,27 @@ finite-panel-calibrated ACF gate.}
 
 Everything in this subsection is a search over a finite grid of sampled schedules and coefficients. Sampled means are estimates at sampled cells; a negative cell is not a proof over the schedules between the cells, and a positive cell is not an optimum. We state that once here and report cell values plainly below.
 
-We score a push-and-unwind manipulator against its zero-impact paired reference (identical seed and schedule, $\lambda = \eta = 0$) over eight seeds, so \texttt{impact\_pnl} attributes profit specifically to having moved the price. \texttt{impact\_boundary\_sweep} sweeps permanent impact (Kyle $\lambda$), temporary impact ($\eta$) and the momentum-follower gain over six grid points per axis; \texttt{size\_response} sweeps the push weight over five points. The evidence commits per-seed impact-PnL vectors at every grid point; intervals below are t-based 95\% CIs over the eight seeds.
+We score a push-and-unwind manipulator against its zero-impact paired reference (identical seed and schedule, $\lambda = \eta = 0$) over eight seeds, so \texttt{impact\_pnl} attributes profit specifically to having moved the price. \texttt{impact\_boundary\_sweep} sweeps permanent impact ($\lambda$, the coefficient of a Kyle-style linear permanent-impact term), temporary impact ($\eta$) and the momentum-follower gain over six grid points per axis; \texttt{size\_response} sweeps the push weight over five points. The evidence commits per-seed impact-PnL vectors at every grid point; intervals below are t-based 95\% CIs over the eight seeds.
 
 Under the precise linear, time-independent permanent-impact assumptions studied by \citet{huberman2004price} and the related no-dynamic-arbitrage conditions of \citet{gatheral2010no}, round-trip price manipulation is ruled out, so the linear sweep is a model-consistency check on the environment rather than a discovery procedure. The three units that follow test what a linear symmetric sweep structurally cannot reach.
 
 \begin{table}[t]
 \centering
-\caption{Manipulation probe, impact-attributable PnL as fraction of capital per episode, in units of $10^{-4}$, mean over 8 seeds with t-based 95\% CIs. Left: endpoints of each swept axis (6 grid points per axis); every axis is unprofitable everywhere, so no profitability boundary exists to report. Right: the full size-response grid in the push weight.}
+\caption{Manipulation probe, impact-attributable PnL as fraction of capital per episode, in units of $10^{-4}$, mean over 8 seeds with t-based 95\% CIs. Top: endpoints of each swept axis (6 grid points per axis); every axis is unprofitable everywhere, so no profitability boundary exists to report. Bottom: the full size-response grid in the push weight.}
 \label{tab:f5}
 \small
 \begin{tabular}{lrrl}
 \toprule
 Axis & Low end & High end & Boundary \\
 \midrule
-Kyle $\lambda$ (0 to 0.8) & $-1.3$ & $-31.7\ [-44.3, -19.2]$ & none \\
+Permanent $\lambda$ (0 to 0.8) & $-1.3$ & $-31.7\ [-44.3, -19.2]$ & none \\
 $\eta$ (0 to 0.8) & $-2.2$ & $-22.4\ [-23.5, -21.4]$ & none \\
 Follower gain (0 to 120) & $-2.6$ & $-6.7\ [-10.1, -3.3]$ & none \\
 \bottomrule
 \end{tabular}
-\hspace{1.2em}
+
+\medskip
+
 \begin{tabular}{lrl}
 \toprule
 Push wt. & PnL & 95\% CI \\
@@ -98,16 +97,19 @@ Push wt. & PnL & 95\% CI \\
 
 \begin{figure}[tbp]
 \centering
-\includegraphics[width=0.92\linewidth]{f5-boundaries}
-\caption{The manipulation probe, boundary sweeps per impact axis: impact-attributed PnL is negative at every sampled coefficient on every axis.}
-\label{fig:f5}
-\end{figure}
-
-\begin{figure}[tbp]
+\begin{subfigure}[b]{0.55\linewidth}
 \centering
-\includegraphics[width=0.92\linewidth]{f5-size-response}
-\caption{The manipulation probe, size response in the push weight: the loss is bounded and decreasing in size, so the least-bad push is the smallest one sampled.}
+\includegraphics[width=\linewidth]{f5-boundaries}
+\caption{Boundary sweeps, one panel per axis on a shared vertical scale.}
+\label{fig:f5}
+\end{subfigure}\hfill
+\begin{subfigure}[b]{0.42\linewidth}
+\centering
+\includegraphics[width=\linewidth]{f5-size-response}
+\caption{Size response in the push weight.}
 \label{fig:f5-size}
+\end{subfigure}
+\caption{The manipulation probe, mean impact-attributed PnL over 8 seeds (intervals are in \cref{tab:f5}). (a) Impact-attributed PnL is negative at every sampled coefficient on every axis, so no profitability boundary is drawn. (b) The loss is bounded and decreasing in size; the dashed line marks the least-bad push, which is the smallest one sampled.}
 \end{figure}
 
 \subsubsection{Normalized-flow concavity: a falsifiable symmetric probe}\label{sec:f5-concave}
@@ -124,7 +126,7 @@ We rerun the symmetric push-and-unwind sweep at $\beta\in\{0.5,0.7\}$, eight see
 \begin{figure}[t]
 \centering
 \includegraphics[width=\linewidth]{f5-concave}
-\caption{Pointwise impact-attributed P\&L intervals for the sampled symmetric schedule under linear and normalized-flow concave impact.}
+\caption{Impact-attributed P\&L for the sampled symmetric schedule under linear and normalized-flow concave impact, against the permanent-impact coefficient (left) and the push weight (right). Lines are means and shading is the pointwise 95\% interval; exponents differ by colour, marker and line style. The two panels have independent vertical scales, so their magnitudes are not comparable by eye.}
 \label{fig:f5-concave}
 \end{figure}
 
@@ -153,7 +155,7 @@ We confirm the selected theory-arm cell independently on 32 fresh seeds fixed be
 
 \subsubsection{Extended sweeps through the positive-control winner}\label{sec:f5-extended-sweeps}
 
-The positive control leaves six axes at their anchor values, so we sweep each of them one at a time through its no-follower, zero-temporary-impact, uniform $9{:}1$ winner: push weight, $\lambda$, total leg length, hold length, short-side trips and follower gain, at $\beta\in\{1,0.5\}$, five values per axis and eight common seeds, for 60 cells. Because the anchor was selected in the earlier 135-cell grid on these same seeds, the familywise intervals are two-sided Bonferroni 95\% $t$ intervals over the global 195-cell family, the antecedent grid plus this extension, rather than over 60 cells alone. Unequal ``uniform'' legs use separate $1/n_{\rm up}$ and $1/n_{\rm down}$ increments, and tests verify that each leg executes exactly one signed peak notional, so changing duration no longer silently changes the amount liquidated.
+The positive control leaves six axes at their anchor values, so we sweep each of them one at a time through its no-follower, zero-temporary-impact, uniform $9{:}1$ winner: push weight, $\lambda$, total leg length, hold length, short-side trips and follower gain, at $\beta\in\{1,0.5\}$, five values per axis and eight common seeds, for 60 cells. Because the anchor was selected in the earlier 135-cell grid on these same seeds, the familywise intervals are two-sided Bonferroni 95\% $t$ intervals over the global 195-cell family, the antecedent grid plus this extension, rather than over 60 cells alone. That correction counts every evaluated cell, but it does not give simultaneous coverage here: the 60 extension cells were chosen around a winner selected from the first grid on the same eight seeds, so the hypotheses they test are data-adaptive, and a Bonferroni bound over the cells evaluated does not account for how they were chosen. We therefore read the extension's familywise intervals as descriptive. The independent evidence remains the fixed-cell confirmation on 32 fresh seeds (\cref{sec:f5-positive-control}), which covers the original $9{:}1$ cell and none of the extension cells. Unequal ``uniform'' legs use separate $1/n_{\rm up}$ and $1/n_{\rm down}$ increments, and tests verify that each leg executes exactly one signed peak notional, so changing duration no longer silently changes the amount liquidated.
 
 The results are sharply asymmetric by exponent. Across the 60 extension cells, 23 global-familywise intervals are positive, 31 are negative and 6 cross zero. The longest tested $45{:}5$ theory-arm trip is the largest observed cell, $+135.0\times10^{-4}$ with global-familywise interval $[122.1,148.0]\times10^{-4}$. Interactions between axes, other exponents, other flow scales, transient impact and overshooting round trips remain untested (\cref{fig:f5-extended-sweeps}).
 
@@ -162,7 +164,7 @@ The results are sharply asymmetric by exponent. Across the 60 extension cells, 2
 \includegraphics[width=\linewidth]{f5-extended-sweeps}
 \caption{Extended manipulation sweeps after per-leg uniform normalization. Shading is the
 pointwise 95\% interval; error bars are the global 195-cell Bonferroni familywise 95\%
-interval.
+interval, which is descriptive for these data-adaptively chosen cells rather than simultaneous coverage.
 The displayed maxima are sampled cells, not optimized values.}
 \label{fig:f5-extended-sweeps}
 \end{figure}
@@ -173,7 +175,7 @@ The displayed maxima are sampled cells, not optimized values.}
 
 \begin{table}[t]
 \centering
-\caption{Maker markout per filled unit (price units per unit quantity) against informed versus paired-uninformed flow, 24 paired episodes; gap CIs are t-based 95\% over per-episode paired gaps. The gap is the price of trading against information and grows with horizon; the levels stay positive at every horizon, a separate finding discussed in the text.}
+\caption{Maker markout per filled unit (price units per unit quantity) against informed versus paired-uninformed flow, 24 paired episodes. The point estimates pool markout and filled quantity over all episodes, so they are quantity-weighted; the gap CIs are t-based 95\% intervals over the 24 per-episode paired gaps and are centred on the per-episode mean gap (0.073, 0.305 and 0.441; \cref{tab:f6-endo}), not on the pooled gap printed beside them. The gap is the price of trading against information and grows with horizon; the levels stay positive at every horizon, a separate finding discussed in the text.}
 \label{tab:f6}
 \small
 \begin{tabular}{lrrrl}
@@ -204,7 +206,7 @@ The single-episode maker decomposition illustrates the exact identity on one see
 
 \subsubsection{The endogenous arm: maker markout when the flow moves the price}\label{sec:f6-endogenous}
 
-The design above fixes the efficient-price path, so it measures the informed-versus-uninformed \emph{gap} but cannot speak to maker profitability \emph{levels}: a maker whose fills never move the price against it books the full quoted depth on every print, and the positive levels reported above are partly that artifact. This arm makes the level question answerable. We rerun the same twenty-four paired episodes with the cleared price endogenous: the taker flow actually filled against the maker ladder moves the mid through the permanent-impact law of the shared-book clearing engine of \cref{sec:env}. Let $S_t$ be the efficient price (the meta-orders' alpha increments plus ordinary volatility, identical across both legs and both arms), $Q_t$ the signed taker quantity filled in bar $t$ (meta-order children plus noise flow, buys positive), $\lambda$ Kyle's permanent-impact coefficient \citep{kyle1985continuous} and $V$ the engine's ADV-like volume normalizer. Makers then quote around
+The design above fixes the efficient-price path, so it measures the informed-versus-uninformed \emph{gap} but cannot speak to maker profitability \emph{levels}: a maker whose fills never move the price against it books the full quoted depth on every print, and the positive levels reported above are partly that artifact. This arm makes the level question answerable. We rerun the same twenty-four paired episodes with the cleared price endogenous: the taker flow actually filled against the maker ladder moves the mid through the permanent-impact law of the shared-book clearing engine of \cref{sec:env}. Let $S_t$ be the efficient price (the meta-orders' alpha increments plus ordinary volatility, identical across both legs and both arms), $Q_t$ the signed taker quantity filled in bar $t$ (meta-order children plus noise flow, buys positive), $\lambda$ the coefficient of the engine's Kyle-style linear permanent-impact term \citep{kyle1985continuous} and $V$ the engine's ADV-like volume normalizer. Makers then quote around
 \begin{equation}\label{eq:f6-endo}
 \mathrm{mid}_t \;=\; S_t\, M_t,
 \qquad
@@ -212,7 +214,7 @@ M_{t+1} \;=\; M_t \bigl(1 + \lambda\, Q_t / V\bigr),
 \qquad
 M_0 = 1,
 \end{equation}
-the engine's running multiplier, updated after the bar clears so the reference price a maker quotes against is moved only by flow strictly before it. Temporary impact is not a separate term: the maker ladder itself is the temporary component (a taker pays the quoted depth, which is what the engine's Almgren--Chriss $\eta$ term models in the maker-less market \citep{almgren2001optimal}), so the arm adds exactly one mechanism to the exogenous scenario, that a filled unit moves the next reference mid by $\mathrm{mid}_t\,\lambda/V$ in the taker's direction. At $\lambda = 0$ the arm reproduces the exogenous scenario bit for bit, and a cross-check in the test suite feeds the identical flow sequence to the native clearing engine and matches its cleared mids to relative $10^{-12}$, so \cref{eq:f6-endo} is the engine's law and not a paraphrase of it. The calibration sets $V = 240$, one episode's realized taker volume (mean 239 filled units over the 48 exogenous-arm episodes), and the engine's default $\lambda = 0.1$, so a filled unit displaces the mid by $0.042$ price units at the initial mid of 100; a parent order fills a mean 22.4 of its 60 offered units, displacing the mid by a mean $0.81\%$ over its own window (t-based 95\% CI $[0.77, 0.85]\%$ over episodes, sided with the parent in both legs, and zero by construction in the exogenous arm).
+the engine's running multiplier, updated after the bar clears so the reference price a maker quotes against is moved only by flow strictly before it. Temporary impact is not a separate term: the maker ladder itself is the temporary component (a taker pays the quoted depth, which is what the engine's Almgren--Chriss $\eta$ term models in the maker-less market \citep{almgren2001optimal}), so the arm adds exactly one mechanism to the exogenous scenario, that a filled unit moves the next reference mid by $\mathrm{mid}_t\,\lambda/V$ in the taker's direction. At $\lambda = 0$ the arm reproduces the exogenous scenario bit for bit, and a cross-check in the test suite feeds the identical flow sequence to the native clearing engine and matches its cleared mids to relative $10^{-12}$, so \cref{eq:f6-endo} is the engine's law and not a paraphrase of it. The calibration sets $V = 240$, one episode's realized taker volume (mean 239 filled units over the 48 exogenous-arm episodes), and the engine's default $\lambda = 0.1$, so a filled unit displaces the mid by $0.042$ price units at the initial mid of 100. A parent order fills a mean 22.4 of its 60 offered units, and the stated law applied to that fill alone gives $22.4\,\lambda/V = 0.933\%$. The measured quantity is different: \texttt{informed\_displacement}, the parent-signed change in the log impact multiplier over the parent's own window, averages $0.81\%$ (t-based 95\% CI $[0.77, 0.85]\%$ over episodes, sided with the parent in both legs, and zero by construction in the exogenous arm). That window also carries the noise flow filled in the same bars, and its multiplier compounds bar by bar, so the two numbers describe different quantities and neither is derived from the other.
 
 \begin{table}[t]
 \centering
@@ -279,7 +281,7 @@ The impact model is the engine's stylized linear permanent impact with a single 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\linewidth]{predictability}
-\caption{Next-bar directional accuracy by tier. The causal AR adversary remains near the unconditional baseline; knowing or recovering the seed gives perfect prediction.}
+\caption{Generator predictability by tier for the unconditional baseline (prefix mean), the causal ridge AR(5) adversary and the known-seed oracle, distinguished by colour and hatching. Left: next-bar directional accuracy; the dotted line is 0.5 accuracy. Right: the kernel's deflated Sharpe of the frictionless sign-following policy driven by each predictor. Error bars are $\pm 1$ population standard deviation over the 16 seeds, not confidence intervals. The causal AR adversary remains near the unconditional baseline; knowing or recovering the seed gives perfect prediction.}
 \label{fig:predictability}
 \end{figure}
 

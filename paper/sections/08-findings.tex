@@ -1,0 +1,225 @@
+\section{Calibration findings}\label{sec:findings}
+
+The previous section audits the environment. This one runs policies through it and reports what the resulting instruments read. Five findings follow: the baseline board under the corrected scoring kernel and the eligibility witness that answers the question the empty board raises (\cref{sec:f1,sec:witness}), regret against the closed-form market-making reference (\cref{sec:f2}), the generalization gap and cross-regime transfer matrix (\cref{sec:f3}), the failure-mode distribution (\cref{sec:f7}), and the replicated ecology probe (\cref{sec:f8}). Every follow-up unit sits directly after the finding it extends.
+
+F1, F3, F7, F8 and the witness run on the canonical position-trading generator, whose tape the realism diagnostic of \cref{sec:f4} declines to certify on 23 of 24 seeded panels; F2 runs on the Avellaneda--Stoikov market-making model instead. Every number below is therefore a calibration of an instrument on tape the paper does not claim is market-realistic, and \cref{sec:limitations} carries that constraint forward into every claim built on it. No golden or parity test pins the F1--F3 outputs themselves, which come from Python rollouts through the native binding on one platform; what is tested is narrower. The native and Python suites pin the scenario generator at seven named specifications, and the canonical and clustered ones also reproduce on \texttt{wasm32} and in the shipped npm bundle (\texttt{scenario\_kernel\_matches\_native\_and\_every\_committed\_golden}, \texttt{exported\_generate\_scenario\_reproduces\_every\_committed\_golden}). \texttt{wasm\_kernel\_matches\_native\_engine} requires the WebAssembly JSON kernel, compiled for the host, to reproduce the native engine's returns and trace for one buy-and-hold fixture. The backtest and kernel goldens pin \texttt{run\_baseline}, \texttt{replay\_run}, \texttt{walk\_forward}, \texttt{stress\_suite} and \texttt{tag\_regime} outputs for named inputs natively, on \texttt{wasm32} and in the npm bundle (\texttt{backtest\_goldens\_reproduce\_natively}, \texttt{kernel\_goldens\_reproduce\_natively} and their \texttt{exported\_}\ldots\texttt{\_under\_wasm32} counterparts). The market-clearing engine's opt-in entry points are held to its linear path by native equality tests (\texttt{a\_unit\_exponent\_is\_byte\_identical\_to\_the\_linear\_path}, \texttt{absent\_uncertainty\_set\_is\_byte\_identical\_to\_the\_point\_estimate}). The Python evidence reductions are seed-deterministic on one platform but sit outside all of these. F1 and F3 report 2{,}000-resample seed bootstrap intervals, F2 reports t-based 95\% intervals over committed per-episode vectors, and F7 and F8 are count-based, reporting episode counts and seed-level winner distributions rather than interval estimates. Every entry point, seed set and quantity is named where it is reported, and the commands are in \cref{app:commands}.
+
+\subsection{F1: Pipeline validation under the corrected kernel}\label{sec:f1}
+
+We roll the reference-policy field (flat, equal-weight long, momentum, minimum-variance, maximum-Sharpe, fractional-Kelly volatility targeting) over sixteen scenario seeds in each of the Calm, Hard and Extreme tiers via \texttt{run\_baselines}. The SharpeBench \texttt{score\_run} kernel scores each policy's pooled return series with the declared trial count equal to the field size, and each row carries a seed-paired bootstrap 95\% confidence interval on the deflated Sharpe (2{,}000 resamples).
+
+\paragraph{Sharpe-ratio convention.} Every Sharpe ratio in this paper is the ex-post ratio of \citet{sharpe1966mutual,sharpe1994sharpe} as the SharpeBench kernel computes it: the mean per-period return divided by the standard deviation of per-period returns, with no risk-free rate subtracted (cash earns zero, so the differential return is the portfolio return) and no annualization. For $n$ returns with estimated Sharpe ratio $\widehat{SR}$, sample skewness $\hat\gamma_3$ and non-excess kurtosis $\hat\gamma_4$, the probabilistic Sharpe ratio against a reference $SR^{*}$ is
+\[
+\mathrm{PSR}(SR^{*})=\Phi\!\left(\frac{(\widehat{SR}-SR^{*})\sqrt{n-1}}{\sqrt{1-\hat\gamma_3\,\widehat{SR}+\tfrac{\hat\gamma_4-1}{4}\,\widehat{SR}^{2}}}\right)
+\]
+\citep{bailey2012sharpe}, one minus the p-value, under its normal approximation, of the one-sided test that the Sharpe ratio does not exceed $SR^{*}$; it is not the probability that the true Sharpe ratio exceeds $SR^{*}$. The deflated Sharpe (DSR) is the PSR at a reference raised for the declared search breadth \citep{bailey2014deflated}. The per-run reliability gate applies the PSR to each seed's own run, and $\passk$ is the share of seeds whose run passes it.
+
+This experiment validates the producer-scorer pipeline end to end; the scorer-side discovery it reproduces belongs to the companion paper. Under the SharpeBench 0.0.8 kernel that SharpeArena pinned before its 0.9.0 release, this board was all zeros: every baseline scored a deflated Sharpe of 0.0000 on every tier, which reflected a unit error rather than strictness. The kernel applied its annualized 0.5 deflation prior per period without conversion, which set the bar near an annualized Sharpe of 18 on daily bars, a level nothing clears. Finding and fixing that unit bug is the companion SharpeBench paper's Finding 1 \citep{toca2026sharpebench}. The fix, converting once at 252 periods per year, shipped in SharpeBench 0.3.0, and SharpeArena 0.9.0 moved its pin to SharpeBench 0.5.0, which carries it. What this paper claims is only that the producer-scorer separation surfaced the bug, because trajectories produced here could be re-scored under both kernels and the discrepancy attributed to the scorer alone.
+
+\begin{table}[t]
+\centering
+\caption{Baseline leaderboard under the corrected kernel, 16 seeds per tier. DSR is the pooled deflated Sharpe with its seed-paired percentile bootstrap 95\% interval (2{,}000 resamples); $\passk$ is the share of seeds whose own run passes the per-run reliability gate; mean return is the pooled mean per-bar return in units of $10^{-4}$. DSR and its interval are rounded to two decimals for display, and the prose quotes four decimals. Within each tier, rows are sorted by unrounded DSR, descending, and rows with exactly equal DSR keep the producer's policy order. Rows that print the same DSR are not separated by this table. $^{\dagger}$The two Calm long books tie only at the displayed precision: their unrounded DSRs differ past the fourth decimal and their intervals overlap, so their order is not a ranking. $^{\ddagger}$\texttt{flat} holds no position, so its return series is identically zero and its Sharpe ratio is undefined; the frozen artifact nonetheless reports a DSR of 0.0007 on every tier, the scorer's value for that undefined statistic rather than an estimate (see text). No policy is rank-eligible on any tier: eligibility requires the gate to pass on every seed (a $\passk$ rate of exactly 1.00), and the best rate is 0.75.}
+\label{tab:f1}
+\small
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{@{}ll r c r r@{}}
+\toprule
+Tier & Policy & DSR & 95\% CI & $\passk$ & Mean return \\
+\midrule
+Calm & \texttt{kelly\_vol\_target} & 1.00$^{\dagger}$ & $[0.98, 1.00]$ & 0.75 & 3.37 \\
+ & \texttt{equal\_weight\_long} & 1.00$^{\dagger}$ & $[0.83, 1.00]$ & 0.62 & 3.56 \\
+ & \texttt{min\_variance} & 0.98 & $[0.03, 1.00]$ & 0.44 & 2.40 \\
+ & \texttt{flat} & 0.00$^{\ddagger}$ & $[0.00, 0.00]$ & 0.00 & 0.00 \\
+ & \texttt{momentum} & 0.00 & $[0.00, 0.00]$ & 0.00 & $-8.69$ \\
+ & \texttt{max\_sharpe} & 0.00 & $[0.00, 0.00]$ & 0.06 & $-10.02$ \\
+\addlinespace
+Hard & \texttt{equal\_weight\_long} & 0.11 & $[0.00, 0.95]$ & 0.31 & 2.43 \\
+ & \texttt{kelly\_vol\_target} & 0.03 & $[0.00, 0.82]$ & 0.31 & 1.18 \\
+ & \texttt{min\_variance} & 0.00 & $[0.00, 0.46]$ & 0.19 & 0.51 \\
+ & \texttt{flat} & 0.00$^{\ddagger}$ & $[0.00, 0.00]$ & 0.00 & 0.00 \\
+ & \texttt{max\_sharpe} & 0.00 & $[0.00, 0.00]$ & 0.00 & $-9.28$ \\
+ & \texttt{momentum} & 0.00 & $[0.00, 0.00]$ & 0.00 & $-8.44$ \\
+\addlinespace
+Extreme & \texttt{min\_variance} & 0.02 & $[0.00, 0.33]$ & 0.06 & 5.85 \\
+ & \texttt{equal\_weight\_long} & 0.02 & $[0.00, 0.31]$ & 0.06 & 4.73 \\
+ & \texttt{kelly\_vol\_target} & 0.00 & $[0.00, 0.11]$ & 0.12 & 1.39 \\
+ & \texttt{flat} & 0.00$^{\ddagger}$ & $[0.00, 0.00]$ & 0.00 & 0.00 \\
+ & \texttt{momentum} & 0.00 & $[0.00, 0.00]$ & 0.06 & $-3.06$ \\
+ & \texttt{max\_sharpe} & 0.00 & $[0.00, 0.00]$ & 0.00 & $-15.78$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\Cref{tab:f1} and \cref{fig:f1} show the corrected board. On Calm, drift is free deflated Sharpe: \texttt{kelly\_vol\_target} and \texttt{equal\_weight\_long} saturate the DSR at 1.0000, with bootstrap CIs $[0.9798, 1.0000]$ and $[0.8343, 1.0000]$. The equal-weight long book holds the tape and acts on no signal, so its Calm score is the tier's drift alone: on Calm, drift by itself saturates the deflated Sharpe. The mean-return column is the realized drift each book earned, and it does not order the tiers' scores, because the DSR reads mean return relative to the volatility of returns, which the committed evidence does not serialize per tier; the equal-weight book earns more per bar on Extreme than on Calm and scores far lower. A DSR on this board therefore mixes a policy's behavior with its tier's drift, and the table does not separate the two. Scoring each policy in excess of the equal-weight tape would separate them, but it requires rerunning the frozen producer and is planned rather than reported. \texttt{min\_variance} reaches 0.9849 on a near-vacuous interval of $[0.0264, 1.0000]$. The deflated Sharpe is a probability bounded in $[0,1]$, so 1.0000 is its ceiling rather than an unbounded score, and the percentile bootstrap undercovers at that boundary: the saturated intervals are indicative, and no bias-corrected variant is applied. Yet nothing on the board is rank-eligible, because no policy passes the per-run reliability gate on every seed; the best $\passk$ rate is 0.75. On Hard the best DSR collapses to 0.1114 and on Extreme to 0.0243, and the long baseline's $\passk$ rate degrades monotonically with stress (0.62, 0.31, 0.06). Each rate is 16 Bernoulli seeds, so near a rate of one half a single rate carries a nominal 95\% half-width of about $0.24$, and a difference between two of them about $0.35$: only the Calm-to-Extreme drop of $0.56$ exceeds that, so the monotone ordering describes these seeds rather than a resolved ranking. \texttt{momentum} and \texttt{max\_sharpe} lose money outright on every tier (mean per-bar returns down to $-1.6 \times 10^{-3}$ on Extreme).
+
+The \texttt{flat} rows are not scores. The flat book holds zero target weight on every bar, so its return series is identically zero on every seed of every tier, and its Sharpe ratio, a zero mean over a zero standard deviation, is undefined. The frozen artifact nonetheless reports a DSR of 0.0007 on each tier, with a zero-width interval: the SharpeBench 0.5.0 scorer that produced it replaces a zero standard deviation with a Sharpe ratio of zero, takes the skewness as zero and the kurtosis as three, and scores the result. The printed value is that convention's output for an undefined statistic, not evidence about the policy. A repair made after release 0.29.0 withholds these values at SharpeArena's own boundary, because the pinned SharpeBench 0.21.0 scorer still substitutes a Sharpe ratio of zero. A track whose observations all equal the first, zero or not, is treated as having no Sharpe ratio; the test is exact equality rather than a volatility threshold, so a dispersed track of any volatility scores exactly as before. \texttt{score\_run} reports such a track with the typed unavailability \texttt{deflation\_error}, whose reason reads ``returns must not be constant: a constant series has no Sharpe ratio'', the reason the corresponding SharpeBench repair uses. Its deflated Sharpe, PSR and deflation bar print the floor value 0 rather than an estimate, its bootstrap interval and rolling Sharpe summary are absent, and it fails the per-run reliability gate and rank eligibility. The seed-paired bootstrap interval and the paired-difference test refuse a constant pooled band with the same reason, and a track that is not constant but whose computed standard deviation underflows to zero is refused as ``Sharpe ratio is not finite''. The repair also closes a worse case of the same shape: a constant nonzero track has a tiny nonzero computed standard deviation, so before it a track of 0.001 on every bar scored a deflated Sharpe and PSR of 1.0 and was rank-eligible. Under the repaired code the \texttt{flat} rows report the reason in place of a deflated Sharpe, a $\passk$ rate and an interval.
+
+Eligibility is a conjunction, and each leg catches what the other misses. Deflation alone would crown drift on Calm; $\passk$ alone would miss the overfit breadth the deflation discounts. The number a real agent has to beat is a positive deflated Sharpe that survives every evaluation seed, and no reference policy produces one. The board alone does not show that the eligibility set is non-empty for this task family. \Cref{sec:witness} answers that by construction, injecting an out-of-band oracle signal of controlled strength and locating the strength at which the gates first open; the eligibility set is non-empty on every tier, and the per-run reliability gate that fails every baseline here is the leg that binds there too.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{f1-baselines}
+\caption{Deflated Sharpe per baseline and tier. Error bars are seed-paired percentile bootstrap 95\% intervals ($B = 2{,}000$). Tiers differ by colour and by hatching (Calm plain, Hard diagonal, Extreme dotted). Calm saturates the long baselines; Hard and Extreme collapse them toward zero. The \texttt{flat} bars are the frozen artifact's value for an undefined statistic (\cref{sec:f1}).}
+\label{fig:f1}
+\end{figure}
+
+\subsubsection{Rank-eligibility witness: the eligibility set is non-empty}\label{sec:witness}
+
+The baseline board above contains no rank-eligible policy, leaving open whether the conjunction can be satisfied at all. We answer by construction with an out-of-band oracle rather than an entrant. For each seed, the script replays the deterministic, policy-invariant tape one bar ahead and mixes standardized next-bar truth $z_t$ with a seeded noise path $\varepsilon_t$:
+\[
+\mathrm{signal}_t(s)=s z_t+\sqrt{1-s^2}\,\varepsilon_t,
+\qquad 0\le s\le1.
+\]
+The mixing weight $s$ is a nominal signal-strength parameter, not the realized correlation between signal and truth on a path: $z_t$ is each return divided by the episode's own sample standard deviation without centering, and $\varepsilon_t$ is one finite draw, so the per-path correlation differs from $s$. Within one noise path the same $\varepsilon_t$ is reused at every $s$ (common random numbers), so changing signal strength does not silently change the experiment. A sign-following policy trades every bar; a deadband policy trades only when $|\mathrm{signal}|>1$ and otherwise holds. Both are scored through the unchanged SharpeBench conjunction over 16 seeds. The per-run reliability gate requires every seed's PSR (\cref{sec:f1}), here against a reference Sharpe of zero, to reach $0.90$. The script records the full coarse eligibility set, the sampled strengths at which the kernel conjunction accepts. It refines an \emph{observed crossing bracket} by bisection only when that coarse set is monotone; otherwise it reports the observed set without calling any crossing a threshold. A crossing located under one noise path is a functional of that draw, so we repeat the whole procedure (coarse sweep, monotonicity check, bisection) under five independent noise paths per cell: the first is the path serialized as the primary witness, the other four redraw $\varepsilon_t$. Each bisection bracket is numerical resolution on the stated grid: bisection stops once a bracket is no wider than $0.005$ in $s$, and because every bracket starts on a grid interval of $0.05$, $0.1$ or $0.2$, every recorded bracket ends at width $0.0031$, a half-width of $0.0016$ (\cref{app:commands}); the spread of the crossing across noise paths is a separate, statistical quantity, and it is what \cref{tab:witness} reports. All 50 attained coarse series (10 cells, five paths each) are monotone.
+
+\begin{table}[t]
+\centering
+\caption{Observed eligibility crossing in the nominal signal strength $s$: mean [min, max] of the bisection-bracket midpoint over five independent noise paths per cell. The min to max range is variation across noise realizations; the bisection bracket around each individual crossing has a realized half-width of $0.0016$, inside the stopping rule's bound of $0.0025$, and is not shown. Crossings are found by bisection after a monotone coarse-grid check on every path, and are not global optima or theorem-level thresholds. ``none (0/5)'' means that no sampled $s\le1$ is eligible on any of the five paths. At every one of the 50 attained crossings, the last failing gate is the per-run reliability gate, the requirement that every seed's marginal PSR reach $0.90$.}
+\label{tab:witness}
+\small
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{llccc}
+\toprule
+Variant & Band & Calm & Hard & Extreme \\
+\midrule
+\texttt{sign\_follow} & gap-band witness & none (0/5) & $0.730\ [0.702,0.752]$ & $0.343\ [0.302,0.389]$ \\
+\texttt{sign\_follow} & F1 table & none (0/5) & $0.783\ [0.764,0.820]$ & $0.353\ [0.317,0.445]$ \\
+\texttt{deadband\_hold} & gap-band witness & $0.848\ [0.777,0.930]$ & $0.500\ [0.408,0.623]$ & $0.337\ [0.283,0.383]$ \\
+\texttt{deadband\_hold} & F1 table & $0.690\ [0.620,0.758]$ & $0.621\ [0.483,0.755]$ & $0.342\ [0.283,0.398]$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The result is an existence proof and a calibration. The deadband construction is eligible on every tier on every noise path, so the observed eligibility set is non-empty. The per-run reliability gate is last to open at all 50 observed crossings; pooled DSR and bootstrap gates open earlier. The crossing itself is not a constant of the tier: across noise paths it moves by $0.05$ to $0.27$ in $s$ (a factor of 15 to 85 above the bisection resolution), widest for the deadband policy on Hard, so any single-path threshold is one draw from that range and the table should be read at the precision of the range rather than of the bracket. Differences between the two bands are differences between two 16-seed scenario bands as well as between noise draws, and with five paths per cell we do not test them. The sign follower never becomes eligible on Calm, on any of the five paths, because its every-bar turnover costs more than the low-volatility signal is worth; at $s=1$ the noise term vanishes, so that endpoint is noise-invariant by construction, and the failure at every $s<1$ is what the replication adds. The environment therefore imposes no activity requirement, but its cost model does require a Calm policy to ration turnover (\cref{fig:witness}).
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.95\linewidth]{witness}
+\caption{Witness sweep on the gap-band witness subset under the primary noise path, one row per policy. Left panels: pooled deflated Sharpe against the nominal signal strength $s$; the band around each curve is a seed-paired percentile bootstrap 95\% interval (2{,}000 resamples), filled markers are rank-eligible sampled points and hollow markers are not, and the dotted line is the DSR bar of 0.95. Right panels: the $\passk$ rate over the 16 seeds, with a dotted line where all 16 pass. In every panel a dashed vertical line marks the primary-path bisection crossing, drawn only after monotonicity is verified, and a shaded column spans the minimum to maximum crossing over five independent noise paths; in the right panels a horizontal bar repeats that range with its marker at the mean. Tiers differ by marker (Calm circle, Hard square, Extreme triangle) and by column hatching (Calm plain, Hard diagonal, Extreme dotted).}
+\label{fig:witness}
+\end{figure}
+
+\subsection{F2: Regret against the closed-form reference policy}\label{sec:f2}
+
+On the Avellaneda--Stoikov market-making task, \texttt{mm\_regret} runs each candidate quoting policy and the closed-form reference policy (\cref{sec:tasks}) on the same sixteen seeded episodes ($\sigma = 2.0$, $\gamma = 0.1$, $\kappa = 1.5$, 200 steps) and reports the mean reward gap to the reference. Candidates are the reference itself and fixed-spread quoters over a grid of half-spreads. The evidence commits the per-episode regret vector per grid point; intervals are t-based 95\% CIs over the sixteen paired episodes.
+
+The reference's regret is 0.0 by construction, which confirms the plumbing. The fixed-spread curve is U-shaped (\cref{fig:f2}): regret is 84.6 (95\% CI $[68.2, 101.1]$) at a half-spread of 0.05 (quoting too tight, filled constantly, run over by inventory), falls to a minimum of 0.037 at 0.5, and rises again to 36.6 ($[33.0, 40.2]$) at 2.0 and 58.8 ($[55.3, 62.3]$) at 4.0 (quoting too wide, earning nothing). The minimum is the point the intervals do not resolve: the 0.5 point's CI is $[-8.7, 8.8]$ and the 1.0 point's is $[-5.4, 12.4]$. Both intervals include zero, so sixteen episodes do not resolve either point from the analytical reference; this failure to reject zero is not evidence of equivalence. At the observed per-episode dispersion, sixteen paired episodes detect a mean regret of about 12 reward units at 80\% power and a two-sided 5\% level, roughly a third of the 36.6 measured at a half-spread of 2.0, so differences smaller than that are outside this design's reach. The tight and wide extremes are separated from zero by wide margins. The instrument resolves the shape of the curve, not the sign of its minimum.
+
+The point of shipping the reference is that agents on this task are scored on regret rather than raw PnL. A market-making leaderboard ranked on PnL rewards whichever policy drew the friendliest flow; regret against a fixed analytical reference on the same episodes removes that luck axis.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{f2-regret}
+\caption{Mean regret versus the analytical Avellaneda--Stoikov reference policy over 16 paired episodes, with t-based 95\% CIs. Fixed-spread quoting is U-shaped in the half-spread; the reference defines zero.}
+\label{fig:f2}
+\end{figure}
+
+\subsection{F3: Generalization gap and cross-regime transfer}\label{sec:f3}
+
+\texttt{generalization\_gap} scores the default reference policy (equal-weight long) on disjoint train and held-out seed bands (16 seeds each, separated by a 10{,}000-seed gap) within each tier. \texttt{cross\_regime\_transfer} then holds sixteen seeds fixed and varies the regime, producing the full three-by-three matrix of transfer gaps, each the in-distribution DSR minus the zero-shot out-of-distribution DSR, whose diagonal is zero by construction because identical regimes reuse byte-identical environments. The policy is fixed and parameter-free, so nothing is trained: ``source regime'' below means the regime the policy is nominally selected on, and for such a policy the matrix reduces to pairwise differences of three per-tier deflated Sharpes. Those three are the equal-weight long book's scores on the same sixteen seeds as \cref{tab:f1}, whose mean returns the two artifacts record identically, so the drift confound of \cref{sec:f1} carries over whole: on Calm drift alone saturates the score, and every transfer gap is a difference between drift-driven DSRs. What F3 measures is the instrument, how much a regime switch moves the score of a signal-free long book, and not transfer learning or the transfer of skill. These are the 16-seed subsets \cref{sec:protocol-bands} exempts fixed policies from replacing with the full canonical band. The evidence commits per-seed return series per cell; CIs are seed-resampled percentile bootstrap ($B = 2000$), seed-paired across regimes for the matrix cells.
+
+\begin{table}[t]
+\centering
+\caption{Left: within-tier generalization gap (train minus test deflated Sharpe) for the fixed equal-weight reference. Right: the cross-regime transfer gap, in-distribution DSR minus zero-shot out-of-distribution DSR, with rows the source regime and columns the scored regime; a cell is a difference of two scores, not an out-of-distribution score, and the diagonal is zero by construction. Cells are read only through their seed-paired bootstrap intervals: a cell whose interval excludes zero is resolved in sign, and the Hard$\leftrightarrow$Extreme cells ($\pm 0.096$), whose intervals straddle zero, are not interpreted.}
+\label{tab:f3}
+\small
+\begin{tabular}{lrrr}
+\toprule
+Tier & Train DSR & Test DSR & Gap \\
+\midrule
+Calm & 1.0000 & 0.9988 & $+0.0012$ \\
+Hard & 0.1231 & 0.4618 & $-0.3388$ \\
+Extreme & 0.0269 & 0.1280 & $-0.1012$ \\
+\bottomrule
+\end{tabular}
+\hspace{1.5em}
+\begin{tabular}{lrrr}
+\toprule
+ & Calm & Hard & Extreme \\
+\midrule
+Calm & 0.000 & $+0.877$ & $+0.973$ \\
+Hard & $-0.877$ & 0.000 & $+0.096$ \\
+Extreme & $-0.973$ & $-0.096$ & 0.000 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\Cref{tab:f3} reports both. The within-tier gaps are the expected control: the reference policy has no fitted parameters, so it cannot overfit its train band, and the instrument correctly reads near zero on Calm ($+0.0012$) and noise-signed values on the stressed tiers (the negative Hard and Extreme gaps mean the held-out band happened to be kinder; with no learning, the gap is pure seed noise, and how much band luck a 16-seed evaluation carries is read from the interval widths rather than from any single realized gap). The per-band bootstrap intervals say the same thing at interval width: Hard's train-band DSR of 0.1231 carries a CI of $[0.000, 0.944]$ and its test band $[0.037, 0.948]$ (the bands are disjoint seed sets, so these are unpaired), overlapping almost entirely, which is what a pure-noise gap looks like. Hard's train-band DSR of 0.1231 here and \cref{tab:f1}'s 0.1114 for the same policy on the same sixteen seeds differ only in the declared trial count the deflation prior consumes, six declared policies in F1 against no declared search in the gap metric; rescoring the committed F3 return series at six trials reproduces 0.1114 exactly.
+
+The transfer-gap matrix is where regime structure appears, and every cell is classified by one rule, fixed here for all cells: a cell whose seed-paired bootstrap interval excludes zero is resolved in sign, and the width of that interval, not the rule, says how precisely the magnitude is known. The Calm-involved point estimates are the largest: source regime Calm scored zero-shot on Hard loses $0.877$ of deflated Sharpe, and Calm to Extreme loses $0.973$ of a score bounded in $[0,1]$. Both intervals exclude zero, so both gaps are resolved in sign, but they differ in precision: Calm to Extreme is $[0.635, 0.999]$, while Calm to Hard is $[0.054, 0.999]$, which leaves its magnitude anywhere from near zero to the whole score. The Hard-to-Extreme cell ($0.096$, CI $[-0.218, 0.911]$) has an interval straddling zero, so it is not interpreted: at 16 seeds the instrument cannot distinguish it from band luck. A bounded, heavily deflated score bootstrapped over 16 seeds is a coarse instrument, which is itself a calibration result, and \cref{sec:protocol-seeds} turns it into a prescription. The matrix is antisymmetric because the policy is fixed, and its diagonal is zero by construction. Its off-diagonal magnitude is the quantity a within-tier gap is structurally blind to: a policy scored only on calm seeds can carry a saturated DSR into a leaderboard while being worth 0.03 under stress. Both metrics are cheap, and the protocol requires reporting both.
+
+\subsection{F7: Failure-mode distributions}\label{sec:f7}
+
+\texttt{classify\_episode\_failure} classifies every rollout of the eight-policy field (the six reference policies plus the two behavioral counterparties), across all three tiers and sixteen seeds (384 episodes), into the worst-case-first taxonomy: cascade-wiped, bankrupt, stopped-out, mandate breach (structural, drawdown or inventory), or clean, with a per-scenario sampled mandate and a 50\% drawdown stop in force. The two evidence dispositions of \cref{sec:mandates}, invalid evidence and execution failure, are counted in the same rollup and are zero on every tier, so they are omitted from \cref{tab:f7}. This artifact was regenerated for SharpeArena 0.29.0 by rerunning its producer; the other F1--F8 artifacts were not.
+
+\begin{table}[t]
+\centering
+\caption{Failure-mode counts per tier, 128 episodes each (8 policies $\times$ 16 seeds). No episode reaches bankruptcy or a cascade wipe; failure is dominated by structural mandate breaches, which are flat across tiers, while the stress-sensitive modes are the drawdown family.}
+\label{tab:f7}
+\small
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{lrrrrrrr}
+\toprule
+Tier & Clean & Stopped out & Mandate struct. & Mandate DD & Mandate inv. & Bankrupt & Clean rate \\
+\midrule
+Calm & 51 & 0 & 50 & 19 & 8 & 0 & 0.40 \\
+Hard & 49 & 0 & 50 & 21 & 8 & 0 & 0.38 \\
+Extreme & 43 & 10 & 43 & 25 & 7 & 0 & 0.34 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Mandates are sampled per scenario and assigned to fixed policies that cannot observe or adapt to them, so a structural breach is guaranteed whenever the draw pairs, say, a shorting policy with a long-only mandate. The flat structural-breach counts across tiers (50, 50, 43) are the signature of that assignment mechanism, not a behavioral finding about agents; a mandate-aware field could invert the distribution entirely, and measuring one is the interesting follow-up. The draw itself changed in SharpeArena 0.29.0: the momentum style is no longer sampled, because \texttt{mandate\_breach} reads per-bar portfolio weights and pooled returns and has no per-symbol returns to grade ``lean into recent winners'' against (\cref{sec:mandates}). Episodes that drew it in the earlier artifact are redrawn as styles that do carry a rule, so 264 of the 384 episodes are now graded against a structural constraint where 168 were before, and the structural counts rise accordingly. The remaining 120 draw the declared permissive control, which is scored by its optional caps alone and says so in its prompt text.
+
+\Cref{tab:f7} and \cref{fig:f7} show the shape of failure as stress rises. The clean rate falls from 0.40 on Calm to 0.34 on Extreme. Each rate is 128 episodes, and the independent-binomial 95\% half-width of a difference between two such rates is about $0.12$. That width is not a floor or a ceiling for this design: episodes that share a seed or a policy are not independent, dependence does not fix the sign of their covariance, and a paired cross-tier difference over the same policies and seed indices has a covariance of its own. We therefore read the counts descriptively. Every tier-to-tier step, Calm to Extreme included at 0.40 versus 0.34, is smaller than the nominal width, and the monotone ordering of clean rates describes these 16 seeds rather than a resolved difference. What the tiers do separate is the composition of failure rather than its rate. Structural mandate breaches are flat, as the mechanism above dictates: a shorting policy under a sampled long-only mandate breaks the rule on every tier. The stress-sensitive modes are the drawdown family: mandate drawdown breaches rise from 19 on Calm to 25 on Extreme, and hard stop-outs at the 50\% line appear only on Extreme (10 episodes: 5 \texttt{overconfident}, 4 \texttt{max\_sharpe}, 1 \texttt{disposition\_effect}). No policy in this field ever reaches bankruptcy or a cascade wipe; the taxonomy's worst states are reachable but not by these baselines at this stop level. Per policy, \texttt{flat} is clean 48/48 by construction, while \texttt{overconfident} and the \texttt{momentum} policy are the worst on Calm (3 clean of 16 each, 8 of each one's failures a drawdown breach) and \texttt{overconfident} is the worst on Extreme (2 clean of 16). On this mandate-blind reference field, most episodes end in a process failure that a return-ranked board does not record: 231 of 384. Counted against failures rather than episodes the share is 231 of 241, because only ten episodes fail on PnL at all, every one of them a stop-out.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{f7-failures}
+\caption{Failure-mode counts per tier, each summed over the 8 policies and 16 seeds (128 episodes per tier, 384 in total), for every disposition in the rollup schema; the bankruptcy, cascade-wipe, invalid-evidence and execution-failure bars are zero. Tiers differ by colour and by hatching (Calm plain, Hard diagonal, Extreme dotted).}
+\label{fig:f7}
+\end{figure}
+
+\subsection{F8: Ecology outcomes under shocks, replicated over seeds}\label{sec:f8}
+
+\texttt{run\_ecology} seeds the replicator with the eight baseline species over a shared-book market via \texttt{market\_payoffs} (12 generations, field size 8, innovation every 4 generations breeding parameter-perturbed variants of the leader) and runs trajectories under a steady all-Calm control schedule and a \texttt{regime\_shocks} schedule rotating Calm (generations 0 to 3), Hard (4 to 7) and Extreme (8 to 11). We replicate the probe over eight replicator seeds per schedule; \cref{tab:f8} reports the cross-seed winner distribution, and the seed-0 trajectories (\cref{fig:f8}) remain the illustrative detail. The two schedules chain episode seeds differently (the shock schedule strides seeds across generations), so control and shocked runs at the same replicator seed are matched in configuration, not in price paths.
+
+The replicator flow rule sits in the market-ecology tradition: strategies as species whose profitability decays as their share of the flow grows \citep{farmer2002market}, and populations whose composition, rather than any single agent's optimization, drives aggregate dynamics \citep{lux1999scaling}. The implementation abstracts away much of what those models study: capital flows react instantly (no fund-flow lags), there are no leverage or margin constraints beyond the strategies' own sizing, and there is no entry beyond the single leader-perturbation innovator. Its outputs are trajectories of this replicator map, not claims about market ecology in general.
+
+\begin{table}[t]
+\centering
+\caption{Replicated ecology outcomes over 8 replicator seeds per schedule: distribution of the final dominant lineage (bred variants credited to their founding species). The root winner differs between the schedules on 5 of 8 seeds, and on 3 of the 6 seeds where both schedules resolve a dominant lineage; the seed-0 replacement of the volatility targeter by the equal-weight long book occurs on 1 of 8 seeds.}
+\label{tab:f8}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lrr}
+\toprule
+Final dominant lineage & Control (all Calm) & Shocked (Calm/Hard/Extreme) \\
+\midrule
+kelly\_vol\_target & 4 & 7 \\
+equal\_weight\_long & 2 & 1 \\
+flat (no resolved dominant) & 2 & 0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The replication does not support the single-seed narrative. At seed 0 the story was clean: \texttt{kelly\_vol\_target} sweeps the control board (peak share 1.00, final 0.81), collapses under the shock schedule once the regime turns Hard, and \texttt{equal\_weight\_long} inherits dominance (final 0.67). Across eight seeds that story is the exception. Under the shock schedule a \texttt{kelly\_vol\_target} lineage ends dominant on 7 of 8 seeds (final shares near 0.90); the seed-0 handoff to the long book happens once. The control side is itself seed-dependent: \texttt{kelly\_vol\_target} wins 4 seeds, \texttt{equal\_weight\_long} wins 2, and on 2 seeds no species resolves dominance at all (all eleven end persistent at small shares, with a \texttt{flat} variant holding the largest share at 0.10). The root-level winner differs between the two schedules on 5 of 8 seeds, but on 2 of those the control side never resolves a dominant lineage at all; among the 6 seeds where both schedules resolve one, the winner differs on 3. At eight seeds the reordering is neither established nor excluded, and it has no consistent direction. Extinction pressure is more stable than identity: shocked runs produce a resolved dominant on 8/8 seeds with 4 to 7 extinctions per run (at seed 0, both behavioral counterparties are gone or collapsed on both schedules, \texttt{overconfident} extinct at generation 0).
+
+One replicator trajectory is one draw from a heavy-tailed outcome distribution, and single-run ecology narratives do not survive replication. What the probe reliably produces at this scale is the outcome distribution itself: which lineages can win, how often shocks reorder the board, and how much of the population goes extinct, per committed seed set. Sharper claims need more seeds, varied shock orderings and path-matched schedule pairs, all of which are mechanical extensions of the committed script.
+
+\begin{figure}[tbp]
+\centering
+\begin{subfigure}[t]{0.92\linewidth}
+\includegraphics[width=\linewidth]{f8-ecology-control}
+\caption{Control: steady Calm.}
+\end{subfigure}
+
+\vspace{0.8em}
+
+\begin{subfigure}[t]{0.92\linewidth}
+\includegraphics[width=\linewidth]{f8-ecology-shocked}
+\caption{Shocked: Calm, then Hard, then Extreme.}
+\end{subfigure}
+\caption{Seed-0 population-share trajectories over 12 replicator generations, the illustrative single run behind \cref{tab:f8}'s distribution; seed 0 only. Both schedules start from the same eight founders (\texttt{flat}, \texttt{equal\_weight\_long}, \texttt{momentum}, \texttt{min\_variance}, \texttt{max\_sharpe}, \texttt{kelly\_vol\_target}, \texttt{disposition\_effect} and \texttt{overconfident}). The innovation operator adds three bred variants to each: \texttt{kelly\_vol\_target} variants labelled \textasciitilde\texttt{lookback4}, \textasciitilde\texttt{target\_vol8} and \textasciitilde\texttt{kelly\_fraction12} under control, and \texttt{equal\_weight\_long} variants labelled \textasciitilde\texttt{v4}, \textasciitilde\texttt{v8} and \textasciitilde\texttt{v12} under shocks. Every band is labelled directly on the plot with a leader line and carries its own hatch; there is no legend. At this seed the regime rotation replaces the calm-regime winner with the equal-weight long book; across the eight-seed replication that replacement occurs once.}
+\label{fig:f8}
+\end{figure}
