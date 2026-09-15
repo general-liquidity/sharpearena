@@ -25,8 +25,16 @@ allow = [
     "Apache-2.0",
     # target-lexicon (pyo3 build dep, sharpearena-py tree): the LLVM exception
     # only relaxes Apache-2.0's binary-attribution clause; no new obligations.
+    # The workspace leg reports this entry as an unmatched allowance, because the
+    # crate that carries it is in the excluded Python crate's tree and not the
+    # workspace's. That warning is expected; the entry is load-bearing for
+    # `cargo deny check --config ../../deny.toml` run from crates/sharpearena-py.
     "Apache-2.0 WITH LLVM-exception",
-    "BSD-3-Clause",
+    # BSD-3-Clause was removed on 2026-09-15. `subtle` was the only crate that
+    # carried it, and curve25519-dalek 5, which the SharpeBench 0.27.0 pin brings
+    # in, replaced it. cargo-deny reported the stale entry as an unmatched
+    # allowance on both legs; leaving it would have admitted a future BSD-3-Clause
+    # dependency without the conscious decision this list exists to force.
     "Unicode-3.0",
     "Unlicense",
 ]
