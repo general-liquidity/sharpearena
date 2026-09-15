@@ -7,19 +7,21 @@
   primaryClass  = {cs.LG}
 }
 
-@misc{towers2024gymnasium,
-  author = {Mark Towers and Ariel Kwiatkowski and Jordan Terry and John U. Balis and Gianluca De Cola and Tristan Deleu and Manuel Goul{\~a}o and Andreas Kallinteris and Markus Krimmel and Arjun KG and Rodrigo Perez-Vicente and Andrea Pierr{\'e} and Sander Schulhoff and Jun Jet Tai and Hannah Tan and Omar G. Younis},
-  title  = {Gymnasium: A Standard Interface for Reinforcement Learning Environments},
-  year   = {2024},
-  eprint = {2407.17032},
-  archivePrefix = {arXiv},
-  primaryClass  = {cs.LG}
+@inproceedings{towers2024gymnasium,
+  author    = {Mark Towers and Ariel Kwiatkowski and Jordan Terry and John U. Balis and Gianluca De Cola and Tristan Deleu and Manuel Goul{\~a}o and Andreas Kallinteris and Markus Krimmel and Arjun KG and Rodrigo Perez-Vicente and Andrea Pierr{\'e} and Sander Schulhoff and Jun Jet Tai and Hannah Tan and Omar G. Younis},
+  title     = {Gymnasium: A Standard Interface for Reinforcement Learning Environments},
+  booktitle = {Advances in Neural Information Processing Systems 38, Datasets and Benchmarks Track},
+  year      = {2025},
+  note      = {arXiv:2407.17032}
 }
 
 @inproceedings{cobbe2020procgen,
   author    = {Karl Cobbe and Christopher Hesse and Jacob Hilton and John Schulman},
   title     = {Leveraging Procedural Generation to Benchmark Reinforcement Learning},
   booktitle = {Proceedings of the 37th International Conference on Machine Learning},
+  series    = {Proceedings of Machine Learning Research},
+  volume    = {119},
+  pages     = {2048--2056},
   year      = {2020}
 }
 
@@ -29,13 +31,17 @@
   journal = {Journal of Artificial Intelligence Research},
   volume  = {61},
   pages   = {523--562},
-  year    = {2018}
+  year    = {2018},
+  doi     = {10.1613/jair.5699}
 }
 
 @inproceedings{jiang2021prioritized,
   author    = {Minqi Jiang and Edward Grefenstette and Tim Rockt{\"a}schel},
   title     = {Prioritized Level Replay},
   booktitle = {Proceedings of the 38th International Conference on Machine Learning},
+  series    = {Proceedings of Machine Learning Research},
+  volume    = {139},
+  pages     = {4940--4950},
   year      = {2021}
 }
 
@@ -46,7 +52,8 @@
   volume  = {8},
   number  = {3},
   pages   = {217--224},
-  year    = {2008}
+  year    = {2008},
+  doi     = {10.1080/14697680701381228}
 }
 
 @article{gneiting2007proper,
@@ -67,7 +74,8 @@
   volume  = {53},
   number  = {6},
   pages   = {1315--1335},
-  year    = {1985}
+  year    = {1985},
+  doi     = {10.2307/1913210}
 }
 
 @article{almgren2001optimal,
@@ -77,7 +85,8 @@
   volume  = {3},
   number  = {2},
   pages   = {5--39},
-  year    = {2001}
+  year    = {2001},
+  doi     = {10.21314/JOR.2001.041}
 }
 
 @article{cont2001empirical,
@@ -87,7 +96,41 @@
   volume  = {1},
   number  = {2},
   pages   = {223--236},
-  year    = {2001}
+  year    = {2001},
+  doi     = {10.1080/713665670}
+}
+
+@article{sharpe1966mutual,
+  author  = {William F. Sharpe},
+  title   = {Mutual Fund Performance},
+  journal = {The Journal of Business},
+  volume  = {39},
+  number  = {1, Part 2},
+  pages   = {119--138},
+  year    = {1966},
+  doi     = {10.1086/294846}
+}
+
+@article{sharpe1994sharpe,
+  author  = {William F. Sharpe},
+  title   = {The {Sharpe} Ratio},
+  journal = {The Journal of Portfolio Management},
+  volume  = {21},
+  number  = {1},
+  pages   = {49--58},
+  year    = {1994},
+  doi     = {10.3905/jpm.1994.409501}
+}
+
+@article{bailey2012sharpe,
+  title   = {The {Sharpe} Ratio Efficient Frontier},
+  author  = {Bailey, David H. and L{\'o}pez de Prado, Marcos},
+  journal = {Journal of Risk},
+  volume  = {15},
+  number  = {2},
+  pages   = {3--44},
+  year    = {2012},
+  doi     = {10.21314/JOR.2012.255}
 }
 
 @article{bailey2014deflated,
@@ -97,16 +140,16 @@
   volume  = {40},
   number  = {5},
   pages   = {94--107},
-  year    = {2014}
+  year    = {2014},
+  doi     = {10.3905/jpm.2014.40.5.094}
 }
 
-@misc{yao2024taubench,
-  author = {Shunyu Yao and Noah Shinn and Pedram Razavi and Karthik Narasimhan},
-  title  = {$\tau$-bench: A Benchmark for Tool-Agent-User Interaction in Real-World Domains},
-  year   = {2024},
-  eprint = {2406.12045},
-  archivePrefix = {arXiv},
-  primaryClass  = {cs.AI}
+@inproceedings{yao2024taubench,
+  author    = {Shunyu Yao and Noah Shinn and Pedram Razavi and Karthik Narasimhan},
+  title     = {$\tau$-bench: A Benchmark for Tool-Agent-User Interaction in Real-World Domains},
+  booktitle = {The Thirteenth International Conference on Learning Representations (ICLR)},
+  year      = {2025},
+  note      = {arXiv:2406.12045}
 }
 
 @inproceedings{terry2021pettingzoo,
@@ -121,14 +164,17 @@
   author       = {{Farama Foundation}},
   title        = {Minari: A Dataset {API} for Offline Reinforcement Learning},
   howpublished = {\url{https://minari.farama.org}},
-  year         = {2024}
+  year         = {2024},
+  note         = {Software documentation, accessed 15 September 2026; release 0.5.0 of September 2024 archived at doi:10.5281/zenodo.13767625}
 }
 
 @inproceedings{byrd2020abides,
   author    = {David Byrd and Maria Hybinette and Tucker Hybinette Balch},
   title     = {{ABIDES}: Towards High-Fidelity Multi-Agent Market Simulation},
   booktitle = {Proceedings of the 2020 ACM SIGSIM Conference on Principles of Advanced Discrete Simulation (SIGSIM-PADS)},
-  year      = {2020}
+  pages     = {11--22},
+  year      = {2020},
+  doi       = {10.1145/3384441.3395986}
 }
 
 @misc{toca2026sharpebench,
@@ -136,7 +182,7 @@
   title        = {{SharpeBench: A Luck-Robust Benchmark for Trading Agents}},
   year         = {2026},
   howpublished = {Preprint, \url{https://github.com/general-liquidity/sharpebench}},
-  note         = {Version 0.11.0}
+  note         = {Version 0.26.0. The SharpeArena evidence cited here was produced against SharpeBench 0.5.0, except the F7 artifact, which was regenerated against SharpeBench 0.21.0}
 }
 
 @misc{liu2020finrl,
@@ -160,7 +206,9 @@
   author    = {Selim Amrouni and Aymeric Moulin and Jared Vann and Svitlana Vyetrenko and Tucker Balch and Manuela Veloso},
   title     = {{ABIDES-Gym}: Gym Environments for Multi-Agent Discrete Event Simulation and Application to Financial Markets},
   booktitle = {Proceedings of the Second ACM International Conference on AI in Finance (ICAIF)},
-  year      = {2021}
+  pages     = {1--9},
+  year      = {2021},
+  doi       = {10.1145/3490354.3494433}
 }
 
 @inproceedings{sun2023trademaster,
@@ -174,7 +222,9 @@
   author    = {Joseph Jerome and Leandro S{\'a}nchez-Betancourt and Rahul Savani and Martin Herdegen},
   title     = {{mbt-gym}: Reinforcement Learning for Model-Based Limit Order Book Trading},
   booktitle = {Proceedings of the Fourth ACM International Conference on AI in Finance (ICAIF)},
-  year      = {2023}
+  pages     = {619--627},
+  year      = {2023},
+  doi       = {10.1145/3604237.3626873}
 }
 
 @article{gueant2013dealing,
@@ -184,7 +234,8 @@
   volume  = {7},
   number  = {4},
   pages   = {477--507},
-  year    = {2013}
+  year    = {2013},
+  doi     = {10.1007/s11579-012-0087-0}
 }
 
 @article{huberman2004price,
@@ -194,7 +245,8 @@
   volume  = {72},
   number  = {4},
   pages   = {1247--1275},
-  year    = {2004}
+  year    = {2004},
+  doi     = {10.1111/j.1468-0262.2004.00531.x}
 }
 
 @article{gatheral2010no,
@@ -204,7 +256,8 @@
   volume  = {10},
   number  = {7},
   pages   = {749--759},
-  year    = {2010}
+  year    = {2010},
+  doi     = {10.1080/14697680903373692}
 }
 
 @article{almgren2005direct,
@@ -224,7 +277,8 @@
   volume  = {9},
   number  = {5},
   pages   = {505--515},
-  year    = {2009}
+  year    = {2009},
+  doi     = {10.1080/14697680802616712}
 }
 
 @article{glosten1985bid,
@@ -234,7 +288,8 @@
   volume  = {14},
   number  = {1},
   pages   = {71--100},
-  year    = {1985}
+  year    = {1985},
+  doi     = {10.1016/0304-405X(85)90044-3}
 }
 
 @article{allen1992stock,
@@ -244,7 +299,8 @@
   volume  = {5},
   number  = {3},
   pages   = {503--529},
-  year    = {1992}
+  year    = {1992},
+  doi     = {10.1093/rfs/5.3.503}
 }
 
 @article{budish2015high,
@@ -254,7 +310,8 @@
   volume  = {130},
   number  = {4},
   pages   = {1547--1621},
-  year    = {2015}
+  year    = {2015},
+  doi     = {10.1093/qje/qjv027}
 }
 
 @article{farmer2002market,
@@ -264,7 +321,8 @@
   volume  = {11},
   number  = {5},
   pages   = {895--953},
-  year    = {2002}
+  year    = {2002},
+  doi     = {10.1093/icc/11.5.895}
 }
 
 @article{lux1999scaling,
@@ -272,8 +330,10 @@
   title   = {Scaling and Criticality in a Stochastic Multi-Agent Model of a Financial Market},
   journal = {Nature},
   volume  = {397},
+  number  = {6719},
   pages   = {498--500},
-  year    = {1999}
+  year    = {1999},
+  doi     = {10.1038/17290}
 }
 
 @inproceedings{steele2014splittable,
@@ -281,7 +341,8 @@
   title     = {Fast Splittable Pseudorandom Number Generators},
   booktitle = {Proceedings of the 2014 ACM International Conference on Object Oriented Programming Systems Languages and Applications (OOPSLA)},
   pages     = {453--472},
-  year      = {2014}
+  year      = {2014},
+  doi       = {10.1145/2660193.2660195}
 }
 
 @incollection{fagiolo2019validation,
@@ -296,6 +357,27 @@
   year      = {2019},
   doi       = {10.1007/978-3-319-70766-2_31},
   note      = {Circulated as LEM Working Paper 2017/23, Sant'Anna School of Advanced Studies}
+}
+
+@article{axtell1994agent,
+  author  = {Robert L. Axtell and Joshua M. Epstein},
+  title   = {Agent-Based Modeling: Understanding Our Creations},
+  journal = {The Bulletin of the Santa Fe Institute},
+  volume  = {9},
+  number  = {2},
+  pages   = {28--32},
+  year    = {1994}
+}
+
+@techreport{barde2017empirical,
+  author      = {Sylvain Barde and Sander van der Hoog},
+  title       = {An Empirical Validation Protocol for Large-Scale Agent-Based Models},
+  institution = {School of Economics, University of Kent},
+  type        = {Studies in Economics},
+  number      = {1712},
+  month       = jul,
+  year        = {2017},
+  doi         = {10.2139/ssrn.2992473}
 }
 
 @article{lamperti2018information,
