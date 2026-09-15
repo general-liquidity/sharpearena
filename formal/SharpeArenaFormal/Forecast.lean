@@ -14,8 +14,12 @@ public import Std
 This module formalizes the deadline classifier, append-only effective-revision rule,
 contract binding, and fixed-point Brier identity used by SharpeArena's forecast evidence.
 
-The executable Python implementation is linked to this model by conformance tests. This
-module is not a proof-producing extraction of that Python program.
+The model is not mechanically linked to the Python implementation. No Rust, Python or TOML file
+references a declaration in this module, and there is no extraction or refinement proof relating
+the two. Separate executable tests cover rules this model states, independently of it:
+`crates/sharpearena-py/tests/test_forecast_evidence.py` exercises the eligibility window, late and
+pre-open attempts, contract-byte reuse and the fixed-point Brier identity against the Python
+implementation.
 
 ## Main results
 
@@ -37,14 +41,19 @@ evidence (`brierNumerator`; Arena's descriptive counterpart is the `brier` entry
 `crates/sharpearena-py/python/sharpearena/deferred.py`).
 
 Assumes: `Nat` timestamps, an integer fixed-point probability `scale > 0`, and no
-floating-point semantics. Executable conformance tests connect the model to the Python
-implementation; this module is not an extraction of it.
+floating-point semantics. Nothing mechanically links the model to the Python implementation:
+this module is not an extraction of it and carries no refinement proof. Separate executable tests
+cover several of the same rules independently of the model.
 
 Not modelled: the environment kernel in `crates/sharpearena/src/market.rs`,
 `crates/sharpearena/src/lob_market.rs` and `crates/sharpearena/src/vec_env.rs`. Its reset,
 step, terminal, fill and accounting transitions are covered by executable properties
 against the shipped functions in `crates/sharpearena/tests/kernel_properties.rs`, not by
 this model.
+
+Check: the CI scope check (scripts/check-lean-scope.py) proves only that at least one repository
+path named in backticks in this block exists. It does not prove that the rules described here still
+correspond to the code at that path.
 -/
 
 public section
