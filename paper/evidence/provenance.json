@@ -212,7 +212,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "d3c548dee46495cc27b7030e60986482f98fb4a5",
+  "generated_at_head": "d8355b30b823e3cde7863b311f6bacb1d29bcb51",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -258,7 +258,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/__init__.py",
-      "sha256": "72682b3dff54ee1b27736d23dc24a5ce0e1a0476f2bbaefdea1c8f1f8ab8ce42"
+      "sha256": "4ece336b8e70d3394f6492c0fe3e29cc5f7f76bf71d4191b2ef21ddaea6dfd71"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/_action_validation.py",
@@ -397,6 +397,10 @@
       "sha256": "c0b4720fa18cda5d35df3a536072dc09f622b4193883a2077d7d773b3ba764b4"
     },
     {
+      "path": "crates/sharpearena-py/python/sharpearena/impact_diagnostics.py",
+      "sha256": "47a866329eb558b09644d6ea7f5f782a78743a81ac313e9780abfb161033b086"
+    },
+    {
       "path": "crates/sharpearena-py/python/sharpearena/indicators.py",
       "sha256": "837a46cd0efcbfdb1f000500436584289ea3864477bf7bcd2f6f970425788d7e"
     },
@@ -434,7 +438,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/market_making.py",
-      "sha256": "22be7ad432e700195fe3c5c47cb72acd4bd78514c2d622bcbeb6f922108a8ad5"
+      "sha256": "58cd006b6c9b14419a9e760cf232741770ff39a4e75b213a5c48a6324ceb782a"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/mcp_server.py",
@@ -514,7 +518,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/rewards.py",
-      "sha256": "269b58d77029328f3a423f750df0d0f4c736436c6cf0fdd5c3d779e91d5df739"
+      "sha256": "a2bd4b000cf2fe0eda7ec709cf86181d55379393c5b4c7ac2b97a30a559435f4"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/risk.py",
@@ -902,6 +906,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "7cb1f498b043fa5ad57422e4c40a3168f37c20d55910a3f9236ee60d9fc6e4c2",
+  "source_snapshot_sha256": "a41923ba8789a383dba2d9819fc0c2d55a25494c645e3d46c9bee1d1812e73fe",
   "validator": "paper/src/check-provenance.py"
 }
