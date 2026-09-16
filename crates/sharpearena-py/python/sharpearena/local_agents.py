@@ -39,6 +39,27 @@ DURATION_UNIT_NS = "ns"
 BACKEND_DURATION_SOURCE = "backend-reported-total-duration"
 HOST_DURATION_SOURCE = "host-monotonic-request"
 DURATION_SOURCES = frozenset({BACKEND_DURATION_SOURCE, HOST_DURATION_SOURCE})
+# Why a model request stopped, reduced to four classes. A completion the token
+# budget cut off can still parse into a decision, so the class is evidence even
+# when the request succeeded. ``absent`` means the backend reported no reason; it
+# is never read as a clean stop.
+FINISH_REASONS = ("stop", "length", "other", "absent")
+
+
+def classify_finish_reason(value: Any) -> str:
+    """Map a backend's reported stop reason onto :data:`FINISH_REASONS`.
+
+    Exact matching: ``"stop"`` and ``"length"`` are the spellings Ollama's
+    ``done_reason`` and the OpenAI-compatible ``finish_reason`` share. A missing
+    key or an explicit null is ``absent``. Any other value, a spelling this module
+    does not normalize included, is ``other`` rather than a guess.
+    """
+
+    if value is None:
+        return "absent"
+    if isinstance(value, str) and value in ("stop", "length"):
+        return value
+    return "other"
 
 
 class LocalAgentError(RuntimeError):
@@ -60,9 +81,17 @@ class ModelResponseError(LocalAgentError):
 class DecisionResponseError(LocalAgentError):
     """A received completion violated the canonical Decision contract."""
 
-    def __init__(self, message: str, raw_response_sha256: str):
+    def __init__(
+        self,
+        message: str,
+        raw_response_sha256: str,
+        finish_reason: Optional[str] = None,
+    ):
         super().__init__(message)
         self.raw_response_sha256 = raw_response_sha256
+        # The class of why the rejected completion stopped, when the backend's
+        # response was read that far. A ``length`` here is a truncated answer.
+        self.finish_reason = finish_reason
 
 
 class _NoRedirectHandler(HTTPRedirectHandler):
@@ -499,8 +528,15 @@ class InferenceResult:
     duration_source: str
     raw_response: Optional[str] = None
     retry_count: int = 0
+    # One of FINISH_REASONS. A client that does not read the backend's stop reason
+    # records ``absent``, never ``stop``.
+    finish_reason: str = "absent"
 
     def __post_init__(self) -> None:
+        if self.finish_reason not in FINISH_REASONS:
+            raise LocalAgentError(
+                f"finish_reason {self.finish_reason!r} is not one of {FINISH_REASONS}"
+            )
         for name in (
             "prompt_tokens",
             "output_tokens",
@@ -551,8 +587,15 @@ class InferenceOutcome:
     # summed as zero cost, because a failed request that took ten seconds and a
     # failed request that took none are not the same operational fact.
     attempt_duration_ns: Optional[int] = None
+    # For a failed request whose completion was received and rejected, the class
+    # of why that completion stopped. ``None`` when no completion was read.
+    finish_reason: Optional[str] = None
 
     def __post_init__(self) -> None:
+        if self.finish_reason is not None and self.finish_reason not in FINISH_REASONS:
+            raise LocalAgentError(
+                f"finish_reason {self.finish_reason!r} is not one of {FINISH_REASONS}"
+            )
         if self.attempt_duration_ns is not None and (
             isinstance(self.attempt_duration_ns, bool)
             or not isinstance(self.attempt_duration_ns, int)
@@ -592,6 +635,7 @@ def _timed_attempt(
             error=str(error),
             raw_response_sha256=getattr(error, "raw_response_sha256", None),
             attempt_duration_ns=time.perf_counter_ns() - started_ns,
+            finish_reason=getattr(error, "finish_reason", None),
         )
     return InferenceOutcome(
         result=result, attempt_duration_ns=time.perf_counter_ns() - started_ns
@@ -824,6 +868,7 @@ class OllamaClient:
         if not isinstance(message, dict) or not isinstance(message.get("content"), str):
             raise ModelResponseError("Ollama response has no message.content")
         raw = message["content"]
+        finish_reason = classify_finish_reason(response.get("done_reason"))
         try:
             decision = parse_decision_payload(raw)
             decision_to_weights(
@@ -833,6 +878,7 @@ class OllamaClient:
             raise DecisionResponseError(
                 f"model emitted an invalid Decision: {error}",
                 sha256(raw.encode("utf-8")).hexdigest(),
+                finish_reason,
             ) from error
         prompt_tokens = _required_count(
             response, "prompt_eval_count", "prompt_eval_count"
@@ -859,6 +905,7 @@ class OllamaClient:
             total_duration_ns=total_duration_ns,
             duration_source=BACKEND_DURATION_SOURCE,
             raw_response=raw,
+            finish_reason=finish_reason,
         )
 
     def decide_many(
@@ -1074,6 +1121,7 @@ class OpenAICompatibleClient:
                 "OpenAI-compatible response has no choices[0].message.content"
             )
         raw = message["content"]
+        finish_reason = classify_finish_reason(choices[0].get("finish_reason"))
         try:
             decision = parse_decision_payload(raw)
             decision_to_weights(
@@ -1083,6 +1131,7 @@ class OpenAICompatibleClient:
             raise DecisionResponseError(
                 f"model emitted an invalid Decision: {error}",
                 sha256(raw.encode("utf-8")).hexdigest(),
+                finish_reason,
             ) from error
         usage = response.get("usage")
         if not isinstance(usage, dict):
@@ -1123,6 +1172,7 @@ class OpenAICompatibleClient:
             total_duration_ns=elapsed,
             duration_source=HOST_DURATION_SOURCE,
             raw_response=raw,
+            finish_reason=finish_reason,
         )
 
     def decide_many(
@@ -1337,6 +1387,8 @@ class LocalFieldRunner:
         retry_counts = [0] * len(cells)
         inference_ns = [0] * len(cells)
         inference_durations: list[list[dict[str, Any]]] = [[] for _ in cells]
+        # One class per successful request, aligned with inference_durations.
+        finish_reason_observations: list[list[str]] = [[] for _ in cells]
         # Append-only per lane: one entry per attempted request that produced no
         # usable result, carrying the host-observed elapsed time when the client
         # reported one and ``None`` when it did not.
@@ -1383,6 +1435,11 @@ class LocalFieldRunner:
                                 if outcome.raw_response_sha256 is not None
                                 else {}
                             ),
+                            **(
+                                {"finish_reason": outcome.finish_reason}
+                                if outcome.finish_reason is not None
+                                else {}
+                            ),
                         }
                         active[lane] = False
                         continue
@@ -1410,6 +1467,7 @@ class LocalFieldRunner:
                             )
                         )
                         or result.duration_source not in DURATION_SOURCES
+                        or result.finish_reason not in FINISH_REASONS
                     ):
                         # The provider's own accounting is unusable, which makes
                         # this a failed request. The host clock still observed how
@@ -1419,7 +1477,7 @@ class LocalFieldRunner:
                         )
                         failed[lane] = {
                             "type": "InvalidInferenceAccounting",
-                            "detail": "inference accounting must contain nonnegative integers and a declared duration source",
+                            "detail": "inference accounting must contain nonnegative integers, a declared duration source and a finish reason class",
                         }
                         active[lane] = False
                         continue
@@ -1434,6 +1492,7 @@ class LocalFieldRunner:
                     retry_counts[lane] += result.retry_count
                     inference_ns[lane] += result.total_duration_ns
                     inference_durations[lane].append(result.duration_measurement())
+                    finish_reason_observations[lane].append(result.finish_reason)
 
             decisions = []
             infer_index_set = set(infer_indices)
@@ -1598,6 +1657,14 @@ class LocalFieldRunner:
                 # value, unit and observing clock. A per-cell source summary
                 # cannot attribute an individual percentile sample.
                 "inference_durations": inference_durations[index],
+                # Why each of those requests stopped, and the per-class counts the
+                # bridge reconciles against them. Rank-neutral: a ``length`` count
+                # is a truncated completion that still became a decision.
+                "finish_reason_observations": finish_reason_observations[index],
+                "finish_reasons": {
+                    reason: finish_reason_observations[index].count(reason)
+                    for reason in FINISH_REASONS
+                },
                 "raw_responses": raw_responses[index],
                 "response_sha256": response_hashes[index],
                 "observation_sha256": observation_hashes[index],
@@ -1668,6 +1735,7 @@ class LocalFieldRunner:
 __all__ = [
     "DURATION_SOURCES",
     "DURATION_UNIT_NS",
+    "FINISH_REASONS",
     "DatasetSpec",
     "DecisionResponseError",
     "DecisionModel",
@@ -1687,5 +1755,6 @@ __all__ = [
     "OpenAICompatibleClient",
     "PromptRenderer",
     "SamplingConfig",
+    "classify_finish_reason",
     "load_identity_manifest",
 ]
