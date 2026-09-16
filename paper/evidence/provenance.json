@@ -212,7 +212,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "d3c548dee46495cc27b7030e60986482f98fb4a5",
+  "generated_at_head": "dd6a3a25a1dc5dbbf412cafdb938c1c87484b05a",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -395,6 +395,10 @@
     {
       "path": "crates/sharpearena-py/python/sharpearena/gym.py",
       "sha256": "c0b4720fa18cda5d35df3a536072dc09f622b4193883a2077d7d773b3ba764b4"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/impact_diagnostics.py",
+      "sha256": "47a866329eb558b09644d6ea7f5f782a78743a81ac313e9780abfb161033b086"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/indicators.py",
@@ -902,6 +906,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "7cb1f498b043fa5ad57422e4c40a3168f37c20d55910a3f9236ee60d9fc6e4c2",
+  "source_snapshot_sha256": "52ae6c0ab1f0cad162c6bf23afc38a6404e83adf8dab967ed451ccbe461dc794",
   "validator": "paper/src/check-provenance.py"
 }
