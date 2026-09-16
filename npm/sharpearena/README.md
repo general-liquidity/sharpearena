@@ -55,7 +55,7 @@ geometry separately when the trajectory is an evidence artifact.
 | `datasetSynthetic(params?)` | Build a deterministic synthetic panel. |
 | `generateScenario(input?)` | Draw one level of a procedural scenario family. |
 | `stressSuite(seed?)` | Return the named adversarial stress scenarios. |
-| `walkForward(params)` | Generate disjoint out-of-sample windows. |
+| `walkForward(params)` | Generate walk-forward out-of-sample windows; they overlap when `step < test`. |
 | `tagRegime(dataset, window)` | Classify a window as bull, bear, or chop. |
 | `SPEC_HASH`, `checkSpecHash(engineHash)` | Inspect or verify wrapper/engine compatibility. |
 

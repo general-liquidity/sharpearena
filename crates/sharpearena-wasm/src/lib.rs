@@ -286,8 +286,10 @@ pub fn stress_suite_json(params_json: &str) -> Result<String, String> {
     serde_json::to_string(&suite).map_err(|e| e.to_string())
 }
 
-/// Generate disjoint walk-forward out-of-sample windows → JSON array of
+/// Generate walk-forward out-of-sample windows → JSON array of
 /// `{ "start": usize, "end": usize }`. Input `{ n_days, warmup, test, step }`.
+/// The windows are disjoint only when `step >= test`; with `step < test`
+/// consecutive windows share `test - step` bars.
 pub fn walk_forward_json(params_json: &str) -> Result<String, String> {
     #[derive(Deserialize)]
     #[serde(deny_unknown_fields)]
