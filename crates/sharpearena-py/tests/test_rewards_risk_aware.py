@@ -249,3 +249,82 @@ def test_time_inhomogeneous_shapes_produce_different_rewards():
     for v in vals.values():
         assert np.isfinite(v)
         assert -1.0 <= v <= 1.0
+
+
+# -- behaviour pins for the corrected attributions ---------------------------
+#
+# The two docstrings now say the schemes are inspired by, not implementations of, the
+# papers they cite. These pins prove the numbers did not move: every value below was
+# computed on origin/main (c179190) before the docstrings changed, and is compared as an
+# exact double.
+
+_PIN_PATHS = {
+    "front_loaded": [0.03, 0.02, 0.015, -0.01, 0.005, 0.0, -0.002, 0.001, 0.0, 0.0],
+    "mixed": [0.01, -0.02, 0.015, 0.03, -0.025, 0.005, -0.01, 0.02, -0.005, 0.012, 0.0, -0.018],
+    "flat": [0.004] * 8,
+}
+
+_PIN_CALLS = {
+    "ra_default": lambda s: risk_aware(state=s),
+    "ra_lam2_eta02": lambda s: risk_aware(state=s, lam=2.0, eta=0.2),
+    "tiva_default": lambda s: time_inhomogeneous_vol_aversion(state=s),
+    "tiva_convex_h30": lambda s: time_inhomogeneous_vol_aversion(
+        state=s, shape="convex", horizon=30
+    ),
+    "tiva_exp": lambda s: time_inhomogeneous_vol_aversion(
+        state=s, shape="exponential", lam_start=0.5, lam_end=3.0, eta=0.1
+    ),
+}
+
+_PINNED = {
+    "front_loaded": {
+        "ra_default": "-0x1.21c729bdc0373p-7",
+        "ra_lam2_eta02": "-0x1.07ddabb2380d4p-3",
+        "tiva_default": "-0x1.2d2bcccdd538bp-7",
+        "tiva_convex_h30": "0x1.3b92e99515b93p-5",
+        "tiva_exp": "-0x1.204b8197cfc04p-4",
+    },
+    "mixed": {
+        "ra_default": "-0x1.6863b2bc04dc4p-4",
+        "ra_lam2_eta02": "-0x1.3300909e2eeb0p-2",
+        "tiva_default": "-0x1.79fe36afb88a0p-4",
+        "tiva_convex_h30": "-0x1.481fe3d35908cp-6",
+        "tiva_exp": "-0x1.909bc89c84e12p-3",
+    },
+    "flat": {
+        "ra_default": "0x1.63d21377c3e8bp-6",
+        "ra_lam2_eta02": "0x1.cef654ab7fef8p-8",
+        "tiva_default": "0x1.54529980a7f49p-6",
+        "tiva_convex_h30": "0x1.dbc8e87311546p-6",
+        "tiva_exp": "0x1.647ce969308eep-7",
+    },
+}
+
+
+@requires_rewards
+@pytest.mark.parametrize("path_name", sorted(_PINNED))
+def test_risk_scheme_values_are_pinned(path_name):
+    state = {"returns": _PIN_PATHS[path_name]}
+    got = {name: call(state).hex() for name, call in _PIN_CALLS.items()}
+    assert got == _PINNED[path_name]
+
+
+@requires_rewards
+@pytest.mark.parametrize("path_name", ["front_loaded", "flat"])
+def test_deterministic_paths_are_still_charged(path_name):
+    # A path identical in every rollout has zero per-step variance across episodes, so the
+    # paper's criterion would not charge it; both schemes here do, because they measure
+    # dispersion along the one path around an EMA mean that starts at zero.
+    rets = _PIN_PATHS[path_name]
+    uncharged = float(np.tanh(sum(rets)))
+    group = [time_inhomogeneous_vol_aversion(state={"returns": list(rets)}) for _ in range(8)]
+    assert len(set(group)) == 1
+    assert group[0] < uncharged
+    assert risk_aware(state={"returns": rets}) < uncharged
+
+
+@requires_rewards
+def test_front_loaded_positive_path_scores_below_zero():
+    rets = _PIN_PATHS["front_loaded"]
+    assert sum(rets) > 0.0
+    assert time_inhomogeneous_vol_aversion(state={"returns": rets}) < 0.0
