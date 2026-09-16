@@ -551,3 +551,99 @@ def test_long_hold_and_long_legs_run_and_are_deterministic():
     b = run_asymmetric_probe(params=p, schedule=sc, seed=3)
     assert a.to_dict() == b.to_dict()
     assert a.up_bars == 45 and a.down_bars == 5
+
+
+# ---------------------------------------------------------------------------
+# Seat-removal externality: what the push did to each follower (A6)
+# ---------------------------------------------------------------------------
+
+_ASYM = AsymmetricSchedule.uniform(6, 2)
+
+
+def _probes(params, seed=0):
+    """The symmetric probe and both sides of an asymmetric probe on one seed."""
+    return [
+        run_manipulation_probe(params=params, seed=seed),
+        run_asymmetric_probe(params=params, schedule=_ASYM, seed=seed, side=1),
+        run_asymmetric_probe(params=params, schedule=_ASYM, seed=seed, side=-1),
+    ]
+
+
+def _assert_no_externality(result, n_followers):
+    assert len(result.follower_externality) == n_followers
+    assert result.follower_externality == (0.0,) * n_followers
+    assert result.follower_externality_total == 0.0
+    assert result.follower_pnl_live == result.follower_pnl_without_manipulator
+
+
+@needs_pz
+@pytest.mark.parametrize("exponent", [1.0, 0.5])
+def test_zero_push_imposes_nothing_on_the_followers(exponent):
+    """A manipulator with ``push_weight = 0`` is the flat manipulator: exactly zero."""
+    p = replace(_P, push_weight=0.0, impact_exponent=exponent)
+    for seed in _SEEDS:
+        for result in _probes(p, seed):
+            _assert_no_externality(result, p.n_followers)
+            assert any(value != 0.0 for value in result.follower_pnl_live)
+
+
+@needs_pz
+@pytest.mark.parametrize("exponent", [1.0, 0.5])
+@pytest.mark.parametrize(
+    "impact", [dict(kyle_lambda=0.0, eta=0.0), dict(kyle_lambda=0.0)]
+)
+def test_no_permanent_impact_means_no_seat_moves_another(impact, exponent):
+    """With ``kyle_lambda = 0`` a seat's fill depends only on its own size, so the
+    manipulator trading its full schedule leaves every follower's P&L bit-identical."""
+    p = replace(_P, impact_exponent=exponent, **impact)
+    for seed in _SEEDS:
+        for result in _probes(p, seed):
+            _assert_no_externality(result, p.n_followers)
+            assert result.live_pnl != 0.0
+
+
+@needs_pz
+def test_no_followers_means_an_empty_externality():
+    for result in _probes(replace(_P, n_followers=0)):
+        assert result.follower_pnl_live == ()
+        assert result.follower_pnl_without_manipulator == ()
+        assert result.follower_externality == ()
+        assert result.follower_externality_total == 0.0
+
+
+@needs_pz
+def test_a_real_push_moves_the_followers_and_the_fields_agree():
+    """At a nonzero push with permanent impact every follower's P&L moves. The flat
+    counterfactual is the zero-push run on the same seed, each entry is live minus flat,
+    and the total is their sum. Identical followers carry identical entries."""
+    for seed in _SEEDS:
+        result = run_manipulation_probe(params=_P, seed=seed)
+        flat = run_manipulation_probe(params=replace(_P, push_weight=0.0), seed=seed)
+        assert result.follower_pnl_without_manipulator == flat.follower_pnl_live
+        assert all(value != 0.0 for value in result.follower_externality)
+        assert result.follower_externality == tuple(
+            live - alone
+            for live, alone in zip(
+                result.follower_pnl_live, result.follower_pnl_without_manipulator
+            )
+        )
+        assert result.follower_externality_total == sum(result.follower_externality)
+        assert len(set(result.follower_externality)) == 1
+        blob = result.to_dict()
+        assert blob["follower_externality"] == list(result.follower_externality)
+        assert blob["follower_externality_total"] == result.follower_externality_total
+
+    crowd = run_manipulation_probe(params=_CROWD, seed=0)
+    assert len(crowd.follower_externality) == _CROWD.n_followers
+    assert crowd.follower_externality_total != 0.0
+
+
+@needs_pz
+def test_the_externality_leaves_the_manipulators_attribution_unchanged():
+    """Values from the unmodified probe at origin/main c179190 (default parameters,
+    seed 0): the added flat run must not perturb the published path."""
+    result = run_manipulation_probe(seed=0)
+    assert result.impact_pnl == -0.0004188081998302007
+    assert result.live_pnl == -0.012208654387262152
+    assert result.reference_pnl == -0.011789846187431952
+    assert result.peak_price_move == 0.06031208065220539

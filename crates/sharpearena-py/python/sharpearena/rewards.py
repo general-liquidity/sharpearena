@@ -234,10 +234,24 @@ def risk_aware(
 ) -> float:
     """Per-bar return net of a causally-estimated risk charge, tanh-bounded.
 
-    Follows "A Risk-Aware Reinforcement Learning Reward for Financial Trading": price risk
-    INTO the per-step signal instead of settling up at the end of the episode. Each bar
-    contributes ``r_t - lam * sigma_t``, where ``sigma_t`` is the EMA conditional volatility
-    built from bars strictly before ``t``. The sum is tanh-bounded to ``[-1, 1]``.
+    Price risk INTO the per-step signal instead of settling up at the end of the episode.
+    Each bar contributes ``r_t - lam * sigma_t``, where ``sigma_t`` is the EMA conditional
+    volatility built from bars strictly before ``t``. The sum is tanh-bounded to ``[-1, 1]``.
+
+    Inspired by "A Risk-Aware Reinforcement Learning Reward for Financial Trading"
+    (Srivastava, Aryan and Singh, arXiv:2506.04358), which subtracts a risk term from a
+    trading reward, but this is not that paper's reward, and the per-bar design is this
+    project's own. The paper's reward is ``w1*R_ann - w2*sigma_down + w3*D_ret + w4*Treynor``
+    (Eq. 6, p. 3), with every term computed once over the whole horizon of ``T`` periods
+    (Eqs. 2 to 5, pp. 2 to 3). This scheme differs in three ways:
+
+    * the paper has no per-bar charge and no conditional volatility, while this scheme
+      charges every bar against volatility estimated from earlier bars only;
+    * the paper's risk term is the whole-horizon downside deviation
+      ``sqrt((1/T) * sum_t max(0, -R_t)**2)`` (Eq. 3, p. 2), which is closer to this
+      registry's ``sortino``, while this scheme's volatility is two-sided;
+    * the paper's annualized-return, benchmark differential-return and Treynor terms (the
+      last two divided by portfolio beta) have no counterpart here.
 
     Why this is not a re-spelling of what is already registered. ``drawdown_penalized``
     charges one episode-terminal scalar (the path extremum) against the aggregate, so it
@@ -326,8 +340,32 @@ def time_inhomogeneous_vol_aversion(
 ) -> float:
     """Volatility charge whose aversion coefficient varies with time, tanh-bounded.
 
-    Follows "Time-Inhomogeneous Volatility Aversion for Financial Applications of
-    Reinforcement Learning". Every other scheme in this registry applies the SAME risk
+    Inspired by "Time-Inhomogeneous Volatility Aversion for Financial Applications of
+    Reinforcement Learning" (Cacciamani, Daluiso, Pinciroli, Trapletti and Vittori,
+    arXiv:2602.12030), but it implements a different scheme, not that paper's criterion. The
+    paper keeps one constant risk aversion ``beta`` and makes each step's TARGET
+    time-inhomogeneous: it ranks policies by
+    ``E[G] - beta * E[sum_i gamma**(i-1) * (r_i - rbar_i)**2]``, where
+    ``rbar_i = E[r_i | episode still running at step i]`` is the expected reward of step
+    ``i`` across episodes (Eqs. 2.1 to 2.3, Definitions 2.1 and 2.2, p. 4), estimated as
+    sample means (Remark 2.14, p. 9). A reward path that is deterministic and known in
+    advance therefore carries no charge, whatever its time profile (p. 2). This function
+    differs in four ways:
+
+    * its aversion ``lam(t)`` varies with time, while the paper's ``beta`` is constant;
+    * it measures dispersion along the one realized path, as a causal EMA volatility around
+      a running EMA mean, not across episodes around each step's expected reward, which puts
+      it closer to the homogeneous reward volatility the paper contrasts with (one common
+      centre for every step, Remark 2.3, p. 4);
+    * it charges a volatility (a standard deviation) linearly and undiscounted, not squared
+      deviations, and bounds the episode sum with tanh;
+    * it scores one episode's returns, while the paper's criterion is an expectation over the
+      policy's episodes.
+
+    So a return path that is identical in every rollout is still charged here, and a
+    deterministic front-loaded path with a positive total can score below zero.
+
+    Every other scheme in this registry applies the SAME risk
     treatment at bar 1 and at bar 500: ``drawdown_penalized`` has one ``lam``,
     ``loss_averse`` one asymmetry, ``sortino`` and ``differential_sharpe`` one functional
     form. That is a modelling assumption, not a fact about traders. Aversion to volatility is
