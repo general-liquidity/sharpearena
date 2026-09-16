@@ -152,6 +152,44 @@ not declared. It also makes ancestry and cited research auditable for candidates
 inside the run. It does not reveal searches performed before an entrant was submitted,
 prove that a cited source caused an idea, or make family membership a scoring input.
 
+### Repeated test consultations and dated sources
+
+Each search deflates its winner's test score by its own observed trials, but the
+evidence path is an append-only journal and one journal can hold many searches against
+the same test split. An operator who revises the prompt after reading earlier test
+scores consults that split again, while every record still looks like a single look.
+From strategy evidence schema 3, `StrategySearchRunner.run` reads the journal it is
+about to append to before any generation, and stamps the new record with
+`test_split_census`: the test split identity and its digest, the number of earlier
+records that read the same split, their record digests (SHA-256 of each stored line),
+their observed trials, the cumulative observed trials including this search, and the
+number of earlier records it could not identify. A journal line that is not JSON
+refuses the search before the model is called.
+
+The identity names the bars that were read. A historical split is its dataset content
+digest and recorded window; execution seeds are excluded because they do not change the
+bars. A synthetic split is generated from its seeds, so the sorted seeds join it. Costs
+and labels are excluded, and windows are compared as recorded. A completed record of
+schema 2 or 3 counts as a consultation. A failed schema 3 record carries the census too,
+with `test_consulted` saying whether evaluation reached the test split; only a failure
+that reached it adds trials. A schema 2 failure states no split and is counted as
+unidentified. The census covers one journal file only: searches written to a different
+evidence path, or never recorded, are invisible to it. It is diagnostic and never changes
+the trial count used for deflation. `sharpebench lineage --census` recomputes it over the
+whole journal and refuses a record whose census disagrees with the records before it.
+
+An operator-bound source may carry `available_on`, the stated first calendar day
+(`YYYY-MM-DD`) its content existed, through `bind_idea_source(..., available_on=...)` or
+the plan's `idea_provenance`. It is omitted when absent, so undated sources keep their
+record and plan-digest bytes. A completed schema 3 record adds `source_dating`: the
+counts of cited, dated and undated sources, and for the selection and test splits the
+calendar day of the first bar the environment stepped and the number of cited sources
+dated on or after it. A synthetic split has no calendar and is reported unavailable with
+reason `synthetic_split_has_no_calendar`; a first bar label that does not begin with a
+calendar day is unavailable with `date_not_iso8601`. Neither is treated as clean, and an
+undated source is never assumed to be early. The date is the operator's statement, not a
+proof of publication.
+
 ## Isolation model
 
 There are two trust zones:
