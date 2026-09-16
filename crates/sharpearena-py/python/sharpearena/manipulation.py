@@ -37,6 +37,17 @@ run is scored twice, once in the live market and once in a reference market with
 schedule. The difference, ``impact_pnl``, is the part attributable to having moved the
 price. That is the number the boundary is drawn on.
 
+**What the push did to the other seats.** ``impact_pnl`` reads only the manipulator. Each
+result also carries a seat-removal externality per follower (the solo-conversion control of
+EconEvals, arXiv 2503.18825v4 p.61): the follower's P&L in the live market with the
+manipulator trading its schedule, minus that follower's P&L on the same seed and the same
+market with the manipulator held flat for the whole episode. A negative entry is a loss the
+manipulator's presence imposed on that follower (a positive entry is a gain). With
+``push_weight = 0`` the two runs are the same run. With ``kyle_lambda = 0`` (in particular
+``kyle_lambda = eta = 0``) no seat can move another's fill, because the temporary term
+charges each seat only for its own size. In both cases every entry is exactly ``0.0``.
+The externality is reported beside the attribution and feeds no rank, gate or boundary.
+
 Determinism: the market is seeded, every policy here is a pure function of the observation
 and the bar index, and there is no clock and no I/O, so a sweep reproduces byte for byte.
 """
@@ -139,6 +150,13 @@ class ManipulationResult:
     identical schedule earns on the identical seed in a market where flow cannot move
     price. ``profitable`` is the sign of that number and nothing more, which is why a
     single :class:`ManipulationResult` is a data point rather than a finding.
+
+    The ``follower_*`` fields are in roster order (``agent_1`` first) and read the live
+    market only. ``follower_pnl_live[i]`` is follower ``i``'s end-of-episode NAV less its
+    capital with the manipulator trading, ``follower_pnl_without_manipulator[i]`` is the
+    same on the same seed with the manipulator held flat, ``follower_externality[i]`` is
+    the first minus the second, and ``follower_externality_total`` is their sum. They are
+    empty (total ``0.0``) when ``n_followers == 0``. Rank-neutral.
     """
 
     seed: int
@@ -152,6 +170,10 @@ class ManipulationResult:
     push_weight: float
     follower_gain: float
     impact_exponent: float = 1.0
+    follower_pnl_live: tuple[float, ...] = ()
+    follower_pnl_without_manipulator: tuple[float, ...] = ()
+    follower_externality: tuple[float, ...] = ()
+    follower_externality_total: float = 0.0
 
     def to_dict(self) -> dict:
         return {
@@ -166,8 +188,28 @@ class ManipulationResult:
             "push_weight": self.push_weight,
             "follower_gain": self.follower_gain,
             "impact_exponent": self.impact_exponent,
+            "follower_pnl_live": list(self.follower_pnl_live),
+            "follower_pnl_without_manipulator": list(self.follower_pnl_without_manipulator),
+            "follower_externality": list(self.follower_externality),
+            "follower_externality_total": self.follower_externality_total,
             "disclaimer": DISCLAIMER,
         }
+
+
+def _follower_fields(live: Sequence[float], flat: Sequence[float]) -> dict:
+    """The per-follower seat-removal externality fields, differenced in roster order."""
+    diff = tuple(a - b for a, b in zip(live, flat))
+    return {
+        "follower_pnl_live": tuple(live),
+        "follower_pnl_without_manipulator": tuple(flat),
+        "follower_externality": diff,
+        "follower_externality_total": math.fsum(diff),
+    }
+
+
+def _flat(bar: int) -> float:
+    """The manipulator held flat for the whole episode: the seat-removal counterfactual."""
+    return 0.0
 
 
 @dataclass(frozen=True)
@@ -428,13 +470,14 @@ def _rollout(
     p: ManipulationParams,
     seed: int,
     weight_at: Optional[Callable[[int], float]] = None,
-) -> tuple[float, float]:
-    """Run one episode and return ``(manipulator_pnl, peak_fractional_price_move)``.
+) -> tuple[float, float, tuple[float, ...]]:
+    """Run one episode and return ``(manipulator_pnl, peak_move, follower_pnls)``.
 
-    P&L is the manipulator's end-of-episode NAV less its starting capital. The peak price
-    move is the largest fractional excursion of the first symbol's cleared mid away from
-    its opening level, which is the diagnostic's read on how far the push actually got.
-    ``weight_at`` defaults to the symmetric :func:`pump_and_dump_schedule`.
+    P&L is a seat's end-of-episode NAV less its starting capital; ``follower_pnls`` holds
+    each follower's, in roster order. The peak price move is the largest fractional
+    excursion of the first symbol's cleared mid away from its opening level, which is the
+    diagnostic's read on how far the push actually got. ``weight_at`` defaults to the
+    symmetric :func:`pump_and_dump_schedule`.
     """
     env = EndogenousMarketEnv(
         n_agents=1 + p.n_followers,
@@ -462,6 +505,7 @@ def _rollout(
     open_mid: Optional[float] = None
     peak_move = 0.0
     nav = p.capital
+    follower_navs = {agent: p.capital for agent in followers}
     bar = 0
     while env.agents:
         actions: dict[str, np.ndarray] = {}
@@ -481,10 +525,18 @@ def _rollout(
                 open_mid = mid
             elif open_mid > 0.0:
                 peak_move = max(peak_move, abs(mid / open_mid - 1.0))
+        for agent in follower_navs:
+            follower_info = infos.get(agent)
+            if follower_info is not None:
+                follower_navs[agent] = float(follower_info["nav"])
         bar += 1
 
     env.close()
-    return nav - p.capital, peak_move
+    return (
+        nav - p.capital,
+        peak_move,
+        tuple(value - p.capital for value in follower_navs.values()),
+    )
 
 
 def run_manipulation_probe(
@@ -495,11 +547,14 @@ def run_manipulation_probe(
     The live run and the reference run share the seed, the schedule and the follower
     population; the reference differs only in that ``kyle_lambda`` and ``eta`` are zero, so
     flow cannot move price there. The difference in the manipulator's P&L is what moving
-    the price was worth. See the module docstring: this is a diagnostic, not a strategy.
+    the price was worth. A third live run with the manipulator held flat gives each
+    follower's seat-removal externality (see :class:`ManipulationResult`). See the module
+    docstring: this is a diagnostic, not a strategy.
     """
     p = params or ManipulationParams()
-    live_pnl, peak_move = _rollout(p, seed)
-    reference_pnl, _ = _rollout(replace(p, kyle_lambda=0.0, eta=0.0), seed)
+    live_pnl, peak_move, follower_live = _rollout(p, seed)
+    reference_pnl, _, _ = _rollout(replace(p, kyle_lambda=0.0, eta=0.0), seed)
+    _, _, follower_flat = _rollout(p, seed, _flat)
     impact_pnl = live_pnl - reference_pnl
     return ManipulationResult(
         seed=int(seed),
@@ -513,6 +568,7 @@ def run_manipulation_probe(
         push_weight=p.push_weight,
         follower_gain=p.follower_gain,
         impact_exponent=p.impact_exponent,
+        **_follower_fields(follower_live, follower_flat),
     )
 
 
@@ -552,12 +608,14 @@ def run_asymmetric_probe(
     followers, same seed on both legs. This is the positive-control probe: the shape
     under which theory permits a profit under concave permanent impact, so a profit
     found here under an exponent below one and not under the linear exponent is the
-    instrument firing where it should and staying silent where it should.
+    instrument firing where it should and staying silent where it should. The follower
+    externality fields are computed exactly as in :func:`run_manipulation_probe`.
     """
     p = params or ManipulationParams()
     weight_at = asymmetric_round_trip_schedule(p, schedule, side)
-    live_pnl, peak_move = _rollout(p, seed, weight_at)
-    reference_pnl, _ = _rollout(replace(p, kyle_lambda=0.0, eta=0.0), seed, weight_at)
+    live_pnl, peak_move, follower_live = _rollout(p, seed, weight_at)
+    reference_pnl, _, _ = _rollout(replace(p, kyle_lambda=0.0, eta=0.0), seed, weight_at)
+    _, _, follower_flat = _rollout(p, seed, _flat)
     impact_pnl = live_pnl - reference_pnl
     return AsymmetricResult(
         seed=int(seed),
@@ -571,6 +629,7 @@ def run_asymmetric_probe(
         push_weight=p.push_weight,
         follower_gain=p.follower_gain,
         impact_exponent=p.impact_exponent,
+        **_follower_fields(follower_live, follower_flat),
         up_bars=schedule.up_bars,
         down_bars=schedule.down_bars,
         size_split=schedule.size_split,
