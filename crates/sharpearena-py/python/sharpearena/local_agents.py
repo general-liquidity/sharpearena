@@ -1495,10 +1495,9 @@ class LocalFieldRunner:
                     continue
                 returns[index].append(reward)
                 # The reward booked at this step is the price move on the holdings
-                # the previous decision chose; this step's decision adds only its
-                # own trading cost. A stated confidence is therefore paired with
-                # the next step's reward, and a lane's final decision, whose
-                # outcome falls outside the run, adds no pair.
+                # the previous decision chose, plus this step's trading cost. A
+                # stated confidence waits for the next step's reward, and a lane's
+                # final decision, whose outcome falls outside the run, adds no pair.
                 if awaiting_outcome[index] is not None:
                     confidences[index].append(awaiting_outcome[index])
                     realized_outcomes[index].append(reward > 0.0)

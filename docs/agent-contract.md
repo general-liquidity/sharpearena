@@ -52,17 +52,18 @@ is a deliberate hold, not an error value.
 
 Calibration counts only confidences an agent stated. The Python local field runner
 records a confidence/outcome pair only for a decision with at least one order that
-states a confidence (the mean over those orders), and pairs it with the reward of the
-next step: the reward booked at a step is the price move on the holdings the previous
-decision chose, so a decision's conviction is realized one step later, and a run's
-final decision adds no pair. `score_run` scores a bare return track, which states no
-confidence, so it reports no `calibration_brier` and zero `calibration_observations`.
+states a confidence, using the mean over those orders. The pair's outcome is whether
+the next step's reward is positive: the reward booked at a step is the price move on
+the holdings the previous decision chose, plus that step's trading cost, so a
+decision's holdings first earn a reward one step later. A run's final decision adds
+no pair. `score_run` scores a bare return track, which states no confidence, so it
+reports no `calibration_brier` and zero `calibration_observations`.
 
 Rust paths that run the pinned SharpeBench `=0.27.0` simulator directly (for example
-`run_backtest_checked`) still use that release's rule: its protocol reads an omitted
+`run_backtest_checked`) keep that release's rule: its protocol reads an omitted
 confidence as `0.5`, and its simulator pairs every step, holds included, with the
-same step's return. That changes only with a SharpeBench release that leaves an
-omitted confidence absent and a pin bump here.
+same step's return. Arena moves to the new rule when a SharpeBench release carries it
+and the pin here moves to that release.
 
 The authoritative schemas are
 [`observation.schema.json`](../crates/sharpearena/contract/observation.schema.json) and
