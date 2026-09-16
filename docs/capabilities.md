@@ -33,7 +33,7 @@ the root README can stay task-oriented.
 |---|---|
 | Portfolio allocation | Simplex weights and log-return reward |
 | Execution | VWAP/TWAP implementation shortfall |
-| Market making | Avellaneda–Stoikov closed-form reference and regret |
+| Market making | Avellaneda–Stoikov closed-form reference and seed-paired regret (`mm_regret` raises `UnpairedMidPathError` when the two arms' mid paths differ, as they do at high arrival rates); per-step reward split into spread capture, inventory mark-to-market, running penalty and liquidation cost (`mm_pnl_split`, diagnostic only) |
 | Shared endogenous market | PettingZoo parallel env with Kyle/Almgren–Chriss impact |
 | Limit-order book | Integer ticks, price-time matching, limit/market/cancel/modify, call auction, depth and sweep-cost queries |
 | Ecology | Deterministic population selection, mutation, regime/liquidity shocks, outcome and coalition classification |
