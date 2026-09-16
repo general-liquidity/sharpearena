@@ -242,12 +242,21 @@ from .manipulation import (
     size_response,
 )
 from .market_env import EndogenousMarketEnv
+from .impact_diagnostics import (
+    ImpactDiagnosticError,
+    UnpairedArmsError,
+    impact_misspecification_gap,
+    meta_order_impact_shape,
+)
 from .market_making import (
     MarketMakingEnv,
     MMParams,
+    MMPnLSplit,
+    UnpairedMidPathError,
     analytically_optimal_policy,
     closed_form_reference_policy,
     fixed_spread_policy,
+    mm_pnl_split,
     mm_regret,
 )
 from .metrics import RunMetrics, cost_adjusted_score
@@ -590,6 +599,13 @@ __all__ = [
     "closed_form_reference_policy",
     "fixed_spread_policy",
     "mm_regret",
+    "mm_pnl_split",
+    "MMPnLSplit",
+    "UnpairedMidPathError",
+    "impact_misspecification_gap",
+    "meta_order_impact_shape",
+    "ImpactDiagnosticError",
+    "UnpairedArmsError",
     "ExecutionEnv",
     "execution_quality",
     "twap_policy",
