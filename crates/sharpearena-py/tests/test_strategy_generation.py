@@ -409,6 +409,23 @@ def test_search_selects_on_validation_and_tests_only_the_winner(tmp_path):
     assert evidence["generation"]["raw_response"] == _response()
     assert evidence["generation"]["prompt"] == plan.prompt
 
+    assert evidence["schema_version"] == 3
+    first_census = evidence["test_split_census"]
+    assert first_census["test_consulted"] is True
+    assert first_census["prior_test_consultations"] == 0
+    assert first_census["prior_consultation_record_sha256"] == []
+    assert first_census["cumulative_observed_n_trials"] == 4
+    assert first_census["test_split_identity"] == {
+        "content_sha256": plan.test_dataset.content_sha256,
+        "window_start": None,
+        "window_end": None,
+        "scenario_seeds": [101, 102],
+    }
+    assert first_census["test_split_sha256"] == _canonical_sha256(
+        first_census["test_split_identity"]
+    )
+    first_line = path.read_bytes().rstrip(b"\n")
+
     second = StrategySearchRunner(FixtureGenerator()).run(plan, path)
     rows = [json.loads(line) for line in path.read_text().splitlines()]
     assert len(rows) == 2
@@ -417,6 +434,38 @@ def test_search_selects_on_validation_and_tests_only_the_winner(tmp_path):
         == rows[1]["generation"]["raw_response_sha256"]
     )
     assert second["status"] == "completed"
+    # The second search read the same test split after the first one had: each
+    # record alone still claims a single look deflated at its own four trials.
+    assert second["test"]["selected_candidate_only"] is True
+    census = second["test_split_census"]
+    assert census["prior_test_consultations"] == 1
+    assert census["prior_consultation_record_sha256"] == [
+        hashlib.sha256(first_line).hexdigest()
+    ]
+    assert census["prior_observed_n_trials"] == 4
+    assert census["cumulative_observed_n_trials"] == 8
+    assert census["unidentified_prior_records"] == 0
+    assert census["test_split_sha256"] == first_census["test_split_sha256"]
+    assert census["scope"] == "earlier-records-in-this-journal-file-only"
+    # Synthetic panels have no calendar, so the dating check is reported as
+    # unavailable rather than passed.
+    assert second["source_dating"] == {
+        "cited_sources": 0,
+        "dated_sources": 0,
+        "undated_sources": 0,
+        "splits": [
+            {
+                "split": "selection",
+                "status": "unavailable",
+                "reason": "synthetic_split_has_no_calendar",
+            },
+            {
+                "split": "test",
+                "status": "unavailable",
+                "reason": "synthetic_split_has_no_calendar",
+            },
+        ],
+    }
 
 
 def test_selection_uses_descending_median_and_candidate_id_tie_break(
@@ -455,6 +504,257 @@ def test_selection_uses_descending_median_and_candidate_id_tie_break(
     )
     assert evidence["selection"]["selected_candidate_id"] == "contrarian"
     assert calls == [["trend", "contrarian"], ["contrarian"]]
+
+
+def _fast_scores(candidates, dataset, seeds, n_trials, max_steps):
+    return {
+        candidate.candidate_id: [
+            {"score": {"deflated_sharpe": 0.5}, "seed": seed} for seed in seeds
+        ]
+        for candidate in candidates
+    }
+
+
+def _synthetic_plan(**overrides):
+    values = {
+        "model": ModelRunConfig("test-fixture:synthetic"),
+        "prompt": "Generate a small, interpretable family.",
+        "requested_candidates": 4,
+        "validation_dataset": DatasetSpec("validation", n_days=16),
+        "test_dataset": DatasetSpec("test", tier="hard", n_days=16),
+        "validation_seeds": (1, 2),
+        "test_seeds": (101,),
+        "max_steps": 8,
+    }
+    values.update(overrides)
+    return StrategySearchPlan(**values)
+
+
+def test_split_identity_keys_the_bars_read_not_seeds_costs_or_labels():
+    identity = strategy_generation.consulted_split_identity
+    csv_text = "date,symbol,close\n2026-01-01,AAA,100\n2026-01-02,AAA,101\n"
+    historical = DatasetSpec("test", csv_text=csv_text, window_start=0, window_end=2)
+    base = identity(historical.public_record(), [7, 8])
+    assert base == {
+        "content_sha256": historical.content_sha256,
+        "window_start": 0,
+        "window_end": 2,
+        "scenario_seeds": None,
+    }
+    # Execution seeds, costs and the label do not change which bars were read.
+    relabelled = replace(historical, dataset_id="renamed", fee_bps=9.0)
+    assert identity(relabelled.public_record(), [99]) == base
+    assert identity(replace(historical, window_start=1).public_record(), [7]) != base
+    assert identity(replace(historical, window_end=None).public_record(), [7]) != base
+
+    synthetic = DatasetSpec("test", tier="hard", n_days=16).public_record()
+    assert identity(synthetic, [102, 101]) == identity(synthetic, [101, 102])
+    assert identity(synthetic, [101, 102])["scenario_seeds"] == [101, 102]
+    assert identity(synthetic, [101]) != identity(synthetic, [102])
+
+    for split, seeds in (
+        (None, [1]),
+        ({**synthetic, "kind": "live"}, [1]),
+        ({**synthetic, "content_sha256": None}, [1]),
+        ({**synthetic, "window_start": True}, [1]),
+        ({**synthetic, "window_end": -1}, [1]),
+        (synthetic, [True]),
+        (synthetic, [2**64]),
+        (synthetic, "1"),
+    ):
+        assert identity(split, seeds) is None
+
+
+def test_census_reads_schema_2_records_and_counts_only_consulted_failures(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(strategy_generation, "_evaluate_candidates", _fast_scores)
+    plan = _synthetic_plan()
+    path = tmp_path / "journal.jsonl"
+    completed = StrategySearchRunner(FixtureGenerator()).run(plan, path)
+    # Rewrite the first record as the schema 2 producer wrote it.
+    legacy = {
+        key: value
+        for key, value in completed.items()
+        if key not in {"test_split_census", "source_dating"}
+    }
+    legacy["schema_version"] = 2
+    legacy_line = json.dumps(
+        legacy, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    path.write_bytes(legacy_line + b"\n")
+
+    def fails_on_test(candidates, dataset, seeds, n_trials, max_steps):
+        if len(candidates) == 1:
+            raise RuntimeError("test evaluation failed")
+        return _fast_scores(candidates, dataset, seeds, n_trials, max_steps)
+
+    monkeypatch.setattr(strategy_generation, "_evaluate_candidates", fails_on_test)
+    with pytest.raises(RuntimeError, match="test evaluation failed"):
+        StrategySearchRunner(FixtureGenerator()).run(plan, path)
+    consulted_failure = json.loads(path.read_bytes().splitlines()[1])
+    assert consulted_failure["status"] == "failed"
+    assert consulted_failure["test_split_census"]["test_consulted"] is True
+    assert consulted_failure["test_split_census"]["prior_test_consultations"] == 1
+    assert consulted_failure["test_split_census"]["cumulative_observed_n_trials"] == 8
+
+    class BadGenerator(FixtureGenerator):
+        def generate(self, model, prompt, requested_candidates):
+            return GenerationResult("not-json")
+
+    with pytest.raises(StrategyProtocolError, match="not JSON"):
+        StrategySearchRunner(BadGenerator()).run(plan, path)
+    unconsulted_failure = json.loads(path.read_bytes().splitlines()[2])
+    assert unconsulted_failure["test_split_census"]["test_consulted"] is False
+    assert (
+        unconsulted_failure["test_split_census"]["cumulative_observed_n_trials"] == 8
+    )
+
+    # A schema 2 failure declares no split, and another evidence class is not a
+    # strategy search: both are counted as unidentified, never as clean.
+    legacy_failure = {
+        key: value
+        for key, value in unconsulted_failure.items()
+        if key != "test_split_census"
+    }
+    legacy_failure["schema_version"] = 2
+    with path.open("ab") as handle:
+        handle.write(json.dumps(legacy_failure).encode("utf-8") + b"\n")
+        handle.write(b'{"evidence_class":"forecast_evidence"}\n\n')
+
+    monkeypatch.setattr(strategy_generation, "_evaluate_candidates", _fast_scores)
+    latest = StrategySearchRunner(FixtureGenerator()).run(plan, path)
+    lines = path.read_bytes().splitlines()
+    census = latest["test_split_census"]
+    assert census["prior_test_consultations"] == 2
+    assert census["prior_consultation_record_sha256"] == [
+        hashlib.sha256(lines[0]).hexdigest(),
+        hashlib.sha256(lines[1]).hexdigest(),
+    ]
+    assert census["prior_observed_n_trials"] == 8
+    assert census["cumulative_observed_n_trials"] == 12
+    assert census["unidentified_prior_records"] == 2
+
+    # A different synthetic test panel is a different split.
+    other = StrategySearchRunner(FixtureGenerator()).run(
+        replace(plan, test_seeds=(202,)), path
+    )
+    assert other["test_split_census"]["prior_test_consultations"] == 0
+    assert other["test_split_census"]["cumulative_observed_n_trials"] == 4
+
+
+def test_a_corrupt_journal_refuses_before_any_generation(tmp_path):
+    class CountingGenerator(FixtureGenerator):
+        calls = 0
+
+        def generate(self, model, prompt, requested_candidates):
+            CountingGenerator.calls += 1
+            return super().generate(model, prompt, requested_candidates)
+
+    path = tmp_path / "journal.jsonl"
+    path.write_bytes(b"not-json\n")
+    with pytest.raises(StrategyProtocolError, match=r"journal\.jsonl:1 is not JSON"):
+        StrategySearchRunner(CountingGenerator()).run(_synthetic_plan(), path)
+    assert CountingGenerator.calls == 0
+    assert path.read_bytes() == b"not-json\n"
+
+
+def _dated_csv(n_days=24):
+    rows = ["date,symbol,close"]
+    for day in range(1, n_days + 1):
+        rows.append(f"2025-01-{day:02d},AAA,{100 + day + (day % 3)}")
+        rows.append(f"2025-01-{day:02d},BBB,{80 + day - (day % 4)}")
+    return "\n".join(rows) + "\n"
+
+
+def test_sources_dated_on_or_after_each_split_start_are_counted(tmp_path):
+    on_test_start = bind_idea_source(
+        "published on the first test bar",
+        source_type="paper",
+        available_on="2025-01-11",
+    )
+    after_selection_start = bind_idea_source(
+        "published inside the selection window",
+        source_type="paper",
+        available_on="2025-01-05",
+    )
+    undated = bind_idea_source("undated memo", source_type="operator_brief")
+    catalog = (on_test_start, after_selection_start, undated)
+    payload = json.loads(_response())
+    payload["strategies"][0]["lineage"] = {
+        "parent_candidate_ids": [],
+        "idea_source_digests": [source.source_digest for source in catalog],
+    }
+
+    class SourcedGenerator(FixtureGenerator):
+        def generate(self, model, prompt, requested_candidates):
+            return GenerationResult(json.dumps(payload))
+
+    csv_text = _dated_csv()
+    plan = StrategySearchPlan(
+        model=ModelRunConfig("test-fixture:synthetic"),
+        prompt="Generate a small, interpretable family.",
+        requested_candidates=4,
+        validation_dataset=DatasetSpec(
+            "validation", csv_text=csv_text, window_start=0, window_end=10
+        ),
+        test_dataset=DatasetSpec(
+            "test", csv_text=csv_text, window_start=10, window_end=20
+        ),
+        validation_seeds=(1,),
+        test_seeds=(2,),
+        idea_provenance=catalog,
+    )
+    evidence = StrategySearchRunner(SourcedGenerator()).run(
+        plan, tmp_path / "dated.jsonl"
+    )
+    assert evidence["source_dating"] == {
+        "cited_sources": 3,
+        "dated_sources": 2,
+        "undated_sources": 1,
+        "splits": [
+            {
+                "split": "selection",
+                "status": "measured",
+                "first_date": "2025-01-01",
+                "sources_on_or_after_first_date": 2,
+            },
+            {
+                "split": "test",
+                "status": "measured",
+                "first_date": "2025-01-11",
+                "sources_on_or_after_first_date": 1,
+            },
+        ],
+    }
+    cited = evidence["generation"]["edge_manifest_ledger"]["records"][0]
+    assert [source.get("available_on") for source in cited["idea_provenance"]] == [
+        "2025-01-11",
+        "2025-01-05",
+        None,
+    ]
+    assert "available_on" not in cited["idea_provenance"][2]
+    # A historical test split keys on bars, not on seeds.
+    assert evidence["test_split_census"]["test_split_identity"]["scenario_seeds"] is None
+
+
+def test_a_bar_label_that_is_not_a_calendar_day_is_unavailable_not_clean():
+    dated = bind_idea_source("x", source_type="paper", available_on="2025-01-01")
+    labels = "\n".join(
+        f"{label},AAA,{100 + index}"
+        for index, label in enumerate(("d1", "d2", "d3", "d4"))
+    )
+    dataset = DatasetSpec("labels", csv_text="date,symbol,close\n" + labels + "\n")
+    assert strategy_generation._split_source_dating(
+        "test", dataset, (1,), (dated,)
+    ) == {"split": "test", "status": "unavailable", "reason": "date_not_iso8601"}
+
+    calendar_day = strategy_generation._calendar_day
+    assert calendar_day("2025-03-04") == "2025-03-04"
+    assert calendar_day("2025-03-04T09:30:00Z") == "2025-03-04"
+    assert calendar_day("2025-03-04 09:30") == "2025-03-04"
+    for label in ("2025-03-04Z", "2025-02-30", "2025-3-04", "20250304", "t0", ""):
+        assert calendar_day(label) is None
 
 
 def test_search_refuses_overlapping_validation_and_test_splits():

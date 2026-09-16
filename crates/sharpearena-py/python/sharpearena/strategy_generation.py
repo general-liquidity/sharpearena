@@ -25,6 +25,7 @@ from .edge_manifest import (
     EdgeManifestError,
     EdgeManifestLedger,
     IdeaProvenance,
+    is_calendar_date,
     parse_candidate_lineage,
     parse_edge_manifest,
 )
@@ -40,7 +41,10 @@ from .kernel_score import kernel_deflated_sharpe
 from .sharpearena_py import score_run
 
 STRATEGY_EVIDENCE_CLASS = "retrospective_generated_strategy"
-STRATEGY_SCHEMA_VERSION = 2
+# Version 3 adds ``test_split_census`` to every record and ``source_dating`` to
+# completed records. Version 2 records remain readable by the census.
+STRATEGY_SCHEMA_VERSION = 3
+TEST_SPLIT_CENSUS_SCOPE = "earlier-records-in-this-journal-file-only"
 MAX_GENERATED_CANDIDATES = 256
 SUPPORTED_INDICATORS = {"price", "sma", "ema", "momentum", "rsi", "volatility"}
 COMPARISON_OPS = {"gt", "gte", "lt", "lte"}
@@ -939,6 +943,226 @@ def _evaluate_candidates(
     return results
 
 
+def _is_u64(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and 0 <= value < 2**64
+
+
+def consulted_split_identity(split: Any, seeds: Any) -> Optional[dict[str, Any]]:
+    """Identity of the bars one test consultation read, or ``None`` if unrecorded.
+
+    ``split`` is a recorded dataset record and ``seeds`` its seed list. Historical
+    bars are named by content digest and window; execution seeds do not change
+    them, so a rerun with new seeds reads the same split. A synthetic panel is
+    generated from its seeds, so those join the key. Costs, labels and the
+    annualization factor are excluded because they do not change which bars were
+    seen. Windows are compared as recorded: an omitted window end and an explicit
+    end at the last bar are different identities, as are overlapping windows.
+    SharpeBench derives the same identity independently.
+    """
+
+    if not isinstance(split, dict) or not isinstance(seeds, list):
+        return None
+    kind = split.get("kind")
+    content = split.get("content_sha256")
+    start = split.get("window_start")
+    end = split.get("window_end")
+    if kind not in {"historical", "synthetic"} or not isinstance(content, str):
+        return None
+    if any(value is not None and not _is_u64(value) for value in (start, end)):
+        return None
+    if not all(_is_u64(seed) for seed in seeds):
+        return None
+    return {
+        "content_sha256": content,
+        "window_start": start,
+        "window_end": end,
+        "scenario_seeds": sorted(seeds) if kind == "synthetic" else None,
+    }
+
+
+def _is_split_identity(value: Any) -> bool:
+    if not isinstance(value, dict) or set(value) != {
+        "content_sha256",
+        "window_start",
+        "window_end",
+        "scenario_seeds",
+    }:
+        return False
+    seeds = value["scenario_seeds"]
+    return (
+        isinstance(value["content_sha256"], str)
+        and all(
+            item is None or _is_u64(item)
+            for item in (value["window_start"], value["window_end"])
+        )
+        and (
+            seeds is None
+            or (
+                isinstance(seeds, list)
+                and all(_is_u64(seed) for seed in seeds)
+                and seeds == sorted(seeds)
+            )
+        )
+    )
+
+
+def _journal_consultation(record: Any) -> tuple[Optional[dict[str, Any]], bool, int]:
+    """Split identity, whether the test split was read, and observed trials.
+
+    A completed record of any schema version read its test split and is keyed
+    by its recorded ``test.split`` and ``test.seeds``. A failed record carries
+    no test block, so only a version 3 failure, which declares its split and
+    whether evaluation reached it, can be keyed. Anything else is unidentified.
+    """
+
+    if (
+        not isinstance(record, dict)
+        or record.get("evidence_class") != STRATEGY_EVIDENCE_CLASS
+    ):
+        return None, False, 0
+    generation = record.get("generation")
+    observed = (
+        generation.get("observed_n_trials") if isinstance(generation, dict) else None
+    )
+    trials = observed if _is_u64(observed) else 0
+    status = record.get("status")
+    if status == "completed":
+        test = record.get("test")
+        if not isinstance(test, dict):
+            return None, False, 0
+        return (
+            consulted_split_identity(test.get("split"), test.get("seeds")),
+            True,
+            trials,
+        )
+    if status == "failed":
+        census = record.get("test_split_census")
+        if not isinstance(census, dict):
+            return None, False, 0
+        identity = census.get("test_split_identity")
+        consulted = census.get("test_consulted")
+        if not _is_split_identity(identity) or not isinstance(consulted, bool):
+            return None, False, 0
+        return identity, consulted, trials
+    return None, False, 0
+
+
+def _prior_test_consultations(
+    path: Path, identity: dict[str, Any]
+) -> dict[str, Any]:
+    """Count earlier reads of this test split among the records already in ``path``.
+
+    Only this journal file is read. Searches written to another journal, or run
+    without recording, are invisible to the census.
+    """
+
+    consultations: list[str] = []
+    prior_trials = 0
+    unidentified = 0
+    if path.exists():
+        for number, raw in enumerate(path.read_bytes().split(b"\n"), start=1):
+            line = raw.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except ValueError as error:
+                raise StrategyProtocolError(
+                    f"{path}:{number} is not JSON; the test-split census cannot be "
+                    "computed"
+                ) from error
+            record_identity, consulted, trials = _journal_consultation(record)
+            if record_identity is None:
+                unidentified += 1
+            elif consulted and record_identity == identity:
+                consultations.append(sha256(line).hexdigest())
+                prior_trials += trials
+    return {
+        "scope": TEST_SPLIT_CENSUS_SCOPE,
+        "test_split_identity": identity,
+        "test_split_sha256": _digest(identity),
+        "prior_test_consultations": len(consultations),
+        "prior_consultation_record_sha256": consultations,
+        "prior_observed_n_trials": prior_trials,
+        "unidentified_prior_records": unidentified,
+    }
+
+
+def _test_split_census(
+    prior: dict[str, Any], test_consulted: bool, observed_n_trials: Any
+) -> dict[str, Any]:
+    own = observed_n_trials if test_consulted and _is_u64(observed_n_trials) else 0
+    return {
+        **prior,
+        "test_consulted": test_consulted,
+        "cumulative_observed_n_trials": prior["prior_observed_n_trials"] + own,
+    }
+
+
+def _calendar_day(label: str) -> Optional[str]:
+    """The ``YYYY-MM-DD`` day a bar label starts with, if it names one."""
+
+    day = label[:10]
+    if not is_calendar_date(day) or (len(label) > 10 and label[10] not in "T "):
+        return None
+    return day
+
+
+def _split_source_dating(
+    name: str,
+    dataset: DatasetSpec,
+    seeds: Sequence[int],
+    sources: Sequence[IdeaProvenance],
+) -> dict[str, Any]:
+    if dataset.kind == "synthetic":
+        return {
+            "split": name,
+            "status": "unavailable",
+            "reason": "synthetic_split_has_no_calendar",
+        }
+    env = LocalFieldRunner._build_env(dataset, list(seeds)[:1])
+    first = _calendar_day(str(json.loads(env.reset_batch())["observations"][0]["date"]))
+    if first is None:
+        return {"split": name, "status": "unavailable", "reason": "date_not_iso8601"}
+    return {
+        "split": name,
+        "status": "measured",
+        "first_date": first,
+        "sources_on_or_after_first_date": sum(
+            source.available_on is not None and source.available_on >= first
+            for source in sources
+        ),
+    }
+
+
+def _source_dating(
+    plan: StrategySearchPlan, ledger: EdgeManifestLedger
+) -> dict[str, Any]:
+    """Count cited sources dated on or after each split's first bar.
+
+    An undated source is counted as undated, never as clean. A split whose first
+    bar has no calendar day is reported unavailable with a typed reason.
+    """
+
+    cited: dict[str, IdeaProvenance] = {}
+    for record in ledger.records:
+        for source in record.idea_provenance:
+            cited.setdefault(source.source_digest, source)
+    sources = list(cited.values())
+    dated = sum(source.available_on is not None for source in sources)
+    return {
+        "cited_sources": len(sources),
+        "dated_sources": dated,
+        "undated_sources": len(sources) - dated,
+        "splits": [
+            _split_source_dating(
+                "selection", plan.validation_dataset, plan.validation_seeds, sources
+            ),
+            _split_source_dating("test", plan.test_dataset, plan.test_seeds, sources),
+        ],
+    }
+
+
 class StrategySearchRunner:
     """Generate, count, validate, select, and test strategies without executing code."""
 
@@ -946,9 +1170,18 @@ class StrategySearchRunner:
         self.generator = generator
 
     def run(self, plan: StrategySearchPlan, evidence_path: Path) -> dict[str, Any]:
+        split_identity = consulted_split_identity(
+            plan.test_dataset.public_record(), list(plan.test_seeds)
+        )
+        if split_identity is None:
+            raise StrategyProtocolError("the test split cannot be identified")
+        # Read before generating, so a corrupt journal refuses before any model
+        # call and the census names only records that existed when this began.
+        prior_census = _prior_test_consultations(evidence_path, split_identity)
         identity = self.generator.identity(plan.model)
         generated: Optional[GenerationResult] = None
         manifest_ledger: Optional[EdgeManifestLedger] = None
+        test_consulted = False
         try:
             generated = self.generator.generate(
                 plan.model, plan.generation_prompt, plan.requested_candidates
@@ -983,6 +1216,7 @@ class StrategySearchRunner:
                 ranking.append((value, candidate.candidate_id, candidate))
             ranking.sort(key=lambda item: (-item[0], item[1]))
             selected = ranking[0][2]
+            test_consulted = True
             test = _evaluate_candidates(
                 [selected],
                 plan.test_dataset,
@@ -1037,6 +1271,10 @@ class StrategySearchRunner:
                     "selected_candidate_only": True,
                     "scores": test,
                 },
+                "test_split_census": _test_split_census(
+                    prior_census, True, observed_n_trials
+                ),
+                "source_dating": _source_dating(plan, manifest_ledger),
                 "recorded_at_unix_ns": time.time_ns(),
             }
             normalized = json.loads(_canonical_bytes(evidence))
@@ -1093,6 +1331,9 @@ class StrategySearchRunner:
                     "prompt_sha256": sha256(plan.prompt.encode("utf-8")).hexdigest(),
                 },
                 "failure": {"type": type(error).__name__, "detail": str(error)},
+                "test_split_census": _test_split_census(
+                    prior_census, test_consulted, observed
+                ),
                 "recorded_at_unix_ns": time.time_ns(),
             }
             _write_evidence(evidence_path, json.loads(_canonical_bytes(failure)))
@@ -1120,6 +1361,7 @@ __all__ = [
     "StrategyProtocolError",
     "StrategySearchPlan",
     "StrategySearchRunner",
+    "consulted_split_identity",
     "evaluate_condition",
     "parse_generated_pool",
     "strategy_decision",
