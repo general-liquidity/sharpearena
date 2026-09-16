@@ -9,6 +9,38 @@ M2 endogenous (batch-clearing) market: here orders match against a real resting 
 **Leak-free.** An agent's observation is the post-step public depth ladder plus its own
 inventory/cash; it never sees other agents' pending same-step orders (all quotes are
 collected, then the book clears, then the next observation is produced).
+
+**Inventory mark.** Reward values inventory at a per-agent mark. The default
+``mark="ex_own_mid"`` is the midpoint of the best bid and best ask among resting orders that
+*other* agents own. While the others' orders lack a side, the previous mark is carried
+forward, starting at the opening reference mid (1000 ticks). The noise trader never rests,
+so a lone agent's mark stays at 1000 ticks. An agent's own resting quotes never enter its
+mark. ``mark="book_mid"`` is the mark this environment used before 2026-09-16, the mid of
+the whole book with the agent's own quotes included, kept only to replay earlier runs.
+Under it an agent moves its own valuation without a counterparty: with the noise trader
+off, a lone agent quoting ``(1, 20)`` walks the book mid 1000, 1010, 1014, 1016, 1018 ticks
+over four steps with no fill, and with the noise trader on its equity changes on steps
+where it trades with nobody.
+
+**Same-bar priority.** The native book folds a bar's orders sorted by their ``agent``
+field, so under the default ``priority="agent_index"`` seat 0 queues ahead of seat 1 at a
+shared tick on every step (two identical ``(3, 3)`` quoters over seeds 0 to 31: seat 0 was
+filled more on all 32, 14,222 units against 13,900). ``priority="seeded_shuffle"`` draws a
+uniform permutation of the seats for each step from ``(seed, step)`` (SplitMix64 with
+Fisher-Yates, on a stream separate from the noise trader's, so both rules see the same
+noise-trader orders) and submits each quote under a code that sorts by its seat's rank.
+Every pair of seats is then ordered each way with probability 1/2. A cyclic rotation with a
+uniform offset was not used: for three or more seats it queues seat ``i`` ahead of seat
+``j`` with probability ``(n - d) / n``, where ``d = (j - i) mod n``. The rule lives
+entirely in the codes this environment submits, so the native engine, ``SPEC_HASH`` and the
+golden fill tape are unchanged, and the default path is byte-identical to the one before
+the rule existed.
+
+**Self-trades.** The book has no self-trade prevention. A new quote here crosses a resting
+order only after the previous step left one side of the book empty and the reference mid
+took a seeded step, so self-trades are rare (2 of 27,552 fills over 400 seeded random
+configurations). Both legs belong to one agent at one price, so its cash and inventory do
+not change, and under the default mark its own orders are not part of its valuation.
 """
 
 from __future__ import annotations
@@ -29,15 +61,27 @@ except Exception:  # noqa: BLE001
 from .sharpearena_py import PyOrderBook
 
 _MID_TICK = 1000  # the reference mid starts here (in ticks)
+_MASK64 = 0xFFFFFFFFFFFFFFFF
+_SEAT_KEY = 0x5EA70D3E2B1CA6F9
+_SEAT_STEP = 0xD1B54A32D192ED03
+
+MARKS = ("ex_own_mid", "book_mid")
+PRIORITIES = ("agent_index", "seeded_shuffle")
+
+
+def _splitmix_bits(state: int) -> tuple[int, int]:
+    """One SplitMix64 draw -> (new_state, 64-bit output); deterministic, no numpy RNG."""
+    state = (state + 0x9E3779B97F4A7C15) & _MASK64
+    z = state
+    z = ((z ^ (z >> 30)) * 0xBF58476D1CE4E5B9) & _MASK64
+    z = ((z ^ (z >> 27)) * 0x94D049BB133111EB) & _MASK64
+    z ^= z >> 31
+    return state, z
 
 
 def _splitmix(state: int) -> tuple[int, float]:
     """One SplitMix64 draw -> (new_state, unit in [0, 1)); deterministic, no numpy RNG."""
-    state = (state + 0x9E3779B97F4A7C15) & 0xFFFFFFFFFFFFFFFF
-    z = state
-    z = ((z ^ (z >> 30)) * 0xBF58476D1CE4E5B9) & 0xFFFFFFFFFFFFFFFF
-    z = ((z ^ (z >> 27)) * 0x94D049BB133111EB) & 0xFFFFFFFFFFFFFFFF
-    z ^= z >> 31
+    state, z = _splitmix_bits(state)
     return state, (z >> 11) / float(1 << 53)
 
 
@@ -47,8 +91,11 @@ class LOBMarketEnv(ParallelEnv):  # type: ignore[misc]
     Each agent's action is a 2-vector ``[bid_offset, ask_offset]`` of ticks from the
     reference mid (clamped to ``[1, max_offset]``); it posts a buy at ``mid - bid_offset``
     and a sell at ``mid + ask_offset``, each of size ``quote_qty``. A seeded noise trader
-    then sends a market order, the book clears, and reward is the change in mark-to-mid
-    equity minus a squared-inventory penalty.
+    then sends a market order, the book clears, and reward is the change in
+    ``cash + inventory * mark`` minus a squared-inventory penalty.
+
+    ``mark`` (one of :data:`MARKS`, default ``"ex_own_mid"``) and ``priority`` (one of
+    :data:`PRIORITIES`, default ``"agent_index"``) are described in the module docstring.
     """
 
     metadata = {"render_modes": [], "name": "sharpearena_lob_v0"}
@@ -65,6 +112,8 @@ class LOBMarketEnv(ParallelEnv):  # type: ignore[misc]
         max_offset: int = 20,
         inventory_penalty: float = 0.001,
         noise_intensity: float = 2.0,
+        mark: str = "ex_own_mid",
+        priority: str = "agent_index",
     ) -> None:
         if not _HAS_PZ:
             raise RuntimeError(
@@ -73,6 +122,12 @@ class LOBMarketEnv(ParallelEnv):  # type: ignore[misc]
             )
         if n_agents < 1:
             raise ValueError("n_agents must be >= 1")
+        if mark not in MARKS:
+            raise ValueError(f"mark must be one of {MARKS}, got {mark!r}")
+        if priority not in PRIORITIES:
+            raise ValueError(f"priority must be one of {PRIORITIES}, got {priority!r}")
+        self._mark_rule = mark
+        self._priority = priority
         self._n_agents = int(n_agents)
         self._n_steps = int(n_steps)
         self._seed = int(seed)
@@ -91,6 +146,16 @@ class LOBMarketEnv(ParallelEnv):  # type: ignore[misc]
         self._act_space = spaces.Box(
             low=1.0, high=float(self._max_offset), shape=(2,), dtype=np.float32
         )
+
+    @property
+    def mark(self) -> str:
+        """The inventory mark rule this environment was built with."""
+        return self._mark_rule
+
+    @property
+    def priority(self) -> str:
+        """The same-bar seat-priority rule this environment was built with."""
+        return self._priority
 
     # -- PettingZoo API ----------------------------------------------------
 
@@ -112,13 +177,19 @@ class LOBMarketEnv(ParallelEnv):  # type: ignore[misc]
         self._inventory = {a: 0 for a in self.agents}
         self._cash = {a: 0.0 for a in self.agents}
         self._prev_equity = {a: 0.0 for a in self.agents}
+        # order id -> [agent index, side, price_tick, resting qty]; only agents ever rest.
+        self._resting: dict[int, list] = {}
+        self._next_order_id = 0
+        self._marks = {a: float(_MID_TICK) for a in self.agents}
         ladder = json.loads(self._book.ladder())
         obs = {a: self._obs(a, ladder) for a in self.agents}
         infos = {a: {} for a in self.agents}
         return obs, infos
 
     def step(self, actions: dict):
-        # 1. every live agent posts a two-sided quote (collected before any clear).
+        # 1. every live agent posts a two-sided quote (collected before any clear). The
+        #    `agent` field is the seat code the book's canonical sort orders the bar by.
+        codes = self._seat_codes()
         orders: list[dict] = []
         for i, a in enumerate(self.possible_agents):
             if a not in actions:
@@ -126,23 +197,27 @@ class LOBMarketEnv(ParallelEnv):  # type: ignore[misc]
             bid_off, ask_off = (int(round(float(x))) for x in np.asarray(actions[a]).reshape(-1)[:2])
             bid_off = max(1, min(self._max_offset, bid_off))
             ask_off = max(1, min(self._max_offset, ask_off))
-            orders.append({"agent": i, "kind": "limit", "side": "buy",
+            orders.append({"agent": codes[i], "kind": "limit", "side": "buy",
                            "price_tick": self._mid - bid_off, "qty": self._quote_qty})
-            orders.append({"agent": i, "kind": "limit", "side": "sell",
+            orders.append({"agent": codes[i], "kind": "limit", "side": "sell",
                            "price_tick": self._mid + ask_off, "qty": self._quote_qty})
 
-        # 2. a seeded noise trader sends one market order (agent id n_agents = exogenous).
+        # 2. a seeded noise trader sends one market order under the exogenous code, which
+        #    sorts after every agent seat.
         self._rng, u = _splitmix(self._rng)
         if u < 0.5 + 0.1 * self._noise:
             self._rng, u2 = _splitmix(self._rng)
             side = "buy" if u2 < 0.5 else "sell"
             self._rng, u3 = _splitmix(self._rng)
             qty = 1 + int(u3 * self._noise * self._quote_qty)
-            orders.append({"agent": self._n_agents, "kind": "market", "side": side, "qty": qty})
+            orders.append({"agent": self._exogenous_code(), "kind": "market",
+                           "side": side, "qty": qty})
 
         out = json.loads(self._book.step_book(json.dumps(orders)))
         ladder = out["ladder"]
+        self._track_resting(orders, out["fills"])
         self._apply_fills(out["fills"], ladder)
+        self._update_marks()
         self._mid = self._next_mid(ladder)
         self._step += 1
 
@@ -160,13 +235,95 @@ class LOBMarketEnv(ParallelEnv):  # type: ignore[misc]
 
     # -- internals ---------------------------------------------------------
 
+    def _exogenous_code(self) -> int:
+        """The noise trader's book code: past every seat code of the active rule."""
+        n = self._n_agents
+        return n if self._priority == "agent_index" else n * n
+
+    def _owner(self, code: int) -> Optional[int]:
+        """The agent index behind a book code, or ``None`` for the noise trader."""
+        if code >= self._exogenous_code():
+            return None
+        return code % self._n_agents
+
+    def _seat_codes(self) -> list[int]:
+        """Book code per agent index for this step (see the module docstring).
+
+        ``seeded_shuffle`` gives agent ``i`` the code ``rank * n + i``: the book sorts by
+        rank, and ``code % n`` recovers the agent from any fill, including fills against a
+        quote that rested under an earlier step's permutation.
+        """
+        n = self._n_agents
+        if self._priority == "agent_index":
+            return list(range(n))
+        state = (self._seed ^ _SEAT_KEY ^ (self._step * _SEAT_STEP)) & _MASK64
+        order = list(range(n))
+        for k in range(n - 1, 0, -1):
+            state, z = _splitmix_bits(state)
+            j = ((z >> 11) * (k + 1)) >> 53  # exact integer draw in [0, k]
+            order[k], order[j] = order[j], order[k]
+        codes = [0] * n
+        for rank, i in enumerate(order):
+            codes[i] = rank * n + i
+        return codes
+
+    def _track_resting(self, orders: list[dict], fills: list[dict]) -> None:
+        """Mirror every agent's resting quotes, which the ex-own mark reads.
+
+        Replays the engine's id rule: the book folds the batch by ``(agent code,
+        submission index)`` and every limit consumes one id. A code posts at most one
+        limit per side per step, so a fill's ``(taker code, taker side)`` names the order
+        that crossed.
+        """
+        crossed: dict[tuple[int, str], int] = {}
+        for f in fills:
+            key = (f["taker_agent"], f["taker_side"])
+            crossed[key] = crossed.get(key, 0) + f["qty"]
+        for j in sorted(range(len(orders)), key=lambda j: (orders[j]["agent"], j)):
+            o = orders[j]
+            if o["kind"] != "limit":
+                continue
+            order_id = self._next_order_id
+            self._next_order_id += 1
+            left = o["qty"] - crossed.get((o["agent"], o["side"]), 0)
+            if left > 0:
+                owner = self._owner(o["agent"])
+                self._resting[order_id] = [owner, o["side"], o["price_tick"], left]
+        for f in fills:
+            entry = self._resting[f["maker_id"]]
+            entry[3] -= f["qty"]
+            if entry[3] == 0:
+                del self._resting[f["maker_id"]]
+
+    def _update_marks(self) -> None:
+        """Move each agent's ex-own mark to the others' mid when they quote both sides."""
+        if self._mark_rule != "ex_own_mid":
+            return
+        levels: dict[str, dict[int, set]] = {"buy": {}, "sell": {}}
+        for owner, side, price, _qty in self._resting.values():
+            levels[side].setdefault(price, set()).add(owner)
+        bids = sorted(levels["buy"].items(), reverse=True)
+        asks = sorted(levels["sell"].items())
+        for i, a in enumerate(self.possible_agents):
+            bid = next((p for p, owners in bids if owners - {i}), None)
+            ask = next((p for p, owners in asks if owners - {i}), None)
+            if bid is not None and ask is not None:
+                self._marks[a] = (bid + ask) / 2.0
+
+    def _mark_price(self, agent: str, ladder) -> float:
+        if self._mark_rule == "book_mid":
+            return ladder["mid"] or float(self._mid)
+        return self._marks[agent]
+
     def _apply_fills(self, fills, ladder) -> None:
         mid = ladder["mid"] or float(self._mid)
         for f in fills:
             price = f["price_tick"]
             qty = f["qty"]
-            maker = self.possible_agents[f["maker_agent"]] if f["maker_agent"] < self._n_agents else None
-            taker = self.possible_agents[f["taker_agent"]] if f["taker_agent"] < self._n_agents else None
+            maker_index = self._owner(f["maker_agent"])
+            taker_index = self._owner(f["taker_agent"])
+            maker = self.possible_agents[maker_index] if maker_index is not None else None
+            taker = self.possible_agents[taker_index] if taker_index is not None else None
             # maker side is the opposite of the taker side.
             if maker is not None:
                 if f["taker_side"] == "buy":  # maker sold
@@ -187,7 +344,7 @@ class LOBMarketEnv(ParallelEnv):  # type: ignore[misc]
         return self._cash[agent] + self._inventory[agent] * mid
 
     def _reward(self, agent: str, ladder) -> float:
-        mid = ladder["mid"] or float(self._mid)
+        mid = self._mark_price(agent, ladder)
         eq = self._equity(agent, mid)
         prev = getattr(self, "_prev_equity", {}).get(agent, 0.0)
         if not hasattr(self, "_prev_equity"):
