@@ -46,9 +46,23 @@ The agent returns one `Decision`:
 ```
 
 `target_weight` is signed for shorts and must lie in `[-1, 1]`. `confidence` lies
-in `[0, 1]`; it is optional and defaults to `0.5`.
+in `[0, 1]` and is optional: omit it when the agent states no conviction.
 `rationale` and top-level `reasoning` are optional audit text. An empty `orders` array
 is a deliberate hold, not an error value.
+
+Calibration counts only confidences an agent stated. The Python local field runner
+records a confidence/outcome pair only for a decision with at least one order that
+states a confidence (the mean over those orders), and pairs it with the reward of the
+next step: the reward booked at a step is the price move on the holdings the previous
+decision chose, so a decision's conviction is realized one step later, and a run's
+final decision adds no pair. `score_run` scores a bare return track, which states no
+confidence, so it reports no `calibration_brier` and zero `calibration_observations`.
+
+Rust paths that run the pinned SharpeBench `=0.27.0` simulator directly (for example
+`run_backtest_checked`) still use that release's rule: its protocol reads an omitted
+confidence as `0.5`, and its simulator pairs every step, holds included, with the
+same step's return. That changes only with a SharpeBench release that leaves an
+omitted confidence absent and a pin bump here.
 
 The authoritative schemas are
 [`observation.schema.json`](../crates/sharpearena/contract/observation.schema.json) and
