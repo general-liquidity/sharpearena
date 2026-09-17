@@ -212,7 +212,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "ee219701c45b4bb256d52c3f7c6b747c8e870568",
+  "generated_at_head": "0f571a6780547f023bae183d22f0a280e34a51e0",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -706,11 +706,11 @@
     },
     {
       "path": "paper/main.tex",
-      "sha256": "9ae055c8149dc47b23c1a98d0e070127bfcc5be2a698a610c29157e310c90279"
+      "sha256": "304ab0a877612ede05d0bd47ce9203ddbd48e4b7de4ee2f1c38cf0e391d99ea4"
     },
     {
       "path": "paper/refs.bib",
-      "sha256": "37d65f2e0d76436c187203fcc1adca96bf526ae9991aff34f72ebc0ffc020ba7"
+      "sha256": "8b18e7afad6c0e355e317a1e28ebcaeca0762c7b1cf3cc11643437d59580480a"
     },
     {
       "path": "paper/sections/00-abstract.tex",
@@ -718,15 +718,15 @@
     },
     {
       "path": "paper/sections/01-introduction.tex",
-      "sha256": "ff32c59d2a98f9f06f04f4799e701bef811e9b1c565542509e301317e17a561b"
+      "sha256": "5cc68d716bf5407ad997b0af09273d386b0eed73acd17b151f3df69771a172a1"
     },
     {
       "path": "paper/sections/02-principles.tex",
-      "sha256": "8ebb64d31710868eb549199b46e629aba8e052d4297d711f2419508404212936"
+      "sha256": "73c35ac5d3246339830f3f0678ecb3d6b59e8984523f481053bb66908098c544"
     },
     {
       "path": "paper/sections/03-environment.tex",
-      "sha256": "4206a96c13e64065448f0bead87e0500deff2a3221588344d44fc4eee13fdba3"
+      "sha256": "b199c713f4de7e9a9b8ff9398f677d6be412d606e68732281f6d0b6785f4820b"
     },
     {
       "path": "paper/sections/04-contract.tex",
@@ -734,27 +734,27 @@
     },
     {
       "path": "paper/sections/05-agentic.tex",
-      "sha256": "cd5080d4a0844e7c14f03fff4e3ad297ac8cf1869b6ab1163478ad2bb3f7bd82"
+      "sha256": "a4873cdc81874c2ca1cd886c57f1e38535e58e37821e767d4759065e1e1018dd"
     },
     {
       "path": "paper/sections/06-protocol.tex",
-      "sha256": "971d6d0720d8c243a141c704161d105683666ba13b4d6dbe22f40c62aa49e4d8"
+      "sha256": "9fbf5cadcb7a89a48ac23f7f99c9ab6e061eea08c877550beaa434a9576bc7be"
     },
     {
       "path": "paper/sections/07-validation.tex",
-      "sha256": "a9451bfac1aa52149ad07996034709106c2b7021421e4b43707d859dd66421d4"
+      "sha256": "c0c5499f8b5d5dc9445493d6a4b21505d7a899fa0fcda60d6875196998dbc178"
     },
     {
       "path": "paper/sections/08-findings.tex",
-      "sha256": "e918f81d586c7d822855890358f9304b53d4a4794bc25e43ff88588cbcefb7e0"
+      "sha256": "4f8ac44e2e3e607642d2f3c46172e09771f66ad76dc393517f2dd85f22e53edb"
     },
     {
       "path": "paper/sections/09-related.tex",
-      "sha256": "9d0f63b76bf623caf4a8680d9078c57373210a6f5d80fc0692b6aceb2ed5bde9"
+      "sha256": "eaefd049943ff9aad37463469595bdc9bdfdf0e6ad35052df3d569b52b14169d"
     },
     {
       "path": "paper/sections/10-limitations.tex",
-      "sha256": "9cae73a088eeaba0ce64d66f77ef448d61445030e60b0123170bd90fe3cf17a6"
+      "sha256": "11aa5fcdca1439581da082ef3ebfea592f681ad3ddf8d9faccd1737b744a57de"
     },
     {
       "path": "paper/sections/11-conclusion.tex",
@@ -762,11 +762,15 @@
     },
     {
       "path": "paper/sections/12-reproducibility.tex",
-      "sha256": "fee3d89d60a04e80aebfd45c2456619f9561aced8046cd502dc620b49058d505"
+      "sha256": "2969ecaa19afc618cda596eda2eceeded6648e8fcece742a3f5a7c38a744c3b2"
     },
     {
       "path": "paper/sections/13-ethics.tex",
-      "sha256": "0b59fa5b426c0faa9fb39e67b713aaa0b46fca6dd2cb7a90b47fa8a02a3f5c81"
+      "sha256": "55d6b94d47c7bd66879bf2204849d61ae4ac53694b3be4fa2371a5aecbc8e0cb"
+    },
+    {
+      "path": "paper/sections/14-declarations.tex",
+      "sha256": "b2f65c5f27926f812c6553a30c7926f61c2a4727853340b8277815958f6cac1b"
     },
     {
       "path": "paper/sections/A-commands.tex",
@@ -906,6 +910,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "1026d5c3c3df2ad60461b7e2f669042c68bb9013bf647ad664a9be3a7cc03b4d",
+  "source_snapshot_sha256": "d15b3bb346fb73fc11ddfa4a9bb296021ee505c20161758daa06cb676c26e349",
   "validator": "paper/src/check-provenance.py"
 }
