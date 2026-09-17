@@ -20,13 +20,44 @@ State the dispersion convention beside every number. We report three: seed-resam
 
 Every band named above is public and therefore enumerable. \Cref{sec:predictability} measures what that costs: a scan of a public $2^{16}$ band recovers the true seed from a single observed bar in about a second, and a recovered seed makes every future bar of the episode exactly computable. For any evaluation whose result is meant to survive an adversarial reading, use the sealed derivation of \cref{sec:sealed-seeds}: publish the salt hash before entries arrive, withhold the salt during scoring, and reveal it afterwards so anyone can recompute the named seeds and replay the run. The current Rust API accepts only a \texttt{SealedSalt}, whose sole constructor refuses fewer than 16 bytes, whose \texttt{Debug} output is redacted, and which has no serialization, display or dereference implementation. The Python binding uses the same constructor and maps a refusal to the typed \texttt{InvalidSalt} error; the WebAssembly package exposes no sealed-seed entry point. The band structure stays checkable without the salt, so disjointness from the train band remains verifiable by construction.
 
-Any public bounded-band evaluation should be treated as compromised until it documents sealed seed custody, a pre-entry commitment, a non-reuse policy and a reveal deadline. This is a statement about the protocol, not an accusation about any particular run: the scan is cheap enough that assuming it was not performed is unreasonable.
+Any public bounded-band evaluation should be treated as compromised until it documents sealed seed custody, a pre-entry commitment, a non-reuse policy and a reveal deadline. This is a statement about the protocol, not an accusation about any particular run: the scan is cheap enough that assuming it was not performed is unreasonable. Other evaluation environments guard held-out answers against the same kind of probing; OpenFinGym, for example, rate-limits the submission API of its verifier to prevent reverse engineering of the held-out ground truth \citep[p.~7]{zhang2026openfingym}.
 
 Three prohibitions bind a submitted agent, and each has an enforcing layer rather than a promise. Reaching past the cursor is forbidden: reading the raw dataset, slicing past the current index and peeking the next bar are refused by \texttt{LookaheadGuard} at the harness boundary and are structurally unavailable at the environment's own surface (\cref{sec:leakfree}). Feeding the scenario seed to the policy as a feature is forbidden, because it identifies the episode and makes the generalization protocol meaningless. Enumerating or reconstructing the evaluation seeds, by band scan or otherwise, is forbidden, and sealed derivation is what makes that prohibition enforceable rather than honour-based. Relaxing the guard is possible for research use through an explicit environment variable, which records the decision; a run that sets it is not a protocol-conformant evaluation.
 
+\subsection{Leakage channels in one place}\label{sec:protocol-leakage}
+
+The controls above and in \cref{sec:env,sec:agentic} close different channels, and each leaves a different residue. \Cref{tab:leakage} lists them together, an inventory of the kind \citet[Appendix~A.4, p.~30]{li2026agora} give for their own system, where each audited path by which test values could reach the model is listed with how it was sealed. Every entry restates a property established in the section it cites, so the table adds no result.
+
+\begin{table}[t]
+\centering
+\caption{Leakage channels, the control SharpeArena applies to each, and the exposure that remains. Entries restate properties described in the cited sections.}
+\label{tab:leakage}
+\scriptsize
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{@{}p{3.3cm} p{4.6cm} p{5.2cm}@{}}
+\toprule
+Channel & Control & Remaining exposure \\
+\midrule
+A bar past the cursor, requested through the environment & The data layer has no operation that returns one (\cref{sec:leakfree}) & None at the interface; inference from the bars it does return is the fourth row \\
+\addlinespace
+Optional observation channels & Fundamentals and news are computed from the surfaced trailing window and inherit its cutoff (\cref{sec:spaces}) & As the fourth row \\
+\addlinespace
+Raw dataset, index slicing or next-bar peeks by harness tools & \texttt{LookaheadGuard} deny-list, substring tells and index check (\cref{sec:leakfree}) & Side channels the environment does not own, such as the clock, filesystem or network (\cref{sec:limitations}); the explicit research override (\cref{sec:protocol-custody}) \\
+\addlinespace
+Inverting the public generator from observed bars & Opt-in sealed seed derivation with a salt hash published before entry and the salt revealed after scoring (\cref{sec:sealed-seeds,sec:protocol-custody}) & A public bounded band falls to a one-bar scan (\cref{sec:predictability}); tape-level inversion is untested; the sealed evidence is a simulated workflow \\
+\addlinespace
+The scenario seed fed to the policy as a feature & Forbidden by the protocol and refused by the guard (\cref{sec:protocol-custody}) & A harness that bypasses the guard \\
+\addlinespace
+Repeated looks at a test interval during strategy search & Selection on a validation interval; only the selected candidate touches test; candidates counted before validation (\cref{sec:observed-search}) & Candidates generated before entry; searches that reuse one test interval are counted per search, not together \\
+\addlinespace
+A model that has already seen the outcome it forecasts & Forecast contracts frozen before the outcome exists, with information exposure recorded per attempt (\cref{sec:prospective-protocol}) & Historical replay cannot remove pretraining exposure; no current-model field is admitted (\cref{sec:limitations}) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 \subsection{Scoring and verification}\label{sec:protocol-scoring}
 
-SharpeArena exposes published SharpeBench scoring and confidence helpers, and its calibration scripts call them; an entrant does not supply a scorer. SharpeBench owns the authoritative board semantics: deflated Sharpe with the declared trial count \citep{bailey2014deflated}, a per-run reliability gate, and the process gates that zero entries bypassing risk controls \citep{toca2026sharpebench}. Rank eligibility is the conjunction of those legs, not any one of them, and \cref{sec:f1} shows why: deflation alone crowns drift on the calm tier, and the per-run reliability gate alone misses the search breadth deflation discounts. Declare the trial count honestly. \Cref{sec:f3} contains a worked instance of what happens otherwise: the same policy on the same sixteen seeds scores $0.1231$ or $0.1114$ depending only on how many trials the deflation prior is told to consume.
+SharpeArena exposes published SharpeBench scoring and confidence helpers, and its calibration scripts call them; an entrant does not supply a scorer. SharpeBench owns the authoritative board semantics: deflated Sharpe with the declared trial count \citep{bailey2014deflated}, a per-run reliability gate, and the process gates that zero entries bypassing risk controls \citep{toca2026sharpebench}. Rank eligibility is the conjunction of those legs, not any one of them, and \cref{sec:f1} shows why: deflation alone crowns drift on the calm tier, and the per-run reliability gate alone misses the search breadth deflation discounts. Declare the trial count honestly. \Cref{sec:f3} contains a worked instance of what happens otherwise: the same policy on the same sixteen seeds scores $0.1231$ or $0.1114$ depending only on how many trials the deflation prior is told to consume. The count covers every configuration whose reward was inspected before the entry was chosen: each training run and random seed, each hyperparameter setting and reward shaping, and each checkpoint evaluated to pick the one submitted. The repository's evaluation guide asks entrants to declare it that way, and the SharpeBench bridge carries the number into scoring as \texttt{in\_sample\_trials}. Both kinds of search appear in reinforcement-learning market making. Three identically configured deep Q-learning market makers trained in one market ended with mean results of 129, $-45$ and $-5$ thousand dollars, and the network transferred to a later experiment was the best of ten evaluated snapshots (\citealp[PDF pp.~52, 55--56, 58]{fernandezvicente2025market}). A run chosen that way is one draw from a search, and its deflation should count the search.
 
 Submit the decision trajectory, not self-reported returns. The replay verifier regenerates the scenario from the declared seed and recomputes the run from the ordered decisions and frozen execution inputs (\texttt{replay\_submission} in the Rust core, \texttt{replayRun} in the npm package). A mismatch is evidence that the decisions or declared engine inputs do not reproduce the reported run, and the npm package's test suite exercises the decision-tampering case directly. This guarantee is narrower than full artifact authentication: the low-level replay path does not validate every auxiliary metadata field or prove that the decision list has the length another field claims. Field compilation and trace-promotion validation enforce those separate structural requirements.
 
