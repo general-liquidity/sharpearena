@@ -424,6 +424,10 @@ def test_search_selects_on_validation_and_tests_only_the_winner(tmp_path):
     assert first_census["test_split_sha256"] == _canonical_sha256(
         first_census["test_split_identity"]
     )
+    assert first_census["test_window_bars"] == [0, 16]
+    assert first_census["test_dataset_bars"] == 16
+    assert first_census["overlapping_prior_test_consultations"] == 0
+    assert first_census["prior_consulted_test_bars"] == 0
     first_line = path.read_bytes().rstrip(b"\n")
 
     second = StrategySearchRunner(FixtureGenerator()).run(plan, path)
@@ -445,6 +449,12 @@ def test_search_selects_on_validation_and_tests_only_the_winner(tmp_path):
     assert census["prior_observed_n_trials"] == 4
     assert census["cumulative_observed_n_trials"] == 8
     assert census["unidentified_prior_records"] == 0
+    assert census["overlapping_prior_test_consultations"] == 1
+    assert census["overlapping_prior_consultation_record_sha256"] == [
+        hashlib.sha256(first_line).hexdigest()
+    ]
+    assert census["overlapping_prior_observed_n_trials"] == 4
+    assert census["prior_consulted_test_bars"] == 16
     assert census["test_split_sha256"] == first_census["test_split_sha256"]
     assert census["scope"] == "earlier-records-in-this-journal-file-only"
     # Synthetic panels have no calendar, so the dating check is reported as
@@ -635,12 +645,113 @@ def test_census_reads_schema_2_records_and_counts_only_consulted_failures(
     assert census["cumulative_observed_n_trials"] == 12
     assert census["unidentified_prior_records"] == 2
 
-    # A different synthetic test panel is a different split.
+    # A different synthetic test panel is a different split and shares no bars.
     other = StrategySearchRunner(FixtureGenerator()).run(
         replace(plan, test_seeds=(202,)), path
     )
     assert other["test_split_census"]["prior_test_consultations"] == 0
     assert other["test_split_census"]["cumulative_observed_n_trials"] == 4
+    assert other["test_split_census"]["overlapping_prior_test_consultations"] == 0
+    assert other["test_split_census"]["prior_consulted_test_bars"] == 0
+
+
+def test_census_counts_earlier_reads_of_overlapping_test_windows(
+    tmp_path, monkeypatch
+):
+    """A shifted window rereads most of its bars: the overlap census counts them.
+
+    Test windows over one 24-bar panel, in journal order, with the bars each one
+    shares with earlier windows worked out by hand:
+      A [10, 20)  nothing earlier                                  0 bars
+      B [12, 22)  A covers 12..19                                  8 bars
+      C [5, 10)   touches neither A nor B                          0 bars
+      D [8, end)  end resolves to 24; C, A, B cover 8..21          14 bars
+      E [10, 20)  same identity as A; A covers all of it           10 bars
+    """
+
+    monkeypatch.setattr(strategy_generation, "_evaluate_candidates", _fast_scores)
+    test_csv = _dated_csv()
+    validation = DatasetSpec("validation", csv_text=_dated_csv().replace(",AAA,1", ",AAA,2"))
+    assert validation.content_sha256 != DatasetSpec("t", csv_text=test_csv).content_sha256
+    path = tmp_path / "windows.jsonl"
+
+    def search(start, end):
+        plan = _synthetic_plan(
+            validation_dataset=validation,
+            test_dataset=DatasetSpec(
+                "test", csv_text=test_csv, window_start=start, window_end=end
+            ),
+        )
+        return StrategySearchRunner(FixtureGenerator()).run(plan, path)[
+            "test_split_census"
+        ]
+
+    censuses = [search(10, 20), search(12, 22), search(5, 10), search(8, None)]
+    censuses.append(search(10, 20))
+    digests = [hashlib.sha256(line).hexdigest() for line in path.read_bytes().splitlines()]
+    summary = [
+        (
+            census["test_window_bars"],
+            census["prior_test_consultations"],
+            census["overlapping_prior_test_consultations"],
+            census["overlapping_prior_observed_n_trials"],
+            census["prior_consulted_test_bars"],
+        )
+        for census in censuses
+    ]
+    assert summary == [
+        ([10, 20], 0, 0, 0, 0),
+        ([12, 22], 0, 1, 4, 8),
+        ([5, 10], 0, 0, 0, 0),
+        ([8, 24], 0, 3, 12, 14),
+        ([10, 20], 1, 3, 12, 10),
+    ]
+    assert all(census["test_dataset_bars"] == 24 for census in censuses)
+    assert censuses[3]["overlapping_prior_consultation_record_sha256"] == digests[:3]
+    assert censuses[4]["prior_consultation_record_sha256"] == [digests[0]]
+    assert censuses[4]["overlapping_prior_consultation_record_sha256"] == [
+        digests[0],
+        digests[1],
+        digests[3],
+    ]
+    # The exact identity still separates a shifted window.
+    assert censuses[1]["test_split_sha256"] != censuses[0]["test_split_sha256"]
+
+
+def test_synthetic_windows_overlap_only_through_a_shared_seed(tmp_path, monkeypatch):
+    monkeypatch.setattr(strategy_generation, "_evaluate_candidates", _fast_scores)
+    path = tmp_path / "synthetic.jsonl"
+
+    def search(seeds, start, end):
+        plan = _synthetic_plan(
+            test_dataset=DatasetSpec(
+                "test", tier="hard", n_days=16, window_start=start, window_end=end
+            ),
+            test_seeds=seeds,
+        )
+        return StrategySearchRunner(FixtureGenerator()).run(plan, path)[
+            "test_split_census"
+        ]
+
+    assert search((101, 102), 0, 8)["overlapping_prior_test_consultations"] == 0
+    shared = search((102, 103), 4, 12)
+    assert shared["overlapping_prior_test_consultations"] == 1
+    assert shared["prior_consulted_test_bars"] == 4
+    assert shared["test_window_bars"] == [4, 12]
+    disjoint_seeds = search((104,), None, None)
+    assert disjoint_seeds["test_window_bars"] == [0, 16]
+    assert disjoint_seeds["overlapping_prior_test_consultations"] == 0
+    assert disjoint_seeds["prior_consulted_test_bars"] == 0
+
+
+def test_covered_bars_counts_the_union_of_windows():
+    covered = strategy_generation._covered_bars
+    assert covered([]) == 0
+    assert covered([(3, 5)]) == 2
+    assert covered([(10, 20), (12, 22), (8, 10)]) == 14
+    assert covered([(0, 10), (2, 4), (4, 6)]) == 10
+    assert covered([(5, 7), (0, 2)]) == 4
+    assert covered([(0, 4), (4, 8)]) == 8
 
 
 def test_a_corrupt_journal_refuses_before_any_generation(tmp_path):

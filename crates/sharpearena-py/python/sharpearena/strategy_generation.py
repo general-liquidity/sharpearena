@@ -38,7 +38,7 @@ from .local_agents import (
     OllamaClient,
 )
 from .kernel_score import kernel_deflated_sharpe
-from .sharpearena_py import score_run
+from .sharpearena_py import TradingEnv, score_run
 
 STRATEGY_EVIDENCE_CLASS = "retrospective_generated_strategy"
 # Version 3 adds ``test_split_census`` to every record and ``source_dating`` to
@@ -1047,17 +1047,79 @@ def _journal_consultation(record: Any) -> tuple[Optional[dict[str, Any]], bool, 
     return None, False, 0
 
 
+def _test_window_bars(dataset: DatasetSpec, seeds: Sequence[int]) -> tuple[int, int, int]:
+    """The half-open bar interval a test split steps, and its dataset's bar count.
+
+    Both come from the kernel's read-back of the environment it builds, so an
+    omitted window bound resolves exactly as it does when the split is scored.
+    """
+
+    window = {"window_start": dataset.window_start, "window_end": dataset.window_end}
+    if dataset.csv_text is not None:
+        env = TradingEnv.from_csv(dataset.csv_text, **window)
+    else:
+        env = TradingEnv(
+            n_symbols=dataset.n_symbols,
+            n_days=dataset.n_days,
+            seed=int(seeds[0]),
+            distribution_mode=dataset.tier,
+            **window,
+        )
+    effective = json.loads(env.effective_config)
+    return (
+        int(effective["window_start"]),
+        int(effective["window_end"]),
+        int(effective["n_bars"]),
+    )
+
+
+def _shares_bars(prior: dict[str, Any], current: dict[str, Any]) -> bool:
+    """Whether two split identities read bars of the same panel.
+
+    Historical splits share bars when they name the same content. A synthetic
+    panel is generated per seed, so two synthetic splits also need a common seed.
+    """
+
+    if prior["content_sha256"] != current["content_sha256"]:
+        return False
+    prior_seeds = prior["scenario_seeds"]
+    current_seeds = current["scenario_seeds"]
+    if prior_seeds is None or current_seeds is None:
+        return prior_seeds is None and current_seeds is None
+    return bool(set(prior_seeds) & set(current_seeds))
+
+
+def _covered_bars(intervals: list[tuple[int, int]]) -> int:
+    """Number of bars in the union of half-open intervals."""
+
+    covered = 0
+    reach = 0
+    for start, end in sorted(intervals):
+        start = max(start, reach)
+        if end > start:
+            covered += end - start
+            reach = end
+    return covered
+
+
 def _prior_test_consultations(
-    path: Path, identity: dict[str, Any]
+    path: Path, identity: dict[str, Any], window_bars: tuple[int, int, int]
 ) -> dict[str, Any]:
     """Count earlier reads of this test split among the records already in ``path``.
 
-    Only this journal file is read. Searches written to another journal, or run
-    without recording, are invisible to the census.
+    Exact counts need the same split identity. Overlap counts need a shared
+    panel and a window that intersects this one's bars, with an earlier
+    record's omitted bounds resolved against this panel's bar count. Only this
+    journal file is read. Searches written to another journal, or run without
+    recording, are invisible to the census.
     """
 
+    start, end, bars = window_bars
     consultations: list[str] = []
     prior_trials = 0
+    overlapping: list[str] = []
+    overlapping_trials = 0
+    read_intervals: list[tuple[int, int]] = []
     unidentified = 0
     if path.exists():
         for number, raw in enumerate(path.read_bytes().split(b"\n"), start=1):
@@ -1074,16 +1136,36 @@ def _prior_test_consultations(
             record_identity, consulted, trials = _journal_consultation(record)
             if record_identity is None:
                 unidentified += 1
-            elif consulted and record_identity == identity:
-                consultations.append(sha256(line).hexdigest())
+                continue
+            if not consulted:
+                continue
+            digest = sha256(line).hexdigest()
+            if record_identity == identity:
+                consultations.append(digest)
                 prior_trials += trials
+            if not _shares_bars(record_identity, identity):
+                continue
+            prior_start = record_identity["window_start"] or 0
+            prior_end = record_identity["window_end"]
+            low = max(start, prior_start)
+            high = min(end, bars if prior_end is None else prior_end)
+            if low < high:
+                overlapping.append(digest)
+                overlapping_trials += trials
+                read_intervals.append((low, high))
     return {
         "scope": TEST_SPLIT_CENSUS_SCOPE,
         "test_split_identity": identity,
         "test_split_sha256": _digest(identity),
+        "test_window_bars": [start, end],
+        "test_dataset_bars": bars,
         "prior_test_consultations": len(consultations),
         "prior_consultation_record_sha256": consultations,
         "prior_observed_n_trials": prior_trials,
+        "overlapping_prior_test_consultations": len(overlapping),
+        "overlapping_prior_consultation_record_sha256": overlapping,
+        "overlapping_prior_observed_n_trials": overlapping_trials,
+        "prior_consulted_test_bars": _covered_bars(read_intervals),
         "unidentified_prior_records": unidentified,
     }
 
@@ -1138,10 +1220,12 @@ def _split_source_dating(
 def _source_dating(
     plan: StrategySearchPlan, ledger: EdgeManifestLedger
 ) -> dict[str, Any]:
-    """Count cited sources dated on or after each split's first bar.
+    """Count cited sources dated on or after each split's first bar day.
 
-    An undated source is counted as undated, never as clean. A split whose first
-    bar has no calendar day is reported unavailable with a typed reason.
+    A source dated on that day counts, because its time within the day is
+    unknown and it may postdate the bar. An undated source is counted as
+    undated, never as clean. A split whose first bar has no calendar day is
+    reported unavailable with a typed reason.
     """
 
     cited: dict[str, IdeaProvenance] = {}
@@ -1175,9 +1259,14 @@ class StrategySearchRunner:
         )
         if split_identity is None:
             raise StrategyProtocolError("the test split cannot be identified")
-        # Read before generating, so a corrupt journal refuses before any model
-        # call and the census names only records that existed when this began.
-        prior_census = _prior_test_consultations(evidence_path, split_identity)
+        # Resolved and read before generating, so an unreadable test split or a
+        # corrupt journal refuses before any model call, and the census names
+        # only records that existed when this search began.
+        prior_census = _prior_test_consultations(
+            evidence_path,
+            split_identity,
+            _test_window_bars(plan.test_dataset, plan.test_seeds),
+        )
         identity = self.generator.identity(plan.model)
         generated: Optional[GenerationResult] = None
         manifest_ledger: Optional[EdgeManifestLedger] = None

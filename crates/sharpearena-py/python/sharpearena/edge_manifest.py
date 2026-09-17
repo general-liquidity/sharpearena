@@ -192,10 +192,12 @@ class IdeaProvenance:
     attribution fields explain those bytes, but never substitute for the digest.
 
     ``available_on`` is the operator-stated first calendar day (``YYYY-MM-DD``)
-    the source content existed, such as its publication date. It is optional and
-    omitted from the record when absent, so undated sources keep their record
-    and plan-digest bytes. Strategy evidence counts cited sources dated on or
-    after each split's first bar, and counts undated sources separately.
+    the source content existed, such as its publication date, written in the
+    date convention of the dataset's bar labels (the trading venue's local
+    date). It is optional and omitted from the record when absent, so undated
+    sources keep their record and plan-digest bytes. Strategy evidence counts
+    cited sources dated on or after each split's first bar day, which may carry
+    information from that split, and counts undated sources separately.
     """
 
     source_type: str
