@@ -70,6 +70,16 @@ DISCLAIMER = (
     "It is not a strategy, not a recommended policy, and not trading advice."
 )
 
+# `WARMUP` in `sharpearena::market`: bars burned in before the first decision.
+_WARMUP_BARS = 20
+
+
+def _traded_bars(n_days: int) -> int:
+    """Decision bars in an ``n_days`` market: the engine burns in
+    ``max(1, min(20, n_days - 1))`` bars, and the schedule's bar index counts from the
+    first decision."""
+    return n_days - max(1, min(_WARMUP_BARS, n_days - 1))
+
 
 @dataclass(frozen=True)
 class ManipulationParams:
@@ -138,8 +148,11 @@ class ManipulationParams:
         if self.push_weight > self.max_weight:
             raise ValueError("push_weight must not exceed max_weight")
         span = self.start_bar + self.push_bars + self.hold_bars + self.dump_bars
-        if span >= self.n_days:
-            raise ValueError("the round trip must finish inside the episode")
+        if span >= _traded_bars(self.n_days):
+            raise ValueError(
+                "the round trip must finish inside the episode's traded bars "
+                f"({_traded_bars(self.n_days)} of {self.n_days} days)"
+            )
 
 
 @dataclass(frozen=True)
@@ -399,8 +412,11 @@ def asymmetric_round_trip_schedule(
     if side not in (1, -1):
         raise ValueError("side must be +1 (long round trip) or -1 (short round trip)")
     span = p.start_bar + schedule.up_bars + p.hold_bars + schedule.down_bars
-    if span >= p.n_days:
-        raise ValueError("the asymmetric round trip must finish inside the episode")
+    if span >= _traded_bars(p.n_days):
+        raise ValueError(
+            "the asymmetric round trip must finish inside the episode's traded bars "
+            f"({_traded_bars(p.n_days)} of {p.n_days} days)"
+        )
     a = p.start_bar
     b = a + schedule.up_bars
     c = b + p.hold_bars
