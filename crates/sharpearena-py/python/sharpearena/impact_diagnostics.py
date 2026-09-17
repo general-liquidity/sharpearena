@@ -49,28 +49,47 @@ must match exactly.
 
 **Degenerate inputs are typed.** A zero-radius set resolves every bar to the point
 estimate, and a policy that never trades moves nothing, so in both cases the two arms
-are bitwise identical and every gap is exactly ``0.0``. A reward track whose values are
-all exactly equal has no Sharpe ratio and reports :class:`Unavailable` with
-:data:`CONSTANT_TRACK`. Two bitwise-identical arms still report a Sharpe gap of exactly
-``0.0``, because every statistic of identical tracks is identical. Fewer than two seeds
-give no dispersion estimate, and the interval reports :data:`INSUFFICIENT_SEEDS`.
+are bitwise identical and ``return_gap`` is exactly ``0.0``. A reward track whose values
+are all exactly equal has no Sharpe ratio and reports :class:`Unavailable` with
+:data:`CONSTANT_TRACK`. A Sharpe gap needs both Sharpe ratios, so it is
+:data:`SHARPE_UNAVAILABLE` whenever either arm lacks one, identical arms included, and the
+across-seed mean and interval then name the seed positions without one instead of
+averaging structural zeros. Fewer than two seeds give no dispersion estimate, and the
+interval reports :data:`INSUFFICIENT_SEEDS`. A cleared mid that is not positive (the
+linear multiplier crossed zero) refuses the arm with :class:`NonPositiveMidError`.
 
-**Which sign is guaranteed.** Write ``return_gap = point_return - robust_return``, so a
-positive gap is return lost to the worst case.
+**Which sign is guaranteed.** Write ``return_gap = point_return - robust_return``. Both
+returns mark the final position at the exogenous mid, so a positive gap is value the worst
+case cost the policy. The engine's NAV marks at the cleared mid, which carries the arm's
+own permanent impact; each row reports that difference as ``*_own_impact_mark``.
 
 * *Eta-only set* (``lambda_radius == 0``). The resolved ``lambda`` is bitwise the point
-  estimate, so the permanent multiplier, the cleared mids, the order sizes and the
-  volatility factor are identical in both arms. Only ``eta`` changes: on a bar that
-  trades it resolves to about ``eta + eta_radius`` (never below ``eta``), so each fill is
-  at least as expensive and cash is never higher. If the policy's weights do not read ``cash`` or ``avg_price`` (the only
-  observation fields that differ between arms), the gap is ``>= 0`` on every seed, and
-  ``> 0`` once anything trades. Rounding is monotone at every step, so the weak inequality
-  also holds in floating point.
-* *Any set with* ``lambda_radius > 0``. No sign is guaranteed. The worst-case ``lambda``
-  also raises the permanent multiplier at which the policy's own position is marked. For
-  a single buy of ``q`` shares held to the end, ``d NAV / d lambda = q**2 / V *
-  (exo_T - exo_0)``, so on a rising path a buy-and-hold ends richer under the worst case
-  and the gap is negative. The report does not clamp it.
+  estimate. If the policy sends the same weights in both arms, the permanent multiplier,
+  the cleared mids, the order sizes (``capital * dw / mid``) and the volatility factor are
+  identical in both arms, and only ``eta`` changes: on a bar that trades it resolves to
+  about ``eta + eta_radius`` (never below ``eta``). At a positive mid each fill is then at
+  least as expensive, so cash is never higher, the shares are equal, and the gap is
+  ``>= 0`` on every seed (``> 0`` in exact arithmetic once anything trades). Rounding is
+  monotone at every step, so the weak inequality also holds in floating point. Both
+  premises are checked. Mids that are not positive are refused, and ``identical_actions``
+  records whether the weights matched. A policy that reads ``cash`` or ``avg_price`` (the
+  only observation fields that differ between arms), or draws from state kept outside its
+  factory, can send different weights, and the report's ``sign_guaranteed`` is then false.
+* *Any set with* ``lambda_radius > 0``. No sign is guaranteed: the worst-case ``lambda``
+  moves the cleared mids, so weights, sizes and later fills can differ between arms. The
+  exogenous mark removes one channel that favours the worst case. With ``vol_scale = 0``, a
+  single buy of ``q`` shares held to the end has ``d NAV / d lambda = q**2 / V * (exo_T -
+  exo_0)`` under the engine's mark, so the engine's NAV ends higher under the worst case
+  on a rising path, while the exogenously marked NAV has slope ``-q**2 / V * exo_0``, the
+  extra cost of the fill. After ``k`` equal weight steps bought at a flat exogenous mid
+  and held until that mid ends at ``r`` times its entry value, the engine-marked slope at
+  ``lambda = eta = 0`` is positive unless ``r < 2 / (k + 1)``, while the exogenously
+  marked slope is negative for every ``r``. Over
+  seeds 0 to 31 (one symbol, 60 days), for a single buy and for ten-bar long and short
+  scale-ins held to the end, the engine-marked gap under ``lambda_radius = 0.05`` was
+  negative on 19 of 32 seeds (the rising paths) and on 32 of 32 respectively; the
+  exogenously marked gap was positive on every seed, as it was for a ten-bar round trip
+  and an alternating policy. The report does not clamp a negative gap.
 
 **What the meta-order probe measures.** The kernel's permanent impact is
 ``M_{t+1} = M_t * (1 + lambda * g(Q_t / V))`` with ``g(x) = sign(x) * |x|**beta``. Each
@@ -137,6 +156,24 @@ class UnpairedArmsError(ImpactDiagnosticError):
         self.check = check
 
 
+class NonPositiveMidError(ImpactDiagnosticError):
+    """An arm cleared a symbol at a mid that is not positive.
+
+    The linear permanent multiplier ``M * (1 + lambda * Q / V)`` crosses zero when one
+    bar's flow is large enough against ``V``. Past that point a fill's impact cost changes
+    sign and no return or gap means anything, so the arm is refused. ``bar`` is the traded
+    bar, or ``None`` for the flat replay.
+    """
+
+    def __init__(self, seed: int, bar: Optional[int], symbol: str, mid: float) -> None:
+        where = "flat replay" if bar is None else f"bar {bar}"
+        super().__init__(f"seed {seed}: {where}: symbol {symbol} cleared at {mid!r}")
+        self.seed = seed
+        self.bar = bar
+        self.symbol = symbol
+        self.mid = mid
+
+
 @dataclass(frozen=True)
 class Unavailable:
     """A statistic that does not exist for this input, with the reason code."""
@@ -187,7 +224,10 @@ class ArmTrace:
 
     Per-bar tuples run over traded bars; per-symbol rows are in the engine's sorted symbol
     order. ``exogenous_mids`` comes from the flat replay of the same market object and
-    ``applied_lambda`` is the permanent coefficient each bar cleared at.
+    ``applied_lambda`` is the permanent coefficient each bar cleared at. ``weights`` are
+    the target weights the policy sent on each bar, and ``final_cash`` and
+    ``final_shares`` are the book after the last bar, as the engine's last observation
+    reports them.
     """
 
     seed: int
@@ -203,6 +243,9 @@ class ArmTrace:
     applied_lambda: tuple[tuple[float, ...], ...]
     rewards: tuple[float, ...]
     navs: tuple[float, ...]
+    weights: tuple[tuple[float, ...], ...]
+    final_cash: float
+    final_shares: tuple[float, ...]
 
 
 def _market(settings: MarketSettings, seed: int, uncertainty) -> PyMarketClearing:
@@ -240,6 +283,15 @@ def _closes(observation: Mapping[str, Any]) -> tuple[tuple[float, ...], ...]:
     return tuple(tuple(float(c) for c in s["close_history"]) for s in observation["symbols"])
 
 
+def _positive_mids(
+    mids: tuple[float, ...], symbols: tuple[str, ...], seed: int, bar: Optional[int]
+) -> tuple[float, ...]:
+    for symbol, mid in zip(symbols, mids):
+        if not mid > 0.0:
+            raise NonPositiveMidError(seed, bar, symbol, mid)
+    return mids
+
+
 def run_impact_arm(
     make_policy: Callable[[], Policy],
     seed: int,
@@ -248,10 +300,13 @@ def run_impact_arm(
 ) -> ArmTrace:
     """Run one arm on one seed: a flat replay for the exogenous path, then the policy.
 
-    ``make_policy`` is called once, after the replay, so a stateful policy starts each arm
-    from the same state. ``uncertainty`` takes the forms
-    :class:`~sharpearena.market_env.EndogenousMarketEnv` accepts; ``None`` is the point
-    estimate.
+    ``make_policy`` is called once, after the replay, so a policy whose state lives in the
+    factory's closure starts each arm from the same state. State shared outside the
+    factory (a module-level random generator, for example) is not reset, and the two arms
+    then send different weights; the report shows that as ``identical_actions``.
+    ``uncertainty`` takes the forms :class:`~sharpearena.market_env.EndogenousMarketEnv`
+    accepts; ``None`` is the point estimate. Raises :class:`NonPositiveMidError` at the
+    first mid that is not positive, in the replay or in the traded run.
     """
     s = (settings or MarketSettings()).validated()
     norm = _normalize_uncertainty(uncertainty)
@@ -266,17 +321,19 @@ def run_impact_arm(
             raise ImpactDiagnosticError(
                 f"flat replay of seed {seed} reported net flow {step['net_flow']!r}"
             )
-        exogenous.append(tuple(float(m) for m in step["cleared_mids"]))
+        mids = tuple(float(m) for m in step["cleared_mids"])
+        exogenous.append(_positive_mids(mids, symbols, seed, None))
         if step["done"]:
             break
 
     start = json.loads(market.reset_market())
     policy = make_policy()
     observation = start["observations"][0]
-    cleared, flows, lambdas, rewards, navs = [], [], [], [], []
+    cleared, flows, lambdas, rewards, navs, sent = [], [], [], [], [], []
     bar = 0
     while True:
         weights = _weights(policy(observation, bar), len(symbols), bar)
+        sent.append(tuple(weights))
         step = json.loads(market.step_market(json.dumps([weights])))
         robust = step.get("robust_impact")
         if (robust is None) != (norm is None):
@@ -284,7 +341,8 @@ def run_impact_arm(
                 f"seed {seed} bar {bar}: robust_impact presence does not match the "
                 f"declared uncertainty {norm!r}"
             )
-        cleared.append(tuple(float(m) for m in step["cleared_mids"]))
+        mids = tuple(float(m) for m in step["cleared_mids"])
+        cleared.append(_positive_mids(mids, symbols, seed, bar))
         flows.append(tuple(float(q) for q in step["net_flow"]))
         if robust is None:
             lambdas.append(tuple(s.kyle_lambda for _ in symbols))
@@ -297,6 +355,7 @@ def run_impact_arm(
         if step["done"]:
             break
 
+    held = {row["symbol"]: float(row["shares"]) for row in observation["portfolio"]}
     return ArmTrace(
         seed=int(seed),
         settings=s,
@@ -311,6 +370,9 @@ def run_impact_arm(
         applied_lambda=tuple(lambdas),
         rewards=tuple(rewards),
         navs=tuple(navs),
+        weights=tuple(sent),
+        final_cash=float(observation["cash"]),
+        final_shares=tuple(held[symbol] for symbol in symbols),
     )
 
 
@@ -519,14 +581,27 @@ def _mean_statistic(values: Sequence[Statistic]) -> Statistic:
 
 @dataclass(frozen=True)
 class SeedGap:
-    """One seed's paired outcome. ``*_gap`` is point minus worst case."""
+    """One seed's paired outcome. ``*_gap`` is point minus worst case.
+
+    ``point_return`` and ``robust_return`` are final returns on ``capital`` with the held
+    position marked at the exogenous mid, so neither includes the arm's own permanent
+    impact on its mark. ``*_own_impact_mark`` is ``final_shares * (cleared_mid -
+    exogenous_mid) / capital`` on the last bar, summed over symbols: what the engine's NAV,
+    which marks at the cleared mid, adds on top. The engine's final return is the sum of
+    the two, up to rounding. ``identical_arms`` compares the reward and NAV tracks bit for
+    bit, and ``identical_actions`` the weights the policy sent. ``sharpe_gap`` is
+    :class:`Unavailable` whenever either arm has no Sharpe ratio, identical arms included.
+    """
 
     seed: int
     traded_bars: int
     identical_arms: bool
+    identical_actions: bool
     point_return: float
     robust_return: float
     return_gap: float
+    point_own_impact_mark: float
+    robust_own_impact_mark: float
     point_sharpe: Statistic
     robust_sharpe: Statistic
     sharpe_gap: Statistic
@@ -536,8 +611,12 @@ class SeedGap:
 class ImpactGapReport:
     """Paired point-estimate versus worst-case report. Rank-neutral: see the module docs.
 
-    ``return_gap`` is ``point_return - robust_return`` (return lost to the worst case) and
-    ``|return_gap|`` is the paper's relative portfolio gap for this pair of arms.
+    ``return_gap`` is ``point_return - robust_return``: with both positions marked at the
+    exogenous mid, a positive gap is value the worst case cost the policy. It compares the
+    point estimate with the worst case of a set; the paper's relative portfolio gap
+    compares a market with impact to one without, so the two are not the same number.
+    ``sign_guaranteed`` is true when the set is eta-only and the policy sent identical
+    weights in both arms on every seed; every ``return_gap`` is then ``>= 0`` (module docs).
     """
 
     n_seeds: int
@@ -553,19 +632,29 @@ class ImpactGapReport:
     mean_sharpe_gap: Statistic
     return_gap_interval: Union[GapInterval, Unavailable]
     sharpe_gap_interval: Union[GapInterval, Unavailable]
+    sign_guaranteed: bool
+
+
+def _exogenous_marked(trace: ArmTrace) -> tuple[float, float]:
+    """(final return with the position at the exogenous mid, own-impact mark), on capital."""
+    capital = trace.settings.capital
+    exogenous = trace.exogenous_mids[-1]
+    cleared = trace.cleared_mids[-1]
+    nav = math.fsum([trace.final_cash, *(h * e for h, e in zip(trace.final_shares, exogenous))])
+    own = math.fsum(
+        h * (x - e) for h, x, e in zip(trace.final_shares, cleared, exogenous)
+    )
+    return nav / capital - 1.0, own / capital
 
 
 def _seed_gap(point: ArmTrace, robust: ArmTrace) -> SeedGap:
-    capital = point.settings.capital
-    point_return = point.navs[-1] / capital - 1.0
-    robust_return = robust.navs[-1] / capital - 1.0
+    point_return, point_own = _exogenous_marked(point)
+    robust_return, robust_own = _exogenous_marked(robust)
     identical = _bits([point.rewards, point.navs]) == _bits([robust.rewards, robust.navs])
     point_sharpe = track_sharpe(point.rewards)
     robust_sharpe = track_sharpe(robust.rewards)
-    if identical:
-        sharpe_gap: Statistic = 0.0
-    elif isinstance(point_sharpe, Unavailable) or isinstance(robust_sharpe, Unavailable):
-        sharpe_gap = Unavailable(
+    if isinstance(point_sharpe, Unavailable) or isinstance(robust_sharpe, Unavailable):
+        sharpe_gap: Statistic = Unavailable(
             SHARPE_UNAVAILABLE,
             f"point {point_sharpe!r}, robust {robust_sharpe!r}",
         )
@@ -575,9 +664,12 @@ def _seed_gap(point: ArmTrace, robust: ArmTrace) -> SeedGap:
         seed=point.seed,
         traded_bars=len(point.rewards),
         identical_arms=identical,
+        identical_actions=_bits(point.weights) == _bits(robust.weights),
         point_return=point_return,
         robust_return=robust_return,
         return_gap=point_return - robust_return,
+        point_own_impact_mark=point_own,
+        robust_own_impact_mark=robust_own,
         point_sharpe=point_sharpe,
         robust_sharpe=robust_sharpe,
         sharpe_gap=sharpe_gap,
@@ -629,6 +721,7 @@ def impact_misspecification_gap(
         mean_sharpe_gap=_mean_statistic([r.sharpe_gap for r in rows]),
         return_gap_interval=gap_interval([r.return_gap for r in rows], confidence),
         sharpe_gap_interval=gap_interval([r.sharpe_gap for r in rows], confidence),
+        sign_guaranteed=norm[0] == 0.0 and all(r.identical_actions for r in rows),
     )
 
 
@@ -811,6 +904,7 @@ __all__ = [
     "ImpactGapReport",
     "MarketSettings",
     "MetaOrderImpactShape",
+    "NonPositiveMidError",
     "SeedGap",
     "Unavailable",
     "UnpairedArmsError",

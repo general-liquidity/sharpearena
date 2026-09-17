@@ -244,6 +244,7 @@ from .manipulation import (
 from .market_env import EndogenousMarketEnv
 from .impact_diagnostics import (
     ImpactDiagnosticError,
+    NonPositiveMidError,
     UnpairedArmsError,
     impact_misspecification_gap,
     meta_order_impact_shape,
@@ -608,6 +609,7 @@ __all__ = [
     "UnpairedMidPathError",
     "impact_misspecification_gap",
     "meta_order_impact_shape",
+    "NonPositiveMidError",
     "ImpactDiagnosticError",
     "UnpairedArmsError",
     "ExecutionEnv",
