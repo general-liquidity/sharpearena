@@ -39,6 +39,7 @@ the root README can stay task-oriented.
 | Ecology | Deterministic population selection, mutation, regime/liquidity shocks, outcome and coalition classification |
 | Adverse selection | Paired informed/uninformed meta-order arms and exact markout decomposition |
 | Manipulation diagnostics | Symmetric/asymmetric schedules, impact boundary and size-response sweeps, explicit finite-grid scope, rank-neutral per-follower seat-removal externality (live P&L minus P&L with the manipulator held flat on the same seed) |
+| Impact robustness | Paired point-estimate against worst-case report over an opt-in elliptic uncertainty set (`impact_misspecification_gap`: returns mark the held position at the exogenous mid and report the arm's own impact mark beside them, refusing unpaired arms or a cleared mid at or below zero; `sign_guaranteed` holds only for an eta-only set with identical weights in both arms), and the meta-order impact-shape probe (`meta_order_impact_shape`: execution exponent, post-execution relaxation ratio, duration exponent); both rank-neutral |
 
 ## Agent operations
 
