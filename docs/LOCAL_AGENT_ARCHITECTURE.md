@@ -169,26 +169,49 @@ refuses the search before the model is called.
 The identity names the bars that were read. A historical split is its dataset content
 digest and recorded window; execution seeds are excluded because they do not change the
 bars. A synthetic split is generated from its seeds, so the sorted seeds join it. Costs
-and labels are excluded, and windows are compared as recorded. A completed record of
-schema 2 or 3 counts as a consultation. A failed schema 3 record carries the census too,
-with `test_consulted` saying whether evaluation reached the test split; only a failure
-that reached it adds trials. A schema 2 failure states no split and is counted as
-unidentified. The census covers one journal file only: searches written to a different
+and labels are excluded, and windows are compared as recorded, so the exact count treats
+a window moved by one bar as a new split.
+
+The overlap count catches that move. The census records `test_window_bars`, the
+half-open bar interval the kernel resolves for this test split, and `test_dataset_bars`,
+the panel's bar count. An earlier consultation overlaps when it read the same panel
+(same content digest, and for a synthetic split at least one common seed) through a
+window that intersects `test_window_bars`; its omitted bounds resolve against this
+panel's bar count. The census reports how many earlier consultations overlap, their
+record digests and observed trials, and `prior_consulted_test_bars`, the number of this
+split's bars that at least one of them read. An exact match always overlaps too. Moving a
+10-bar window from bars 10 to 19 to bars 12 to 21 leaves the exact count at zero, while
+the overlap count is one and 8 of the 10 bars were read before.
+
+A completed record of schema 2 or 3 counts as a consultation. A failed schema 3 record
+carries the census too, with `test_consulted` saying whether evaluation reached the test
+split; only a failure that reached it adds trials. A schema 2 failure states no split and
+is counted as unidentified. The runner resolves the test split before generation, so a
+test window the dataset cannot hold refuses the search before the model is called.
+
+The two multiplicities bound different uses. `prior_test_consultations + 1` counts test
+looks, which is the multiplicity when only final test results were compared across
+searches. `cumulative_observed_n_trials` counts every candidate the consulting searches
+generated, which is the multiplicity when later generations were steered by earlier test
+results. The census covers one journal file only: searches written to a different
 evidence path, or never recorded, are invisible to it. It is diagnostic and never changes
 the trial count used for deflation. `sharpebench lineage --census` recomputes it over the
 whole journal and refuses a record whose census disagrees with the records before it.
 
 An operator-bound source may carry `available_on`, the stated first calendar day
 (`YYYY-MM-DD`) its content existed, through `bind_idea_source(..., available_on=...)` or
-the plan's `idea_provenance`. It is omitted when absent, so undated sources keep their
-record and plan-digest bytes. A completed schema 3 record adds `source_dating`: the
-counts of cited, dated and undated sources, and for the selection and test splits the
-calendar day of the first bar the environment stepped and the number of cited sources
-dated on or after it. A synthetic split has no calendar and is reported unavailable with
-reason `synthetic_split_has_no_calendar`; a first bar label that does not begin with a
-calendar day is unavailable with `date_not_iso8601`. Neither is treated as clean, and an
-undated source is never assumed to be early. The date is the operator's statement, not a
-proof of publication.
+the plan's `idea_provenance`. Write the day in the date convention of the dataset's bar
+labels, the trading venue's local date; the field carries no time zone. It is omitted
+when absent, so undated sources keep their record and plan-digest bytes. A completed
+schema 3 record adds `source_dating`: the counts of cited, dated and undated sources, and
+for the selection and test splits the calendar day of the first bar the environment
+stepped and the number of cited sources dated on or after that day. Such a source may
+carry information from the split. A source dated on the first bar's day counts, because
+its time within the day is unknown and it may postdate that bar. A synthetic split has no
+calendar and is reported unavailable with reason `synthetic_split_has_no_calendar`; a
+first bar label that does not begin with a calendar day is unavailable with
+`date_not_iso8601`. Neither is treated as clean, and an undated source is never assumed to
+be early. The date is the operator's statement, not a proof of publication.
 
 ## Isolation model
 
