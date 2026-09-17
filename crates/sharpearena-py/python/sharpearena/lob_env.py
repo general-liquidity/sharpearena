@@ -12,15 +12,30 @@ collected, then the book clears, then the next observation is produced).
 
 **Inventory mark.** Reward values inventory at a per-agent mark. The default
 ``mark="ex_own_mid"`` is the midpoint of the best bid and best ask among resting orders that
-*other* agents own. While the others' orders lack a side, the previous mark is carried
-forward, starting at the opening reference mid (1000 ticks). The noise trader never rests,
-so a lone agent's mark stays at 1000 ticks. An agent's own resting quotes never enter its
-mark. ``mark="book_mid"`` is the mark this environment used before 2026-09-16, the mid of
-the whole book with the agent's own quotes included, kept only to replay earlier runs.
-Under it an agent moves its own valuation without a counterparty: with the noise trader
-off, a lone agent quoting ``(1, 20)`` walks the book mid 1000, 1010, 1014, 1016, 1018 ticks
-over four steps with no fill, and with the noise trader on its equity changes on steps
-where it trades with nobody.
+*other controllers* own. Each seat is its own controller unless ``controllers`` names the
+seats one entrant runs; the noise trader is a controller of its own. While those orders lack
+a side, the mark is the price of the step's last fill between two different controllers,
+and on a step with neither the previous mark carries forward from the opening reference mid
+(1000 ticks). An agent's own resting quotes, and those of its controller's other seats,
+never enter its mark. The noise trader never rests, so a lone agent's mark is the price of
+its last fill against the noise trader: its equity changes only on steps where it trades,
+and inventory it builds while walking the reference mid is valued where it last traded.
+Until 2026-09-17 the fallback carried the previous mark, which froze a lone agent's mark at
+1000 ticks. Over seeds 0 to 31 with no inventory penalty, a lone agent that walked the mid
+with ``(1, 20)`` for 60 steps and then quoted ``(1, 1)`` earned a mean reward of 2360.3
+under the frozen mark against 897.1 for cash plus inventory at the final reference mid; it
+now earns 881.4. ``mark="book_mid"`` is the mark this environment used before 2026-09-16,
+the mid of the whole book with the agent's own quotes included, kept only to replay earlier
+runs. Under it an agent moves its own valuation without a counterparty: with the noise
+trader off, a lone agent quoting ``(1, 20)`` walks the book mid 1000, 1010, 1014, 1016, 1018
+ticks over four steps with no fill, and with the noise trader on its equity changes on
+steps where it trades with nobody.
+
+The mark still follows an agent's quotes indirectly. Every seat quotes around one
+reference mid that tracks the whole book, so an agent's quotes move the others' next quotes
+and the prices the noise trader fills at. With two agents and the noise trader off, agent 0
+quoting ``(1, 20)`` against agent 1's ``(3, 3)`` moved agent 0's mark from 1000 to 1001
+ticks with no fill.
 
 **Same-bar priority.** The native book folds a bar's orders sorted by their ``agent``
 field, so under the default ``priority="agent_index"`` seat 0 queues ahead of seat 1 at a
@@ -40,13 +55,14 @@ the rule existed.
 order only after the previous step left one side of the book empty and the reference mid
 took a seeded step, so self-trades are rare (2 of 27,552 fills over 400 seeded random
 configurations). Both legs belong to one agent at one price, so its cash and inventory do
-not change, and under the default mark its own orders are not part of its valuation.
+not change. Under the default mark its own orders are not part of its valuation, and a fill
+between two seats of one controller never sets anyone's mark.
 """
 
 from __future__ import annotations
 
 import json
-from typing import Any, Optional
+from typing import Any, Hashable, Optional, Sequence
 
 import numpy as np
 
@@ -96,6 +112,10 @@ class LOBMarketEnv(ParallelEnv):  # type: ignore[misc]
 
     ``mark`` (one of :data:`MARKS`, default ``"ex_own_mid"``) and ``priority`` (one of
     :data:`PRIORITIES`, default ``"agent_index"``) are described in the module docstring.
+    ``controllers`` gives one hashable label per seat, equal for seats one entrant runs
+    (for example a policy that shares parameters across seats); the default gives each
+    seat its own. It applies to ``mark="ex_own_mid"`` only and is refused with
+    ``"book_mid"``, which ignores ownership.
     """
 
     metadata = {"render_modes": [], "name": "sharpearena_lob_v0"}
@@ -114,6 +134,7 @@ class LOBMarketEnv(ParallelEnv):  # type: ignore[misc]
         noise_intensity: float = 2.0,
         mark: str = "ex_own_mid",
         priority: str = "agent_index",
+        controllers: Optional[Sequence[Hashable]] = None,
     ) -> None:
         if not _HAS_PZ:
             raise RuntimeError(
@@ -126,6 +147,20 @@ class LOBMarketEnv(ParallelEnv):  # type: ignore[misc]
             raise ValueError(f"mark must be one of {MARKS}, got {mark!r}")
         if priority not in PRIORITIES:
             raise ValueError(f"priority must be one of {PRIORITIES}, got {priority!r}")
+        if controllers is None:
+            labels: tuple = tuple(range(int(n_agents)))
+        else:
+            if mark != "ex_own_mid":
+                raise ValueError("controllers applies to mark='ex_own_mid' only")
+            labels = tuple(controllers)
+            if len(labels) != n_agents or any(label is None for label in labels):
+                raise ValueError(
+                    f"controllers needs one controller per seat ({n_agents}), "
+                    f"none of them None, got {labels!r}"
+                )
+        self._controllers = labels
+        # Each seat's controller as the index of the first seat with the same label.
+        self._controller_index = [labels.index(label) for label in labels]
         self._mark_rule = mark
         self._priority = priority
         self._n_agents = int(n_agents)
@@ -156,6 +191,11 @@ class LOBMarketEnv(ParallelEnv):  # type: ignore[misc]
     def priority(self) -> str:
         """The same-bar seat-priority rule this environment was built with."""
         return self._priority
+
+    @property
+    def controllers(self) -> tuple:
+        """Each seat's controller label, in seat order."""
+        return self._controllers
 
     # -- PettingZoo API ----------------------------------------------------
 
@@ -217,7 +257,7 @@ class LOBMarketEnv(ParallelEnv):  # type: ignore[misc]
         ladder = out["ladder"]
         self._track_resting(orders, out["fills"])
         self._apply_fills(out["fills"], ladder)
-        self._update_marks()
+        self._update_marks(out["fills"])
         self._mid = self._next_mid(ladder)
         self._step += 1
 
@@ -245,6 +285,10 @@ class LOBMarketEnv(ParallelEnv):  # type: ignore[misc]
         if code >= self._exogenous_code():
             return None
         return code % self._n_agents
+
+    def _controller_of(self, owner: Optional[int]) -> int:
+        """The controller index behind an agent index; ``-1`` for the noise trader."""
+        return -1 if owner is None else self._controller_index[owner]
 
     def _seat_codes(self) -> list[int]:
         """Book code per agent index for this step (see the module docstring).
@@ -295,20 +339,30 @@ class LOBMarketEnv(ParallelEnv):  # type: ignore[misc]
             if entry[3] == 0:
                 del self._resting[f["maker_id"]]
 
-    def _update_marks(self) -> None:
-        """Move each agent's ex-own mark to the others' mid when they quote both sides."""
+    def _update_marks(self, fills: list[dict]) -> None:
+        """Move each agent's ex-own mark to the other controllers' mid when they quote both
+        sides, else to the step's last fill between two different controllers."""
         if self._mark_rule != "ex_own_mid":
             return
+        last_trade: Optional[float] = None
+        for f in fills:
+            maker = self._controller_of(self._owner(f["maker_agent"]))
+            taker = self._controller_of(self._owner(f["taker_agent"]))
+            if maker != taker:
+                last_trade = float(f["price_tick"])
         levels: dict[str, dict[int, set]] = {"buy": {}, "sell": {}}
         for owner, side, price, _qty in self._resting.values():
-            levels[side].setdefault(price, set()).add(owner)
+            levels[side].setdefault(price, set()).add(self._controller_of(owner))
         bids = sorted(levels["buy"].items(), reverse=True)
         asks = sorted(levels["sell"].items())
         for i, a in enumerate(self.possible_agents):
-            bid = next((p for p, owners in bids if owners - {i}), None)
-            ask = next((p for p, owners in asks if owners - {i}), None)
+            mine = {self._controller_index[i]}
+            bid = next((p for p, owners in bids if owners - mine), None)
+            ask = next((p for p, owners in asks if owners - mine), None)
             if bid is not None and ask is not None:
                 self._marks[a] = (bid + ask) / 2.0
+            elif last_trade is not None:
+                self._marks[a] = last_trade
 
     def _mark_price(self, agent: str, ladder) -> float:
         if self._mark_rule == "book_mid":

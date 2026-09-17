@@ -33,12 +33,13 @@ the root README can stay task-oriented.
 |---|---|
 | Portfolio allocation | Simplex weights and log-return reward |
 | Execution | VWAP/TWAP implementation shortfall |
-| Market making | Avellaneda–Stoikov closed-form reference and seed-paired regret (`mm_regret` raises `UnpairedMidPathError` when the two arms' mid paths differ, as they do at high arrival rates); per-step reward split into spread capture, inventory mark-to-market, running penalty and liquidation cost (`mm_pnl_split`, diagnostic only) |
+| Market making | Avellaneda–Stoikov closed-form reference and seed-paired regret (`mm_regret` raises `UnpairedMidPathError` when the two arms' mids, arrival counts or generator positions differ after any step, as they do at high arrival rates, also when `sigma = 0` keeps every mid equal); per-step reward split into spread capture, inventory mark-to-market, running penalty and liquidation cost (`mm_pnl_split`, diagnostic only), and the same split of a paired regret under the same refusal (`mm_regret_split`) |
 | Shared endogenous market | PettingZoo parallel env with Kyle/Almgren–Chriss impact |
-| Limit-order book | Integer ticks, price-time matching, limit/market/cancel/modify, call auction, depth and sweep-cost queries; PettingZoo `LOBMarketEnv` values each agent's inventory at the mid of the other agents' resting quotes (`mark="ex_own_mid"`, the default; `"book_mid"` replays the pre-2026-09-16 mark) and offers an opt-in seeded same-bar seat shuffle (`priority="seeded_shuffle"`; default `"agent_index"`) |
+| Limit-order book | Integer ticks, price-time matching, limit/market/cancel/modify, call auction, depth and sweep-cost queries; PettingZoo `LOBMarketEnv` values each agent's inventory at the mid of other controllers' resting quotes, or at the last fill between two different controllers while those quotes lack a side (`mark="ex_own_mid"`, the default; `controllers` groups the seats one entrant runs; `"book_mid"` replays the pre-2026-09-16 mark) and offers an opt-in seeded same-bar seat shuffle (`priority="seeded_shuffle"`; default `"agent_index"`) |
 | Ecology | Deterministic population selection, mutation, regime/liquidity shocks, outcome and coalition classification |
 | Adverse selection | Paired informed/uninformed meta-order arms and exact markout decomposition |
 | Manipulation diagnostics | Symmetric/asymmetric schedules, impact boundary and size-response sweeps, explicit finite-grid scope, rank-neutral per-follower seat-removal externality (live P&L minus P&L with the manipulator held flat on the same seed) |
+| Impact robustness | Paired point-estimate against worst-case report over an opt-in elliptic uncertainty set (`impact_misspecification_gap`: returns mark the held position at the exogenous mid and report the arm's own impact mark beside them, refusing unpaired arms or a cleared mid at or below zero; `sign_guaranteed` holds only for an eta-only set with identical weights in both arms), and the meta-order impact-shape probe (`meta_order_impact_shape`: execution exponent, post-execution relaxation ratio, duration exponent); both rank-neutral |
 
 ## Agent operations
 
@@ -82,4 +83,11 @@ the root README can stay task-oriented.
   quoters was filled more on 32 of 32 seeds; `priority="seeded_shuffle"` makes
   the seats exchangeable (15 of 32) without changing the engine, `SPEC_HASH` or
   the golden fill tape. The rule lives in the Python environment only.
+- The `LOBMarketEnv` inventory mark leaves out an agent's own quotes but not their
+  effect on the one reference mid every seat quotes around. With two agents and
+  the noise trader off, an agent quoting `(1, 20)` moved its own mark from 1000
+  to 1001 ticks with no fill. Seats that one entrant runs stay out of each other's
+  marks only when `controllers` declares them; the environment cannot infer it.
+  A lone agent is marked at its last fill against the noise trader, the only
+  counterparty it has.
 - A PrimeIntellect Environments-Hub listing is not yet shipped.

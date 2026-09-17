@@ -175,11 +175,14 @@ report = impact_misspecification_gap(
 
 Each seed runs the policy alone in the book twice on the linear kernel
 (`impact_exponent=1.0`): once at the point estimate and once against the declared set.
-The report gives per-seed and mean total return and per-bar Sharpe under each arm. It also
-gives `return_gap` and `sharpe_gap` (point minus worst case, so a positive gap is what the
-worst case cost), the number of seeds, and a t-based 95% interval on each gap over the
-per-seed vector. `|return_gap|` is the paper's relative portfolio gap for this pair of
-arms.
+The report gives per-seed and mean total return and per-bar Sharpe under each arm. The
+returns mark the final position at the exogenous mid, and each row reports separately
+what the engine's own mark, at a cleared mid that carries the arm's permanent impact,
+adds (`point_own_impact_mark`, `robust_own_impact_mark`). The report also gives
+`return_gap` and `sharpe_gap` (point minus worst case, so a positive return gap is value
+the worst case cost), the number of seeds, and a t-based 95% interval on each gap over
+the per-seed vector. The paper's relative portfolio gap compares a market with impact to
+one without (p. 9), so `return_gap` is an adaptation of that measure, not the same number.
 
 - **Pairing is proved, not assumed.** Each arm's market object is first replayed with flat
   orders, which exposes its exogenous mids exactly. It is then reset and the policy is run.
@@ -189,17 +192,25 @@ arms.
     that arm's reported flow and applied `lambda`.
 - **Degenerate inputs are typed.**
   - A zero-radius set, or a policy that never trades, leaves the arms bitwise identical.
-    Every gap is then exactly `0.0`.
+    `return_gap` is then exactly `0.0`.
   - A reward track with all values exactly equal reports `Unavailable("constant_track")`
-    instead of a Sharpe ratio.
+    instead of a Sharpe ratio. A Sharpe gap needs both ratios, so it is
+    `Unavailable("sharpe_unavailable")` whenever either arm lacks one, identical arms
+    included, and the mean and interval name the seeds without one.
   - One seed reports `Unavailable("insufficient_seeds")` instead of an interval.
-- **The sign is guaranteed only for an eta-only set.**
-  - With `lambda_radius = 0`, both arms clear at identical mids and sizes, and only the
-    fill cost rises. For a policy whose weights do not read `cash` or `avg_price`, the gap
-    is therefore never negative.
-  - With `lambda_radius > 0`, the worst-case `lambda` also marks up a position the policy
-    holds in the direction it traded. A buy-and-hold on a rising path then ends richer
-    under the worst case, and the gap is negative. The report does not clamp it.
+  - A cleared mid at or below zero, which a large flow against the linear multiplier can
+    produce, raises `NonPositiveMidError`.
+- **The sign is guaranteed only for an eta-only set, and the report says when.**
+  - With `lambda_radius = 0` and the same weights sent in both arms, both arms clear at
+    identical mids and sizes, and only the fill cost rises, so the gap is never negative.
+    Each row records `identical_actions`; a policy that reads `cash` or `avg_price`, or
+    draws from random state kept outside its factory, can send different weights. The
+    report's `sign_guaranteed` is true only for an eta-only set with identical weights on
+    every seed.
+  - With `lambda_radius > 0` no sign is guaranteed. The engine's mark would make a held
+    position richer under the worst case (after ten equal buys, on 32 of 32 seeds whatever
+    the path did); the exogenous mark removes that channel, and the same scale-ins then
+    gave a positive gap on every seed. The report does not clamp a negative gap.
 
 **Meta-order impact shape.** Permanent impact in this market compounds bar by bar,
 `M_{t+1} = M_t * (1 + lambda * sign(Q/V) * |Q/V|**exponent)`, and never decays. An

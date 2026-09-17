@@ -13,7 +13,8 @@ closed under batch G in ``VERIFICATION-LOG.md``; it is a regression guard, not a
 The default ``ex_own_mid`` mark is checked against the native engine rather than against
 the environment's own bookkeeping: every batch the environment submitted is replayed into a
 fresh ``PyOrderBook``, the agent's own resting orders are cancelled there, and the mark must
-equal that book's mid whenever both sides remain.
+equal that book's mid whenever both sides remain, and otherwise the price of the step's last
+fill between two different owners.
 """
 
 from __future__ import annotations
@@ -108,8 +109,9 @@ def test_equity_reward_identity_and_flow_conservation_every_step(mark, priority)
     After each step, for every agent: ``cash + inventory * mark`` is the stored equity
     baseline, and ``reward == equity - prev_equity - penalty * inventory**2``. The
     ``book_mid`` mark is the full book's mid; the ``ex_own_mid`` mark is the native book's
-    mid with the agent's own resting orders cancelled, carried forward from 1000 ticks
-    while that book lacks a side. Across agents, inventory and cash are conserved against
+    mid with the agent's own resting orders cancelled; while that book lacks a side it is
+    the price of the step's last fill between two different owners, and it carries
+    forward from 1000 ticks on a step with neither. Across agents, inventory and cash are conserved against
     the exogenous noise trader's fills; with the noise trader disabled they sum to exactly
     zero.
     """
@@ -143,6 +145,14 @@ def test_equity_reward_identity_and_flow_conservation_every_step(mark, priority)
                     ex_own = _engine_ex_own_ladder(env, recorder.batches, index)
                     if ex_own["bids"] and ex_own["asks"]:
                         expected_mark[agent] = ex_own["mid"]
+                    else:
+                        traded = [
+                            fill["price_tick"]
+                            for fill in captured[-1]
+                            if env._owner(fill["maker_agent"]) != env._owner(fill["taker_agent"])
+                        ]
+                        if traded:
+                            expected_mark[agent] = float(traded[-1])
                     price = expected_mark[agent]
                     assert env._marks[agent] == price
                 inventory = env._inventory[agent]

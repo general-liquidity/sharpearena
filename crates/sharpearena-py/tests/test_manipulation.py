@@ -390,7 +390,7 @@ def test_asymmetric_schedule_rejects_incoherent_shapes(kwargs):
 
 
 def test_asymmetric_schedule_must_fit_inside_the_episode():
-    p = ManipulationParams(n_days=20)
+    p = ManipulationParams(n_days=40)
     with pytest.raises(ValueError, match="inside the episode"):
         asymmetric_round_trip_schedule(p, AsymmetricSchedule.uniform(10, 10))
 
@@ -490,7 +490,8 @@ def test_short_side_is_the_exact_sign_mirror_of_the_long_side(schedule, hold_bar
     """The short round trip is the long one with the sign flipped bar for bar, and the
     default side is the long side. Any asymmetry the probe then measures between the two
     sides is a property of the market, not of the schedule."""
-    p = ManipulationParams(n_days=80, hold_bars=hold_bars)
+    # 100 days give 80 traded bars, enough for a 45:5 trip around a 12-bar hold.
+    p = ManipulationParams(n_days=100, hold_bars=hold_bars)
     long_w = asymmetric_round_trip_schedule(p, schedule)
     short_w = asymmetric_round_trip_schedule(p, schedule, -1)
     explicit_long = asymmetric_round_trip_schedule(p, schedule, 1)
@@ -545,7 +546,7 @@ def test_zero_impact_reference_leaves_nothing_to_attribute_on_the_short_side():
 
 @needs_pz
 def test_long_hold_and_long_legs_run_and_are_deterministic():
-    p = ManipulationParams(n_days=80, hold_bars=12, eta=0.0, follower_gain=0.0)
+    p = ManipulationParams(n_days=100, hold_bars=12, eta=0.0, follower_gain=0.0)
     sc = AsymmetricSchedule.uniform(45, 5)
     a = run_asymmetric_probe(params=p, schedule=sc, seed=3)
     b = run_asymmetric_probe(params=p, schedule=sc, seed=3)
@@ -647,3 +648,39 @@ def test_the_externality_leaves_the_manipulators_attribution_unchanged():
     assert result.live_pnl == -0.012208654387262152
     assert result.reference_pnl == -0.011789846187431952
     assert result.peak_price_move == 0.06031208065220539
+
+
+# ---------------------------------------------------------------------------
+# A6-4: the round trip must fit the traded bars, not the whole dataset
+
+
+def test_round_trip_must_finish_inside_the_traded_bars():
+    # The market burns in 20 bars before the first decision, so 80 days give 60 traded
+    # bars. A trip starting at bar 57 would never unwind, yet it fitted inside n_days.
+    p = ManipulationParams()
+    late = p.n_days - 20 - 3
+    with pytest.raises(ValueError, match="inside the episode"):
+        replace(p, start_bar=late)
+    last_fit = 60 - (p.push_bars + p.hold_bars + p.dump_bars) - 1
+    assert replace(p, start_bar=last_fit).start_bar == last_fit
+    with pytest.raises(ValueError, match="inside the episode"):
+        replace(p, start_bar=last_fit + 1)
+    with pytest.raises(ValueError, match="inside the episode"):
+        asymmetric_round_trip_schedule(
+            replace(p, start_bar=40), AsymmetricSchedule.uniform(18, 2)
+        )
+
+
+@needs_pz
+@pytest.mark.parametrize("n_days", [2, 3, 21, 22, 40, 80])
+def test_traded_bar_count_matches_the_market(n_days):
+    from sharpearena.market_env import EndogenousMarketEnv
+
+    env = EndogenousMarketEnv(n_agents=1, n_symbols=1, n_days=n_days, seed=0)
+    env.reset(seed=0)
+    steps = 0
+    while env.agents:
+        env.step({agent: np.zeros(1, dtype=np.float32) for agent in env.agents})
+        steps += 1
+    env.close()
+    assert manipulation._traded_bars(n_days) == steps
