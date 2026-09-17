@@ -212,7 +212,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "d4e3afe13f75c45b2b65710d0200d86027ed1aba",
+  "generated_at_head": "25d66ab8903bea46be9b8925c2bf4db05cfa9d85",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -414,7 +414,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/local_agents.py",
-      "sha256": "4665b73807f61e7582d8d8c753ab9e66eb3f2f40bd896700781cc7a23a239550"
+      "sha256": "c4626644b3a3d45bf6ee3ed491356c4448c3d3cfb0a1ef45936c67332c725595"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/local_field_cli.py",
@@ -614,7 +614,7 @@
     },
     {
       "path": "crates/sharpearena/src/kernel_score.rs",
-      "sha256": "b663234bc2783675e4f2ec667b0593c529c2c1d152dabc5034a00705b555cbf5"
+      "sha256": "5cb3d74d3b092afd4bb93db2bc6ca35efce6556989fa226ea0ed052c62ea47a9"
     },
     {
       "path": "crates/sharpearena/src/leaderboard_ci.rs",
@@ -906,6 +906,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "75d9166f6f0d0a206d0f7e7b0114c38a474f1c854b9ae5a0cb9b95fd97bdeb56",
+  "source_snapshot_sha256": "fb38c90c95df29ef74dc6579f9f954cdcb347bc0714d0d9bace3792eb7203e88",
   "validator": "paper/src/check-provenance.py"
 }
