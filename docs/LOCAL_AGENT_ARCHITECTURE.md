@@ -99,6 +99,22 @@ schema 2 publishes nearest-rank p50/p95 duration for each observing clock separa
 so a percentile in a mixed cell is attributable to backend compute time or host elapsed
 time, alongside token totals, reasoning-token provenance, and retries for each model
 with `rank_input: false`.
+
+A completion the token budget cut off can still parse into a decision, so each record
+also keeps why every successful model request stopped: `finish_reason_observations`,
+one class per request in the order of `inference_durations`, and `finish_reasons`,
+the per-class counts. The classes are `stop` and `length` (exactly those spellings of
+Ollama's `done_reason` or the OpenAI-compatible `finish_reason`), `other` (any other
+value, a spelling such as `max_tokens` included, never guessed at), and `absent` (the
+backend reported none, which is not read as a clean stop). A request that returned a
+completion the Decision contract rejected keeps its class in the cell's `failure`
+object instead, so a truncated, unparseable answer is labelled `length` there. The
+bridge refuses a record whose two fields do not appear together, whose observations
+are not one per model request, name a class outside the four, or disagree with the
+counts. The profile and its attempt ledger publish `finish_reasons` totals with a
+fifth count, `unrecorded`, for requests in records written before these fields
+existed; such records still compile. Evidence schema 3 and bridge schema 3 are
+unchanged, because both fields are additive.
 These fields support operational diagnosis and capacity planning; they cannot alter the
 score submission emitted beside the manifest.
 
