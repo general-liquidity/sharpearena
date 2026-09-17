@@ -1,0 +1,7 @@
+\section{Declarations}\label{sec:declarations}
+
+\paragraph{Use of language models.} Language models helped draft and edit the prose, read the cited papers and propose candidate facts, and write parts of the code the paper describes. Every fact taken from a cited paper was checked against that paper's text, and the page is given where the fact is used; every bibliography entry was checked against its source. No language model is a component of the environment, the contract or any admitted result (\cref{sec:repro}).
+
+\paragraph{Competing interests.} The author is affiliated with General Liquidity, which publishes both SharpeArena and the companion SharpeBench. Every reference policy, probe and producer evaluated here was built for this repository, and the companion scorer is the same author's work \citep{toca2026sharpebench}, so the producer--scorer separation of \cref{sec:protocol-scoring} separates code and artifacts, not authors.
+
+\paragraph{Data and code availability.} The source code, the contract schemas and conformance fixtures, the producer scripts and the committed evidence behind every reported number are in the public repository \url{https://github.com/general-liquidity/sharpearena}, dual-licensed under MIT or Apache-2.0; \cref{app:commands} lists the command behind each artifact. No market data enters any reported result: the tape is synthetic and every scenario is regenerated from its seed.
