@@ -79,6 +79,13 @@ A leaderboard entry is incomplete unless it states all of:
 6. **Confidence interval on the deflated Sharpe** and, when comparing entries, the
    **paired-difference verdict** (see the next section). A ranked number with no interval,
    or an "A beats B" claim a paired test calls tied, is a dashboard, not a result.
+7. **Declared trial count** (`n_trials`), the number the deflated Sharpe is deflated by.
+   Count every configuration whose reward you looked at before choosing the entry: each
+   training run and random seed, each hyperparameter setting, each reward shaping, and
+   each checkpoint you evaluated to pick the one you submitted. An entry that trained
+   ten runs and submits the best checkpoint of the best run has more trials than one,
+   and declaring one makes its deflated Sharpe look better than the search that produced
+   it. The SharpeBench bridge carries this count into scoring as `in_sample_trials`.
 
 ## Cross-regime transfer (a stronger robustness signal)
 
@@ -138,6 +145,81 @@ The endogenous market also exposes an opt-in `impact_exponent`. The canonical
 setting is explicitly `impact_exponent=1.0` (linear permanent impact). Values below
 one run on a separate `powf` path and are not covered by the canonical byte-identity
 goldens; reports using them must state the exponent in every result row.
+
+## Impact robustness diagnostics (optional, rank-neutral)
+
+`sharpearena.impact_diagnostics` holds two diagnostics for the shared-book market. Neither
+feeds SharpeBench, the kernel score, this leaderboard, pass^k or any other rank or gate.
+Both drive the published `PyMarketClearing` binding with its existing arguments, so the
+clearing arithmetic, `SPEC_HASH` and every golden file are untouched. An entry may quote
+them next to its score. They are not required.
+
+**Impact-misspecification gap.** The market can clear each bar at the worst case inside an
+opt-in elliptic uncertainty set over the impact coefficients `(lambda, eta)`. That set is
+adapted from Ma and Huang (2025), "Robust Reinforcement Learning in Finance", and differs
+from their construction. Clearing that way does not show whether a policy's profit
+depended on impact being exactly the point estimate. The paper judges robustness by how far
+a policy's value moves when impact changes, and `impact_misspecification_gap` reports the
+same kind of number:
+
+```python
+from sharpearena.impact_diagnostics import MarketSettings, impact_misspecification_gap
+
+report = impact_misspecification_gap(
+    make_policy,                      # zero-argument factory, called once per arm
+    seeds=range(10256, 10280),
+    uncertainty={"lambda_radius": 0.05, "eta_radius": 0.02, "correlation": 0.0},
+    settings=MarketSettings(n_symbols=4, n_days=120),
+)
+```
+
+Each seed runs the policy alone in the book twice on the linear kernel
+(`impact_exponent=1.0`): once at the point estimate and once against the declared set.
+The report gives per-seed and mean total return and per-bar Sharpe under each arm. It also
+gives `return_gap` and `sharpe_gap` (point minus worst case, so a positive gap is what the
+worst case cost), the number of seeds, and a t-based 95% interval on each gap over the
+per-seed vector. `|return_gap|` is the paper's relative portfolio gap for this pair of
+arms.
+
+- **Pairing is proved, not assumed.** Each arm's market object is first replayed with flat
+  orders, which exposes its exogenous mids exactly. It is then reset and the policy is run.
+  The report raises `UnpairedArmsError` unless:
+  - the two replays and the two first observations are bitwise identical;
+  - each arm's traded tape equals `exogenous_mid * M` bit for bit, with `M` rebuilt from
+    that arm's reported flow and applied `lambda`.
+- **Degenerate inputs are typed.**
+  - A zero-radius set, or a policy that never trades, leaves the arms bitwise identical.
+    Every gap is then exactly `0.0`.
+  - A reward track with all values exactly equal reports `Unavailable("constant_track")`
+    instead of a Sharpe ratio.
+  - One seed reports `Unavailable("insufficient_seeds")` instead of an interval.
+- **The sign is guaranteed only for an eta-only set.**
+  - With `lambda_radius = 0`, both arms clear at identical mids and sizes, and only the
+    fill cost rises. For a policy whose weights do not read `cash` or `avg_price`, the gap
+    is therefore never negative.
+  - With `lambda_radius > 0`, the worst-case `lambda` also marks up a position the policy
+    holds in the direction it traded. A buy-and-hold on a rising path then ends richer
+    under the worst case, and the gap is negative. The report does not clamp it.
+
+**Meta-order impact shape.** Permanent impact in this market compounds bar by bar,
+`M_{t+1} = M_t * (1 + lambda * sign(Q/V) * |Q/V|**exponent)`, and never decays. An
+exponent below one makes each bar's increment concave in that bar's flow (the nonlinear
+regime Huberman and Stanzl analyse for manipulation). It does not reproduce the empirical
+square-root law of meta-order impact, which is concave in the total executed quantity and
+decays after execution ends.
+
+`meta_order_impact_shape(impact_exponent=...)` measures this on one symbol against a
+flat replay of the same path. It reports three numbers:
+
+| Measurement | Square-root law | This kernel |
+|---|---|---|
+| Log-log exponent of impact against executed quantity, during a constant-rate buy | about 0.5 | about 1, at every exponent |
+| Impact after execution ends, as a ratio to impact when it ends | below 1 | exactly 1 |
+| Log-log exponent of end-of-execution impact against duration, for a fixed total | about 0 | about `1 - exponent` |
+
+At exponents 1.0 and 0.5 the default probe measures execution exponents within 0.05 of 1
+and duration exponents within 0.05 of `1 - exponent`, and the tests pin both. A
+transient-impact kernel is future work.
 
 ## Statistical confidence (is A > B beyond seed noise?)
 

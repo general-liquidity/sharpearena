@@ -1378,6 +1378,7 @@ class LocalFieldRunner:
         confidences: list[list[float]] = [[] for _ in cells]
         realized_outcomes: list[list[bool]] = [[] for _ in cells]
         step_confidences: list[Optional[float]] = [None] * len(cells)
+        awaiting_outcome: list[Optional[float]] = [None] * len(cells)
         tokens_in = [0] * len(cells)
         tokens_out = [0] * len(cells)
         reasoning_tokens = [0] * len(cells)
@@ -1552,9 +1553,14 @@ class LocalFieldRunner:
                     active[index] = False
                     continue
                 returns[index].append(reward)
-                if step_confidences[index] is not None:
-                    confidences[index].append(step_confidences[index])
+                # The reward booked at this step is the price move on the holdings
+                # the previous decision chose, plus this step's trading cost. A
+                # stated confidence waits for the next step's reward, and a lane's
+                # final decision, whose outcome falls outside the run, adds no pair.
+                if awaiting_outcome[index] is not None:
+                    confidences[index].append(awaiting_outcome[index])
                     realized_outcomes[index].append(reward > 0.0)
+                awaiting_outcome[index] = step_confidences[index]
                 if stepped["terminated"][index] or stepped["truncated"][index]:
                     termination[index] = "environment"
                     active[index] = False

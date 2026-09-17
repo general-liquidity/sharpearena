@@ -30,10 +30,13 @@ use crate::leaderboard_ci::check_sharpe_defined;
 
 /// Score one per-period return track with the pinned kernel, as `score_run` reports it.
 ///
-/// The submission is one run of `returns` with no trace, a neutral 0.5 confidence per
-/// bar, outcomes `return > 0`, zero cost and `n_trials` declared in-sample trials, scored
-/// under the default configuration at `periods_per_year`. With one run and one execution
-/// seed per window, the pooled track and the only per-run track are both `returns`.
+/// The submission is one run of `returns` with no trace, zero cost and `n_trials`
+/// declared in-sample trials, scored under the default configuration at
+/// `periods_per_year`. A return track carries no stated confidence, so the run carries
+/// no confidence/outcome pairs: `calibration_brier` is absent and
+/// `calibration_observations` is 0, rather than a Brier score of a filled-in 0.5 over
+/// every bar. With one run and one execution seed per window, the pooled track and the
+/// only per-run track are both `returns`.
 ///
 /// When the kernel recorded no `deflation_error` and [`check_sharpe_defined`] refuses
 /// `returns`, the score is withheld: `deflation_error` carries the refusal (for a constant
@@ -55,13 +58,11 @@ use crate::leaderboard_ci::check_sharpe_defined;
 /// module note.
 pub fn score_returns(returns: Vec<f64>, n_trials: u32, periods_per_year: f64) -> CompositeScore {
     let refusal = check_sharpe_defined(&returns).err();
-    let outcomes: Vec<bool> = returns.iter().map(|r| *r > 0.0).collect();
-    let confidences = vec![0.5_f64; returns.len()];
     let run = Run {
         returns,
         trace: Trace::default(),
-        confidences,
-        outcomes,
+        confidences: Vec::new(),
+        outcomes: Vec::new(),
         cost: 0.0,
     };
     let submission = AgentSubmission {
@@ -101,11 +102,22 @@ mod tests {
 
     /// The pinned kernel's own score of the submission `score_returns` builds.
     fn kernel(returns: &[f64], n_trials: u32) -> CompositeScore {
+        kernel_with_pairs(returns, n_trials, Vec::new(), Vec::new())
+    }
+
+    /// The pinned kernel's score of the same one-run submission carrying the given
+    /// confidence/outcome pairs.
+    fn kernel_with_pairs(
+        returns: &[f64],
+        n_trials: u32,
+        confidences: Vec<f64>,
+        outcomes: Vec<bool>,
+    ) -> CompositeScore {
         let run = Run {
             returns: returns.to_vec(),
             trace: Trace::default(),
-            confidences: vec![0.5; returns.len()],
-            outcomes: returns.iter().map(|r| *r > 0.0).collect(),
+            confidences,
+            outcomes,
             cost: 0.0,
         };
         score_agent(
@@ -178,6 +190,43 @@ mod tests {
                     (Some(false), Some(false))
                 );
             }
+        }
+    }
+
+    /// A return track states no confidence, so `score_run` reports no calibration. It
+    /// used to fill in 0.5 for every bar, which reported a Brier score of exactly 0.25
+    /// over the full track length for every input. Leaving the pairs out moves nothing
+    /// else: every other field is what the filled-in submission scored.
+    #[test]
+    fn a_returns_only_track_reports_no_calibration() {
+        let dispersed: Vec<f64> = (0..120)
+            .map(|i| 0.001 + 0.02 * (i as f64 * 0.9 + 1.0).sin())
+            .collect();
+        for track in [dispersed, vec![0.0; 30], vec![0.001]] {
+            let score = score_returns(track.clone(), 6, 252.0);
+            assert_eq!(score.calibration_brier, None, "{track:?}");
+            assert_eq!(score.calibration_observations, 0, "{track:?}");
+
+            let mut filled = kernel_with_pairs(
+                &track,
+                6,
+                vec![0.5; track.len()],
+                track.iter().map(|r| *r > 0.0).collect(),
+            );
+            assert_eq!(filled.calibration_brier, Some(0.25), "{track:?}");
+            assert_eq!(filled.calibration_observations, track.len());
+            if let Some(refusal) = check_sharpe_defined(&track).err() {
+                if filled.deflation_error.is_none() {
+                    filled = withheld(filled, &refusal.to_string());
+                }
+            }
+            filled.calibration_brier = None;
+            filled.calibration_observations = 0;
+            assert_eq!(
+                serde_json::to_string(&score).unwrap(),
+                serde_json::to_string(&filled).unwrap(),
+                "{track:?}"
+            );
         }
     }
 

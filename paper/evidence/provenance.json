@@ -212,7 +212,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "d3c548dee46495cc27b7030e60986482f98fb4a5",
+  "generated_at_head": "25d66ab8903bea46be9b8925c2bf4db05cfa9d85",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -258,7 +258,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/__init__.py",
-      "sha256": "72682b3dff54ee1b27736d23dc24a5ce0e1a0476f2bbaefdea1c8f1f8ab8ce42"
+      "sha256": "4ece336b8e70d3394f6492c0fe3e29cc5f7f76bf71d4191b2ef21ddaea6dfd71"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/_action_validation.py",
@@ -397,6 +397,10 @@
       "sha256": "c0b4720fa18cda5d35df3a536072dc09f622b4193883a2077d7d773b3ba764b4"
     },
     {
+      "path": "crates/sharpearena-py/python/sharpearena/impact_diagnostics.py",
+      "sha256": "47a866329eb558b09644d6ea7f5f782a78743a81ac313e9780abfb161033b086"
+    },
+    {
       "path": "crates/sharpearena-py/python/sharpearena/indicators.py",
       "sha256": "837a46cd0efcbfdb1f000500436584289ea3864477bf7bcd2f6f970425788d7e"
     },
@@ -406,11 +410,11 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/lob_env.py",
-      "sha256": "1764aa03189c6af9079a8a39d8653338787af6ed461c769ba5c120634bb27245"
+      "sha256": "7715f5cfa2e8ae0bcb4b84cfc53bfdf03a5e53884fad30bf6cfc6800ddd34c80"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/local_agents.py",
-      "sha256": "4665b73807f61e7582d8d8c753ab9e66eb3f2f40bd896700781cc7a23a239550"
+      "sha256": "c4626644b3a3d45bf6ee3ed491356c4448c3d3cfb0a1ef45936c67332c725595"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/local_field_cli.py",
@@ -426,7 +430,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/manipulation.py",
-      "sha256": "b8348db62dc93fc9d1adf18c7e7515b1ced6d5942d4caa7e921162738b78ca4c"
+      "sha256": "7813a7cf3a0023046ac859bdf9332fe68e29f8cd60b0c13dac3041c3a0913452"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/market_env.py",
@@ -434,7 +438,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/market_making.py",
-      "sha256": "22be7ad432e700195fe3c5c47cb72acd4bd78514c2d622bcbeb6f922108a8ad5"
+      "sha256": "58cd006b6c9b14419a9e760cf232741770ff39a4e75b213a5c48a6324ceb782a"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/mcp_server.py",
@@ -514,7 +518,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/rewards.py",
-      "sha256": "269b58d77029328f3a423f750df0d0f4c736436c6cf0fdd5c3d779e91d5df739"
+      "sha256": "a2bd4b000cf2fe0eda7ec709cf86181d55379393c5b4c7ac2b97a30a559435f4"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/risk.py",
@@ -570,7 +574,7 @@
     },
     {
       "path": "crates/sharpearena-wasm/src/lib.rs",
-      "sha256": "c1b2979dbe3f1441d14586f87afc9c240c4090e8ae4e5bba75ea3e66bcc4e61d"
+      "sha256": "e08e5c50db907fbd55ec4fb93ae34ef309850953e469ac56e7f34b1147e66cd2"
     },
     {
       "path": "crates/sharpearena/Cargo.toml",
@@ -610,7 +614,7 @@
     },
     {
       "path": "crates/sharpearena/src/kernel_score.rs",
-      "sha256": "b663234bc2783675e4f2ec667b0593c529c2c1d152dabc5034a00705b555cbf5"
+      "sha256": "5cb3d74d3b092afd4bb93db2bc6ca35efce6556989fa226ea0ed052c62ea47a9"
     },
     {
       "path": "crates/sharpearena/src/leaderboard_ci.rs",
@@ -902,6 +906,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "7cb1f498b043fa5ad57422e4c40a3168f37c20d55910a3f9236ee60d9fc6e4c2",
+  "source_snapshot_sha256": "fb38c90c95df29ef74dc6579f9f954cdcb347bc0714d0d9bace3792eb7203e88",
   "validator": "paper/src/check-provenance.py"
 }
