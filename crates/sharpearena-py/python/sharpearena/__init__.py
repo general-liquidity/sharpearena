@@ -152,6 +152,7 @@ from .edge_manifest import (
     DeclaredCandidateLineage,
     IdeaProvenance,
     bind_idea_source,
+    is_calendar_date,
 )
 from .eval_seeds import (
     EVAL_SEEDS,
@@ -363,6 +364,7 @@ from .strategy_generation import (
     StrategyProtocolError,
     StrategySearchPlan,
     StrategySearchRunner,
+    consulted_split_identity,
     evaluate_condition,
     parse_generated_pool,
     strategy_decision,
@@ -437,6 +439,7 @@ __all__ = [
     "DeclaredCandidateLineage",
     "IdeaProvenance",
     "bind_idea_source",
+    "is_calendar_date",
     "CandidateRejection",
     "GenerationResult",
     "OllamaStrategyGenerator",
@@ -445,6 +448,7 @@ __all__ = [
     "StrategyProtocolError",
     "StrategySearchPlan",
     "StrategySearchRunner",
+    "consulted_split_identity",
     "evaluate_condition",
     "parse_generated_pool",
     "strategy_decision",
