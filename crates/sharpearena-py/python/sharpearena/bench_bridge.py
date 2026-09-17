@@ -21,6 +21,7 @@ from .local_agents import (
     DURATION_SOURCES,
     DURATION_UNIT_NS,
     EVIDENCE_SCHEMA_VERSION,
+    FINISH_REASONS,
     HOST_DURATION_SOURCE,
     LOCAL_EVIDENCE_CLASS,
 )
@@ -66,6 +67,73 @@ def _count(record: dict[str, Any], field: str) -> int:
     return value
 
 
+def _finish_reason_tally(
+    record: dict[str, Any], requests: int
+) -> Optional[dict[str, int]]:
+    """Validate one record's stop-reason evidence and return its class counts.
+
+    ``None`` means the record was written before the field existed: its requests
+    are unrecorded, which is not the same as a backend reporting no reason. A record
+    carrying either field must carry both, give exactly one class per successful
+    request, and state counts that agree with those classes.
+    """
+
+    has_observations = "finish_reason_observations" in record
+    if has_observations != ("finish_reasons" in record):
+        raise BenchBridgeError(
+            f"attempt {record.get('cell_id')!r} must record finish_reason_observations "
+            "and finish_reasons together"
+        )
+    if not has_observations:
+        return None
+    observations = record["finish_reason_observations"]
+    if not isinstance(observations, list) or len(observations) != requests:
+        raise BenchBridgeError(
+            "finish reason observations must carry one entry per model request"
+        )
+    if any(
+        not isinstance(observation, str) or observation not in FINISH_REASONS
+        for observation in observations
+    ):
+        raise BenchBridgeError(
+            f"a finish reason observation must be one of {', '.join(FINISH_REASONS)}"
+        )
+    tally = {reason: observations.count(reason) for reason in FINISH_REASONS}
+    counts = record["finish_reasons"]
+    if (
+        not isinstance(counts, dict)
+        or set(counts) != set(FINISH_REASONS)
+        or any(
+            isinstance(counts[reason], bool)
+            or not isinstance(counts[reason], int)
+            or counts[reason] != tally[reason]
+            for reason in FINISH_REASONS
+        )
+    ):
+        raise BenchBridgeError(
+            "finish_reasons does not match the recorded finish reason observations"
+        )
+    return tally
+
+
+def _finish_reason_totals(
+    records: Sequence[dict[str, Any]],
+) -> dict[str, int]:
+    """Sum stop-reason classes over records, counting pre-field requests apart."""
+
+    totals = {reason: 0 for reason in FINISH_REASONS}
+    totals["unrecorded"] = 0
+    for record in records:
+        requests = len(record["inference_durations"])
+        tally = _finish_reason_tally(record, requests)
+        if tally is None:
+            totals["unrecorded"] += requests
+            continue
+        for reason in FINISH_REASONS:
+            totals[reason] += tally[reason]
+    return totals
+
+
 def _attempt_ledger(attempts: Sequence[dict[str, Any]]) -> dict[str, Any]:
     """Append-only accounting over every recorded attempt, not the retained one.
 
@@ -106,6 +174,7 @@ def _attempt_ledger(attempts: Sequence[dict[str, Any]]) -> dict[str, Any]:
                     "an attempt declares an unknown duration unit or observing clock"
                 )
             successful.append(value)
+        _finish_reason_tally(record, len(measurements))
         observations = record.get("failed_request_duration_observations")
         if not isinstance(observations, list) or len(observations) != _count(
             record, "failed_requests"
@@ -168,6 +237,7 @@ def _attempt_ledger(attempts: Sequence[dict[str, Any]]) -> dict[str, Any]:
             _count(record, "reasoning_tokens") for record in attempts
         ),
         "retry_count_total": sum(_count(record, "retry_count") for record in attempts),
+        "finish_reasons": _finish_reason_totals(attempts),
     }
 
 
@@ -216,6 +286,10 @@ def _operational_profile(
         ),
         "reasoning_token_sources": reasoning_sources,
         "retry_count_total": sum(int(record["retry_count"]) for record in records),
+        # Successful requests by why they stopped; ``length`` is a truncated
+        # completion that still became a decision. ``unrecorded`` counts requests
+        # in records written before the field existed.
+        "finish_reasons": _finish_reason_totals(records),
         "cells": len(records),
         # The scored cells above are the terminal completions. The ledger below
         # keeps every attempt that reached those cells, including the failed and
@@ -505,6 +579,7 @@ def _validate_field(records: Sequence[dict[str, Any]]) -> dict[str, Any]:
             raise BenchBridgeError(
                 "reasoning_tokens_source disagrees with the recorded observations"
             )
+        _finish_reason_tally(record, expected_calls)
     if seen_ordinals != set(range(expected_total)):
         raise BenchBridgeError(
             "field ordinals do not cover the planned Cartesian product"
