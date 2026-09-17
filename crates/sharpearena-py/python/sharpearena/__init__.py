@@ -244,6 +244,7 @@ from .manipulation import (
 from .market_env import EndogenousMarketEnv
 from .impact_diagnostics import (
     ImpactDiagnosticError,
+    NonPositiveMidError,
     UnpairedArmsError,
     impact_misspecification_gap,
     meta_order_impact_shape,
@@ -252,12 +253,14 @@ from .market_making import (
     MarketMakingEnv,
     MMParams,
     MMPnLSplit,
+    MMRegretSplit,
     UnpairedMidPathError,
     analytically_optimal_policy,
     closed_form_reference_policy,
     fixed_spread_policy,
     mm_pnl_split,
     mm_regret,
+    mm_regret_split,
 )
 from .metrics import RunMetrics, cost_adjusted_score
 from .minari_export import to_minari, to_minari_train_test
@@ -601,9 +604,12 @@ __all__ = [
     "mm_regret",
     "mm_pnl_split",
     "MMPnLSplit",
+    "mm_regret_split",
+    "MMRegretSplit",
     "UnpairedMidPathError",
     "impact_misspecification_gap",
     "meta_order_impact_shape",
+    "NonPositiveMidError",
     "ImpactDiagnosticError",
     "UnpairedArmsError",
     "ExecutionEnv",

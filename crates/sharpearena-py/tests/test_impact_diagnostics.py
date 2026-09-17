@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import dataclasses
 import math
+import random
 
 import pytest
 
@@ -18,6 +19,7 @@ from sharpearena import impact_diagnostics as diag
 from sharpearena.impact_diagnostics import (
     CONSTANT_TRACK,
     INSUFFICIENT_SEEDS,
+    SHARPE_UNAVAILABLE,
     GapInterval,
     ImpactDiagnosticError,
     MarketSettings,
@@ -96,16 +98,44 @@ def test_never_trading_policy_reports_exactly_zero_gap():
         _constant(0.0), [0, 1, 2], GENERAL_SET, settings=SETTINGS
     )
     for row in report.per_seed:
-        assert row.identical_arms
+        assert row.identical_arms and row.identical_actions
         assert row.point_return == 0.0
         assert row.robust_return == 0.0
         assert row.return_gap == 0.0
-        assert row.sharpe_gap == 0.0
+        assert row.point_own_impact_mark == row.robust_own_impact_mark == 0.0
         assert row.point_sharpe == Unavailable(CONSTANT_TRACK, "every bar returned 0.0")
         assert row.robust_sharpe == row.point_sharpe
+        # Identical arms do not turn two missing Sharpe ratios into a zero gap.
+        assert isinstance(row.sharpe_gap, Unavailable)
+        assert row.sharpe_gap.reason == SHARPE_UNAVAILABLE
     assert report.mean_return_gap == 0.0
-    assert report.mean_sharpe_gap == 0.0
     assert isinstance(report.mean_point_sharpe, Unavailable)
+    assert isinstance(report.mean_sharpe_gap, Unavailable)
+    assert report.mean_sharpe_gap.reason == SHARPE_UNAVAILABLE
+    assert isinstance(report.sharpe_gap_interval, Unavailable)
+    assert report.sharpe_gap_interval.reason == SHARPE_UNAVAILABLE
+
+
+def _trades_on_odd_seeds(seed):
+    def make():
+        def policy(observation, bar):
+            return [0.5 if seed % 2 and bar % 2 == 0 else 0.0] * len(observation["symbols"])
+
+        return policy
+
+    return make
+
+
+def test_flat_seeds_are_not_pooled_as_zero_sharpe_gaps():
+    rows = [
+        impact_misspecification_gap(
+            _trades_on_odd_seeds(seed), [seed], GENERAL_SET, settings=ONE_SYMBOL
+        ).per_seed[0]
+        for seed in range(4)
+    ]
+    assert [isinstance(row.sharpe_gap, float) for row in rows] == [False, True, False, True]
+    interval = diag.gap_interval([row.sharpe_gap for row in rows])
+    assert interval == Unavailable(SHARPE_UNAVAILABLE, "no gap at seed positions [0, 2]")
 
 
 def test_single_seed_says_it_has_no_dispersion_estimate():
@@ -136,8 +166,10 @@ def test_heavy_trading_under_eta_only_set_loses_return_on_every_seed():
         assert robust.cleared_mids == point.cleared_mids
         assert robust.net_flow == point.net_flow
     report = impact_misspecification_gap(_alternating, seeds, eta_only, settings=SETTINGS)
+    assert report.sign_guaranteed
     for row in report.per_seed:
         assert not row.identical_arms
+        assert row.identical_actions
         assert row.robust_return < row.point_return
         assert row.return_gap > 0.0
     assert isinstance(report.return_gap_interval, GapInterval)
@@ -145,23 +177,131 @@ def test_heavy_trading_under_eta_only_set_loses_return_on_every_seed():
     assert report.return_gap_interval.lo > 0.0
 
 
-def test_lambda_uncertainty_can_favor_a_holder_and_the_gap_is_not_clamped():
-    # A buy of q shares held to the end has d NAV / d lambda = q^2 / V * (exo_T - exo_0):
-    # the worst-case lambda also marks the holder's own position up. On a rising path the
-    # worst case is therefore better for the holder and the gap must come out negative.
+def _engine_gap(make_policy, seed, uncertainty, settings):
+    point = run_impact_arm(make_policy, seed, None, settings)
+    robust = run_impact_arm(make_policy, seed, uncertainty, settings)
+    return (point.navs[-1] - robust.navs[-1]) / settings.capital, point
+
+
+def test_lambda_uncertainty_favors_a_holder_only_through_its_own_impact_mark():
+    # A buy of q shares held to the end has d NAV / d lambda = q^2 / V * (exo_T - exo_0)
+    # under the engine's mark, which carries the holder's own permanent impact, so on a
+    # rising path the engine-marked NAV is higher under the worst case. Marked at the
+    # exogenous mid the slope is -q^2 / V * exo_0, and the reported gap is positive.
     lambda_only = {"lambda_radius": 0.05, "eta_radius": 0.0}
     seeds = list(range(8))
     report = impact_misspecification_gap(
         _constant(1.0), seeds, lambda_only, settings=ONE_SYMBOL
     )
+    assert not report.sign_guaranteed
     signs = set()
     for seed, row in zip(seeds, report.per_seed):
-        trace = run_impact_arm(_constant(1.0), seed, None, ONE_SYMBOL)
+        engine_gap, trace = _engine_gap(_constant(1.0), seed, lambda_only, ONE_SYMBOL)
         move = trace.exogenous_mids[-1][0] - trace.exogenous_mids[0][0]
         assert move != 0.0
-        assert math.copysign(1.0, row.return_gap) == -math.copysign(1.0, move)
-        signs.add(row.return_gap > 0.0)
+        assert math.copysign(1.0, engine_gap) == -math.copysign(1.0, move)
+        own_gap = row.point_own_impact_mark - row.robust_own_impact_mark
+        assert row.return_gap + own_gap == pytest.approx(engine_gap, rel=0.0, abs=1e-15)
+        assert row.return_gap > 0.0
+        signs.add(engine_gap > 0.0)
     assert signs == {True, False}, "the seed set must contain both path directions"
+
+
+@pytest.mark.parametrize("side", [1.0, -1.0], ids=["long", "short"])
+def test_a_held_scale_in_is_not_richer_under_the_worst_case(side):
+    # Ten equal weight steps held to the end. The engine's mark makes the worst case richer
+    # on every seed, whatever the path does; the exogenous mark does not.
+    def scale_in():
+        def policy(observation, bar):
+            return [side * min(0.1 * (bar + 1), 1.0)]
+
+        return policy
+
+    settings = MarketSettings(n_symbols=1, n_days=60)
+    lambda_only = {"lambda_radius": 0.05, "eta_radius": 0.0}
+    seeds = list(range(32))
+    report = impact_misspecification_gap(scale_in, seeds, lambda_only, settings=settings)
+    engine_gaps = [_engine_gap(scale_in, seed, lambda_only, settings)[0] for seed in seeds]
+    assert sum(gap < 0.0 for gap in engine_gaps) == 32
+    assert all(row.return_gap > 0.0 for row in report.per_seed)
+    for row in report.per_seed:
+        assert row.point_own_impact_mark != 0.0
+        assert abs(row.robust_own_impact_mark) > abs(row.point_own_impact_mark)
+
+
+def test_returns_reconcile_with_the_engine_nav():
+    report = impact_misspecification_gap(_chaser, [0, 1, 2], GENERAL_SET, settings=SETTINGS)
+    for row in report.per_seed:
+        for arm, uncertainty in (("point", None), ("robust", GENERAL_SET)):
+            trace = run_impact_arm(_chaser, row.seed, uncertainty, SETTINGS)
+            engine_return = trace.navs[-1] / SETTINGS.capital - 1.0
+            marked = getattr(row, f"{arm}_return") + getattr(row, f"{arm}_own_impact_mark")
+            assert marked == pytest.approx(engine_return, rel=0.0, abs=1e-15)
+
+
+# ---------------------------------------------------------------------------
+# The premises of the eta-only guarantee are checked
+# ---------------------------------------------------------------------------
+
+
+def _open_loop_schedule():
+    weights = [0.0, 0.0, 0.5, 1.0, -1.0, -1.0, 1.0, 1.0, -0.5, -0.5, 1.0, 0.0]
+
+    def policy(observation, bar):
+        return [weights[bar % len(weights)]]
+
+    return policy
+
+
+@pytest.mark.parametrize("uncertainty", [None, (0.0, 0.03, 0.0)], ids=["point", "eta_only"])
+def test_a_cleared_mid_that_is_not_positive_is_refused(uncertainty):
+    # At capital 1000 this schedule's flow drives the linear multiplier below zero on bar 5.
+    # Past that point the eta term pays the agent, and the eta-only gap came out -18.86.
+    settings = MarketSettings(n_symbols=1, n_days=30, capital=1000.0)
+    with pytest.raises(diag.NonPositiveMidError) as excinfo:
+        run_impact_arm(_open_loop_schedule, 0, uncertainty, settings)
+    err = excinfo.value
+    assert isinstance(err, ImpactDiagnosticError)
+    assert (err.seed, err.bar, err.symbol) == (0, 5, "SYM00")
+    assert err.mid < 0.0
+    with pytest.raises(diag.NonPositiveMidError):
+        impact_misspecification_gap(
+            _open_loop_schedule,
+            [0],
+            {"lambda_radius": 0.0, "eta_radius": 0.03},
+            settings=settings,
+        )
+
+
+def test_weights_are_recorded_and_shared_state_voids_the_sign_guarantee():
+    shared = random.Random(5)
+
+    def make_random():
+        def policy(observation, bar):
+            return [shared.uniform(-1.0, 1.0)]
+
+        return policy
+
+    eta_only = {"lambda_radius": 0.0, "eta_radius": 0.03}
+    settings = MarketSettings(n_symbols=1, n_days=40)
+    report = impact_misspecification_gap(make_random, range(4), eta_only, settings=settings)
+    assert not report.sign_guaranteed
+    assert not any(row.identical_actions for row in report.per_seed)
+
+    trace = run_impact_arm(_alternating, 0, None, settings)
+    assert len(trace.weights) == len(trace.rewards)
+    assert trace.weights[:2] == ((1.0,), (-1.0,))
+    shares = 0.0
+    for flow in trace.net_flow:
+        shares += flow[0]
+    assert trace.final_shares == (shares,)
+
+    deterministic = impact_misspecification_gap(
+        _alternating, range(4), eta_only, settings=settings
+    )
+    assert deterministic.sign_guaranteed
+    general = impact_misspecification_gap(_alternating, range(4), GENERAL_SET, settings=settings)
+    assert not general.sign_guaranteed
 
 
 # ---------------------------------------------------------------------------

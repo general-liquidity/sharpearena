@@ -224,3 +224,98 @@ def test_mm_pnl_split_is_seed_deterministic_and_seed_sensitive():
     c = mm.mm_pnl_split(policy, params=p, n_episodes=4, seed_base=9)
     assert a == b
     assert a != c
+
+
+# -- A1-3: a constant mid path does not prove a shared stream -----------------
+
+
+@pytest.mark.parametrize("sigma", [0.0, 1e-17])
+def test_mm_regret_refuses_an_unpaired_stream_behind_a_constant_mid(sigma):
+    # With no resolvable mid increment both arms report the mid s0 on every step, while the
+    # fill draws at 200 arrivals per step move the generator apart from step 0 on, so the
+    # two arms see different arrivals from step 1. The gap was returned (11907.11 at
+    # sigma = 0) before the generator position was compared.
+    params = mm.MMParams(arrival_rate=40000.0, sigma=sigma)
+    with pytest.raises(mm.UnpairedMidPathError) as excinfo:
+        mm.mm_regret(mm.fixed_spread_policy(0.05), params=params)
+    err = excinfo.value
+    assert (err.seed, err.step) == (0, 0)
+    assert err.reference_mid == err.candidate_mid == params.s0
+    assert "generator" in str(err)
+
+
+def test_steps_report_their_arrival_counts():
+    params = mm.MMParams(arrival_rate=40000.0, n_steps=30)
+    lam = params.arrival_rate * params.dt
+    orders = []
+    for action, q_before, reward, info in _steps(params, mm.fixed_spread_policy(0.05), 0):
+        assert isinstance(info["buy_orders"], int) and isinstance(info["sell_orders"], int)
+        assert info["ask_fills"] <= info["buy_orders"]
+        assert info["bid_fills"] <= info["sell_orders"]
+        orders += [info["buy_orders"], info["sell_orders"]]
+    assert abs(np.mean(orders) - lam) < 5 * math.sqrt(lam / len(orders))
+
+
+def _arrivals(params, policy, seed):
+    return [(info["buy_orders"], info["sell_orders"]) for *_, info in _steps(params, policy, seed)]
+
+
+def test_paired_arms_share_their_arrivals_on_every_step():
+    p = mm.MMParams()
+    reference = mm.closed_form_reference_policy(p)
+    for half_spread in (0.05, 4.0):
+        for seed in range(4):
+            assert _arrivals(p, reference, seed) == _arrivals(
+                p, mm.fixed_spread_policy(half_spread), seed
+            )
+    unpaired = mm.MMParams(arrival_rate=40000.0, sigma=0.0)
+    assert _arrivals(unpaired, mm.closed_form_reference_policy(unpaired), 0)[1:] != _arrivals(
+        unpaired, mm.fixed_spread_policy(0.05), 0
+    )[1:]
+
+
+# -- SA-2 / A1-4: differenced splits are paired --------------------------------
+
+
+def test_mm_regret_split_reconciles_with_mm_regret_and_mm_pnl_split():
+    p = mm.MMParams()
+    policy = mm.fixed_spread_policy(0.05)
+    split = mm.mm_regret_split(policy, params=p)
+    assert split.regret.hex() == mm.mm_regret(policy, params=p).hex()
+    assert split.reference == mm.mm_pnl_split(mm.closed_form_reference_policy(p), params=p)
+    assert split.candidate == mm.mm_pnl_split(policy, params=p)
+    for key in COMPONENTS:
+        assert getattr(split, key) == getattr(split.reference, key) - getattr(split.candidate, key)
+    assert split.total == pytest.approx(split.regret, rel=0.0, abs=1e-9)
+    assert split.spread_capture > 0 and split.inventory_penalty > 0
+
+
+def test_mm_regret_split_takes_any_reference_policy():
+    p = mm.MMParams(n_steps=60)
+    wide, tight = mm.fixed_spread_policy(1.0), mm.fixed_spread_policy(0.25)
+    split = mm.mm_regret_split(tight, reference=wide, params=p, n_episodes=6, seed_base=3)
+    assert split.reference == mm.mm_pnl_split(wide, params=p, n_episodes=6, seed_base=3)
+    assert split.candidate == mm.mm_pnl_split(tight, params=p, n_episodes=6, seed_base=3)
+    assert split.regret == pytest.approx(
+        split.reference.reward - split.candidate.reward, rel=0.0, abs=1e-12
+    )
+
+
+@pytest.mark.parametrize(
+    "params, first_unpaired",
+    [
+        (mm.MMParams(arrival_rate=40000.0), (0, 0)),
+        (mm.MMParams(arrival_rate=10000.0), (2, 63)),
+        (mm.MMParams(arrival_rate=40000.0, sigma=0.0), (0, 0)),
+        (mm.MMParams(arrival_rate=10000.0, sigma=0.0), (4, 163)),
+    ],
+    ids=["high_rate", "first_unpaired_later", "zero_sigma", "zero_sigma_later"],
+)
+def test_mm_regret_split_refuses_where_mm_regret_refuses(params, first_unpaired):
+    policy = mm.fixed_spread_policy(0.05)
+    with pytest.raises(mm.UnpairedMidPathError) as split_err:
+        mm.mm_regret_split(policy, params=params)
+    with pytest.raises(mm.UnpairedMidPathError) as regret_err:
+        mm.mm_regret(policy, params=params)
+    assert (split_err.value.seed, split_err.value.step) == first_unpaired
+    assert (regret_err.value.seed, regret_err.value.step) == first_unpaired

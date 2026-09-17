@@ -45,11 +45,14 @@ NEWLY_EXPORTED = [
     "closed_form_reference_policy",
     "mm_pnl_split",
     "MMPnLSplit",
+    "mm_regret_split",
+    "MMRegretSplit",
     "UnpairedMidPathError",
     # impact diagnostics
     "impact_misspecification_gap",
     "meta_order_impact_shape",
     "ImpactDiagnosticError",
+    "NonPositiveMidError",
     "UnpairedArmsError",
     # local-model field, observed-trial strategy search, and paper-only forward arm
     "LocalFieldRunner",

@@ -109,7 +109,10 @@ export function stressSuite(seed = 0): StressScenario[] {
   return parse(kernel.stress_suite(JSON.stringify({ seed })));
 }
 
-/** Generate disjoint walk-forward out-of-sample {@link Window}s. */
+/**
+ * Generate walk-forward out-of-sample {@link Window}s. The windows are disjoint only
+ * when `step >= test`; with `step < test` consecutive windows share `test - step` bars.
+ */
 export function walkForward(params: WalkForwardParams): Window[] {
   return parse(kernel.walk_forward(JSON.stringify(params)));
 }

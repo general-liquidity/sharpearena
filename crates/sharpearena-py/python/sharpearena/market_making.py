@@ -95,6 +95,9 @@ class MarketMakingEnv(gym.Env):
     squared-inventory penalty ``phi*q**2``; the terminal step force-liquidates remaining
     inventory at an unfavorable price.
 
+    ``info`` reports the step's market-order arrivals as ``buy_orders`` and ``sell_orders``
+    (the Poisson draws before the fill draws), beside the fills they produced.
+
     ``step`` also splits each reward into four components in ``info``, each signed as its
     contribution to the reward, so they sum to it up to floating-point rounding:
 
@@ -228,6 +231,8 @@ class MarketMakingEnv(gym.Env):
         info = {
             "value": self._value(),
             "inventory": self._q,
+            "buy_orders": n_buy_orders,
+            "sell_orders": n_sell_orders,
             "bid_fills": bid_fills,
             "ask_fills": ask_fills,
             "mid": self._mid,
@@ -302,11 +307,13 @@ _PNL_COMPONENTS = ("spread_capture", "inventory_pnl", "inventory_penalty", "liqu
 
 
 class UnpairedMidPathError(ValueError):
-    """:func:`mm_regret` refused because the two arms did not see the same mid path.
+    """:func:`mm_regret` or :func:`mm_regret_split` refused because the two arms did not
+    draw the same random stream.
 
-    ``seed`` is the first episode seed whose paths differ, ``step`` the zero-based index of
-    the first ``env.step`` call after which the two mids differ, and ``reference_mid`` /
-    ``candidate_mid`` the two mids at that step.
+    ``seed`` is the first episode seed whose arms differ, ``step`` the zero-based index of
+    the first ``env.step`` call after which their mids, arrival counts or generator
+    positions differ, and ``reference_mid`` / ``candidate_mid`` the two mids at that step.
+    The mids can agree while the streams do not: with ``sigma = 0`` every mid is ``s0``.
     """
 
     def __init__(
@@ -316,36 +323,68 @@ class UnpairedMidPathError(ValueError):
         self.step = step
         self.reference_mid = reference_mid
         self.candidate_mid = candidate_mid
-        super().__init__(
-            f"mid paths differ at seed {seed}, step {step}: reference mid "
-            f"{reference_mid!r}, candidate mid {candidate_mid!r}; the regret would be "
-            f"unpaired"
-        )
+        if reference_mid != candidate_mid:
+            detail = (
+                f"mid paths differ at seed {seed}, step {step}: reference mid "
+                f"{reference_mid!r}, candidate mid {candidate_mid!r}"
+            )
+        else:
+            detail = (
+                f"random streams differ at seed {seed}, step {step}: both mids are "
+                f"{reference_mid!r}, but the arrival counts or generator positions differ"
+            )
+        super().__init__(f"{detail}; the regret would be unpaired")
 
 
 def _rollout(
     env: MarketMakingEnv, policy: Policy, seed: int
-) -> tuple[float, list[float], dict[str, float]]:
-    """One seeded episode: its summed reward, its post-step mid path and the episode sum of
-    each reward component."""
+) -> tuple[float, list[tuple], dict[str, float]]:
+    """One seeded episode: its summed reward, its per-step stream record and the episode
+    sum of each reward component.
+
+    A step's stream record is its post-step mid, its two arrival counts and the generator
+    state after the step. Two arms whose records agree on every step drew each step's
+    arrivals from the same generator position, so they saw the same arrivals and the same
+    mid path.
+    """
     obs, _ = env.reset(seed=seed)
     total = 0.0
-    mids: list[float] = []
+    stream: list[tuple] = []
     split = dict.fromkeys(_PNL_COMPONENTS, 0.0)
     while True:
         obs, reward, terminated, truncated, info = env.step(policy(obs))
         total += reward
-        mids.append(info["mid"])
+        stream.append(
+            (
+                info["mid"],
+                info["buy_orders"],
+                info["sell_orders"],
+                env._rng.bit_generator.state,
+            )
+        )
         for key in _PNL_COMPONENTS:
             split[key] += info[key]
         if terminated or truncated:
-            return total, mids, split
+            return total, stream, split
 
 
-def _check_paired(seed: int, reference_mids: list[float], candidate_mids: list[float]) -> None:
-    for step, (ref_mid, cand_mid) in enumerate(zip(reference_mids, candidate_mids)):
-        if ref_mid != cand_mid:
-            raise UnpairedMidPathError(seed, step, ref_mid, cand_mid)
+def _check_paired(seed: int, reference: list[tuple], candidate: list[tuple]) -> None:
+    for step, (ref_step, cand_step) in enumerate(zip(reference, candidate)):
+        if ref_step != cand_step:
+            raise UnpairedMidPathError(seed, step, ref_step[0], cand_step[0])
+
+
+def _paired_episodes(
+    reference: Policy, candidate: Policy, p: MMParams, n_episodes: int, seed_base: int
+):
+    """Yield both arms' :func:`_rollout` per seed, refusing at the first unpaired episode."""
+    env = MarketMakingEnv(p)
+    for i in range(n_episodes):
+        seed = seed_base + i
+        ref = _rollout(env, reference, seed)
+        cand = _rollout(env, candidate, seed)
+        _check_paired(seed, ref[1], cand[1])
+        yield ref, cand
 
 
 def mm_regret(
@@ -365,28 +404,27 @@ def mm_regret(
     draws that depends on the fill probability. Measured with numpy 2.5.1, it takes one draw
     while ``n*min(p, 1-p)`` is at most 30, a variable number above that, and none when the
     fill probability is exactly zero. Two quoting policies can therefore desynchronize the
-    stream, after which their mid paths (and arrivals) differ and the gap mixes policy with
-    luck. Each episode records both arms' post-step mids and raises
-    :class:`UnpairedMidPathError` at the first episode whose paths differ, so an unpaired
-    gap is never returned.
+    stream, after which their arrivals and mid paths differ and the gap mixes policy with
+    luck. After every step each episode records both arms' mid, arrival counts and generator
+    state, and raises :class:`UnpairedMidPathError` at the first episode where any of them
+    differ, so an unpaired gap is never returned. Mids alone would not show it: with
+    ``sigma = 0``, or a ``sigma`` whose step is below the float resolution of the mid, every
+    mid equals ``s0`` while the arrivals differ. The check does not couple the two arms'
+    fill draws, which depend on each arm's own quotes.
 
     Measured on seeds 0 to 15: at the default parameters every fixed-spread quoter in the F2
-    grid shares the reference's path; at arrival rates of 16000, 20000, 30000 and 40000 (80
-    to 200 arrivals per step) none of them does. A quote wide enough that
+    grid shares the reference's stream; at arrival rates of 16000, 20000, 30000 and 40000
+    (80 to 200 arrivals per step) none of them does. A quote wide enough that
     ``exp(-kappa*depth)`` underflows to zero draws nothing where the reference draws, so it
     unpairs at the first order arriving on that side, even at the default rate (at the
-    default ``kappa`` and ``max_depth`` no quote can underflow). The default random stream is left
-    as it is so the committed F2 regrets reproduce exactly.
+    default ``kappa`` and ``max_depth`` no quote can underflow). The default random stream is
+    left as it is so the committed F2 regrets reproduce exactly.
     """
     p = params or MMParams()
-    reference = closed_form_reference_policy(p)
-    env = MarketMakingEnv(p)
     gap = 0.0
-    for i in range(n_episodes):
-        seed = seed_base + i
-        ref_r, ref_mids, _ = _rollout(env, reference, seed)
-        pol_r, pol_mids, _ = _rollout(env, policy, seed)
-        _check_paired(seed, ref_mids, pol_mids)
+    for (ref_r, _, _), (pol_r, _, _) in _paired_episodes(
+        closed_form_reference_policy(p), policy, p, n_episodes, seed_base
+    ):
         gap += ref_r - pol_r
     return gap / n_episodes
 
@@ -417,6 +455,19 @@ class MMPnLSplit:
         )
 
 
+def _mean_split(episodes: list[tuple], n_episodes: int) -> MMPnLSplit:
+    reward = 0.0
+    sums = dict.fromkeys(_PNL_COMPONENTS, 0.0)
+    for episode_reward, _, split in episodes:
+        reward += episode_reward
+        for key in _PNL_COMPONENTS:
+            sums[key] += split[key]
+    return MMPnLSplit(
+        **{key: value / n_episodes for key, value in sums.items()},
+        reward=reward / n_episodes,
+    )
+
+
 def mm_pnl_split(
     policy: Policy,
     *,
@@ -429,29 +480,92 @@ def mm_pnl_split(
     and the terminal liquidation cost, each averaged over episodes.
 
     It separates a quoter that earns by capturing spread from one that earns by holding
-    inventory into a favourable mid path. Differencing two policies' splits attributes their
-    regret component by component only when their mid paths are shared, which is the
-    condition :func:`mm_regret` checks for the same ``params`` and seeds. Rank-neutral: no
+    inventory into a favourable mid path. To compare two policies component by component,
+    call :func:`mm_regret_split`, which checks that both arms drew the same stream on every
+    seed; subtracting the results of two separate calls checks nothing. Rank-neutral: no
     SharpeArena or SharpeBench score reads it.
     """
     p = params or MMParams()
     env = MarketMakingEnv(p)
-    reward = 0.0
-    sums = dict.fromkeys(_PNL_COMPONENTS, 0.0)
-    for i in range(n_episodes):
-        episode_reward, _, split = _rollout(env, policy, seed_base + i)
-        reward += episode_reward
-        for key in _PNL_COMPONENTS:
-            sums[key] += split[key]
-    return MMPnLSplit(
-        **{key: value / n_episodes for key, value in sums.items()},
-        reward=reward / n_episodes,
+    episodes = [_rollout(env, policy, seed_base + i) for i in range(n_episodes)]
+    return _mean_split(episodes, n_episodes)
+
+
+@dataclass(frozen=True)
+class MMRegretSplit:
+    """``candidate``'s regret against ``reference``, split by reward component.
+
+    ``reference`` and ``candidate`` are what :func:`mm_pnl_split` returns for each arm on the
+    same seeds, built only after every episode passed the pairing check of
+    :func:`mm_regret`. Each component property is the reference arm's value minus the
+    candidate arm's, so a positive value names a component where the candidate earns less.
+    ``regret`` is the mean per-episode reward gap, accumulated as :func:`mm_regret`
+    accumulates it, and :attr:`total` (the sum of the four component gaps) matches it up to
+    floating-point rounding. Diagnostic only: nothing scores on it.
+    """
+
+    reference: MMPnLSplit
+    candidate: MMPnLSplit
+    regret: float
+
+    @property
+    def spread_capture(self) -> float:
+        return self.reference.spread_capture - self.candidate.spread_capture
+
+    @property
+    def inventory_pnl(self) -> float:
+        return self.reference.inventory_pnl - self.candidate.inventory_pnl
+
+    @property
+    def inventory_penalty(self) -> float:
+        return self.reference.inventory_penalty - self.candidate.inventory_penalty
+
+    @property
+    def liquidation_cost(self) -> float:
+        return self.reference.liquidation_cost - self.candidate.liquidation_cost
+
+    @property
+    def total(self) -> float:
+        return (
+            self.spread_capture
+            + self.inventory_pnl
+            + self.inventory_penalty
+            + self.liquidation_cost
+        )
+
+
+def mm_regret_split(
+    policy: Policy,
+    *,
+    reference: Optional[Policy] = None,
+    params: Optional[MMParams] = None,
+    n_episodes: int = 16,
+    seed_base: int = 0,
+) -> MMRegretSplit:
+    """``policy``'s regret against ``reference`` (default
+    :func:`closed_form_reference_policy`), split into the four reward components.
+
+    Both arms run on the same seeds and pass the pairing check of :func:`mm_regret`, which
+    raises :class:`UnpairedMidPathError` where their streams differ. With the default
+    reference, ``regret`` equals ``mm_regret(policy, ...)`` bit for bit.
+    """
+    p = params or MMParams()
+    arm = closed_form_reference_policy(p) if reference is None else reference
+    pairs = list(_paired_episodes(arm, policy, p, n_episodes, seed_base))
+    gap = 0.0
+    for (ref_r, _, _), (pol_r, _, _) in pairs:
+        gap += ref_r - pol_r
+    return MMRegretSplit(
+        reference=_mean_split([ref for ref, _ in pairs], n_episodes),
+        candidate=_mean_split([cand for _, cand in pairs], n_episodes),
+        regret=gap / n_episodes,
     )
 
 
 __all__ = [
     "MMParams",
     "MMPnLSplit",
+    "MMRegretSplit",
     "MarketMakingEnv",
     "UnpairedMidPathError",
     "analytically_optimal_policy",
@@ -459,4 +573,5 @@ __all__ = [
     "fixed_spread_policy",
     "mm_pnl_split",
     "mm_regret",
+    "mm_regret_split",
 ]

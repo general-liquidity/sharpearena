@@ -212,7 +212,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "0f571a6780547f023bae183d22f0a280e34a51e0",
+  "generated_at_head": "b803d1a6f2a5619ca86e15e2e6a331211020c06f",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -258,7 +258,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/__init__.py",
-      "sha256": "4ece336b8e70d3394f6492c0fe3e29cc5f7f76bf71d4191b2ef21ddaea6dfd71"
+      "sha256": "1635984a0b5e2f9236a176abf101f08fe116656f4b00ccba333e99ce0d168f64"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/_action_validation.py",
@@ -398,7 +398,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/impact_diagnostics.py",
-      "sha256": "47a866329eb558b09644d6ea7f5f782a78743a81ac313e9780abfb161033b086"
+      "sha256": "f9073ffa78ef7fd066b21299a4b93874bfdf92c1427e26031aadacc860c750fe"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/indicators.py",
@@ -410,7 +410,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/lob_env.py",
-      "sha256": "7715f5cfa2e8ae0bcb4b84cfc53bfdf03a5e53884fad30bf6cfc6800ddd34c80"
+      "sha256": "ea427d3951c225a33c1fc9e061a72c43f17ebc163b9b2bcc85cbb95920220cea"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/local_agents.py",
@@ -430,7 +430,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/manipulation.py",
-      "sha256": "7813a7cf3a0023046ac859bdf9332fe68e29f8cd60b0c13dac3041c3a0913452"
+      "sha256": "9a01d0e154e79d84825e049d19a3805af5007682a5bb3b59853be759d664c8ee"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/market_env.py",
@@ -438,7 +438,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/market_making.py",
-      "sha256": "58cd006b6c9b14419a9e760cf232741770ff39a4e75b213a5c48a6324ceb782a"
+      "sha256": "1949115dcba7b75e089fd912217d42abe9d41254106453f3ea362c88220dbd27"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/mcp_server.py",
@@ -910,6 +910,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "d15b3bb346fb73fc11ddfa4a9bb296021ee505c20161758daa06cb676c26e349",
+  "source_snapshot_sha256": "e4792dfb0a8a35a5df497a61ab0822069c676e49fa81de1d94f114810898314b",
   "validator": "paper/src/check-provenance.py"
 }
