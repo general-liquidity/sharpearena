@@ -245,8 +245,8 @@ def test_hand_trace_quote_walk_moves_the_book_mid_but_not_the_mark():
 def test_self_trade_needs_an_emptied_side_and_nets_to_zero():
     """The book has no self-trade prevention. A quote crosses a resting order only after a
     step left one side of the book empty, and a self-trade leaves the agent's cash and
-    inventory exactly where its fills with the noise trader put them. Seed 327 with
-    ``(1, 3)`` quotes self-trades twice, at step 76."""
+    inventory exactly where its fills with the noise trader put them, and never sets its
+    mark. Seed 327 with ``(1, 3)`` quotes self-trades twice, at step 76."""
     from sharpearena.lob_env import LOBMarketEnv
 
     env = LOBMarketEnv(1, n_steps=80, seed=327, noise_intensity=4.0, max_offset=3)
@@ -254,6 +254,7 @@ def test_self_trade_needs_an_emptied_side_and_nets_to_zero():
     env.reset(seed=327)
     self_trades = 0
     step = 0
+    mark = 1000.0
     while env.agents:
         before = json.loads(env._book.ladder())
         inventory, cash = env._inventory["agent_0"], env._cash["agent_0"]
@@ -269,7 +270,9 @@ def test_self_trade_needs_an_emptied_side_and_nets_to_zero():
         )
         assert env._inventory["agent_0"] == inventory + units
         assert env._cash["agent_0"] == cash + cash_in
-        assert env._marks["agent_0"] == 1000.0
+        if external:
+            mark = float(external[-1]["price_tick"])
+        assert env._marks["agent_0"] == mark
         step += 1
     assert self_trades == 2
 
@@ -485,3 +488,172 @@ def test_seeded_shuffle_keeps_the_noise_trader_stream():
 
     assert market_orders("agent_index")
     assert market_orders("seeded_shuffle") == market_orders("agent_index")
+
+
+# ---------------------------------------------------------------------------
+# SA-1: a lone agent's mark follows its counterparty trades, not a frozen anchor.
+# ---------------------------------------------------------------------------
+
+
+def _counterparty_price(env, fills, previous):
+    """The price of the last fill between two different controllers, else ``previous``."""
+    for f in fills:
+        maker = env._controller_of(env._owner(f["maker_agent"]))
+        taker = env._controller_of(env._owner(f["taker_agent"]))
+        if maker != taker:
+            previous = float(f["price_tick"])
+    return previous
+
+
+@pytest.mark.parametrize("quote", [(1, 20), (20, 1), (3, 3)])
+def test_lone_agent_is_marked_at_its_last_counterparty_fill(quote):
+    from sharpearena.lob_env import LOBMarketEnv
+
+    moved = 0
+    for seed in range(8):
+        env = LOBMarketEnv(1, n_steps=120, seed=seed)
+        log = _fill_log(env)
+        env.reset(seed=seed)
+        expected = 1000.0
+        while env.agents:
+            env.step({"agent_0": _quote(*quote)})
+            expected = _counterparty_price(env, log[-1], expected)
+            assert env._marks["agent_0"] == expected
+        moved += expected != 1000.0
+    assert moved == 8
+
+
+def _walk_then_tighten(step):
+    return _quote(1, 20) if step < 60 else _quote(1, 1)
+
+
+def test_a_lone_quote_walk_is_not_booked_as_reward():
+    """The RETRO-CR-MAIN SA-1 repro. A lone agent walks the reference mid with ``(1, 20)``
+    for 60 steps and then quotes ``(1, 1)``; seeds 0 to 31, no inventory penalty. Marked at
+    a frozen 1000 ticks its mean episode reward was 2360.3 against 897.1 for cash plus
+    inventory at the final reference mid. Marked at its last counterparty fill the reward
+    is 881.4, and the symmetric ``(1, 1)`` control is 848.6 against 864.7."""
+    from sharpearena.lob_env import LOBMarketEnv
+
+    def means(policy):
+        rewards, values = [], []
+        for seed in range(32):
+            env = LOBMarketEnv(1, n_steps=120, seed=seed, inventory_penalty=0.0)
+            env.reset(seed=seed)
+            total, step = 0.0, 0
+            while env.agents:
+                total += env.step({"agent_0": policy(step)})[1]["agent_0"]
+                step += 1
+            rewards.append(total)
+            values.append(env._cash["agent_0"] + env._inventory["agent_0"] * env._mid)
+        return sum(rewards) / 32, sum(values) / 32
+
+    walk_reward, walk_value = means(_walk_then_tighten)
+    flat_reward, flat_value = means(lambda step: _quote(1, 1))
+    assert (round(walk_reward, 1), round(walk_value, 1)) == (881.4, 897.1)
+    assert (round(flat_reward, 1), round(flat_value, 1)) == (848.6, 864.7)
+    assert abs(walk_reward - walk_value) < 20.0
+
+
+def test_default_mark_ranks_lone_quoters_like_their_final_value():
+    """Over seeds 0 to 31 with the default penalty, the price-walking ``(1, 20)`` quoter
+    ends below the symmetric ``(3, 3)`` quoter by its final value, by the ``book_mid``
+    reward, and by the default reward. The frozen mark ranked it above."""
+    from sharpearena.lob_env import LOBMarketEnv
+
+    def totals(quote, mark):
+        out = []
+        for seed in range(32):
+            env = LOBMarketEnv(1, n_steps=120, seed=seed, mark=mark)
+            env.reset(seed=seed)
+            total = 0.0
+            while env.agents:
+                total += env.step({"agent_0": _quote(*quote)})[1]["agent_0"]
+            out.append(total)
+        return np.array(out)
+
+    for mark in ("ex_own_mid", "book_mid"):
+        gap = totals((1, 20), mark) - totals((3, 3), mark)
+        assert gap.mean() < -1000.0, mark
+
+
+# ---------------------------------------------------------------------------
+# A5-3: seats one entrant controls do not value each other.
+# ---------------------------------------------------------------------------
+
+
+def test_a_controllers_other_seat_cannot_steer_its_mark():
+    """Noise trader off. Seat 0 quotes ``(20, 20)`` and never trades while seat 1 quotes
+    ``(1, 20)``. As separate entrants seat 1's quotes are prices another party stands
+    behind, and seat 0's mark follows them; declared as one controller they are not.
+    Separately, seat 0's own ``(1, 20)`` quotes still move its mark through seat 1, which
+    quotes around the shared reference mid: 1000 to 1001 ticks with no fill."""
+    from sharpearena.lob_env import LOBMarketEnv
+
+    paths = {}
+    for controllers in (None, ["x", "x"]):
+        env = LOBMarketEnv(2, n_steps=6, seed=0, noise_intensity=-5.0, controllers=controllers)
+        log = _fill_log(env)
+        env.reset(seed=0)
+        path = []
+        while env.agents:
+            env.step({"agent_0": _quote(20, 20), "agent_1": _quote(1, 20)})
+            path.append(env._marks["agent_0"])
+        assert not any(log)
+        paths[controllers is None] = path
+    assert paths[True] == [1009.5, 1014.5, 1016.5, 1017.5, 1018.5, 1018.5]
+    assert paths[False] == [1000.0] * 6
+
+    env = LOBMarketEnv(2, n_steps=4, seed=0, noise_intensity=-5.0)
+    env.reset(seed=0)
+    indirect = []
+    while env.agents:
+        env.step({"agent_0": _quote(1, 20), "agent_1": _quote(3, 3)})
+        indirect.append(env._marks["agent_0"])
+    assert indirect == [1000.0, 1000.5, 1001.0, 1001.0]
+
+
+def test_controllers_group_seats_and_a_cross_controller_fill_still_counts():
+    from sharpearena.lob_env import LOBMarketEnv
+
+    env = LOBMarketEnv(3, controllers=["a", "b", "a"])
+    assert env.controllers == ("a", "b", "a")
+    assert [env._controller_of(i) for i in range(3)] == [0, 1, 0]
+    assert env._controller_of(None) not in {0, 1}
+    assert LOBMarketEnv(3).controllers == (0, 1, 2)
+
+
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        ({"controllers": ["a"]}, "one controller per seat"),
+        ({"controllers": ["a", None]}, "one controller per seat"),
+        ({"controllers": ["a", "a"], "mark": "book_mid"}, "ex_own_mid"),
+    ],
+)
+def test_controllers_are_validated(kwargs, match):
+    from sharpearena.lob_env import LOBMarketEnv
+
+    with pytest.raises(ValueError, match=match):
+        LOBMarketEnv(2, **kwargs)
+
+
+def test_a_fill_between_seats_of_one_controller_never_sets_a_mark():
+    from sharpearena.lob_env import LOBMarketEnv
+
+    def marks_after(controllers, fills):
+        env = LOBMarketEnv(3, controllers=controllers)
+        env.reset(seed=0)
+        env._update_marks(fills)
+        return [env._marks[a] for a in env.possible_agents]
+
+    def fill(maker, taker, price):
+        return {"maker_agent": maker, "taker_agent": taker, "price_tick": price, "qty": 1}
+
+    wash = [fill(0, 2, 1010)]
+    assert marks_after(None, wash) == [1010.0] * 3
+    assert marks_after(["a", "b", "a"], wash) == [1000.0] * 3
+    # The last fill between two different controllers sets every seat's fallback mark.
+    mixed = [fill(0, 1, 1004), fill(2, 0, 1012), fill(0, 3, 1007)]
+    assert marks_after(["a", "b", "a"], mixed) == [1007.0] * 3
+    assert marks_after(["a", "b", "a"], mixed[:2]) == [1004.0] * 3
