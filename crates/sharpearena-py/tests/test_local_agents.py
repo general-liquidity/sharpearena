@@ -981,6 +981,13 @@ def test_bench_bridge_compiles_complete_shards_and_preserves_frequency(tmp_path)
         "reasoning_tokens_total": 0,
         "reasoning_token_sources": ["unavailable"],
         "retry_count_total": 0,
+        "finish_reasons": {
+            "stop": 0,
+            "length": 0,
+            "other": 0,
+            "absent": 12,
+            "unrecorded": 0,
+        },
         "cells": 4,
         "attempt_ledger": {
             "attempts": 4,
@@ -995,6 +1002,13 @@ def test_bench_bridge_compiles_complete_shards_and_preserves_frequency(tmp_path)
             "tokens_out_total": 60,
             "reasoning_tokens_total": 0,
             "retry_count_total": 0,
+            "finish_reasons": {
+                "stop": 0,
+                "length": 0,
+                "other": 0,
+                "absent": 12,
+                "unrecorded": 0,
+            },
         },
     }
 
