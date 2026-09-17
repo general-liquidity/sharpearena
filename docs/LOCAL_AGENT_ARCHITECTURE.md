@@ -168,6 +168,81 @@ not declared. It also makes ancestry and cited research auditable for candidates
 inside the run. It does not reveal searches performed before an entrant was submitted,
 prove that a cited source caused an idea, or make family membership a scoring input.
 
+### Repeated test consultations and dated sources
+
+Each search deflates its winner's test score by its own observed trials, but the
+evidence path is an append-only journal and one journal can hold many searches against
+the same test split. An operator who revises the prompt after reading earlier test
+scores consults that split again, while every record still looks like a single look.
+From strategy evidence schema 3, `StrategySearchRunner.run` stamps each record with
+`test_split_census`: the test split identity and its digest, the number of earlier
+records that read the same split, their record digests (SHA-256 of each stored line),
+their observed trials, the cumulative observed trials including this search, the
+number of earlier records it could not identify, and `previous_record_sha256`, the
+digest of the last nonblank line before the record (null for the first). The runner
+reads the journal once before any generation, so a journal line that is not JSON
+refuses the search before the model is called. It reads the journal again and appends
+the record while it holds an exclusive lock on `<journal>.lock`, so searches that share
+a journal can run at the same time and each record still describes exactly the lines
+before it.
+
+The chain makes a removed, inserted or reordered earlier line visible: every later
+schema 3 record names the line that preceded it. It cannot reveal lines cut from the
+end of the journal, because nothing follows them; keep the digest of the last line
+somewhere else when that matters. A journal that concurrent writers appended to without
+the lock fails verification and cannot be repaired in place.
+
+The identity names the bars that were read. A historical split is its dataset content
+digest and recorded window; execution seeds are excluded because they do not change the
+bars. A synthetic split is generated from its seeds, so the sorted seeds join it. Costs
+and labels are excluded, and windows are compared as recorded, so the exact count treats
+a window moved by one bar as a new split.
+
+The overlap count catches that move. The census records `test_window_bars`, the
+half-open bar interval the kernel resolves for this test split, and `test_dataset_bars`,
+the panel's bar count. An earlier consultation overlaps when it read the same panel
+(same content digest, and for a synthetic split at least one common seed) through a
+window that intersects `test_window_bars`; its omitted bounds resolve against this
+panel's bar count. The census reports how many earlier consultations overlap, their
+record digests and observed trials, and `prior_consulted_test_bars`, the number of this
+split's bars that at least one of them read. An exact match always overlaps too. Moving a
+10-bar window from bars 10 to 19 to bars 12 to 21 leaves the exact count at zero, while
+the overlap count is one and 8 of the 10 bars were read before.
+
+A completed record of schema 2 or 3 counts as a consultation. A failed schema 3 record
+carries the census too, with `test_consulted` saying whether evaluation reached the test
+split; only a failure that reached it adds trials. A schema 2 failure states no split and
+is counted as unidentified. The runner resolves the test split before generation, so a
+test window the dataset cannot hold refuses the search before the model is called.
+
+The two multiplicities bound different uses. `prior_test_consultations + 1` counts test
+looks, which is the multiplicity when only final test results were compared across
+searches. `cumulative_observed_n_trials` counts every candidate the consulting searches
+generated, which is the multiplicity when later generations were steered by earlier test
+results. The census covers one journal file only: searches written to a different
+evidence path, or never recorded, are invisible to it. It is diagnostic and never changes
+the trial count used for deflation. `sharpebench lineage --census` recomputes it over the
+whole journal and refuses a record whose census or chain disagrees with the records
+before it. That check needs a SharpeBench release newer than 0.27.0: 0.27.0 and earlier
+verify a schema 3 record's lineage without reading its census or source dating.
+
+An operator-bound source may carry `available_on`, the stated first calendar day
+(`YYYY-MM-DD`) its content existed, through `bind_idea_source(..., available_on=...)` or
+the plan's `idea_provenance`. Write the day in the date convention of the dataset's bar
+labels, the trading venue's local date; the field carries no time zone. It is omitted
+when absent, so undated sources keep their record and plan-digest bytes. A completed
+schema 3 record adds `source_dating`: the counts of cited, dated and undated sources, and
+for the selection and test splits the calendar day of the first bar the environment
+stepped and the number of cited sources dated on or after that day. Such a source may
+carry information from the split. A source dated on the first bar's day counts, because
+its time within the day is unknown and it may postdate that bar. A synthetic split has no
+calendar and is reported unavailable with reason `synthetic_split_has_no_calendar`; a
+first bar label that does not begin with a calendar day is unavailable with
+`date_not_iso8601`. Neither is treated as clean, and an undated source is never assumed to
+be early. The runner dates the sources before it reads the test split, so a dating
+failure becomes a failed search that never consulted the test split. The date is the
+operator's statement, not a proof of publication.
+
 ## Isolation model
 
 There are two trust zones:

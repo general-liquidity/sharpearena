@@ -45,7 +45,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass
+from datetime import date
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Optional, Union
@@ -158,6 +160,20 @@ def _string_tuple(value: Any, path: str) -> tuple[str, ...]:
     return items
 
 
+def is_calendar_date(value: Any) -> bool:
+    """Whether ``value`` is exactly ``YYYY-MM-DD`` naming a real Gregorian day."""
+
+    if not isinstance(value, str) or not re.fullmatch(
+        r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value
+    ):
+        return False
+    try:
+        date.fromisoformat(value)
+    except ValueError:
+        return False
+    return True
+
+
 def _string_tuple_allow_empty(value: Any, path: str) -> tuple[str, ...]:
     if not isinstance(value, list):
         raise EdgeManifestError(f"{path} must be an array")
@@ -174,6 +190,14 @@ class IdeaProvenance:
     The source is registered on the search plan, not invented in model output.
     ``source_digest`` binds the exact bytes the operator supplied. Locators and
     attribution fields explain those bytes, but never substitute for the digest.
+
+    ``available_on`` is the operator-stated first calendar day (``YYYY-MM-DD``)
+    the source content existed, such as its publication date, written in the
+    date convention of the dataset's bar labels (the trading venue's local
+    date). It is optional and omitted from the record when absent, so undated
+    sources keep their record and plan-digest bytes. Strategy evidence counts
+    cited sources dated on or after each split's first bar day, which may carry
+    information from that split, and counts undated sources separately.
     """
 
     source_type: str
@@ -182,6 +206,7 @@ class IdeaProvenance:
     commit: Optional[str] = None
     authors: tuple[str, ...] = ()
     license: Optional[str] = None
+    available_on: Optional[str] = None
 
     def __post_init__(self) -> None:
         if self.source_type not in IDEA_SOURCE_TYPES:
@@ -201,9 +226,13 @@ class IdeaProvenance:
             _text(author, f"authors[{index}]")
         if self.license is not None:
             _text(self.license, "license")
+        if self.available_on is not None and not is_calendar_date(self.available_on):
+            raise EdgeManifestError(
+                "available_on must be a calendar date written as YYYY-MM-DD"
+            )
 
     def as_record(self) -> dict[str, Any]:
-        return {
+        record = {
             "source_type": self.source_type,
             "source_digest": self.source_digest,
             "url_or_doi": self.url_or_doi,
@@ -211,6 +240,9 @@ class IdeaProvenance:
             "authors": list(self.authors),
             "license": self.license,
         }
+        if self.available_on is not None:
+            record["available_on"] = self.available_on
+        return record
 
 
 def bind_idea_source(
@@ -221,6 +253,7 @@ def bind_idea_source(
     commit: Optional[str] = None,
     authors: Iterable[str] = (),
     license: Optional[str] = None,
+    available_on: Optional[str] = None,
 ) -> IdeaProvenance:
     """Bind exact source bytes into a plan-owned provenance record."""
 
@@ -232,6 +265,7 @@ def bind_idea_source(
         commit=commit,
         authors=tuple(authors),
         license=license,
+        available_on=available_on,
     )
 
 
@@ -240,10 +274,23 @@ def parse_idea_provenance(
 ) -> IdeaProvenance:
     obj = _closed(
         payload,
-        {"source_type", "source_digest", "url_or_doi", "commit", "authors", "license"},
+        {
+            "source_type",
+            "source_digest",
+            "url_or_doi",
+            "commit",
+            "authors",
+            "license",
+            "available_on",
+        },
         {"source_type", "source_digest"},
         path,
     )
+    available_on = obj.get("available_on")
+    if available_on is not None and not is_calendar_date(available_on):
+        raise EdgeManifestError(
+            f"{path}.available_on must be a calendar date written as YYYY-MM-DD"
+        )
     authors = obj.get("authors", [])
     if not isinstance(authors, list):
         raise EdgeManifestError(f"{path}.authors must be an array")
@@ -268,6 +315,7 @@ def parse_idea_provenance(
             if obj.get("license") is None
             else _text(obj["license"], f"{path}.license")
         ),
+        available_on=available_on,
     )
 
 
@@ -1366,6 +1414,7 @@ __all__ = [
     "VerificationPlan",
     "bind_idea_source",
     "evaluate_condition_against",
+    "is_calendar_date",
     "monitor_edge",
     "parse_candidate_lineage",
     "parse_condition",
