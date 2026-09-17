@@ -1091,15 +1091,17 @@ def _shares_bars(prior: dict[str, Any], current: dict[str, Any]) -> bool:
 
 
 def _covered_bars(intervals: list[tuple[int, int]]) -> int:
-    """Number of bars in the union of half-open intervals."""
+    """Number of bars in the union of half-open intervals.
+
+    In start order, each interval adds only the bars past the furthest bar an
+    earlier one reached, so an interval inside an earlier one adds nothing.
+    """
 
     covered = 0
     reach = 0
     for start, end in sorted(intervals):
-        start = max(start, reach)
-        if end > start:
-            covered += end - start
-            reach = end
+        covered += max(end - max(start, reach), 0)
+        reach = max(reach, end)
     return covered
 
 
