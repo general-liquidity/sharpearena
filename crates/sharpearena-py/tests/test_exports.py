@@ -48,6 +48,9 @@ NEWLY_EXPORTED = [
     "mm_regret_split",
     "MMRegretSplit",
     "UnpairedMidPathError",
+    # strategy-search census and dated idea sources
+    "consulted_split_identity",
+    "is_calendar_date",
     # impact diagnostics
     "impact_misspecification_gap",
     "meta_order_impact_shape",
