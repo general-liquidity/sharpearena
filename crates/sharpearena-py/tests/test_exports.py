@@ -45,6 +45,8 @@ NEWLY_EXPORTED = [
     "closed_form_reference_policy",
     "mm_pnl_split",
     "MMPnLSplit",
+    "mm_regret_split",
+    "MMRegretSplit",
     "UnpairedMidPathError",
     # impact diagnostics
     "impact_misspecification_gap",

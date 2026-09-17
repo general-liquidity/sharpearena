@@ -33,7 +33,7 @@ the root README can stay task-oriented.
 |---|---|
 | Portfolio allocation | Simplex weights and log-return reward |
 | Execution | VWAP/TWAP implementation shortfall |
-| Market making | Avellaneda–Stoikov closed-form reference and seed-paired regret (`mm_regret` raises `UnpairedMidPathError` when the two arms' mid paths differ, as they do at high arrival rates); per-step reward split into spread capture, inventory mark-to-market, running penalty and liquidation cost (`mm_pnl_split`, diagnostic only) |
+| Market making | Avellaneda–Stoikov closed-form reference and seed-paired regret (`mm_regret` raises `UnpairedMidPathError` when the two arms' mids, arrival counts or generator positions differ after any step, as they do at high arrival rates, also when `sigma = 0` keeps every mid equal); per-step reward split into spread capture, inventory mark-to-market, running penalty and liquidation cost (`mm_pnl_split`, diagnostic only), and the same split of a paired regret under the same refusal (`mm_regret_split`) |
 | Shared endogenous market | PettingZoo parallel env with Kyle/Almgren–Chriss impact |
 | Limit-order book | Integer ticks, price-time matching, limit/market/cancel/modify, call auction, depth and sweep-cost queries; PettingZoo `LOBMarketEnv` values each agent's inventory at the mid of the other agents' resting quotes (`mark="ex_own_mid"`, the default; `"book_mid"` replays the pre-2026-09-16 mark) and offers an opt-in seeded same-bar seat shuffle (`priority="seeded_shuffle"`; default `"agent_index"`) |
 | Ecology | Deterministic population selection, mutation, regime/liquidity shocks, outcome and coalition classification |
