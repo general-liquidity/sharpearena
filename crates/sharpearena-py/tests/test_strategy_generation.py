@@ -428,6 +428,7 @@ def test_search_selects_on_validation_and_tests_only_the_winner(tmp_path):
     assert first_census["test_dataset_bars"] == 16
     assert first_census["overlapping_prior_test_consultations"] == 0
     assert first_census["prior_consulted_test_bars"] == 0
+    assert first_census["previous_record_sha256"] is None
     first_line = path.read_bytes().rstrip(b"\n")
 
     second = StrategySearchRunner(FixtureGenerator()).run(plan, path)
@@ -455,6 +456,7 @@ def test_search_selects_on_validation_and_tests_only_the_winner(tmp_path):
     ]
     assert census["overlapping_prior_observed_n_trials"] == 4
     assert census["prior_consulted_test_bars"] == 16
+    assert census["previous_record_sha256"] == hashlib.sha256(first_line).hexdigest()
     assert census["test_split_sha256"] == first_census["test_split_sha256"]
     assert census["scope"] == "earlier-records-in-this-journal-file-only"
     # Synthetic panels have no calendar, so the dating check is reported as
@@ -644,6 +646,11 @@ def test_census_reads_schema_2_records_and_counts_only_consulted_failures(
     assert census["prior_observed_n_trials"] == 8
     assert census["cumulative_observed_n_trials"] == 12
     assert census["unidentified_prior_records"] == 2
+    # The chain skips the blank line and names the last nonblank one, whatever
+    # record it holds.
+    assert lines[-2] == b""
+    assert lines[-3] == b'{"evidence_class":"forecast_evidence"}'
+    assert census["previous_record_sha256"] == hashlib.sha256(lines[-3]).hexdigest()
 
     # A different synthetic test panel is a different split and shares no bars.
     other = StrategySearchRunner(FixtureGenerator()).run(
@@ -742,6 +749,89 @@ def test_synthetic_windows_overlap_only_through_a_shared_seed(tmp_path, monkeypa
     assert disjoint_seeds["test_window_bars"] == [0, 16]
     assert disjoint_seeds["overlapping_prior_test_consultations"] == 0
     assert disjoint_seeds["prior_consulted_test_bars"] == 0
+
+
+def test_a_search_that_finishes_first_is_counted_by_the_one_that_started_first(
+    tmp_path, monkeypatch
+):
+    """The census describes the journal at append time, not at start time.
+
+    Search A starts, and while its model call is running search B runs to
+    completion on the same journal. A's record must count B and chain to it,
+    or a verifier recomputing the census from the file would refuse A.
+    """
+
+    monkeypatch.setattr(strategy_generation, "_evaluate_candidates", _fast_scores)
+    path = tmp_path / "shared.jsonl"
+    plan = _synthetic_plan()
+
+    class InterleavingGenerator(FixtureGenerator):
+        def generate(self, model, prompt, requested_candidates):
+            StrategySearchRunner(FixtureGenerator()).run(plan, path)
+            return super().generate(model, prompt, requested_candidates)
+
+    first = StrategySearchRunner(InterleavingGenerator()).run(plan, path)
+    lines = path.read_bytes().splitlines()
+    assert len(lines) == 2
+    assert json.loads(lines[1]) == first
+    census = first["test_split_census"]
+    assert census["prior_test_consultations"] == 1
+    assert census["prior_consultation_record_sha256"] == [
+        hashlib.sha256(lines[0]).hexdigest()
+    ]
+    assert census["previous_record_sha256"] == hashlib.sha256(lines[0]).hexdigest()
+    assert (tmp_path / "shared.jsonl.lock").exists()
+
+
+def test_the_journal_lock_excludes_a_second_writer(tmp_path):
+    import threading
+
+    path = tmp_path / "locked.jsonl"
+    events = []
+    released = threading.Event()
+
+    def second_writer():
+        with strategy_generation._journal_lock(path):
+            events.append("second acquired")
+
+    with strategy_generation._journal_lock(path):
+        events.append("first acquired")
+        thread = threading.Thread(target=second_writer)
+        thread.start()
+        thread.join(timeout=0.5)
+        assert thread.is_alive(), "the second writer entered while the lock was held"
+        events.append("first released")
+        released.set()
+    thread.join(timeout=10)
+    assert not thread.is_alive()
+    assert events == ["first acquired", "first released", "second acquired"]
+    with strategy_generation._journal_lock(path):
+        events.append("reacquired")
+    assert events[-1] == "reacquired"
+
+
+def test_a_source_dating_failure_is_recorded_before_the_test_split_is_read(
+    tmp_path, monkeypatch
+):
+    datasets = []
+
+    def recording_scores(candidates, dataset, seeds, n_trials, max_steps):
+        datasets.append(dataset.dataset_id)
+        return _fast_scores(candidates, dataset, seeds, n_trials, max_steps)
+
+    def broken_dating(plan, ledger):
+        raise RuntimeError("dating failed")
+
+    monkeypatch.setattr(strategy_generation, "_evaluate_candidates", recording_scores)
+    monkeypatch.setattr(strategy_generation, "_source_dating", broken_dating)
+    path = tmp_path / "dating.jsonl"
+    with pytest.raises(RuntimeError, match="dating failed"):
+        StrategySearchRunner(FixtureGenerator()).run(_synthetic_plan(), path)
+    failure = json.loads(path.read_bytes())
+    assert failure["status"] == "failed"
+    assert failure["test_split_census"]["test_consulted"] is False
+    assert failure["test_split_census"]["cumulative_observed_n_trials"] == 0
+    assert datasets == []
 
 
 def test_covered_bars_counts_the_union_of_windows():

@@ -12,11 +12,12 @@ import json
 import math
 import os
 import time
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, replace
 from hashlib import sha256
 from pathlib import Path
 from statistics import median, pstdev
-from typing import Any, Optional, Protocol, Sequence
+from typing import Any, Iterator, Optional, Protocol, Sequence
 
 from .edge_manifest import (
     CandidateValidation,
@@ -1109,9 +1110,11 @@ def _prior_test_consultations(
 
     Exact counts need the same split identity. Overlap counts need a shared
     panel and a window that intersects this one's bars, with an earlier
-    record's omitted bounds resolved against this panel's bar count. Only this
-    journal file is read. Searches written to another journal, or run without
-    recording, are invisible to the census.
+    record's omitted bounds resolved against this panel's bar count.
+    ``previous_record_sha256`` chains the record to the last line before it, so
+    removing or reordering an earlier line breaks a later record's chain. Only
+    this journal file is read. Searches written to another journal, or run
+    without recording, are invisible to the census.
     """
 
     start, end, bars = window_bars
@@ -1121,6 +1124,7 @@ def _prior_test_consultations(
     overlapping_trials = 0
     read_intervals: list[tuple[int, int]] = []
     unidentified = 0
+    previous: Optional[str] = None
     if path.exists():
         for number, raw in enumerate(path.read_bytes().split(b"\n"), start=1):
             line = raw.strip()
@@ -1133,13 +1137,14 @@ def _prior_test_consultations(
                     f"{path}:{number} is not JSON; the test-split census cannot be "
                     "computed"
                 ) from error
+            digest = sha256(line).hexdigest()
+            previous = digest
             record_identity, consulted, trials = _journal_consultation(record)
             if record_identity is None:
                 unidentified += 1
                 continue
             if not consulted:
                 continue
-            digest = sha256(line).hexdigest()
             if record_identity == identity:
                 consultations.append(digest)
                 prior_trials += trials
@@ -1167,6 +1172,7 @@ def _prior_test_consultations(
         "overlapping_prior_observed_n_trials": overlapping_trials,
         "prior_consulted_test_bars": _covered_bars(read_intervals),
         "unidentified_prior_records": unidentified,
+        "previous_record_sha256": previous,
     }
 
 
@@ -1260,13 +1266,10 @@ class StrategySearchRunner:
         if split_identity is None:
             raise StrategyProtocolError("the test split cannot be identified")
         # Resolved and read before generating, so an unreadable test split or a
-        # corrupt journal refuses before any model call, and the census names
-        # only records that existed when this search began.
-        prior_census = _prior_test_consultations(
-            evidence_path,
-            split_identity,
-            _test_window_bars(plan.test_dataset, plan.test_seeds),
-        )
+        # corrupt journal refuses before any model call. The census stamped on
+        # the record is read again under the journal lock when it is appended.
+        window_bars = _test_window_bars(plan.test_dataset, plan.test_seeds)
+        _prior_test_consultations(evidence_path, split_identity, window_bars)
         identity = self.generator.identity(plan.model)
         generated: Optional[GenerationResult] = None
         manifest_ledger: Optional[EdgeManifestLedger] = None
@@ -1286,6 +1289,9 @@ class StrategySearchRunner:
             )
             if not candidates:
                 raise StrategyProtocolError("the model emitted no valid candidate")
+            # Dated before the test split is read, so a dating failure cannot
+            # turn a scored test look into a failed record.
+            source_dating = _source_dating(plan, manifest_ledger)
             validation = _evaluate_candidates(
                 candidates,
                 plan.validation_dataset,
@@ -1360,15 +1366,17 @@ class StrategySearchRunner:
                     "selected_candidate_only": True,
                     "scores": test,
                 },
-                "test_split_census": _test_split_census(
-                    prior_census, True, observed_n_trials
-                ),
-                "source_dating": _source_dating(plan, manifest_ledger),
+                "source_dating": source_dating,
                 "recorded_at_unix_ns": time.time_ns(),
             }
-            normalized = json.loads(_canonical_bytes(evidence))
-            _write_evidence(evidence_path, normalized)
-            return normalized
+            return _append_with_census(
+                evidence_path,
+                evidence,
+                split_identity,
+                window_bars,
+                True,
+                observed_n_trials,
+            )
         except Exception as error:
             observed = None
             if generated is not None:
@@ -1420,13 +1428,73 @@ class StrategySearchRunner:
                     "prompt_sha256": sha256(plan.prompt.encode("utf-8")).hexdigest(),
                 },
                 "failure": {"type": type(error).__name__, "detail": str(error)},
-                "test_split_census": _test_split_census(
-                    prior_census, test_consulted, observed
-                ),
                 "recorded_at_unix_ns": time.time_ns(),
             }
-            _write_evidence(evidence_path, json.loads(_canonical_bytes(failure)))
+            _append_with_census(
+                evidence_path,
+                failure,
+                split_identity,
+                window_bars,
+                test_consulted,
+                observed,
+            )
             raise
+
+
+@contextmanager
+def _journal_lock(path: Path) -> Iterator[None]:
+    """Hold an exclusive lock on ``<journal>.lock`` for one census read and append.
+
+    Searches that share a journal can run at the same time; each record's
+    census must still describe exactly the lines before it.
+    """
+
+    lock_path = path.with_name(path.name + ".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+b") as handle:
+        if os.name == "nt":
+            import msvcrt
+
+            while True:
+                handle.seek(0)
+                try:
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError:
+                    time.sleep(0.05)
+            try:
+                yield
+            finally:
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _append_with_census(
+    path: Path,
+    record: dict[str, Any],
+    identity: dict[str, Any],
+    window_bars: tuple[int, int, int],
+    test_consulted: bool,
+    observed_n_trials: Any,
+) -> dict[str, Any]:
+    """Stamp the census of the lines now in ``path`` and append, under the lock."""
+
+    with _journal_lock(path):
+        prior = _prior_test_consultations(path, identity, window_bars)
+        record["test_split_census"] = _test_split_census(
+            prior, test_consulted, observed_n_trials
+        )
+        normalized = json.loads(_canonical_bytes(record))
+        _write_evidence(path, normalized)
+    return normalized
 
 
 def _write_evidence(path: Path, evidence: dict[str, Any]) -> None:
