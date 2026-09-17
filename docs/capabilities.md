@@ -33,12 +33,12 @@ the root README can stay task-oriented.
 |---|---|
 | Portfolio allocation | Simplex weights and log-return reward |
 | Execution | VWAP/TWAP implementation shortfall |
-| Market making | Avellaneda–Stoikov closed-form reference and regret |
+| Market making | Avellaneda–Stoikov closed-form reference and seed-paired regret (`mm_regret` raises `UnpairedMidPathError` when the two arms' mid paths differ, as they do at high arrival rates); per-step reward split into spread capture, inventory mark-to-market, running penalty and liquidation cost (`mm_pnl_split`, diagnostic only) |
 | Shared endogenous market | PettingZoo parallel env with Kyle/Almgren–Chriss impact |
-| Limit-order book | Integer ticks, price-time matching, limit/market/cancel/modify, call auction, depth and sweep-cost queries |
+| Limit-order book | Integer ticks, price-time matching, limit/market/cancel/modify, call auction, depth and sweep-cost queries; PettingZoo `LOBMarketEnv` values each agent's inventory at the mid of the other agents' resting quotes (`mark="ex_own_mid"`, the default; `"book_mid"` replays the pre-2026-09-16 mark) and offers an opt-in seeded same-bar seat shuffle (`priority="seeded_shuffle"`; default `"agent_index"`) |
 | Ecology | Deterministic population selection, mutation, regime/liquidity shocks, outcome and coalition classification |
 | Adverse selection | Paired informed/uninformed meta-order arms and exact markout decomposition |
-| Manipulation diagnostics | Symmetric/asymmetric schedules, impact boundary and size-response sweeps, explicit finite-grid scope |
+| Manipulation diagnostics | Symmetric/asymmetric schedules, impact boundary and size-response sweeps, explicit finite-grid scope, rank-neutral per-follower seat-removal externality (live P&L minus P&L with the manipulator held flat on the same seed) |
 
 ## Agent operations
 
@@ -74,4 +74,12 @@ the root README can stay task-oriented.
   Replay inputs contain private seeds and possibly full CSV data. Its Python
   socket guard is process-global and provides neither concurrent replay safety
   nor OS isolation; hashes and operator metadata do not authenticate authorship.
+- The limit-order book has no self-trade prevention, and its canonical batch
+  order queues lower agent indices first at a shared tick. In `LOBMarketEnv` a
+  self-trade needs a step that left one book side empty (2 of 27,552 fills over
+  400 seeded random configurations) and nets to zero in the agent's cash and
+  inventory. Under the default `priority="agent_index"`, seat 0 of two identical
+  quoters was filled more on 32 of 32 seeds; `priority="seeded_shuffle"` makes
+  the seats exchangeable (15 of 32) without changing the engine, `SPEC_HASH` or
+  the golden fill tape. The rule lives in the Python environment only.
 - A PrimeIntellect Environments-Hub listing is not yet shipped.

@@ -94,6 +94,27 @@ class MarketMakingEnv(gym.Env):
     a hard cap ``+/-inventory_cap``. Reward is the mark-to-mid value change minus a running
     squared-inventory penalty ``phi*q**2``; the terminal step force-liquidates remaining
     inventory at an unfavorable price.
+
+    ``step`` also splits each reward into four components in ``info``, each signed as its
+    contribution to the reward, so they sum to it up to floating-point rounding:
+
+    * ``spread_capture``: ``ask_fills*ask_depth + bid_fills*bid_depth``, the quoted depth
+      earned on this step's fills.
+    * ``inventory_pnl``: ``q*(mid_after - mid_before)``, the post-fill inventory marked
+      to the mid move.
+    * ``inventory_penalty``: ``-phi*q**2`` on the post-fill inventory.
+    * ``liquidation_cost``: ``-abs(q)*terminal_liq_penalty`` on the terminal step when
+      inventory is left, ``0.0`` otherwise.
+
+    The first two are an exact algebraic split of the mark-to-mid value change (equal to it
+    up to floating-point rounding), because the fill cash
+    ``ask_fills*(mid+ask_depth) - bid_fills*(mid-bid_depth)`` and the inventory change at the
+    pre-move mid cancel. This follows the reward decomposition in Fernández Vicente's
+    "Market Making Strategies with Reinforcement Learning" (dissertation, 2025, Eqs. 4.1 to
+    4.3: spread earnings plus inventory times the price change). This env has no hedging cost
+    (Eq. 4.4) and no adaptive inventory penalty (Eq. 4.5); its own running penalty and
+    terminal liquidation charge take those places. The split is a diagnostic: nothing in
+    SharpeArena or SharpeBench scores on it.
     """
 
     metadata = {"render_modes": []}
@@ -178,20 +199,28 @@ class MarketMakingEnv(gym.Env):
         self._q += bid_fills - ask_fills
 
         # Mid advances as arithmetic Brownian motion.
+        mid_before = self._mid
         self._mid += p.sigma * math.sqrt(p.dt) * float(self._rng.standard_normal())
         self._t += 1
 
+        # The reward arithmetic is unchanged in value and order, so the frozen F2 regrets
+        # reproduce bit for bit; the split below is computed beside it.
         value_after = self._value()
-        reward = (value_after - value_before) - p.phi * self._q**2
+        running_penalty = p.phi * self._q**2
+        reward = (value_after - value_before) - running_penalty
+        spread_capture = ask_fills * ask_depth + bid_fills * bid_depth
+        inventory_pnl = self._q * (self._mid - mid_before)
 
         terminated = self._t >= p.n_steps
         liquidated = 0.0
+        liquidation_cost = 0.0
         if terminated and self._q != 0:
             # Forced liquidation crosses the spread at an unfavorable price.
             sign = 1.0 if self._q > 0 else -1.0
             liq_price = self._mid - sign * p.terminal_liq_penalty
             proceeds = self._q * liq_price
-            reward += proceeds - self._q * self._mid
+            liquidation_cost = proceeds - self._q * self._mid
+            reward += liquidation_cost
             self._cash += proceeds
             liquidated = float(self._q)
             self._q = 0
@@ -203,6 +232,10 @@ class MarketMakingEnv(gym.Env):
             "ask_fills": ask_fills,
             "mid": self._mid,
             "liquidated": liquidated,
+            "spread_capture": spread_capture,
+            "inventory_pnl": inventory_pnl,
+            "inventory_penalty": -running_penalty,
+            "liquidation_cost": liquidation_cost,
         }
         return self._obs(), float(reward), bool(terminated), False, info
 
@@ -265,14 +298,54 @@ def fixed_spread_policy(half_spread: float) -> Policy:
 # -- regret metric ----------------------------------------------------------
 
 
-def _rollout_reward(env: MarketMakingEnv, policy: Policy, seed: int) -> float:
+_PNL_COMPONENTS = ("spread_capture", "inventory_pnl", "inventory_penalty", "liquidation_cost")
+
+
+class UnpairedMidPathError(ValueError):
+    """:func:`mm_regret` refused because the two arms did not see the same mid path.
+
+    ``seed`` is the first episode seed whose paths differ, ``step`` the zero-based index of
+    the first ``env.step`` call after which the two mids differ, and ``reference_mid`` /
+    ``candidate_mid`` the two mids at that step.
+    """
+
+    def __init__(
+        self, seed: int, step: int, reference_mid: float, candidate_mid: float
+    ) -> None:
+        self.seed = seed
+        self.step = step
+        self.reference_mid = reference_mid
+        self.candidate_mid = candidate_mid
+        super().__init__(
+            f"mid paths differ at seed {seed}, step {step}: reference mid "
+            f"{reference_mid!r}, candidate mid {candidate_mid!r}; the regret would be "
+            f"unpaired"
+        )
+
+
+def _rollout(
+    env: MarketMakingEnv, policy: Policy, seed: int
+) -> tuple[float, list[float], dict[str, float]]:
+    """One seeded episode: its summed reward, its post-step mid path and the episode sum of
+    each reward component."""
     obs, _ = env.reset(seed=seed)
     total = 0.0
+    mids: list[float] = []
+    split = dict.fromkeys(_PNL_COMPONENTS, 0.0)
     while True:
-        obs, reward, terminated, truncated, _ = env.step(policy(obs))
+        obs, reward, terminated, truncated, info = env.step(policy(obs))
         total += reward
+        mids.append(info["mid"])
+        for key in _PNL_COMPONENTS:
+            split[key] += info[key]
         if terminated or truncated:
-            return total
+            return total, mids, split
+
+
+def _check_paired(seed: int, reference_mids: list[float], candidate_mids: list[float]) -> None:
+    for step, (ref_mid, cand_mid) in enumerate(zip(reference_mids, candidate_mids)):
+        if ref_mid != cand_mid:
+            raise UnpairedMidPathError(seed, step, ref_mid, cand_mid)
 
 
 def mm_regret(
@@ -286,6 +359,24 @@ def mm_regret(
     ``n_episodes`` seeded episodes, the regret-versus-reference metric. Both policies run
     on the *same* seeds, so the reference scores ~0 regret against itself and a worse
     policy scores a positive gap; the zero point is the reference, not a proven optimum.
+
+    The pairing is checked, not assumed. The env draws arrivals, fills and the mid step from
+    one generator per episode, and numpy's binomial sampler consumes a number of underlying
+    draws that depends on the fill probability. Measured with numpy 2.5.1, it takes one draw
+    while ``n*min(p, 1-p)`` is at most 30, a variable number above that, and none when the
+    fill probability is exactly zero. Two quoting policies can therefore desynchronize the
+    stream, after which their mid paths (and arrivals) differ and the gap mixes policy with
+    luck. Each episode records both arms' post-step mids and raises
+    :class:`UnpairedMidPathError` at the first episode whose paths differ, so an unpaired
+    gap is never returned.
+
+    Measured on seeds 0 to 15: at the default parameters every fixed-spread quoter in the F2
+    grid shares the reference's path; at arrival rates of 16000, 20000, 30000 and 40000 (80
+    to 200 arrivals per step) none of them does. A quote wide enough that
+    ``exp(-kappa*depth)`` underflows to zero draws nothing where the reference draws, so it
+    unpairs at the first order arriving on that side, even at the default rate (at the
+    default ``kappa`` and ``max_depth`` no quote can underflow). The default random stream is left
+    as it is so the committed F2 regrets reproduce exactly.
     """
     p = params or MMParams()
     reference = closed_form_reference_policy(p)
@@ -293,17 +384,79 @@ def mm_regret(
     gap = 0.0
     for i in range(n_episodes):
         seed = seed_base + i
-        ref_r = _rollout_reward(env, reference, seed)
-        pol_r = _rollout_reward(env, policy, seed)
+        ref_r, ref_mids, _ = _rollout(env, reference, seed)
+        pol_r, pol_mids, _ = _rollout(env, policy, seed)
+        _check_paired(seed, ref_mids, pol_mids)
         gap += ref_r - pol_r
     return gap / n_episodes
 
 
+@dataclass(frozen=True)
+class MMPnLSplit:
+    """A policy's mean episode reward split into the four ``step`` components.
+
+    Each component field is the mean over episodes of that component's episode sum, signed
+    as its contribution to the reward. ``reward`` is the mean episode reward as the env
+    accumulated it, and :attr:`total` (the sum of the four components) matches it up to
+    floating-point rounding. Diagnostic only: nothing scores on it.
+    """
+
+    spread_capture: float
+    inventory_pnl: float
+    inventory_penalty: float
+    liquidation_cost: float
+    reward: float
+
+    @property
+    def total(self) -> float:
+        return (
+            self.spread_capture
+            + self.inventory_pnl
+            + self.inventory_penalty
+            + self.liquidation_cost
+        )
+
+
+def mm_pnl_split(
+    policy: Policy,
+    *,
+    params: Optional[MMParams] = None,
+    n_episodes: int = 16,
+    seed_base: int = 0,
+) -> MMPnLSplit:
+    """Where ``policy``'s reward comes from, over the same seeded episodes :func:`mm_regret`
+    uses: spread capture, inventory marked to the mid move, the running inventory penalty
+    and the terminal liquidation cost, each averaged over episodes.
+
+    It separates a quoter that earns by capturing spread from one that earns by holding
+    inventory into a favourable mid path. Differencing two policies' splits attributes their
+    regret component by component only when their mid paths are shared, which is the
+    condition :func:`mm_regret` checks for the same ``params`` and seeds. Rank-neutral: no
+    SharpeArena or SharpeBench score reads it.
+    """
+    p = params or MMParams()
+    env = MarketMakingEnv(p)
+    reward = 0.0
+    sums = dict.fromkeys(_PNL_COMPONENTS, 0.0)
+    for i in range(n_episodes):
+        episode_reward, _, split = _rollout(env, policy, seed_base + i)
+        reward += episode_reward
+        for key in _PNL_COMPONENTS:
+            sums[key] += split[key]
+    return MMPnLSplit(
+        **{key: value / n_episodes for key, value in sums.items()},
+        reward=reward / n_episodes,
+    )
+
+
 __all__ = [
     "MMParams",
+    "MMPnLSplit",
     "MarketMakingEnv",
+    "UnpairedMidPathError",
     "analytically_optimal_policy",
     "closed_form_reference_policy",
     "fixed_spread_policy",
+    "mm_pnl_split",
     "mm_regret",
 ]
