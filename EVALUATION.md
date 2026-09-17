@@ -79,6 +79,13 @@ A leaderboard entry is incomplete unless it states all of:
 6. **Confidence interval on the deflated Sharpe** and, when comparing entries, the
    **paired-difference verdict** (see the next section). A ranked number with no interval,
    or an "A beats B" claim a paired test calls tied, is a dashboard, not a result.
+7. **Declared trial count** (`n_trials`), the number the deflated Sharpe is deflated by.
+   Count every configuration whose reward you looked at before choosing the entry: each
+   training run and random seed, each hyperparameter setting, each reward shaping, and
+   each checkpoint you evaluated to pick the one you submitted. An entry that trained
+   ten runs and submits the best checkpoint of the best run has more trials than one,
+   and declaring one makes its deflated Sharpe look better than the search that produced
+   it. The SharpeBench bridge carries this count into scoring as `in_sample_trials`.
 
 ## Cross-regime transfer (a stronger robustness signal)
 
