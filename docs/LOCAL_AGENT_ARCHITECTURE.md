@@ -158,13 +158,23 @@ Each search deflates its winner's test score by its own observed trials, but the
 evidence path is an append-only journal and one journal can hold many searches against
 the same test split. An operator who revises the prompt after reading earlier test
 scores consults that split again, while every record still looks like a single look.
-From strategy evidence schema 3, `StrategySearchRunner.run` reads the journal it is
-about to append to before any generation, and stamps the new record with
+From strategy evidence schema 3, `StrategySearchRunner.run` stamps each record with
 `test_split_census`: the test split identity and its digest, the number of earlier
 records that read the same split, their record digests (SHA-256 of each stored line),
-their observed trials, the cumulative observed trials including this search, and the
-number of earlier records it could not identify. A journal line that is not JSON
-refuses the search before the model is called.
+their observed trials, the cumulative observed trials including this search, the
+number of earlier records it could not identify, and `previous_record_sha256`, the
+digest of the last nonblank line before the record (null for the first). The runner
+reads the journal once before any generation, so a journal line that is not JSON
+refuses the search before the model is called. It reads the journal again and appends
+the record while it holds an exclusive lock on `<journal>.lock`, so searches that share
+a journal can run at the same time and each record still describes exactly the lines
+before it.
+
+The chain makes a removed, inserted or reordered earlier line visible: every later
+schema 3 record names the line that preceded it. It cannot reveal lines cut from the
+end of the journal, because nothing follows them; keep the digest of the last line
+somewhere else when that matters. A journal that concurrent writers appended to without
+the lock fails verification and cannot be repaired in place.
 
 The identity names the bars that were read. A historical split is its dataset content
 digest and recorded window; execution seeds are excluded because they do not change the
@@ -196,7 +206,9 @@ generated, which is the multiplicity when later generations were steered by earl
 results. The census covers one journal file only: searches written to a different
 evidence path, or never recorded, are invisible to it. It is diagnostic and never changes
 the trial count used for deflation. `sharpebench lineage --census` recomputes it over the
-whole journal and refuses a record whose census disagrees with the records before it.
+whole journal and refuses a record whose census or chain disagrees with the records
+before it. That check needs a SharpeBench release newer than 0.27.0: 0.27.0 and earlier
+verify a schema 3 record's lineage without reading its census or source dating.
 
 An operator-bound source may carry `available_on`, the stated first calendar day
 (`YYYY-MM-DD`) its content existed, through `bind_idea_source(..., available_on=...)` or
@@ -211,7 +223,9 @@ its time within the day is unknown and it may postdate that bar. A synthetic spl
 calendar and is reported unavailable with reason `synthetic_split_has_no_calendar`; a
 first bar label that does not begin with a calendar day is unavailable with
 `date_not_iso8601`. Neither is treated as clean, and an undated source is never assumed to
-be early. The date is the operator's statement, not a proof of publication.
+be early. The runner dates the sources before it reads the test split, so a dating
+failure becomes a failed search that never consulted the test split. The date is the
+operator's statement, not a proof of publication.
 
 ## Isolation model
 
