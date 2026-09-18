@@ -6,7 +6,6 @@ Authors: Tiberiu Toca
 module
 
 public import Init.Grind
-public import Std
 
 /-!
 # Prospective forecast invariants
@@ -51,8 +50,8 @@ step, terminal, fill and accounting transitions are covered by executable proper
 against the shipped functions in `crates/sharpearena/tests/kernel_properties.rs`, not by
 this model.
 
-Check: the CI scope check (scripts/check-lean-scope.py) proves only that at least one repository
-path named in backticks in this block exists. It does not prove that the rules described here still
+Check: the CI scope check (scripts/check-lean-scope.py) proves only that every repository path
+named in backticks in this block exists. It does not prove that the rules described here still
 correspond to the code at that path.
 -/
 
@@ -153,7 +152,7 @@ def brierNumerator (probability truth scale : Int) : Int :=
     (scale - truth) * intSquare probability
 
 /-- Every integer square is nonnegative. -/
-theorem intSquare_nonnegative (value : Int) : 0 ≤ intSquare value := by
+theorem intSquare_nonneg (value : Int) : 0 ≤ intSquare value := by
   rcases Int.le_total 0 value with hvalue | hvalue
   · exact Int.mul_nonneg hvalue hvalue
   · exact Int.mul_nonneg_of_nonpos_of_nonpos hvalue hvalue
@@ -171,7 +170,7 @@ theorem brierNumerator_minimized (probability truth scale : Int)
     brierNumerator truth truth scale ≤ brierNumerator probability truth scale := by
   rw [brierNumerator_decomposition, brierNumerator_decomposition]
   have hregret : 0 ≤ scale * intSquare (probability - truth) :=
-    Int.mul_nonneg hscale (intSquare_nonnegative _)
+    Int.mul_nonneg hscale (intSquare_nonneg _)
   grind [intSquare]
 
 /-- On a positive scale, only the true fixed-point probability attains the minimum. -/
