@@ -10,6 +10,7 @@ from sharpearena.paper_cli import load_execution_plan
 from sharpearena.paper_cli import main as paper_cli_main
 from sharpearena.paper_trading import (
     ALPACA_PAPER_ORIGIN,
+    SUPPLIED_RETURNS_INTAKE_FLAG,
     AlpacaMarketData,
     AlpacaPaperBroker,
     BinancePublicData,
@@ -22,6 +23,7 @@ from sharpearena.paper_trading import (
     PaperRiskGuard,
     PaperTradingError,
     PaperTradingSession,
+    forward_reveal_intake,
     make_forward_commitment,
     prepare_forward_window_commitment,
     prepare_forward_window_reveal,
@@ -456,7 +458,78 @@ def test_paper_cli_reveal_writes_the_array_consumed_by_arena_score(tmp_path, cap
     entries = json.loads(output.read_text(encoding="utf-8"))
     assert len(entries) == 1
     assert entries[0]["submission"]["agent_id"] == "agent"
-    assert json.loads(capsys.readouterr().out)["entries"] == 1
+    reported = json.loads(capsys.readouterr().out)
+    assert reported["entries"] == 1
+    assert reported["sharpebench_intake"] == forward_reveal_intake(entries)
+
+
+def test_forward_reveal_entries_are_supplied_returns_the_default_intake_refuses(tmp_path):
+    """The only forward producer emits `submission` with no `capture`, so SharpeBench's
+    default arena intake refuses every entry and the flag is required to rank any."""
+    public = tmp_path / "commitment.json"
+    private = tmp_path / "preimage.json"
+    prepare_forward_window_commitment(
+        "agent",
+        "window",
+        {"model_digest": "sha256:model"},
+        "salt",
+        commitment_path=public,
+        private_preimage_path=private,
+    )
+    entry = prepare_forward_window_reveal(
+        {"agent_id": "agent", "runs": []},
+        json.loads(public.read_text(encoding="utf-8")),
+        json.loads(private.read_text(encoding="utf-8")),
+    )
+    assert "capture" not in entry and "submission" in entry
+
+    default = forward_reveal_intake([entry])
+    assert default["ranked_rows"] == 0
+    assert default["refused_entries"] == 1
+    assert default["required_intake_flag"] == SUPPLIED_RETURNS_INTAKE_FLAG
+
+    flagged = forward_reveal_intake([entry], allow_supplied_returns=True)
+    assert flagged["ranked_rows"] == 1
+    assert flagged["refused_entries"] == 0
+
+
+def test_a_reveal_set_that_ranks_nothing_is_not_certifying(tmp_path):
+    """A board that ranked no row must not carry the mark that says its rows were
+    re-executed, so the all-refused and empty cases are both false where it is computed."""
+    public = tmp_path / "commitment.json"
+    private = tmp_path / "preimage.json"
+    prepare_forward_window_commitment(
+        "agent",
+        "window",
+        {"model_digest": "sha256:model"},
+        "salt",
+        commitment_path=public,
+        private_preimage_path=private,
+    )
+    entry = prepare_forward_window_reveal(
+        {"agent_id": "agent", "runs": []},
+        json.loads(public.read_text(encoding="utf-8")),
+        json.loads(private.read_text(encoding="utf-8")),
+    )
+    empty = forward_reveal_intake([])
+    assert empty["entries"] == 0 and empty["ranked_rows"] == 0
+    assert empty["certifying"] is False
+    assert "no re-executed row" in empty["certifying_reason"]
+
+    refused = forward_reveal_intake([entry])
+    assert refused["certifying"] is False
+    assert "no re-executed row" in refused["certifying_reason"]
+
+    ranked = forward_reveal_intake([entry], allow_supplied_returns=True)
+    assert ranked["certifying"] is False
+    assert "supplied returns" in ranked["certifying_reason"]
+
+
+def test_forward_reveal_intake_refuses_an_entry_it_does_not_describe():
+    with pytest.raises(ValueError, match="not a forward reveal"):
+        forward_reveal_intake([{"submission": {}, "capture": {}, "salt": "s"}])
+    with pytest.raises(ValueError, match="not a forward reveal"):
+        forward_reveal_intake([{"artifact_digest": "d", "salt": "s"}])
 
 
 def test_paper_cli_plan_is_closed_and_inspection_never_uses_network(tmp_path, capsys):

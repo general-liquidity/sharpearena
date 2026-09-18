@@ -64,6 +64,8 @@ NEWLY_EXPORTED = [
     "PaperRiskGuard",
     "PaperTradingSession",
     "prepare_forward_window_commitment",
+    "forward_reveal_intake",
+    "SUPPLIED_RETURNS_INTAKE_FLAG",
 ]
 
 

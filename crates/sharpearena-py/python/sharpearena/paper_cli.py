@@ -27,6 +27,7 @@ from .paper_trading import (
     PaperRiskConfig,
     PaperRiskGuard,
     PaperTradingSession,
+    forward_reveal_intake,
     forward_window_from_preimage,
     prepare_forward_window_commitment,
     prepare_forward_window_reveal,
@@ -265,13 +266,22 @@ def _run_reveal(args: argparse.Namespace) -> int:
     submission = json.loads(args.submission.read_text(encoding="utf-8"))
     commitment = json.loads(args.commitment.read_text(encoding="utf-8"))
     preimage = json.loads(args.private_preimage.read_text(encoding="utf-8"))
-    entry = prepare_forward_window_reveal(submission, commitment, preimage)
-    payload = json.dumps([entry], sort_keys=True, indent=2, ensure_ascii=False) + "\n"
+    entries = [prepare_forward_window_reveal(submission, commitment, preimage)]
+    payload = json.dumps(entries, sort_keys=True, indent=2, ensure_ascii=False) + "\n"
     args.output.parent.mkdir(parents=True, exist_ok=True)
     temporary = args.output.with_suffix(args.output.suffix + ".partial")
     temporary.write_text(payload, encoding="utf-8", newline="\n")
     temporary.replace(args.output)
-    print(json.dumps({"output": str(args.output), "entries": 1}, sort_keys=True))
+    print(
+        json.dumps(
+            {
+                "output": str(args.output),
+                "entries": len(entries),
+                "sharpebench_intake": forward_reveal_intake(entries),
+            },
+            sort_keys=True,
+        )
+    )
     return 0
 
 
@@ -307,7 +317,10 @@ def _parser() -> argparse.ArgumentParser:
     commit.add_argument("--salt-env", default="SHARPEARENA_FORWARD_SALT")
 
     reveal = commands.add_parser(
-        "reveal", help="open a commitment into a SharpeBench RevealedEntry array"
+        "reveal",
+        help="open a commitment into a SharpeBench RevealedEntry array of supplied "
+        "returns, which `arena score` ranks only under --allow-supplied-returns and "
+        "on a noncertifying board",
     )
     reveal.add_argument("--submission", type=Path, required=True)
     reveal.add_argument("--commitment", type=Path, required=True)

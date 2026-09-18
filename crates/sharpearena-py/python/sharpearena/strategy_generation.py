@@ -958,7 +958,9 @@ def consulted_split_identity(split: Any, seeds: Any) -> Optional[dict[str, Any]]
     annualization factor are excluded because they do not change which bars were
     seen. Windows are compared as recorded: an omitted window end and an explicit
     end at the last bar are different identities, as are overlapping windows.
-    SharpeBench derives the same identity independently.
+    A SharpeBench release newer than 0.27.0 derives the same identity independently,
+    through `sharpebench lineage --census`. Through 0.27.0, which is the pin this
+    crate builds against, nothing on that side reads the census at all.
     """
 
     if not isinstance(split, dict) or not isinstance(seeds, list):
@@ -1105,6 +1107,32 @@ def _covered_bars(intervals: list[tuple[int, int]]) -> int:
     return covered
 
 
+_CENSUS_CHAIN_DOMAIN = "sharpearena/test-split-census/chain/v1"
+
+
+def _chain_step(previous: Optional[str], digest: str) -> str:
+    """Fold one line's digest into the running journal chain.
+
+    ``previous_record_sha256`` names only the line immediately before a record, so it
+    witnesses nothing about the lines before that one. A record that is identified but not
+    consulted, which is what a search that failed before reading the test split writes, is
+    counted by no other field either, so deleting or reordering one left every later
+    census byte-identical. Folding every line into a running digest closes that: any line
+    removed, inserted or moved anywhere before a record changes the record's chain.
+
+    Both inputs are fixed-length hex or empty, and the domain and NUL separators keep the
+    pre-image unambiguous, so no pair of different journals frames to the same bytes.
+    """
+
+    accumulator = sha256()
+    accumulator.update(_CENSUS_CHAIN_DOMAIN.encode("utf-8"))
+    accumulator.update(b"\x00")
+    accumulator.update((previous or "").encode("ascii"))
+    accumulator.update(b"\x00")
+    accumulator.update(digest.encode("ascii"))
+    return accumulator.hexdigest()
+
+
 def _prior_test_consultations(
     path: Path, identity: dict[str, Any], window_bars: tuple[int, int, int]
 ) -> dict[str, Any]:
@@ -1113,10 +1141,12 @@ def _prior_test_consultations(
     Exact counts need the same split identity. Overlap counts need a shared
     panel and a window that intersects this one's bars, with an earlier
     record's omitted bounds resolved against this panel's bar count.
-    ``previous_record_sha256`` chains the record to the last line before it, so
-    removing or reordering an earlier line breaks a later record's chain. Only
-    this journal file is read. Searches written to another journal, or run
-    without recording, are invisible to the census.
+    ``previous_record_sha256`` names the line immediately before the record, which
+    witnesses that one line only. ``journal_chain_sha256`` folds every nonblank line
+    before it in order, so removing, inserting or reordering any earlier line breaks a
+    later record's chain even when no counter here sees that line (see
+    :func:`_chain_step`). Only this journal file is read. Searches written to another
+    journal, or run without recording, are invisible to the census.
     """
 
     start, end, bars = window_bars
@@ -1127,6 +1157,7 @@ def _prior_test_consultations(
     read_intervals: list[tuple[int, int]] = []
     unidentified = 0
     previous: Optional[str] = None
+    chain: Optional[str] = None
     if path.exists():
         for number, raw in enumerate(path.read_bytes().split(b"\n"), start=1):
             line = raw.strip()
@@ -1141,6 +1172,9 @@ def _prior_test_consultations(
                 ) from error
             digest = sha256(line).hexdigest()
             previous = digest
+            # Folded for every line, before any classification, so a line this census
+            # counts nowhere else still witnesses itself in the chain.
+            chain = _chain_step(chain, digest)
             record_identity, consulted, trials = _journal_consultation(record)
             if record_identity is None:
                 unidentified += 1
@@ -1175,6 +1209,7 @@ def _prior_test_consultations(
         "prior_consulted_test_bars": _covered_bars(read_intervals),
         "unidentified_prior_records": unidentified,
         "previous_record_sha256": previous,
+        "journal_chain_sha256": chain,
     }
 
 

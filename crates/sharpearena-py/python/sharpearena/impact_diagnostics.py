@@ -51,8 +51,11 @@ must match exactly.
 estimate, and a policy that never trades moves nothing, so in both cases the two arms
 are bitwise identical and ``return_gap`` is exactly ``0.0``. A reward track whose values
 are all exactly equal has no Sharpe ratio and reports :class:`Unavailable` with
-:data:`CONSTANT_TRACK`. A Sharpe gap needs both Sharpe ratios, so it is
-:data:`SHARPE_UNAVAILABLE` whenever either arm lacks one, identical arms included, and the
+:data:`CONSTANT_TRACK`; a track that is dispersed but whose standard deviation underflows
+to zero, and one carrying a non-finite bar, have none either and report
+:data:`NON_FINITE_SHARPE`, which is what the kernel refuses under that name. A Sharpe gap
+needs both Sharpe ratios, so it is :data:`SHARPE_UNAVAILABLE` whenever either arm lacks
+one, identical arms included, and the
 across-seed mean and interval then name the seed positions without one instead of
 averaging structural zeros. Fewer than two seeds give no dispersion estimate, and the
 interval reports :data:`INSUFFICIENT_SEEDS`. A cleared mid that is not positive (the
@@ -133,6 +136,11 @@ INSUFFICIENT_SEEDS = "insufficient_seeds"
 SHARPE_UNAVAILABLE = "sharpe_unavailable"
 """A Sharpe gap or mean needs a Sharpe ratio that at least one arm or seed lacks."""
 
+NON_FINITE_SHARPE = "non_finite_sharpe"
+"""A non-finite bar, or a standard deviation that underflows to zero on a track whose
+values differ: the ratio is not finite, so there is no Sharpe ratio. Matches the kernel's
+`Sharpe ratio is not finite` in `leaderboard_ci::check_sharpe_defined`."""
+
 Policy = Callable[[Mapping[str, Any], int], Sequence[float]]
 """``policy(observation, bar) -> target weights``. ``observation`` is the engine's wire
 ``MarketObservation`` dict (``date``, ``cash``, ``symbols``, ``portfolio``); ``bar`` counts
@@ -190,6 +198,20 @@ Statistic = Union[float, Unavailable]
 # ---------------------------------------------------------------------------
 
 
+#: Knobs both entry points scale the market by. Zero or negative makes the cleared mid,
+#: and so every number derived from it, meaningless rather than merely extreme.
+_POSITIVE_KNOBS = ("capital", "volume_scale")
+
+
+def _positive(name: str, value: float) -> float:
+    """Refuse a knob that is not finite and positive, in one place, so the paired report
+    and the meta-order probe cannot drift into two standards for the same knob."""
+
+    if not (math.isfinite(value) and value > 0.0):
+        raise ImpactDiagnosticError(f"{name} must be finite and positive, got {value!r}")
+    return value
+
+
 @dataclass(frozen=True)
 class MarketSettings:
     """The native market settings both arms of a paired report share."""
@@ -205,10 +227,8 @@ class MarketSettings:
     richness: str = "standard"
 
     def validated(self) -> "MarketSettings":
-        for name in ("capital", "volume_scale"):
-            value = getattr(self, name)
-            if not (math.isfinite(value) and value > 0.0):
-                raise ImpactDiagnosticError(f"{name} must be finite and positive, got {value!r}")
+        for name in _POSITIVE_KNOBS:
+            _positive(name, getattr(self, name))
         for name in ("kyle_lambda", "eta", "vol_scale"):
             value = getattr(self, name)
             if not (math.isfinite(value) and value >= 0.0):
@@ -460,14 +480,29 @@ def track_sharpe(rewards: Sequence[float]) -> Statistic:
 
     A track whose values are all exactly equal (for example a flat policy's zeros) is
     :data:`CONSTANT_TRACK`. The predicate is exact equality, not a variance threshold.
+
+    Two further shapes have no Sharpe ratio and report :data:`NON_FINITE_SHARPE`: a track
+    carrying a non-finite bar, and a dispersed track whose sample standard deviation
+    underflows to exactly zero, where the ratio is not finite. The order of the checks
+    follows ``leaderboard_ci::check_sharpe_defined``, which is the definition: the
+    non-finite test runs before value equality, because NaN never equals itself.
     """
     r = [float(x) for x in rewards]
     if len(r) < 2:
         return Unavailable(TOO_FEW_BARS, f"{len(r)} traded bars")
+    if any(not math.isfinite(x) for x in r):
+        return Unavailable(NON_FINITE_SHARPE, "a bar returned a non-finite value")
     if all(x == r[0] for x in r):
         return Unavailable(CONSTANT_TRACK, f"every bar returned {r[0]!r}")
     mean = _mean(r)
     sd = math.sqrt(math.fsum((x - mean) ** 2 for x in r) / (len(r) - 1))
+    if sd == 0.0 or not math.isfinite(mean / sd):
+        # A track can be dispersed and still have no Sharpe ratio: squaring deviations
+        # this small underflows, so the sample standard deviation is exactly zero. The
+        # kernel is the definition and already refuses this by name, in
+        # `leaderboard_ci::check_sharpe_defined` and its pinned
+        # `an_underflowing_track_is_withheld_as_a_non_finite_sharpe`.
+        return Unavailable(NON_FINITE_SHARPE, f"mean {mean!r} over standard deviation {sd!r}")
     return mean / sd
 
 
@@ -841,6 +876,14 @@ def meta_order_impact_shape(
     """
     if not (math.isfinite(kyle_lambda) and kyle_lambda > 0.0):
         raise ImpactDiagnosticError(f"kyle_lambda must be positive, got {kyle_lambda!r}")
+    # The same rule `MarketSettings.validated` applies for the paired report. These reach
+    # the engine directly here, so without this they arrived unchecked.
+    for name, value in (
+        ("capital", capital),
+        ("volume_scale", volume_scale),
+        ("impact_exponent", impact_exponent),
+    ):
+        _positive(name, value)
     if not (math.isfinite(weight_step) and weight_step > 0.0):
         raise ImpactDiagnosticError(f"weight_step must be positive, got {weight_step!r}")
     if not (math.isfinite(total_weight) and total_weight > 0.0):
@@ -870,6 +913,13 @@ def meta_order_impact_shape(
     ramp_x = executed[1 : execution_bars + 1]
     ramp_i = impact[1 : execution_bars + 1]
     end = impact[execution_bars]
+    if not end > 0.0:
+        raise ImpactDiagnosticError(
+            "relaxation is measured as a ratio to the impact when execution ends, and "
+            f"that impact is {end!r}: the meta-order moved the cleared mid by less than "
+            "its float resolution, so there is no shape to report. A larger weight_step "
+            "or a smaller volume_scale gives a measurable one."
+        )
     ratios = tuple(impact[execution_bars + j] / end for j in range(hold_bars + 1))
 
     duration_impact = []
@@ -896,6 +946,7 @@ def meta_order_impact_shape(
 __all__ = [
     "CONSTANT_TRACK",
     "INSUFFICIENT_SEEDS",
+    "NON_FINITE_SHARPE",
     "SHARPE_UNAVAILABLE",
     "TOO_FEW_BARS",
     "ArmTrace",
