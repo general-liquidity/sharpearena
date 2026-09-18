@@ -35,13 +35,14 @@ Brier identity against its Rust scorer.
 
 ## Scope
 
-Every module under `SharpeArenaFormal/` carries a `## Scope` block in its doc
-comment with a `Covers:` line (the production symbols it models) and an
+Every module in the `SharpeArenaFormal` library, the root module and every
+module under `SharpeArenaFormal/` at any depth, carries a `## Scope` block in
+its doc comment with a `Covers:` line (the production symbols it models) and an
 `Assumes:` line (the assumptions the proofs rest on).
 `scripts/check-lean-scope.py` fails CI when a module lacks the block or its
-block references no existing repository path; it runs as one step of the
-`Lean model` job. The check proves that a named path exists, not that the model
-still corresponds to the code at that path.
+block names a repository path that does not exist; it runs as one step of the
+`Lean model` job. The check proves that every named path exists, not that the
+model still corresponds to the code at those paths.
 
 `Forecast.lean` covers the submission status classification and claim binding
 inside `submit`, effective-revision selection in `effective_claims`, and the
