@@ -1141,10 +1141,12 @@ def _prior_test_consultations(
     Exact counts need the same split identity. Overlap counts need a shared
     panel and a window that intersects this one's bars, with an earlier
     record's omitted bounds resolved against this panel's bar count.
-    ``previous_record_sha256`` chains the record to the last line before it, so
-    removing or reordering an earlier line breaks a later record's chain. Only
-    this journal file is read. Searches written to another journal, or run
-    without recording, are invisible to the census.
+    ``previous_record_sha256`` names the line immediately before the record, which
+    witnesses that one line only. ``journal_chain_sha256`` folds every nonblank line
+    before it in order, so removing, inserting or reordering any earlier line breaks a
+    later record's chain even when no counter here sees that line (see
+    :func:`_chain_step`). Only this journal file is read. Searches written to another
+    journal, or run without recording, are invisible to the census.
     """
 
     start, end, bars = window_bars
