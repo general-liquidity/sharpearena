@@ -212,7 +212,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "84e3b7f09337f5659d83784478d1d7e92914d2ac",
+  "generated_at_head": "ab05bbf2e931a7f704336b00ae46ce922ad0e597",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -258,7 +258,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/__init__.py",
-      "sha256": "d4557f3f083eb3e8a640c575c758b2f0b851cbc450a90f34ca35cc05ca0c6a5e"
+      "sha256": "cd21da40a62ea84258bdf980cb5c23e48ec0245cf627d677fece8b6abd6bb3e9"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/_action_validation.py",
@@ -282,7 +282,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/bench_bridge.py",
-      "sha256": "49f007c902c907199a9b1bfd2c4ec7b747404dd920588ff3313709627985dd98"
+      "sha256": "5ca87d095e727b4032e16c4528e7cbcab1a136f74ef185c2465f5f0a495fa2c7"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/canonical_json.py",
@@ -398,7 +398,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/impact_diagnostics.py",
-      "sha256": "f9073ffa78ef7fd066b21299a4b93874bfdf92c1427e26031aadacc860c750fe"
+      "sha256": "5bab48f8e31eab47f87b199ed988b75871e2e5381dc50209477286460b86d4ed"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/indicators.py",
@@ -474,11 +474,11 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/paper_cli.py",
-      "sha256": "980c47aac257be1468f689ebff012134a28a331dcd98fb5f0618751293e57771"
+      "sha256": "4d8d5c610b062bbbc37faba9bbfe25291c65dede6ed07fb11ab2e886fa79aff7"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/paper_trading.py",
-      "sha256": "96dd93629e5c04eb734c3ed0c5a219828797c3013255310fe8b03cd57fe0a060"
+      "sha256": "093de381b51e339c2cf19bb1e99a60291b9a38d368efb4a5c487ec00671650c6"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/pettingzoo_env.py",
@@ -538,7 +538,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/strategy_generation.py",
-      "sha256": "9ace02456bc713294c2d7d26787af35545dc145ed7aab6e9c214dfd75b3fe8bc"
+      "sha256": "58ebc2aa1f3d6d195dd12aa2cb43d149fec503d24b952c4c96dafa10a899cc84"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/trace.py",
@@ -910,6 +910,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "d753a465e2c2336d4e9bb288bfb8fa8030c955d0a3ea8599070dfa757b9c747e",
+  "source_snapshot_sha256": "cb6316a76c75d8b2f59538972be0112e73fff781a88ef0331b5a12ba03992ad2",
   "validator": "paper/src/check-provenance.py"
 }
