@@ -316,6 +316,23 @@ python -m sharpearena.paper_cli reveal \
   --output local-evidence/revealed-entry.json
 ```
 
+A forward window is traded against a live paper broker, so there is no committed artifact
+to replay: every entry carries a `submission` and no `capture`, which SharpeBench's arena
+intake calls supplied returns. Its default intake refuses such an entry and records the
+refusal, so `sharpebench arena score` ranks a forward reveal only under
+`--allow-supplied-returns`, and the window that flag signs is noncertifying. This is
+structural rather than a gap to close, because a live forward arm has no strict capture to
+reveal.
+
+The `reveal` command prints that outcome beside the file it wrote, under
+`sharpebench_intake`, from `sharpearena.paper_trading.forward_reveal_intake`. The function
+computes `certifying` from the rows rather than reading it back from a published header,
+and it is false in both cases. Without the flag the board ranks no row, and a board with no
+rows has no re-executed row to certify, so an all-refused window does not earn the mark by
+having no row to fail it. With the flag the ranked rows are supplied, not re-executed, so
+the board is noncertifying for that reason instead. Read `certifying_reason` to see which
+of the two applies.
+
 ## Model-server diversity
 
 The scheduler depends on the `DecisionModel` protocol, not the Ollama class. Ollama is

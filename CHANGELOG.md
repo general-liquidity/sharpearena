@@ -14,6 +14,10 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 - docs: the mirrored audit records add the round that stopped a track with no Sharpe ratio from voting on the deflation bar the rest of the field is judged against, and that settled the two dependency items the preceding round had refused or left standing. The preceding round's open item is dated rather than left reading as though it still stands.
 
+### Fixed
+
+- paper trading: the forward-reveal producer states what SharpeBench does with what it emits. A forward window is traded against a live paper broker, so every entry `prepare_forward_window_reveal` builds carries a `submission` and no `capture`, which the arena intake calls supplied returns and refuses by default; nothing in this repository said so, and the documented workflow read as though `sharpebench arena score` would rank it. `forward_reveal_intake` computes the outcome from the rows and `paper_cli reveal` prints it beside the file it wrote: how many entries the default intake refuses, that `--allow-supplied-returns` is required to rank any, and the `certifying` mark. The mark is computed rather than read back from a published header, and it is false in both cases: with the flag the ranked rows are supplied and not re-executed, and without it the board ranks no row, so it has no re-executed row and does not carry the mark by having no row to fail it. `certifying_reason` says which case applies. The reveal file's bytes are unchanged, so an entry already produced still opens its commitment.
+
 ## [0.30.0] - 2026-09-15
 
 ### Changed

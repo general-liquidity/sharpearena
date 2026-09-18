@@ -1327,7 +1327,13 @@ def prepare_forward_window_reveal(
     public_commitment: Mapping[str, Any],
     private_preimage: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Build one ``sharpebench arena score`` reveal after checking its preimage."""
+    """Build one ``sharpebench arena score`` reveal after checking its preimage.
+
+    The entry carries ``submission`` and no ``capture``, so it is a supplied-returns entry:
+    the default intake refuses it and the window needs ``--allow-supplied-returns`` to rank
+    it, on a board that is noncertifying either way. :func:`forward_reveal_intake` computes
+    that for a prepared set.
+    """
 
     required_commitment = {"agent_id", "target_window", "commit_hash"}
     if set(public_commitment) != required_commitment:
@@ -1361,6 +1367,50 @@ def prepare_forward_window_reveal(
         "submission": dict(submission),
         "artifact_digest": artifact_digest,
         "salt": str(private_preimage["salt"]),
+    }
+
+
+#: The `sharpebench arena score` flag a reveal set from this module needs to be ranked.
+SUPPLIED_RETURNS_INTAKE_FLAG = "--allow-supplied-returns"
+
+
+def forward_reveal_intake(
+    entries: Sequence[Mapping[str, Any]], *, allow_supplied_returns: bool = False
+) -> dict[str, Any]:
+    """What ``sharpebench arena score`` does with a reveal set from this module.
+
+    A forward window is traded against a live paper broker, so there is no committed
+    artifact to replay and every entry :func:`prepare_forward_window_reveal` builds carries
+    a ``submission`` and no ``capture``. Those are supplied returns: revealed after the
+    data, not derived by re-executing the entrant. The default intake refuses each one and
+    records the refusal, so without ``--allow-supplied-returns`` the window ranks no row;
+    with the flag the rows are ranked as supplied.
+
+    ``certifying`` is the mark the signed window header carries, computed here from the
+    rows instead of read back from the published header. It is false either way, for two
+    different reasons that ``certifying_reason`` states. The all-refused case is false as
+    well: the mark says every ranked row was re-executed, and a board that ranked nothing
+    has no such row, so it does not earn the mark by having no row to fail it.
+    """
+
+    for index, entry in enumerate(entries):
+        if "submission" not in entry or "capture" in entry:
+            raise ValueError(
+                f"entry {index} is not a forward reveal: this describes the "
+                "supplied-returns entries prepare_forward_window_reveal builds"
+            )
+    ranked = len(entries) if allow_supplied_returns else 0
+    return {
+        "entries": len(entries),
+        "ranked_rows": ranked,
+        "refused_entries": len(entries) - ranked,
+        "required_intake_flag": SUPPLIED_RETURNS_INTAKE_FLAG,
+        "certifying": False,
+        "certifying_reason": (
+            "the ranked rows carry supplied returns, which are not re-executed"
+            if ranked
+            else "the board ranks no row, and a board with no rows has no re-executed row"
+        ),
     }
 
 
@@ -1850,6 +1900,7 @@ __all__ = [
     "STATE_REJECTED",
     "STATE_SUBMISSION_UNKNOWN",
     "STATE_SUBMITTED",
+    "SUPPLIED_RETURNS_INTAKE_FLAG",
     "AccountSnapshot",
     "AlpacaMarketData",
     "AlpacaPaperBroker",
@@ -1871,6 +1922,7 @@ __all__ = [
     "RiskVerdict",
     "SubmissionUnknown",
     "bind_forward_window",
+    "forward_reveal_intake",
     "forward_window_from_preimage",
     "make_forward_commitment",
     "prepare_forward_window_commitment",
