@@ -743,4 +743,4 @@ __all__ = [
     "forecast_evidence_from_json",
     "write_forecast_evidence",
 ]
-__version__ = "0.30.0"
+__version__ = "0.31.0"
