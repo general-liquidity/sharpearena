@@ -235,8 +235,9 @@ results. The census covers one journal file only: searches written to a differen
 evidence path, or never recorded, are invisible to it. It is diagnostic and never changes
 the trial count used for deflation. `sharpebench lineage --census` recomputes it over the
 whole journal and refuses a record whose census or chain disagrees with the records
-before it. That check needs a SharpeBench release newer than 0.27.0: 0.27.0 and earlier
-verify a schema 3 record's lineage without reading its census or source dating.
+before it. That check needs SharpeBench 0.28.0, the release this one pins, or later.
+SharpeBench 0.27.0 and earlier verify a schema 3 record's lineage without reading its
+census or source dating.
 
 An operator-bound source may carry `available_on`, the stated first calendar day
 (`YYYY-MM-DD`) its content existed, through `bind_idea_source(..., available_on=...)` or

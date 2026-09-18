@@ -958,9 +958,9 @@ def consulted_split_identity(split: Any, seeds: Any) -> Optional[dict[str, Any]]
     annualization factor are excluded because they do not change which bars were
     seen. Windows are compared as recorded: an omitted window end and an explicit
     end at the last bar are different identities, as are overlapping windows.
-    A SharpeBench release newer than 0.27.0 derives the same identity independently,
-    through `sharpebench lineage --census`. Through 0.27.0, which is the pin this
-    crate builds against, nothing on that side reads the census at all.
+    SharpeBench 0.28.0, the release this crate pins, derives the same identity
+    independently through `sharpebench lineage --census`. SharpeBench 0.27.0 and
+    earlier do not read the census at all.
     """
 
     if not isinstance(split, dict) or not isinstance(seeds, list):
