@@ -212,7 +212,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "dc998b756c34cd575521e8d9cc29215fa89043df",
+  "generated_at_head": "5b41934d3e0516533f2e0eecc7f000a47cd929e2",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -714,11 +714,11 @@
     },
     {
       "path": "paper/sections/00-abstract.tex",
-      "sha256": "a4665e200043cc4f92cf23f8ad03dd0286f55ee65398896d1ac7e0ea6bda0be9"
+      "sha256": "70d97837c9d7cac1736e6c6895b61e6a10d8afedede8ec2c32e1fdcb3e9d0a3e"
     },
     {
       "path": "paper/sections/01-introduction.tex",
-      "sha256": "5cc68d716bf5407ad997b0af09273d386b0eed73acd17b151f3df69771a172a1"
+      "sha256": "8035262621bf3e95c4bdd64ade1c762fec88d1893cf42ceef8415291d956d28e"
     },
     {
       "path": "paper/sections/02-principles.tex",
@@ -738,11 +738,11 @@
     },
     {
       "path": "paper/sections/06-protocol.tex",
-      "sha256": "9fbf5cadcb7a89a48ac23f7f99c9ab6e061eea08c877550beaa434a9576bc7be"
+      "sha256": "dde2fbc1242cba5fd6e77d2b24ffd7d731eb0d1f5f0f343effb834939aa75390"
     },
     {
       "path": "paper/sections/07-validation.tex",
-      "sha256": "c0c5499f8b5d5dc9445493d6a4b21505d7a899fa0fcda60d6875196998dbc178"
+      "sha256": "c922ba9c4bc0a5c203f7d60ebf20aca4da243cc0eaaa5e2cf64f70d5935d15a0"
     },
     {
       "path": "paper/sections/08-findings.tex",
@@ -910,6 +910,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "8e2f3a6d3fb5f8ebc3a58da075da23ed4d42f1762bcb4b08346dbd0d83c19f46",
+  "source_snapshot_sha256": "bb9925b529830bdb478944eed01fc7ab52509af5081eb15ecd4eb00489c2a664",
   "validator": "paper/src/check-provenance.py"
 }
