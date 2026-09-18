@@ -59,11 +59,13 @@ decision's holdings first earn a reward one step later. A run's final decision a
 no pair. `score_run` scores a bare return track, which states no confidence, so it
 reports no `calibration_brier` and zero `calibration_observations`.
 
-Rust paths that run the pinned SharpeBench `=0.27.0` simulator directly (for example
-`run_backtest_checked`) keep that release's rule: its protocol reads an omitted
-confidence as `0.5`, and its simulator pairs every step, holds included, with the
-same step's return. Arena moves to the new rule when a SharpeBench release carries it
-and the pin here moves to that release.
+Rust paths that run the pinned SharpeBench `=0.28.0` simulator directly (for example
+`run_backtest_checked`) follow the same rule. Its protocol leaves an omitted confidence
+unstated rather than reading it as `0.5`, and its simulator pairs a stated confidence
+with the return of the book that decision left, net of the carry that book paid, so a
+run's final decision has no pair. Through `=0.27.0` those paths read an omitted
+confidence as `0.5` and paired every step, holds included, with the same step's
+return.
 
 The authoritative schemas are
 [`observation.schema.json`](../crates/sharpearena/contract/observation.schema.json) and

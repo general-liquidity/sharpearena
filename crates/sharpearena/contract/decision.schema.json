@@ -64,7 +64,7 @@
         },
         "confidence": {
           "type": "number",
-          "description": "Stated conviction in [0, 1], scored for calibration. Optional; defaults to 0.5."
+          "description": "Stated conviction in [0, 1], scored for calibration. Optional: omit it to state no conviction. An omitted confidence has no default value and adds no calibration pair."
         },
         "rationale": {
           "type": "string",

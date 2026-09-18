@@ -164,7 +164,7 @@ def test_run_baselines_attaches_confidence_the_kernel_reproduces_bit_for_bit():
         ci = r["arena_deflated_sharpe_ci"]
         from sharpearena.confidence import deflated_sharpe_ci
         assert ci == deflated_sharpe_ci(r["per_seed_returns"], len(BASELINE_POLICIES))
-        # The pinned SharpeBench 0.27.0 and the Arena estimator share the n-normalized
+        # The pinned SharpeBench 0.28.0 and the Arena estimator share the n-normalized
         # moment convention: exact equality, not a tolerance, is the parity witness.
         assert ci["point"] == r["deflated_sharpe"]
         assert r["deflated_sharpe_ci"] == ci

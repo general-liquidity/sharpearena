@@ -59,6 +59,7 @@ impl CostsInput {
             impact_bps: self.impact_bps.unwrap_or(d.impact_bps),
             financing_bps: self.financing_bps.unwrap_or(d.financing_bps),
             max_participation: self.max_participation.unwrap_or(d.max_participation),
+            short_borrow_bps: d.short_borrow_bps,
             trf_cost: d.trf_cost,
             noise: d.noise,
         }

@@ -6,7 +6,7 @@
 //! variance of zero, so it has no Sharpe ratio and none of the statistics read off one
 //! exists for it.
 //!
-//! SharpeBench `=0.27.0` refuses such a track itself: `deflation_error` names the
+//! SharpeBench `=0.28.0` refuses such a track itself: `deflation_error` names the
 //! refusal, the deflated Sharpe, PSR and deflation bar read the 0.0 floor, the
 //! interval, the per-cost and percentile figures and the rolling-Sharpe summary are
 //! absent, and the run clears no per-run PSR bar, so it is neither pass^k nor
@@ -49,7 +49,7 @@ use crate::leaderboard_ci::check_sharpe_defined;
 /// the kernel refused first. Every other field is the kernel's, and a track with a Sharpe
 /// ratio is returned exactly as the kernel scored it.
 ///
-/// Under the `=0.27.0` pin the first condition never holds: the kernel refuses every
+/// Under the `=0.28.0` pin the first condition never holds: the kernel refuses every
 /// track [`check_sharpe_defined`] refuses, before this function is asked, and writes the
 /// same reason into the same fields, so what this function returns is the kernel's own
 /// score for every input. The tests below still assert the withheld shape rather than
