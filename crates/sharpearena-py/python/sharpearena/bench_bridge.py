@@ -56,6 +56,62 @@ def _nearest_rank(values: Sequence[int], percentile: int) -> int:
     return ordered[max(0, rank - 1)]
 
 
+def _decision_confidence(decision: Any) -> Optional[float]:
+    """One applied decision's mean stated confidence, or ``None`` if it stated none.
+
+    Mirrors the per-step reduction in ``LocalFieldRunner``, so the pairs rebuilt below are
+    the ones that run produced.
+    """
+
+    if not isinstance(decision, dict):
+        raise BenchBridgeError("each recorded decision must be an object")
+    orders = decision.get("orders", [])
+    if not isinstance(orders, list):
+        raise BenchBridgeError("a recorded decision's orders must be an array")
+    stated: list[float] = []
+    for order in orders:
+        if not isinstance(order, dict) or "confidence" not in order:
+            continue
+        value = order["confidence"]
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(float(value))
+        ):
+            raise BenchBridgeError("a stated confidence must be a finite number")
+        stated.append(float(value))
+    return sum(stated) / len(stated) if stated else None
+
+
+def _derived_pairs(
+    decisions: Sequence[Any], returns: Sequence[Any]
+) -> tuple[list[float], list[bool]]:
+    """Rebuild the calibration pairs from the decisions and returns the record carries.
+
+    The engine books a step's reward against the holdings the *previous* decision chose,
+    so a stated confidence is realized by the next step's reward and a lane's final
+    decision, whose reward falls outside the run, adds no pair.
+
+    Recomputation is what binds these arrays. A ``*_sha256`` a record states about its own
+    field is derived from those same bytes, so an edited record restates it and the check
+    passes; that is why ``returns_sha256`` catches corruption but not an editor. The pairs
+    are instead fixed by the decision history and the scored returns, neither of which can
+    be moved to flatter the calibration without rewriting the evidence the process gate
+    reads.
+    """
+
+    confidences: list[float] = []
+    outcomes: list[bool] = []
+    awaiting: Optional[float] = None
+    for step, reward in enumerate(returns):
+        stated = _decision_confidence(decisions[step])
+        if awaiting is not None:
+            confidences.append(awaiting)
+            outcomes.append(float(reward) > 0.0)
+        awaiting = stated
+    return confidences, outcomes
+
+
 def _count(record: dict[str, Any], field: str) -> int:
     """Read one required nonnegative count, refusing an absent or coerced value."""
 
@@ -287,8 +343,10 @@ def _operational_profile(
         "reasoning_token_sources": reasoning_sources,
         "retry_count_total": sum(int(record["retry_count"]) for record in records),
         # Successful requests by why they stopped; ``length`` is a truncated
-        # completion that still became a decision. ``unrecorded`` counts requests
-        # in records written before the field existed.
+        # completion that still became a decision. ``unrecorded`` counts requests whose
+        # record states no stopping reason. Both fields were added inside evidence schema
+        # 3, so the version cannot separate a record written before they existed from a
+        # current one they were removed from: this counts what is absent, not why.
         "finish_reasons": _finish_reason_totals(records),
         "cells": len(records),
         # The scored cells above are the terminal completions. The ledger below
@@ -473,10 +531,24 @@ def _validate_field(records: Sequence[dict[str, Any]]) -> dict[str, Any]:
         outcomes = record.get("outcomes")
         if not isinstance(confidences, list) or not isinstance(outcomes, list):
             raise BenchBridgeError("confidences and outcomes must be arrays")
-        if len(confidences) != len(outcomes) or len(confidences) > len(returns):
+        if any(
+            isinstance(value, bool) or not isinstance(value, (int, float))
+            for value in confidences
+        ) or any(not isinstance(value, bool) for value in outcomes):
             raise BenchBridgeError(
-                "reported confidences and outcomes must align with each other and cannot "
-                "outnumber returns"
+                "confidences must be numbers and outcomes must be booleans"
+            )
+        decisions = record.get("decisions")
+        if not isinstance(decisions, list) or len(decisions) != len(returns):
+            raise BenchBridgeError(
+                "completed cell must record one applied decision per return"
+            )
+        derived_confidences, derived_outcomes = _derived_pairs(decisions, returns)
+        if confidences != derived_confidences or outcomes != derived_outcomes:
+            raise BenchBridgeError(
+                "reported confidences and outcomes disagree with the recorded decisions "
+                "and returns; each stated confidence is realized by the next step's "
+                f"reward, which gives {len(derived_confidences)} pair(s) for this cell"
             )
         if record.get("returns_sha256") != _digest(returns):
             raise BenchBridgeError("returns_sha256 does not match returns")

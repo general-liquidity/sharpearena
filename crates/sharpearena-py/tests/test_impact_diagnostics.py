@@ -18,6 +18,7 @@ import pytest
 from sharpearena import impact_diagnostics as diag
 from sharpearena.impact_diagnostics import (
     CONSTANT_TRACK,
+    NON_FINITE_SHARPE,
     INSUFFICIENT_SEEDS,
     SHARPE_UNAVAILABLE,
     GapInterval,
@@ -412,6 +413,54 @@ def test_track_sharpe_types_degenerate_tracks():
     assert track_sharpe([0.01]).reason == "too_few_bars"
     assert track_sharpe([0.002, 0.002, 0.002]).reason == CONSTANT_TRACK
     assert track_sharpe([0.01, -0.01, 0.03]) == pytest.approx(0.01 / 0.02)
+
+
+def test_track_sharpe_matches_the_kernel_on_an_underflowing_track():
+    """The kernel is the definition of when a Sharpe ratio exists, and it already refuses
+    a dispersed track whose standard deviation underflows to zero, by name and with a
+    pinned fixture (`leaderboard_ci::check_sharpe_defined` and
+    `kernel_score::an_underflowing_track_is_withheld_as_a_non_finite_sharpe`). This side
+    used to divide by that zero and raise `ZeroDivisionError` instead."""
+
+    kernel_fixture = [(i % 2) * 1e-170 for i in range(60)]
+    assert track_sharpe(kernel_fixture).reason == NON_FINITE_SHARPE
+    assert track_sharpe([1e-200, 2e-200]).reason == NON_FINITE_SHARPE
+    assert track_sharpe([0.0, 5e-324]).reason == NON_FINITE_SHARPE
+
+
+def test_track_sharpe_refuses_a_non_finite_bar_before_calling_it_constant():
+    """The kernel checks non-finite before constant, so an all-NaN track is named for the
+    non-finite bar rather than falling through value equality, which NaN never satisfies."""
+
+    assert track_sharpe([float("nan")] * 4).reason == NON_FINITE_SHARPE
+    assert track_sharpe([0.01, float("inf"), 0.02]).reason == NON_FINITE_SHARPE
+
+
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        ({"capital": -1.0}, "capital must be finite and positive"),
+        ({"capital": 0.0}, "capital must be finite and positive"),
+        ({"volume_scale": 0.0}, "volume_scale must be finite and positive"),
+        ({"volume_scale": -1.0}, "volume_scale must be finite and positive"),
+        ({"impact_exponent": 0.0}, "impact_exponent must be finite and positive"),
+    ],
+)
+def test_meta_order_probe_validates_the_knobs_its_sibling_validates(kwargs, match):
+    """`MarketSettings.validated` refused a non-positive `capital` or `volume_scale` for
+    the paired report while the probe passed the same two knobs to the engine raw."""
+
+    with pytest.raises(ImpactDiagnosticError, match=match):
+        meta_order_impact_shape(**kwargs)
+
+
+@pytest.mark.parametrize("kwargs", [{"volume_scale": 1e18}, {"capital": 1e-300}])
+def test_meta_order_probe_refuses_an_unmeasurable_impact(kwargs):
+    """Valid knobs can still leave the meta-order moving the mid by less than its float
+    resolution. The relaxation ratio then divided by exactly zero."""
+
+    with pytest.raises(ImpactDiagnosticError, match="less than"):
+        meta_order_impact_shape(**kwargs)
 
 
 @pytest.mark.parametrize(

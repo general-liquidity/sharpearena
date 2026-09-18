@@ -112,9 +112,11 @@ object instead, so a truncated, unparseable answer is labelled `length` there. T
 bridge refuses a record whose two fields do not appear together, whose observations
 are not one per model request, name a class outside the four, or disagree with the
 counts. The profile and its attempt ledger publish `finish_reasons` totals with a
-fifth count, `unrecorded`, for requests in records written before these fields
-existed; such records still compile. Evidence schema 3 and bridge schema 3 are
-unchanged, because both fields are additive.
+fifth count, `unrecorded`, for requests whose record does not state a stopping reason at
+all; such records still compile. Both fields were added inside evidence schema 3, which is
+otherwise unchanged because they are additive, so the version alone does not distinguish a
+record written before they existed from a current one they were removed from, and
+`unrecorded` does not claim to tell those apart. It counts what is absent, not why.
 These fields support operational diagnosis and capacity planning; they cannot alter the
 score submission emitted beside the manifest.
 
@@ -178,19 +180,29 @@ From strategy evidence schema 3, `StrategySearchRunner.run` stamps each record w
 `test_split_census`: the test split identity and its digest, the number of earlier
 records that read the same split, their record digests (SHA-256 of each stored line),
 their observed trials, the cumulative observed trials including this search, the
-number of earlier records it could not identify, and `previous_record_sha256`, the
-digest of the last nonblank line before the record (null for the first). The runner
+number of earlier records it could not identify, `previous_record_sha256`, the digest of
+the last nonblank line before the record (null for the first), and
+`journal_chain_sha256`, a running digest folding every nonblank line before the record in
+order (null for the first). The runner
 reads the journal once before any generation, so a journal line that is not JSON
 refuses the search before the model is called. It reads the journal again and appends
 the record while it holds an exclusive lock on `<journal>.lock`, so searches that share
 a journal can run at the same time and each record still describes exactly the lines
 before it.
 
-The chain makes a removed, inserted or reordered earlier line visible: every later
-schema 3 record names the line that preceded it. It cannot reveal lines cut from the
-end of the journal, because nothing follows them; keep the digest of the last line
-somewhere else when that matters. A journal that concurrent writers appended to without
-the lock fails verification and cannot be repaired in place.
+The chain makes a removed, inserted or reordered earlier line visible. Every line is
+folded into `journal_chain_sha256` before the census classifies it, so the guarantee does
+not depend on a line being counted anywhere else. That matters for the ordinary failure
+shape: a schema 3 record that declares its split and says evaluation never reached it is
+identified, so it is not an unidentified record, and it is not consulted, so no
+consultation counter sees it either. Until the running chain existed, `previous_record_sha256`
+named only the line immediately before a record, and deleting or reordering such a record
+left every later census byte-identical. Neither digest can reveal lines cut from the end of
+the journal, because nothing follows them; keep the digest of the last line somewhere else
+when that matters. Both are taken over each stored line's bytes ignoring surrounding
+whitespace, so reindenting a line does not break them while changing any value does. A
+journal that concurrent writers appended to without the lock fails verification and cannot
+be repaired in place.
 
 The identity names the bars that were read. A historical split is its dataset content
 digest and recorded window; execution seeds are excluded because they do not change the

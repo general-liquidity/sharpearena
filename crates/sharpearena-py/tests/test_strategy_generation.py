@@ -1227,3 +1227,115 @@ def test_generated_text_is_never_executed_by_the_dsl_modules():
     assert observed == 1
     assert accepted == []
     assert rejected[0].reason == "long_when.left.indicator is unsupported"
+
+
+def _census_of(path, identity, window_bars=(10, 20, 60)):
+    return strategy_generation._prior_test_consultations(path, identity, window_bars)
+
+
+def _uncounted_failure(tag):
+    """The ordinary failure shape: a schema 3 record that declares its split and says it
+    never reached the test data. It is identified, so it is not an unidentified record,
+    and it is not consulted, so no consultation counter sees it either."""
+
+    return {
+        "schema_version": 3,
+        "evidence_class": strategy_generation.STRATEGY_EVIDENCE_CLASS,
+        "status": "failed",
+        "tag": tag,
+        "generation": {"observed_n_trials": 7},
+        "test_split_census": {
+            "test_split_identity": _CENSUS_IDENTITY,
+            "test_consulted": False,
+        },
+    }
+
+
+_CENSUS_IDENTITY = {
+    "content_sha256": "a" * 64,
+    "window_start": 10,
+    "window_end": 20,
+    "scenario_seeds": None,
+}
+
+
+def _write_journal(path, records):
+    path.write_bytes(
+        b"".join(
+            json.dumps(record, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            + b"\n"
+            for record in records
+        )
+    )
+    return path
+
+
+def test_the_chain_witnesses_a_line_no_counter_sees(tmp_path):
+    """`previous_record_sha256` names only the line immediately before a record, and a
+    failed record that never reached the test split is counted by no other field, so
+    deleting or reordering one left every later census byte-identical. The running chain
+    closes that: every line is folded before it is classified."""
+
+    first, second = _uncounted_failure("F1"), _uncounted_failure("F2")
+    completed = {
+        "schema_version": 3,
+        "evidence_class": strategy_generation.STRATEGY_EVIDENCE_CLASS,
+        "status": "completed",
+        "generation": {"observed_n_trials": 3},
+        "test": {
+            "split": {
+                "kind": "historical",
+                "content_sha256": "a" * 64,
+                "window_start": 10,
+                "window_end": 20,
+            },
+            "seeds": [1],
+        },
+    }
+
+    full = _census_of(_write_journal(tmp_path / "full.jsonl", [first, second, completed]), _CENSUS_IDENTITY)
+    deleted = _census_of(_write_journal(tmp_path / "cut.jsonl", [second, completed]), _CENSUS_IDENTITY)
+    reordered = _census_of(
+        _write_journal(tmp_path / "swap.jsonl", [second, first, completed]), _CENSUS_IDENTITY
+    )
+
+    # Every other field, the one-line back-link included, is blind to both edits.
+    blind = {key: value for key, value in full.items() if key != "journal_chain_sha256"}
+    assert {k: v for k, v in deleted.items() if k != "journal_chain_sha256"} == blind
+    assert {k: v for k, v in reordered.items() if k != "journal_chain_sha256"} == blind
+    assert full["previous_record_sha256"] == deleted["previous_record_sha256"]
+
+    # The chain is not.
+    assert full["journal_chain_sha256"] != deleted["journal_chain_sha256"]
+    assert full["journal_chain_sha256"] != reordered["journal_chain_sha256"]
+    assert deleted["journal_chain_sha256"] != reordered["journal_chain_sha256"]
+
+
+def test_the_chain_folds_every_line_in_order(tmp_path):
+    """It is a fold over each stored line's digest, so it is reproducible from the file
+    alone and an empty journal has no chain."""
+
+    records = [_uncounted_failure("A"), _uncounted_failure("B")]
+    path = _write_journal(tmp_path / "chain.jsonl", records)
+    expected = None
+    for line in path.read_bytes().splitlines():
+        expected = strategy_generation._chain_step(
+            expected, hashlib.sha256(line).hexdigest()
+        )
+    assert _census_of(path, _CENSUS_IDENTITY)["journal_chain_sha256"] == expected
+    assert _census_of(tmp_path / "absent.jsonl", _CENSUS_IDENTITY)["journal_chain_sha256"] is None
+
+
+def test_a_search_records_the_chain_of_the_lines_before_it(tmp_path, monkeypatch):
+    monkeypatch.setattr(strategy_generation, "_evaluate_candidates", _fast_scores)
+    plan = _synthetic_plan()
+    path = tmp_path / "journal.jsonl"
+    first = StrategySearchRunner(FixtureGenerator()).run(plan, path)
+    second = StrategySearchRunner(FixtureGenerator()).run(plan, path)
+    lines = path.read_bytes().splitlines()
+
+    assert first["test_split_census"]["journal_chain_sha256"] is None
+    expected = strategy_generation._chain_step(
+        None, hashlib.sha256(lines[0]).hexdigest()
+    )
+    assert second["test_split_census"]["journal_chain_sha256"] == expected
