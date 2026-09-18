@@ -11,8 +11,15 @@ function assertValidRun(r, expectedLen) {
     "every return is a finite number",
   );
   assert.ok(r.trace && Array.isArray(r.trace.events), "trace.events is an array");
-  assert.equal(r.confidences.length, expectedLen, "one confidence per step");
-  assert.equal(r.outcomes.length, expectedLen, "one outcome per step");
+  // SharpeBench 0.28.0 pairs only a stated confidence with the move of the book its
+  // decision left, so a hold states nothing and the final decision has no pair.
+  assert.equal(r.outcomes.length, r.confidences.length, "one outcome per stated confidence");
+  assert.ok(r.confidences.length < expectedLen, "the final decision adds no pair");
+  assert.ok(
+    r.confidences.every((c) => typeof c === "number" && c >= 0 && c <= 1),
+    "every stated confidence is in [0, 1]",
+  );
+  assert.ok(r.outcomes.every((o) => typeof o === "boolean"), "every outcome is a boolean");
   assert.equal(typeof r.cost, "number", "cost is a number");
 }
 

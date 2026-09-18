@@ -99,7 +99,7 @@ fn decision(rng: &mut SplitMix64, obs: &MarketObservation) -> Decision {
             symbol: s.symbol.clone(),
             action: Action::Buy,
             target_weight: rng.next_unit() * 0.5,
-            confidence: 0.5,
+            confidence: Some(0.5),
             rationale: String::new(),
         })
         .collect();

@@ -48,12 +48,13 @@ fn assert_well_formed(decision: &Decision, observed: &BTreeSet<String>, ctx: &st
             "{ctx}: order on unobserved symbol {}",
             order.symbol,
         );
-        assert!(
-            (0.0..=1.0).contains(&order.confidence),
-            "{ctx}: confidence {} out of [0, 1] for {}",
-            order.confidence,
-            order.symbol,
-        );
+        if let Some(confidence) = order.confidence {
+            assert!(
+                (0.0..=1.0).contains(&confidence),
+                "{ctx}: confidence {confidence} out of [0, 1] for {}",
+                order.symbol,
+            );
+        }
     }
 }
 
@@ -144,7 +145,7 @@ fn published_decision_schema_matches_the_protocol_types() {
         symbol: "TSLA".into(),
         action: Action::Sell,
         target_weight: -0.3,
-        confidence: 0.7,
+        confidence: Some(0.7),
         rationale: "downtrend".into(),
     };
     let decision = Decision {

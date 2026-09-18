@@ -1,10 +1,10 @@
 {
-  "note": "Cross-runtime backtest goldens. Each entry is the exact JSON input the run/replay kernel takes and the FNV-1a/64 fingerprint of the bytes it must return. Native Rust, the wasm32 export layer and the published npm package all read this one file, so a backtest-path arithmetic change that is not carried into the committed .wasm fails a gate instead of shipping. The scenario goldens next door cover generation only; these cover the execution and replay path. A replay entry's dataset is the kernel's own dataset_synthetic output for `dataset`, passed verbatim, so the pin is on the replay arithmetic rather than on a re-serialization of the panel. These entries pin output bytes only: not SPEC_HASH, not a wasm digest, nothing a bundle rebuild moves. run_backtest, replay_run, Dataset and CostModel all come from sharpebench-sim, pinned at =0.27.0, so a spec-hash rebind and the rebuild that follows it leave them alone, and a change confined to the arena crate's own modules does too. If a fingerprint here ever moves it is a sharpebench-sim pin move or a change in the wasm facade's config translation, both of which belong in the changelog. That makes a moved fingerprint a finding, not something to regenerate: do not re-record these values to turn the suite green.",
+  "note": "Cross-runtime backtest goldens. Each entry is the exact JSON input the run/replay kernel takes and the FNV-1a/64 fingerprint of the bytes it must return. Native Rust, the wasm32 export layer and the published npm package all read this one file, so a backtest-path arithmetic change that is not carried into the committed .wasm fails a gate instead of shipping. The scenario goldens next door cover generation only; these cover the execution and replay path. A replay entry's dataset is the kernel's own dataset_synthetic output for `dataset`, passed verbatim, so the pin is on the replay arithmetic rather than on a re-serialization of the panel. These entries pin output bytes only: not SPEC_HASH, not a wasm digest, nothing a bundle rebuild moves. run_backtest, replay_run, Dataset and CostModel all come from sharpebench-sim, pinned at =0.28.0, so a spec-hash rebind and the rebuild that follows it leave them alone, and a change confined to the arena crate's own modules does too. If a fingerprint here ever moves it is a sharpebench-sim pin move or a change in the wasm facade's config translation, both of which belong in the changelog. That makes a moved fingerprint a finding, not something to regenerate: do not re-record these values to turn the suite green.",
   "fingerprint": "fnv1a-64",
   "runs": [
     {
       "name": "momentum_2x40_seed3",
-      "fnv1a64": "028c456b225087a3",
+      "fnv1a64": "4419d5478ea5ec87",
       "pre_hash": "run-momentum-2x40-seed3.json",
       "config": {
         "agent": "momentum",
@@ -32,7 +32,7 @@
     },
     {
       "name": "buy_and_hold_2x40_seed1",
-      "fnv1a64": "3b444c4e0846547d",
+      "fnv1a64": "f649777c9c3ca155",
       "pre_hash": "run-buy-and-hold-2x40-seed1.json",
       "config": {
         "agent": "buy_and_hold",
@@ -54,7 +54,7 @@
   "replays": [
     {
       "name": "fixed_weight_2x40_seed7_costed",
-      "fnv1a64": "dea1a1ceff6ac552",
+      "fnv1a64": "1f894d9bfea17143",
       "pre_hash": "replay-fixed-weight-2x40-seed7-costed.json",
       "dataset": {
         "n_symbols": 2,
@@ -238,7 +238,7 @@
     },
     {
       "name": "long_short_rotation_2x40_seed13_frictionless",
-      "fnv1a64": "2c64740fb4b5b142",
+      "fnv1a64": "d5ab8d2eb370d2a0",
       "pre_hash": "replay-long-short-rotation-2x40-seed13-frictionless.json",
       "dataset": {
         "n_symbols": 2,

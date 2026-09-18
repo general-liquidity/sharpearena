@@ -189,6 +189,7 @@ fn step_lane(
         let observation = env.reset();
         let info = StepInfo {
             nav: observation.cash,
+            carry: 0.0,
             events: Vec::new(),
         };
         return LaneOutcome {
@@ -212,6 +213,7 @@ fn step_lane(
         AutoresetMode::SameStep if ended => {
             let final_info = StepInfo {
                 nav: res.info.nav,
+                carry: res.info.carry,
                 events: res.info.events.clone(),
             };
             let observation = env.reset();
@@ -398,7 +400,7 @@ mod tests {
                     Action::Hold
                 },
                 target_weight: weight,
-                confidence: 0.5,
+                confidence: Some(0.5),
                 rationale: String::new(),
             })
             .collect();

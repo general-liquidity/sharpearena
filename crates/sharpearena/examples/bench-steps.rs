@@ -26,7 +26,7 @@ fn decision_for(obs: &MarketObservation, weight: f64) -> Decision {
                 Action::Hold
             },
             target_weight: weight,
-            confidence: 0.5,
+            confidence: Some(0.5),
             rationale: String::new(),
         })
         .collect();

@@ -71,7 +71,7 @@ fn signed_target_opens_a_short_through_the_public_environment() {
             symbol: symbol.clone(),
             action: Action::Sell,
             target_weight: -0.5,
-            confidence: 1.0,
+            confidence: Some(1.0),
             rationale: "regression: signed target".to_string(),
         }],
         reasoning: String::new(),

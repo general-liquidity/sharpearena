@@ -3,7 +3,7 @@
 `is_process_block` decides whether a rollout keeps training reward. It used to
 recognize a block-severity event by the substring `manipulative`, the exact name
 `protocol_error`, or an explicit `severity` field, while the pinned
-`sharpebench-core 0.27.0` `ProcessEvent` enum serializes its block variants with
+`sharpebench-core 0.28.0` `ProcessEvent` enum serializes its block variants with
 neither that token nor a severity field. Four of its five block variants therefore
 read as clean. These tests pin the whole vocabulary to the engine's own
 classification, and they carry the non-blocking control rows so that a classifier
