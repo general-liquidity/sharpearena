@@ -131,7 +131,9 @@ Package-specific usage lives beside each distribution: the
 
 The Python package is the surface above; underneath it, several interfaces sit
 over the same engine, and Gymnasium is one of them, not the only one. Four are
-optional extras (`pip install "sharpearena[pettingzoo,verifiers,minari,mcp]"`):
+optional extras (`pip install "sharpearena[pettingzoo,verifiers,minari,mcp]"`).
+A short, runnable example for every row below except Gymnasium (see
+[Quick start](#quick-start)) is in [the interface examples](docs/interfaces.md).
 
 | Interface | What it's for |
 |:--|:--|
