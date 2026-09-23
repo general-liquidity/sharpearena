@@ -152,10 +152,7 @@ fn scalar_rep(m: &Manifest, episodes: u64, seed_base: u64) -> (f64, u64) {
             obs = res.observation;
         }
     }
-    (
-        steps as f64 / start.elapsed().as_secs_f64(),
-        steps,
-    )
+    (steps as f64 / start.elapsed().as_secs_f64(), steps)
 }
 
 /// Scalar stepping with construction hoisted out of the timed region: the env is built
@@ -351,7 +348,9 @@ fn main() {
         for _ in 0..warmup {
             let _ = vector_rep(&mut batch, &m, bars.min(200));
         }
-        let samples: Vec<f64> = (0..reps).map(|_| vector_rep(&mut batch, &m, bars)).collect();
+        let samples: Vec<f64> = (0..reps)
+            .map(|_| vector_rep(&mut batch, &m, bars))
+            .collect();
         cells.push(Cell {
             name: "native_vector_step_batch".into(),
             unit: "steps/s".into(),
