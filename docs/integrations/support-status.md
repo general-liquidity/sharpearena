@@ -45,7 +45,7 @@ directly, not a Gymnasium, PettingZoo, or `verifiers` rollout.
 | Ray, RLlib | Not supported | `inventory.md`: no code, only a literature citation in `paper/review/environment-genre-study-2026.md`. |
 | Stable-Baselines3 | Not supported | `inventory.md`: the string "SB3-style MLP feature extractors" in a `spaces.py:5` docstring is the only occurrence; no SB3 import or adapter exists. |
 | TorchRL | Not supported | `inventory.md`: nothing in the tree. |
-| HUD | Local feasibility only, not a supported integration | `examples/hud/` and `crates/sharpearena-py/tests/test_hud_local.py`, recorded in [INT-08](INT-08-hud-local-feasibility.md). Eleven deterministic tests against HUD 0.6.18 with no model call, account or upload. Only `LocalRuntime` and `SubprocessRuntime` were exercised and neither is isolation: the first shares an interpreter with the grader and the private episode state, the second is a process boundary over loopback. Docker, Modal and hosted runtimes are unevaluated. |
+| HUD | Local feasibility only, not a supported integration | [HUD: a local feasibility check, now in the tree](#hud-a-local-feasibility-check-now-in-the-tree), below. |
 | Harbor | Local feasibility only, not a supported integration | `integrations/harbor/`, recorded in [INT-09](INT-09-harbor-local-feasibility.md). A local job ran end to end under Harbor 0.23.0 on Docker Desktop over WSL2 with a separate-container verifier, and seven of eight tampering fixtures are refused. The evidence covers that one host: it is not evidence against kernel-level container escape, and network egress is untested because `no-network` is unavailable there. Harbor's built-in job aggregation counts a missing or crashed reward as 0, so a custom metric is required before any job-level number means what it appears to. |
 | PufferLib | Ruled out | [Ruled out: PufferLib and EnvPool](#ruled-out-pufferlib-and-envpool), below. |
 | EnvPool | Ruled out | [Ruled out: PufferLib and EnvPool](#ruled-out-pufferlib-and-envpool), below. |
@@ -92,6 +92,28 @@ were not restated from memory. `0.29.1` and `>=1.0` do not overlap, so no single
 Python environment can install CleanRL and this package's Gymnasium-facing surface
 together today. This is a fact about the current dependency sets, not a statement that
 either project is unwilling to move; no fix is planned here.
+
+## HUD: a local feasibility check, now in the tree
+
+HUD is not a supported integration. There is no adapter and no import of `hud`
+anywhere under `crates/sharpearena-py/python/sharpearena/`. What the tree holds is
+the fixture from a local feasibility and isolation-boundary check, merged in PR #102:
+`examples/hud/`, which wraps one bounded SharpeArena episode behind three HUD MCP
+tools, and `crates/sharpearena-py/tests/test_hud_local.py`. The full record is in
+[INT-08](INT-08-hud-local-feasibility.md). Nothing in the package depends on HUD.
+
+What the check established: `hud` 0.6.18 installs and runs locally with no account,
+no deployment and no provider call, and all eleven tests pass deterministically. Two
+runtimes were exercised, and neither is isolation. `LocalRuntime` shares one Python
+interpreter between the grader, the episode state and the test process, with only the
+fixture's own tool surface between them. `SubprocessRuntime` adds a process boundary
+over loopback TCP but shares the host filesystem and network namespace.
+`DockerRuntime`, `ModalRuntime` and `HUDRuntime` were not exercised, because each
+needs Docker execution, an account or a deployment.
+
+What it does not cover: container or cloud isolation, the control channel's
+authentication surface at the wire level, training-client export, and replay through
+the canonical engine or the SharpeBench bridge.
 
 ## Harbor: a local feasibility check, now in the tree
 
