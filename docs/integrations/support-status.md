@@ -93,16 +93,15 @@ Python environment can install CleanRL and this package's Gymnasium-facing surfa
 together today. This is a fact about the current dependency sets, not a statement that
 either project is unwilling to move; no fix is planned here.
 
-## Harbor: separate feasibility check, not part of this tree
+## Harbor: a local feasibility check, now in the tree
 
-Harbor is not integrated into SharpeArena. A feasibility and verifier-boundary check
-ran separately, on branch `feat/int-harbor` (PR #99), against a standalone task
-package that does not touch this package's engine, wire contract, or SharpeBench
-bridge; none of that work is merged into or stacked on this tree, so nothing in this
-package currently depends on Harbor or exposes a Harbor adapter.
+Harbor is not a supported integration. The task package from the feasibility and
+verifier-boundary check now lives in `integrations/harbor/` (merged in PR #99), and it
+is standalone: it does not touch this package's engine, wire contract or SharpeBench
+bridge, and nothing in the package depends on Harbor or exposes a Harbor adapter. The
+full record is in [INT-09](INT-09-harbor-local-feasibility.md).
 
-What that separate check found, restated here only as a pointer, not as a claim about
-this package: a local job ran end to end on Docker Desktop over WSL2 with Harbor
+What the check established, on one host and no more: a local job ran end to end on Docker Desktop over WSL2 with Harbor
 v0.23.0, completing in about 83 seconds with the recorded reward. A separate verifier
 container ran, and in the fixtures that tested it, the private evaluator files and
 grader were unreachable from the agent's own container. Of eight tampering fixtures,
