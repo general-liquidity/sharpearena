@@ -97,7 +97,7 @@ intended test only.
 | `SharpeArenaEnv.step` always reports `terminated` false | the insolvency test only |
 | `SharpeArenaEnv.step` doubles the reward | the truncation test and the reward/NAV chain test only |
 | `eval_seeds._rollout_returns` rescales the collected returns | the reported-metric test only |
-| `SharpeArenaVectorEnv` stops forwarding `env_kwargs` to the native batch | the execution-seed test (and the pre-existing `test_equivalence` execution-noise cases) |
+| `SharpeArenaVectorEnv` stops forwarding `env_kwargs` to the native batch | the execution-seed test, alongside the pre-existing `test_equivalence.py` cases that bridge the two streams |
 | `LaneConfig::build` seeds the scenario generator from the execution seed, rebuilt and installed as a wheel | both stream-separation tests only |
 | `SharpeArenaVectorEnv` dispatches lane 0's action to every lane | the lane-independence test only |
 | The autoreset label table maps `next_step` to `SAME_STEP` | the metadata test for `next_step` only |
