@@ -11,28 +11,31 @@ stale (HUD and Harbor, below) is corrected.
 
 | Ecosystem | Present | Where | Upstream import |
 |---|---|---|---|
-| <img src="../assets/logos/gymnasium.svg" alt="" height="16"> Gymnasium scalar | Yes | `crates/sharpearena-py/python/sharpearena/gym.py` (`SharpeArenaEnv`) | Hard; `gymnasium>=1.0` is a base dependency |
-| <img src="../assets/logos/gymnasium.svg" alt="" height="16"> Gymnasium vector | Yes | `vector.py` (`SharpeArenaVectorEnv` over native `VecTradingEnv`) | Hard, with a guarded `AutoresetMode` import that falls back to the string label |
-| <img src="../assets/logos/gymnasium.svg" alt="" height="16"> Gymnasium wrappers | Yes | `wrappers.py`, `wrappers_vector.py`, `spaces.py` | Hard |
-| <img src="../assets/logos/gymnasium.svg" alt="" height="16"> Gymnasium registration | Yes | `registration.py`, IDs `SharpeArena/<Tier>[-Eval]-v1` with scalar and vector entry points | Hard |
+| <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/gymnasium-dark.svg"><img src="../assets/logos/gymnasium.svg" alt="" height="16"></picture> Gymnasium scalar | Yes | `crates/sharpearena-py/python/sharpearena/gym.py` (`SharpeArenaEnv`) | Hard; `gymnasium>=1.0` is a base dependency |
+| <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/gymnasium-dark.svg"><img src="../assets/logos/gymnasium.svg" alt="" height="16"></picture> Gymnasium vector | Yes | `vector.py` (`SharpeArenaVectorEnv` over native `VecTradingEnv`) | Hard, with a guarded `AutoresetMode` import that falls back to the string label |
+| <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/gymnasium-dark.svg"><img src="../assets/logos/gymnasium.svg" alt="" height="16"></picture> Gymnasium wrappers | Yes | `wrappers.py`, `wrappers_vector.py`, `spaces.py` | Hard |
+| <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/gymnasium-dark.svg"><img src="../assets/logos/gymnasium.svg" alt="" height="16"></picture> Gymnasium registration | Yes | `registration.py`, IDs `SharpeArena/<Tier>[-Eval]-v1` with scalar and vector entry points | Hard |
 | Conformance checker | Yes | `check_env.py` (`check_env`, `check_determinism_across_constructors`) | None; hand written, numpy only |
-| <img src="../assets/logos/pettingzoo.svg" alt="" height="16"> PettingZoo | Yes | `pettingzoo_env.py`, `lob_env.py`, `market_env.py` | Guarded; `ParallelEnv` falls back to `object` and construction raises a named error |
-| <img src="../assets/logos/minari.svg" alt="" height="16"> Minari | Yes | `minari_export.py` (`to_minari`, `to_minari_train_test`, `seed_band_metadata`) | Guarded behind `_require_minari()` |
-| verifiers / Prime-RL | Yes | `verifiers_env.py`, `examples/prime-rl/` | Guarded; the class only exists when `verifiers` imports |
+| <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/pettingzoo-dark.svg"><img src="../assets/logos/pettingzoo.svg" alt="" height="16"></picture> PettingZoo | Yes | `pettingzoo_env.py`, `lob_env.py`, `market_env.py` | Guarded; `ParallelEnv` falls back to `object` and construction raises a named error |
+| <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/minari-dark.svg"><img src="../assets/logos/minari.svg" alt="" height="16"></picture> Minari | Yes | `minari_export.py` (`to_minari`, `to_minari_train_test`, `seed_band_metadata`) | Guarded behind `_require_minari()` |
+| <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/prime-intellect-dark.png"><img src="../assets/logos/prime-intellect.png" alt="" height="11"></picture> verifiers / Prime-RL | Yes | `verifiers_env.py`, `examples/prime-rl/` | Guarded; the class only exists when `verifiers` imports |
 | SharpeBench bridge | Yes | `bench_bridge.py` | Standard library only |
-| MCP | Yes | `mcp_server.py` | Guarded behind `FastMCP is None` |
+| <a href="https://modelcontextprotocol.io"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/mcp-dark.svg"><img src="../assets/logos/mcp.svg" alt="" height="11"></picture></a> MCP | Yes | `mcp_server.py` | Guarded behind `FastMCP is None` |
 | Functional view | Yes | `functional.py` (`SharpeArenaFuncEnv`) | Three-way probe ending in a local shim, so the module always imports |
 | CleanRL | No | Nothing in the tree | |
-| Ray, RLlib | No | Only a literature citation in `paper/review/environment-genre-study-2026.md` | |
-| HUD | Yes, as a local feasibility fixture, not a supported integration | `examples/hud/`, `crates/sharpearena-py/tests/test_hud_local.py`. Only `LocalRuntime` and `SubprocessRuntime` were exercised; `DockerRuntime`, `ModalRuntime`, and `HUDRuntime` were not. Report: `docs/integrations/INT-08-hud-local-feasibility.md`. | Not imported by the package; the fixture depends on the `hud` PyPI package |
-| Harbor | Yes, as a local feasibility fixture, not a supported integration | `integrations/harbor/` (task package, fixtures, tampering jobs). Ran on Docker Desktop over WSL2. Report: `docs/integrations/INT-09-harbor-local-feasibility.md`. | Not imported by the package; the fixture depends on the `harbor` PyPI package |
-| Stable-Baselines3 | No | Only the phrase "SB3-style MLP feature extractors" in `spaces.py:5`, a docstring | |
-| TorchRL, PufferLib, EnvPool | No | Nothing in the tree | |
+| <a href="https://www.ray.io"><img src="../assets/logos/ray.svg" alt="" height="12"></a> Ray, RLlib | No | Only a literature citation in `paper/review/environment-genre-study-2026.md` | |
+| <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/hud-dark.svg"><img src="../assets/logos/hud.svg" alt="" height="14"></picture> HUD | Yes, as a local feasibility fixture, not a supported integration | `examples/hud/`, `crates/sharpearena-py/tests/test_hud_local.py`. Only `LocalRuntime` and `SubprocessRuntime` were exercised; `DockerRuntime`, `ModalRuntime`, and `HUDRuntime` were not. Report: `docs/integrations/INT-08-hud-local-feasibility.md`. | Not imported by the package; the fixture depends on the `hud` PyPI package |
+| <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/harbor-dark.png"><img src="../assets/logos/harbor.png" alt="" height="13"></picture> Harbor | Yes, as a local feasibility fixture, not a supported integration | `integrations/harbor/` (task package, fixtures, tampering jobs). Ran on Docker Desktop over WSL2. Report: `docs/integrations/INT-09-harbor-local-feasibility.md`. | Not imported by the package; the fixture depends on the `harbor` PyPI package |
+| <img src="../assets/logos/stable-baselines3.png" alt="" height="16"> Stable-Baselines3 | No | Only the phrase "SB3-style MLP feature extractors" in `spaces.py:5`, a docstring | |
+| <a href="https://pytorch.org/rl"><img src="../assets/logos/torchrl.png" alt="" height="10"></a> <img src="../assets/logos/envpool.svg" alt="" height="10"> TorchRL, PufferLib, EnvPool | No | Nothing in the tree | |
 
-Logos mark the projects whose published terms allow their use here; see
-[`docs/assets/logos/`](../assets/logos/) for each file's source and governing
-terms, and for why MCP, HUD, Harbor and `verifiers` are named in text only. No
-logo appears on a row this tree does not implement.
+Every row above with an upstream project of its own carries that project's logo;
+see [`docs/assets/logos/`](../assets/logos/) for each file's source and the terms
+governing its use. A logo credits the project this tree talks to. It is not a
+support claim: the "Present" column beside it, and
+[`support-status.md`](support-status.md), are where that is stated, and two of
+the rows carrying a logo are local feasibility fixtures rather than supported
+integrations. Rows for ecosystems this tree does not implement carry no logo.
 
 The declared optional extras are exactly four: `verifiers`, `minari`, `pettingzoo`,
 `mcp` (`crates/sharpearena-py/pyproject.toml`). The plan's warning holds: generic
