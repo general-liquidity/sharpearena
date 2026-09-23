@@ -435,3 +435,10 @@ jobs:
           print("imported the wheel and stepped one bar")
           PY
           ./consumer/bin/python smoke.py
+      - name: Drive the packaged Gymnasium adapter in the same venv
+        # The smoke above covers the native binding. This covers the adapter a learner
+        # binds against, still with only the wheel's declared dependencies present.
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          ./consumer/bin/python "$GITHUB_WORKSPACE/scripts/check-packaged-adapter.py"
