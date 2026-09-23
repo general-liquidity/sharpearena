@@ -45,8 +45,8 @@ directly, not a Gymnasium, PettingZoo, or `verifiers` rollout.
 | Ray, RLlib | Not supported | `inventory.md`: no code, only a literature citation in `paper/review/environment-genre-study-2026.md`. |
 | Stable-Baselines3 | Not supported | `inventory.md`: the string "SB3-style MLP feature extractors" in a `spaces.py:5` docstring is the only occurrence; no SB3 import or adapter exists. |
 | TorchRL | Not supported | `inventory.md`: nothing in the tree. |
-| HUD | Not supported | `inventory.md`: nothing in the tree. No feasibility work has reported results. |
-| Harbor | Not integrated | [Harbor: separate feasibility check, not part of this tree](#harbor-separate-feasibility-check-not-part-of-this-tree), below. |
+| HUD | Local feasibility only, not a supported integration | [HUD: a local feasibility check, now in the tree](#hud-a-local-feasibility-check-now-in-the-tree), below. |
+| Harbor | Local feasibility only, not a supported integration | `integrations/harbor/`, recorded in [INT-09](INT-09-harbor-local-feasibility.md). A local job ran end to end under Harbor 0.23.0 on Docker Desktop over WSL2 with a separate-container verifier, and seven of eight tampering fixtures are refused. The evidence covers that one host: it is not evidence against kernel-level container escape, and network egress is untested because `no-network` is unavailable there. Harbor's built-in job aggregation counts a missing or crashed reward as 0, so a custom metric is required before any job-level number means what it appears to. |
 | PufferLib | Ruled out | [Ruled out: PufferLib and EnvPool](#ruled-out-pufferlib-and-envpool), below. |
 | EnvPool | Ruled out | [Ruled out: PufferLib and EnvPool](#ruled-out-pufferlib-and-envpool), below. |
 
@@ -93,16 +93,37 @@ Python environment can install CleanRL and this package's Gymnasium-facing surfa
 together today. This is a fact about the current dependency sets, not a statement that
 either project is unwilling to move; no fix is planned here.
 
-## Harbor: separate feasibility check, not part of this tree
+## HUD: a local feasibility check, now in the tree
 
-Harbor is not integrated into SharpeArena. A feasibility and verifier-boundary check
-ran separately, on branch `feat/int-harbor` (PR #99), against a standalone task
-package that does not touch this package's engine, wire contract, or SharpeBench
-bridge; none of that work is merged into or stacked on this tree, so nothing in this
-package currently depends on Harbor or exposes a Harbor adapter.
+HUD is not a supported integration. There is no adapter and no import of `hud`
+anywhere under `crates/sharpearena-py/python/sharpearena/`. What the tree holds is
+the fixture from a local feasibility and isolation-boundary check, merged in PR #102:
+`examples/hud/`, which wraps one bounded SharpeArena episode behind three HUD MCP
+tools, and `crates/sharpearena-py/tests/test_hud_local.py`. The full record is in
+[INT-08](INT-08-hud-local-feasibility.md). Nothing in the package depends on HUD.
 
-What that separate check found, restated here only as a pointer, not as a claim about
-this package: a local job ran end to end on Docker Desktop over WSL2 with Harbor
+What the check established: `hud` 0.6.18 installs and runs locally with no account,
+no deployment and no provider call, and all eleven tests pass deterministically. Two
+runtimes were exercised, and neither is isolation. `LocalRuntime` shares one Python
+interpreter between the grader, the episode state and the test process, with only the
+fixture's own tool surface between them. `SubprocessRuntime` adds a process boundary
+over loopback TCP but shares the host filesystem and network namespace.
+`DockerRuntime`, `ModalRuntime` and `HUDRuntime` were not exercised, because each
+needs Docker execution, an account or a deployment.
+
+What it does not cover: container or cloud isolation, the control channel's
+authentication surface at the wire level, training-client export, and replay through
+the canonical engine or the SharpeBench bridge.
+
+## Harbor: a local feasibility check, now in the tree
+
+Harbor is not a supported integration. The task package from the feasibility and
+verifier-boundary check now lives in `integrations/harbor/` (merged in PR #99), and it
+is standalone: it does not touch this package's engine, wire contract or SharpeBench
+bridge, and nothing in the package depends on Harbor or exposes a Harbor adapter. The
+full record is in [INT-09](INT-09-harbor-local-feasibility.md).
+
+What the check established, on one host and no more: a local job ran end to end on Docker Desktop over WSL2 with Harbor
 v0.23.0, completing in about 83 seconds with the recorded reward. A separate verifier
 container ran, and in the fixtures that tested it, the private evaluator files and
 grader were unreachable from the agent's own container. Of eight tampering fixtures,

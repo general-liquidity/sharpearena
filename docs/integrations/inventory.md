@@ -1,8 +1,11 @@
 # Integration inventory and version matrix (INT-00)
 
-What the tree actually contains on `d33b249`, read against the integration plan's
+What the tree actually contains on `b9fdf30`, read against the integration plan's
 claims rather than assumed from them. Every row below was checked against the source
-file named in it. Nothing is listed as missing that was not grepped for first.
+file named in it. Nothing is listed as missing that was not grepped for first. The
+original pass was checked against `d33b249`; this update reread every row against the
+current commit rather than trusting the earlier one, and the one row that had gone
+stale (HUD and Harbor, below) is corrected.
 
 ## What already exists
 
@@ -21,7 +24,8 @@ file named in it. Nothing is listed as missing that was not grepped for first.
 | Functional view | Yes | `functional.py` (`SharpeArenaFuncEnv`) | Three-way probe ending in a local shim, so the module always imports |
 | CleanRL | No | Nothing in the tree | |
 | Ray, RLlib | No | Only a literature citation in `paper/review/environment-genre-study-2026.md` | |
-| HUD, Harbor | No | Nothing in the tree | |
+| HUD | Yes, as a local feasibility fixture, not a supported integration | `examples/hud/`, `crates/sharpearena-py/tests/test_hud_local.py`. Only `LocalRuntime` and `SubprocessRuntime` were exercised; `DockerRuntime`, `ModalRuntime`, and `HUDRuntime` were not. Report: `docs/integrations/INT-08-hud-local-feasibility.md`. | Not imported by the package; the fixture depends on the `hud` PyPI package |
+| Harbor | Yes, as a local feasibility fixture, not a supported integration | `integrations/harbor/` (task package, fixtures, tampering jobs). Ran on Docker Desktop over WSL2. Report: `docs/integrations/INT-09-harbor-local-feasibility.md`. | Not imported by the package; the fixture depends on the `harbor` PyPI package |
 | Stable-Baselines3 | No | Only the phrase "SB3-style MLP feature extractors" in `spaces.py:5`, a docstring | |
 | TorchRL, PufferLib, EnvPool | No | Nothing in the tree | |
 

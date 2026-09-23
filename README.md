@@ -131,7 +131,9 @@ Package-specific usage lives beside each distribution: the
 
 The Python package is the surface above; underneath it, several interfaces sit
 over the same engine, and Gymnasium is one of them, not the only one. Four are
-optional extras (`pip install "sharpearena[pettingzoo,verifiers,minari,mcp]"`):
+optional extras (`pip install "sharpearena[pettingzoo,verifiers,minari,mcp]"`).
+A short, runnable example for every row below except Gymnasium (see
+[Quick start](#quick-start)) is in [the interface examples](docs/interfaces.md).
 
 | Interface | What it's for |
 |:--|:--|
@@ -141,13 +143,21 @@ optional extras (`pip install "sharpearena[pettingzoo,verifiers,minari,mcp]"`):
 | Minari | Offline-RL dataset export, including a train/test split. |
 | MCP | An MCP server for connecting an agent over that protocol. |
 | JSON contract | stdin/stdout or `POST /decide`, for an external agent in any language; not a standalone Arena CLI. |
+| HUD | A task and grader for the HUD agent SDK, exercised locally with a deterministic agent double: `examples/hud/`. |
+| Harbor | A Harbor task package with a separate-container verifier and tampering fixtures: `integrations/harbor/`. |
+| SharpeBench bridge | Compiles episode evidence into the inputs the benchmark scores: `bench_bridge.py`. |
+| Functional view | A replay interface over recorded history, not an accelerator-native engine: `functional.py`. |
+| WASM and TypeScript | The same engine compiled for JavaScript runtimes: `crates/sharpearena-wasm/`. |
 
 Each row's actual test coverage differs; none of them has been used to produce
 a reported benchmark result yet. The
 [support status table](docs/integrations/support-status.md) states, per
-interface, what is contract-tested, what is only specified, and what is
-deliberately not supported (CleanRL, Ray/RLlib, Stable-Baselines3, TorchRL,
-HUD, PufferLib, EnvPool), with the evidence for each. Read
+interface, what is contract-tested, what is only specified, and what is not
+supported (CleanRL, Ray and RLlib, Stable-Baselines3, TorchRL) or ruled out
+(PufferLib, EnvPool), with the evidence for each. The HUD and Harbor routes
+are local feasibility work rather than supported integrations: each ran on one
+host with a deterministic agent and no model call, and each records what its
+evidence does not cover. Read
 [the integration inventory](docs/integrations/inventory.md) for what exists
 and where, and [the contract map](docs/integrations/contracts.md) for which
 module owns each contract clause.
