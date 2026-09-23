@@ -6,17 +6,25 @@ root README's "Choose an interface" table and in
 was downloaded from the project's own official source and committed byte for
 byte: none has been recoloured, cropped, rescaled or otherwise modified.
 
+Eight of the nine have a `-dark` companion, and the tables select between them
+with a `<picture>` element keyed on `prefers-color-scheme`. That matters because
+most of these marks are near-black ink on transparency, which disappears against
+GitHub's dark theme. Every `-dark` file is the project's own published
+light-on-dark variant, downloaded from the path recorded below, so no recolouring
+was needed to make them legible. TypeScript is the exception and needs no
+companion: its mark is blue on both themes.
+
 | File | Project | Downloaded from | Governing terms |
 |---|---|---|---|
-| `gymnasium.svg` | Gymnasium (Farama Foundation) | `Farama-Foundation/Gymnasium`, `main`, `docs/_static/img/gymnasium_black.svg` | Repository LICENSE is the MIT License (Copyright 2016 OpenAI, 2022 Farama Foundation). |
-| `pettingzoo.svg` | PettingZoo (Farama Foundation) | `Farama-Foundation/PettingZoo`, `main`, `docs/_static/img/PettingZoo.svg` | Repository LICENSE is the MIT License. |
-| `minari.svg` | Minari (Farama Foundation) | `Farama-Foundation/Minari`, `main`, `docs/_static/img/Minari.svg` | Repository LICENSE states that all assets in that repository are the copyright of the Farama Foundation and that the Foundation "releases the elements of this repository they copyright to under the MIT license". It is the only one of the three that names assets rather than code. |
-| `webassembly.svg` | WebAssembly | `carlosbaraza/web-assembly-logo`, `master`, `dist/icon/web-assembly-icon.svg` | CC0 1.0 Universal, per that repository's LICENSE file. This is the logo the WebAssembly design process selected. |
+| `gymnasium.svg`, `gymnasium-dark.svg` | Gymnasium (Farama Foundation) | `Farama-Foundation/Gymnasium`, `main`, `docs/_static/img/gymnasium_black.svg` and `gymnasium_white.svg` | Repository LICENSE is the MIT License (Copyright 2016 OpenAI, 2022 Farama Foundation). |
+| `pettingzoo.svg`, `pettingzoo-dark.svg` | PettingZoo (Farama Foundation) | `Farama-Foundation/PettingZoo`, `main`, `docs/_static/img/PettingZoo.svg` and `PettingZoo_White.svg` | Repository LICENSE is the MIT License. |
+| `minari.svg`, `minari-dark.svg` | Minari (Farama Foundation) | `Farama-Foundation/Minari`, `main`, `docs/_static/img/Minari.svg` and `Minari_White.svg` | Repository LICENSE states that all assets in that repository are the copyright of the Farama Foundation and that the Foundation "releases the elements of this repository they copyright to under the MIT license". It is the only one of the three that names assets rather than code. |
+| `webassembly.svg`, `webassembly-dark.svg` | WebAssembly | `carlosbaraza/web-assembly-logo`, `master`, `dist/icon/web-assembly-icon.svg` and `web-assembly-icon-white.svg` | CC0 1.0 Universal, per that repository's LICENSE file. This is the logo the WebAssembly design process selected. |
 | `typescript.svg` | TypeScript | `ts-logo-128.svg`, from the official design-assets pack linked at <https://www.typescriptlang.org/branding/> | The branding page permits use of the logo to refer to TypeScript, and asks that the shape not be modified, that the logo not be used as a product's own logo or folded into one, and that nothing imply TypeScript's endorsement. This use satisfies all four. |
-| `mcp.svg` | Model Context Protocol | `modelcontextprotocol/docs`, `main`, `favicon.svg` | Repository LICENSE is the MIT License (Copyright 2024-2025 Anthropic, PBC and contributors). The mark itself is held by LF Projects, LLC; see the note below on why this one is wrapped in a link. |
-| `hud.svg` | HUD | `hud-evals/hud-python`, `main`, `docs/logo/hud_logo.svg` | Repository LICENSE is the MIT License. |
-| `harbor.png` | Harbor | `harbor-framework/harbor`, `main`, `docs-mintlify/harbor-logo.png` | Repository LICENSE is Apache 2.0. |
-| `prime-intellect.png` | Prime Intellect, for `verifiers` and Prime-RL | `https://www.primeintellect.ai/icons/logo-icon.png` | No published brand policy. Both project READMEs use this company mark as their own header, so it is the mark upstream itself puts on these projects. The use here is nominative: it names the library this package integrates with. |
+| `mcp.svg`, `mcp-dark.svg` | Model Context Protocol | `modelcontextprotocol/docs`, `main`, `logo/light.svg` and `logo/dark.svg` | Repository LICENSE is the MIT License (Copyright 2024-2025 Anthropic, PBC and contributors). The mark itself is held by LF Projects, LLC; see the note below on why this one is wrapped in a link. |
+| `hud.svg`, `hud-dark.svg` | HUD | `hud-evals/hud-python`, `main`, `docs/logo/hud_logo.svg` and `docs/logo/hud_logo_dark.svg` | Repository LICENSE is the MIT License. |
+| `harbor.png`, `harbor-dark.png` | Harbor | `harbor-framework/harbor`, `main`, `docs-mintlify/harbor-wordmark-light.png` and `harbor-wordmark-dark.png`, the pair its own `docs.json` selects between | Repository LICENSE is Apache 2.0. |
+| `prime-intellect.png`, `prime-intellect-dark.png` | Prime Intellect, for `verifiers` and Prime-RL | the light-mode and dark-mode pair the Prime-RL README itself serves, at `github.com/user-attachments/assets/40c36e38-c5bd-4c5a-9cb3-f7b902cd155d` and `.../6414bc9b-126b-41ca-9307-9e982430cde8` | No published brand policy. Both project READMEs use this company mark as their own header, so it is the mark upstream itself puts on these projects. The use here is nominative: it names the library this package integrates with. |
 
 ## The MCP logo is a link, deliberately
 
@@ -78,15 +86,23 @@ sha256sum docs/assets/logos/gymnasium.svg
 The hashes recorded at the time of vendoring:
 
 ```
+744bc2255252daf7f8236dc85f2a4b8ca9c026d3350b71528785b2fdb4cfe7b9  gymnasium-dark.svg
 2c02ebee9015c8129e98e1f897a998f3a62ed6e15016aa0d2c4c18b430b5a63c  gymnasium.svg
+5230634ab602c06c2e7a906767f29f7a4aa610e0b35e3f1b7dfd4c1da1d828e1  pettingzoo-dark.svg
 b98827308858b79d5eddf4dad68ba5e74f994ea58439ac0f642365dc001af031  pettingzoo.svg
+2e35e6f50e7f4c525bbcb084485354ea51114521a6084d737f0cec3884d4b658  minari-dark.svg
 dc6e121d2361174d6eb06e6ec47806d35a2d07ff12738d32c77f9e7846ff6f4b  minari.svg
+285a1e4032d3964c013f073293efce2e6bac9994885cac530da0e6619cc6e988  webassembly-dark.svg
 59adfc16172ad52c99436b44ef60e2aa3120a45cd82fbf57e4cc184f1f55511c  webassembly.svg
 25e995fa85ae9ff6b5749f4ffeb21b2fe71d74e9b8d8db8eac4b9732cd9ef287  typescript.svg
-05f47fb3ffb7323bdbf6b397330229a7f32a3a1f2d17365e748f8777a82dd6c0  mcp.svg
+ae239dea9d037a331575487390bf900d6baacf896991185b3dd861ac4b9941d5  mcp-dark.svg
+3163a85f9db4b98c3b5af846ea284b3296295dbd51a138b2e77ebd438342e902  mcp.svg
+7a7876c8b682dd3a8f1f93de793ab336c6090f3e173bb7e491bae953b0e8dcb4  hud-dark.svg
 ec16d2d86e91da3e2c598d8609115562c04e47b576b905b131ffbc4a621224dc  hud.svg
-b5004bb031b04aa6d55d93df8547ac39cf17f5341e1056c21e05581612b972fb  harbor.png
-3d7b0ddac38e785bace1523d2be274591b47dad82a0a5f3572230a40ff3e9328  prime-intellect.png
+fcd011e2bd2c689ef2fcca792bddd8008431f8a31a73449a5957334432512908  harbor-dark.png
+b83402339c81f73b83c7e6409d3fa9e8fbab3a333060a06ffe0d3692a80bc4de  harbor.png
+e70261c6840a7f0e590c492f560c40692f958e3ddfa324452a2e4e4d615c2cf0  prime-intellect-dark.png
+70a2a6f0cc4d86355485adc5ea9aca0c7171a3c6c5a426ba6fb8496d95490335  prime-intellect.png
 ```
 
 An upstream hash that no longer matches means the project has changed its logo,

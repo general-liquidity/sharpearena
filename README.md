@@ -137,17 +137,17 @@ A short, runnable example for every row below except Gymnasium (see
 
 | Interface | What it's for |
 |:--|:--|
-| <img src="docs/assets/logos/gymnasium.svg" alt="" height="18"> Gymnasium (scalar and vector) | The default Python route: `SharpeArenaEnv`, `SharpeArenaVectorEnv`, registered `SharpeArena/<Tier>[-Eval]-v1` IDs. |
-| <img src="docs/assets/logos/pettingzoo.svg" alt="" height="18"> PettingZoo | Multi-agent parallel envs: shared-market impact and the limit-order book. |
-| <img src="docs/assets/logos/prime-intellect.png" alt="" height="18"> `verifiers` / Prime-RL | RLVR-style multi-turn rollout with an XML decision parser, for training with Prime-RL. |
-| <img src="docs/assets/logos/minari.svg" alt="" height="18"> Minari | Offline-RL dataset export, including a train/test split. |
-| <a href="https://modelcontextprotocol.io"><img src="docs/assets/logos/mcp.svg" alt="" height="18"></a> MCP | An MCP server for connecting an agent over that protocol. |
+| <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/logos/gymnasium-dark.svg"><img src="docs/assets/logos/gymnasium.svg" alt="" height="18"></picture> Gymnasium (scalar and vector) | The default Python route: `SharpeArenaEnv`, `SharpeArenaVectorEnv`, registered `SharpeArena/<Tier>[-Eval]-v1` IDs. |
+| <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/logos/pettingzoo-dark.svg"><img src="docs/assets/logos/pettingzoo.svg" alt="" height="18"></picture> PettingZoo | Multi-agent parallel envs: shared-market impact and the limit-order book. |
+| <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/logos/prime-intellect-dark.png"><img src="docs/assets/logos/prime-intellect.png" alt="" height="13"></picture> `verifiers` / Prime-RL | RLVR-style multi-turn rollout with an XML decision parser, for training with Prime-RL. |
+| <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/logos/minari-dark.svg"><img src="docs/assets/logos/minari.svg" alt="" height="18"></picture> Minari | Offline-RL dataset export, including a train/test split. |
+| <a href="https://modelcontextprotocol.io"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/logos/mcp-dark.svg"><img src="docs/assets/logos/mcp.svg" alt="" height="13"></picture></a> MCP | An MCP server for connecting an agent over that protocol. |
 | JSON contract | stdin/stdout or `POST /decide`, for an external agent in any language; not a standalone Arena CLI. |
-| <img src="docs/assets/logos/hud.svg" alt="" height="18"> HUD | A task and grader for the HUD agent SDK, exercised locally with a deterministic agent double: `examples/hud/`. |
-| <img src="docs/assets/logos/harbor.png" alt="" height="18"> Harbor | A Harbor task package with a separate-container verifier and tampering fixtures: `integrations/harbor/`. |
+| <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/logos/hud-dark.svg"><img src="docs/assets/logos/hud.svg" alt="" height="16"></picture> HUD | A task and grader for the HUD agent SDK, exercised locally with a deterministic agent double: `examples/hud/`. |
+| <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/logos/harbor-dark.png"><img src="docs/assets/logos/harbor.png" alt="" height="15"></picture> Harbor | A Harbor task package with a separate-container verifier and tampering fixtures: `integrations/harbor/`. |
 | SharpeBench bridge | Compiles episode evidence into the inputs the benchmark scores: `bench_bridge.py`. |
 | Functional view | A replay interface over recorded history, not an accelerator-native engine: `functional.py`. |
-| <img src="docs/assets/logos/webassembly.svg" alt="" height="18"> <img src="docs/assets/logos/typescript.svg" alt="" height="18"> WASM and TypeScript | The same engine compiled for JavaScript runtimes: `crates/sharpearena-wasm/`. |
+| <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/logos/webassembly-dark.svg"><img src="docs/assets/logos/webassembly.svg" alt="" height="18"></picture> <img src="docs/assets/logos/typescript.svg" alt="" height="18"> WASM and TypeScript | The same engine compiled for JavaScript runtimes: `crates/sharpearena-wasm/`. |
 
 Each row's actual test coverage differs; none of them has been used to produce
 a reported benchmark result yet. The
