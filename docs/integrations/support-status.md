@@ -45,7 +45,7 @@ directly, not a Gymnasium, PettingZoo, or `verifiers` rollout.
 | Ray, RLlib | Not supported | `inventory.md`: no code, only a literature citation in `paper/review/environment-genre-study-2026.md`. |
 | Stable-Baselines3 | Not supported | `inventory.md`: the string "SB3-style MLP feature extractors" in a `spaces.py:5` docstring is the only occurrence; no SB3 import or adapter exists. |
 | TorchRL | Not supported | `inventory.md`: nothing in the tree. |
-| HUD | Not supported | `inventory.md`: nothing in the tree. No feasibility work has reported results. |
+| HUD | Not integrated | [HUD: separate feasibility check, not part of this tree](#hud-separate-feasibility-check-not-part-of-this-tree), below. |
 | Harbor | Not integrated | [Harbor: separate feasibility check, not part of this tree](#harbor-separate-feasibility-check-not-part-of-this-tree), below. |
 | PufferLib | Ruled out | [Ruled out: PufferLib and EnvPool](#ruled-out-pufferlib-and-envpool), below. |
 | EnvPool | Ruled out | [Ruled out: PufferLib and EnvPool](#ruled-out-pufferlib-and-envpool), below. |
@@ -92,6 +92,39 @@ were not restated from memory. `0.29.1` and `>=1.0` do not overlap, so no single
 Python environment can install CleanRL and this package's Gymnasium-facing surface
 together today. This is a fact about the current dependency sets, not a statement that
 either project is unwilling to move; no fix is planned here.
+
+## HUD: separate feasibility check, not part of this tree
+
+HUD is not integrated into SharpeArena: no adapter, and no import of `hud`
+anywhere under `crates/sharpearena-py/python/sharpearena/`. A local feasibility
+and isolation-boundary check ran separately, recorded in
+[`INT-08-hud-local-feasibility.md`](INT-08-hud-local-feasibility.md), on
+branch `feat/int-hud` (PR #102), against a deterministic fixture
+(`examples/hud/`) that wraps one bounded SharpeArena episode behind three HUD
+MCP tools. That fixture does not touch this package's engine, wire contract,
+or SharpeBench bridge outside the fixture itself, so nothing in this package
+depends on HUD or exposes a HUD adapter.
+
+What that separate check found, restated here only as a pointer, not as a
+claim about this package: `pip install hud` (0.6.18) installs and runs
+locally with no account, no deployment, and no provider call, and all 11
+tests in `crates/sharpearena-py/tests/test_hud_local.py` pass. Two runtimes
+were exercised, `LocalRuntime` and `SubprocessRuntime`; neither provides
+isolation. `LocalRuntime` shares one Python interpreter between the grader,
+the episode state, and the test process, with only the fixture's own MCP
+tool surface between them. `SubprocessRuntime` adds a process boundary over
+loopback TCP but shares the host filesystem and network namespace.
+`DockerRuntime`, `ModalRuntime`, and `HUDRuntime` were not exercised (each
+needs Docker execution, an account, or a deployment, out of scope for this
+check).
+
+That check does not cover container or cloud isolation, the control
+channel's authentication surface at the wire level, training-client export,
+or replay through the canonical engine or SharpeBench bridge.
+
+Until that work is merged into this tree, HUD's status here stays "not
+integrated." Treat the paragraph above as a pointer to PR #102, not as
+documentation of a capability this package ships.
 
 ## Harbor: separate feasibility check, not part of this tree
 

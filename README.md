@@ -145,9 +145,10 @@ optional extras (`pip install "sharpearena[pettingzoo,verifiers,minari,mcp]"`):
 Each row's actual test coverage differs; none of them has been used to produce
 a reported benchmark result yet. The
 [support status table](docs/integrations/support-status.md) states, per
-interface, what is contract-tested, what is only specified, and what is
+interface, what is contract-tested, what is only specified, what is
 deliberately not supported (CleanRL, Ray/RLlib, Stable-Baselines3, TorchRL,
-HUD, PufferLib, EnvPool), with the evidence for each. Read
+PufferLib, EnvPool), and what has local feasibility work but no adapter in
+this tree (HUD, Harbor), with the evidence for each. Read
 [the integration inventory](docs/integrations/inventory.md) for what exists
 and where, and [the contract map](docs/integrations/contracts.md) for which
 module owns each contract clause.
