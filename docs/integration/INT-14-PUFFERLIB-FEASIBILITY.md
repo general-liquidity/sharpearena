@@ -179,9 +179,18 @@ a separate architecture decision.
 **Working integration: not attempted, not claimed.**
 
 **Performance improvement: not measured, not claimed.** The INT-13 baseline
-([INT-13-BASELINE-PERFORMANCE.md](INT-13-BASELINE-PERFORMANCE.md)) shows where this
-project's own throughput is actually lost, and that bottleneck is reachable without any of
-the work above.
+([INT-13-BASELINE-PERFORMANCE.md](INT-13-BASELINE-PERFORMANCE.md)) has since measured its
+native half, and it shows where this project's own throughput is actually lost: one scalar
+transition costs 1.43 us, while `VecTradingEnv::step_batch` spends 42.9 us per call beyond
+that work at 2 lanes and 1,250.7 us at 512, because it issues one `par_iter_mut` dispatch
+per batched call over work units smaller than the cost of handing them to another thread.
+At a fixed 256 lanes, throughput peaks at 580,908 steps/s on a 4-thread Rayon pool and
+falls to 203,735 steps/s at 64 threads, so the ambient default is 2.85 times worse than
+the best measured pool size and worse than the 699,049 steps/s the scalar loop reaches on
+one core. That bottleneck is reachable without any of the work above: chunking lanes per
+Rayon task, or stepping serially below a lane threshold, are local changes to
+`crates/sharpearena/src/vec_env.rs` and need no C ABI and no fork. The baseline's Python
+boundary half is still pending a quiet machine, so no claim here rests on it.
 
 ### What would reopen this
 
