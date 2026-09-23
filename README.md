@@ -137,17 +137,17 @@ A short, runnable example for every row below except Gymnasium (see
 
 | Interface | What it's for |
 |:--|:--|
-| Gymnasium (scalar and vector) | The default Python route: `SharpeArenaEnv`, `SharpeArenaVectorEnv`, registered `SharpeArena/<Tier>[-Eval]-v1` IDs. |
-| PettingZoo | Multi-agent parallel envs: shared-market impact and the limit-order book. |
+| <img src="docs/assets/logos/gymnasium.svg" alt="" height="18"> Gymnasium (scalar and vector) | The default Python route: `SharpeArenaEnv`, `SharpeArenaVectorEnv`, registered `SharpeArena/<Tier>[-Eval]-v1` IDs. |
+| <img src="docs/assets/logos/pettingzoo.svg" alt="" height="18"> PettingZoo | Multi-agent parallel envs: shared-market impact and the limit-order book. |
 | `verifiers` / Prime-RL | RLVR-style multi-turn rollout with an XML decision parser, for training with Prime-RL. |
-| Minari | Offline-RL dataset export, including a train/test split. |
+| <img src="docs/assets/logos/minari.svg" alt="" height="18"> Minari | Offline-RL dataset export, including a train/test split. |
 | MCP | An MCP server for connecting an agent over that protocol. |
 | JSON contract | stdin/stdout or `POST /decide`, for an external agent in any language; not a standalone Arena CLI. |
 | HUD | A task and grader for the HUD agent SDK, exercised locally with a deterministic agent double: `examples/hud/`. |
 | Harbor | A Harbor task package with a separate-container verifier and tampering fixtures: `integrations/harbor/`. |
 | SharpeBench bridge | Compiles episode evidence into the inputs the benchmark scores: `bench_bridge.py`. |
 | Functional view | A replay interface over recorded history, not an accelerator-native engine: `functional.py`. |
-| WASM and TypeScript | The same engine compiled for JavaScript runtimes: `crates/sharpearena-wasm/`. |
+| <img src="docs/assets/logos/webassembly.svg" alt="" height="18"> <img src="docs/assets/logos/typescript.svg" alt="" height="18"> WASM and TypeScript | The same engine compiled for JavaScript runtimes: `crates/sharpearena-wasm/`. |
 
 Each row's actual test coverage differs; none of them has been used to produce
 a reported benchmark result yet. The
@@ -161,6 +161,12 @@ evidence does not cover. Read
 [the integration inventory](docs/integrations/inventory.md) for what exists
 and where, and [the contract map](docs/integrations/contracts.md) for which
 module owns each contract clause.
+
+A logo above marks a project whose own published terms allow it to appear here;
+its absence says nothing about how well that interface works.
+[`docs/assets/logos/`](docs/assets/logos/) records where each file came from,
+what governs its use, and why the remaining interfaces are named in text only.
+Each project is its own trademark holder, and none of them endorses this one.
 
 ## How the Sharpe suite fits
 

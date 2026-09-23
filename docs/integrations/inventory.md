@@ -11,13 +11,13 @@ stale (HUD and Harbor, below) is corrected.
 
 | Ecosystem | Present | Where | Upstream import |
 |---|---|---|---|
-| Gymnasium scalar | Yes | `crates/sharpearena-py/python/sharpearena/gym.py` (`SharpeArenaEnv`) | Hard; `gymnasium>=1.0` is a base dependency |
-| Gymnasium vector | Yes | `vector.py` (`SharpeArenaVectorEnv` over native `VecTradingEnv`) | Hard, with a guarded `AutoresetMode` import that falls back to the string label |
-| Gymnasium wrappers | Yes | `wrappers.py`, `wrappers_vector.py`, `spaces.py` | Hard |
-| Gymnasium registration | Yes | `registration.py`, IDs `SharpeArena/<Tier>[-Eval]-v1` with scalar and vector entry points | Hard |
+| <img src="../assets/logos/gymnasium.svg" alt="" height="16"> Gymnasium scalar | Yes | `crates/sharpearena-py/python/sharpearena/gym.py` (`SharpeArenaEnv`) | Hard; `gymnasium>=1.0` is a base dependency |
+| <img src="../assets/logos/gymnasium.svg" alt="" height="16"> Gymnasium vector | Yes | `vector.py` (`SharpeArenaVectorEnv` over native `VecTradingEnv`) | Hard, with a guarded `AutoresetMode` import that falls back to the string label |
+| <img src="../assets/logos/gymnasium.svg" alt="" height="16"> Gymnasium wrappers | Yes | `wrappers.py`, `wrappers_vector.py`, `spaces.py` | Hard |
+| <img src="../assets/logos/gymnasium.svg" alt="" height="16"> Gymnasium registration | Yes | `registration.py`, IDs `SharpeArena/<Tier>[-Eval]-v1` with scalar and vector entry points | Hard |
 | Conformance checker | Yes | `check_env.py` (`check_env`, `check_determinism_across_constructors`) | None; hand written, numpy only |
-| PettingZoo | Yes | `pettingzoo_env.py`, `lob_env.py`, `market_env.py` | Guarded; `ParallelEnv` falls back to `object` and construction raises a named error |
-| Minari | Yes | `minari_export.py` (`to_minari`, `to_minari_train_test`, `seed_band_metadata`) | Guarded behind `_require_minari()` |
+| <img src="../assets/logos/pettingzoo.svg" alt="" height="16"> PettingZoo | Yes | `pettingzoo_env.py`, `lob_env.py`, `market_env.py` | Guarded; `ParallelEnv` falls back to `object` and construction raises a named error |
+| <img src="../assets/logos/minari.svg" alt="" height="16"> Minari | Yes | `minari_export.py` (`to_minari`, `to_minari_train_test`, `seed_band_metadata`) | Guarded behind `_require_minari()` |
 | verifiers / Prime-RL | Yes | `verifiers_env.py`, `examples/prime-rl/` | Guarded; the class only exists when `verifiers` imports |
 | SharpeBench bridge | Yes | `bench_bridge.py` | Standard library only |
 | MCP | Yes | `mcp_server.py` | Guarded behind `FastMCP is None` |
@@ -28,6 +28,11 @@ stale (HUD and Harbor, below) is corrected.
 | Harbor | Yes, as a local feasibility fixture, not a supported integration | `integrations/harbor/` (task package, fixtures, tampering jobs). Ran on Docker Desktop over WSL2. Report: `docs/integrations/INT-09-harbor-local-feasibility.md`. | Not imported by the package; the fixture depends on the `harbor` PyPI package |
 | Stable-Baselines3 | No | Only the phrase "SB3-style MLP feature extractors" in `spaces.py:5`, a docstring | |
 | TorchRL, PufferLib, EnvPool | No | Nothing in the tree | |
+
+Logos mark the projects whose published terms allow their use here; see
+[`docs/assets/logos/`](../assets/logos/) for each file's source and governing
+terms, and for why MCP, HUD, Harbor and `verifiers` are named in text only. No
+logo appears on a row this tree does not implement.
 
 The declared optional extras are exactly four: `verifiers`, `minari`, `pettingzoo`,
 `mcp` (`crates/sharpearena-py/pyproject.toml`). The plan's warning holds: generic
