@@ -212,7 +212,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "ddc9239ecb8938a6e75ec0a0d13c4955ef698021",
+  "generated_at_head": "55b1cf688af905d0111fe377f58888f4da53e999",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -234,7 +234,7 @@
     },
     {
       "path": ".github/workflows/ci.yml",
-      "sha256": "d1e16170c754ce6a21011856cb3a3810eb064a1be155e0c8cde6334c64ff76e0"
+      "sha256": "9c922e8f6497c5f223b4fb7c48dc73beec4658299de9a04fcdb24a9c24afa8d2"
     },
     {
       "path": ".github/workflows/release.yml",
@@ -403,6 +403,18 @@
     {
       "path": "crates/sharpearena-py/python/sharpearena/indicators.py",
       "sha256": "837a46cd0efcbfdb1f000500436584289ea3864477bf7bcd2f6f970425788d7e"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/integrations/__init__.py",
+      "sha256": "fb2ef3d9764b19f6b49df74a3416f90a367d1dfdb6e65deef89d226d551a8567"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/integrations/contracts.py",
+      "sha256": "d95daeaaf076f23b13e4f5885212c9afc7929fbc2b1d1f39b8ae08e95b2bfd40"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/integrations/parity.py",
+      "sha256": "1fc1baa2b7c1793840d886cdf8d025f9051bc7284b7010d20805792cacb680be"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/kernel_score.py",
@@ -587,6 +599,10 @@
     {
       "path": "crates/sharpearena/build_support.rs",
       "sha256": "290ad35a3994b60f3654b7aa77092e8a299958327a8c82006bfc90f0f61bd13b"
+    },
+    {
+      "path": "crates/sharpearena/examples/bench-int13.rs",
+      "sha256": "4e6b1a7e1d30dbc314e8b4a99bf9e3cb676ae0935e8b79c9723d2ea92a525d83"
     },
     {
       "path": "crates/sharpearena/examples/bench-steps.rs",
@@ -873,6 +889,10 @@
       "sha256": "b89fb1ff3dfb4a55984cb07bc96fca011afa9b36f16cd7f61ceb84f615b6fe63"
     },
     {
+      "path": "scripts/check-packaged-adapter.py",
+      "sha256": "9a1a5f89c1c7ef81645bd17aeb7da8cc5841360309dd81d9a09ce5c1dd8396eb"
+    },
+    {
       "path": "scripts/check-packaged-consumer.py",
       "sha256": "e67782dca6b0d6d98dcbccadd9ec23f90d7e339d1c87081a4faa25b7ef75b2ae"
     },
@@ -910,6 +930,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "4f22dbfdf882c931f7ef93adda23b770e1c12a0bdd4e07dc24b7c371f22e4c09",
+  "source_snapshot_sha256": "62257543efa04b16c9c69fd46f6c77351c0072bac4fd0ab997f1dbee76576bd4",
   "validator": "paper/src/check-provenance.py"
 }

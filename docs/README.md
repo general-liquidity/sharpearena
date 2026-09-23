@@ -20,6 +20,8 @@ and delivery checks. The 2026-09-07 audit is a completed historical checkpoint.
 | Compare supported local model runtimes | [Local model matrix](LOCAL_MODEL_MATRIX_2026.md) |
 | Commit forecasts now and score them after resolution | [Prospective forecast evidence](forecast-evidence.md) |
 | Interpret baseline scores, unavailable estimates and intervals | [Statistical confidence](statistical-confidence.md) |
+| Add a framework adapter, or check one against the engine | [Integration contracts](integrations/contracts.md) and [inventory](integrations/inventory.md) |
+| See what's tested, specified, or ruled out per interface | [Support status](integrations/support-status.md) |
 
 Registry-specific instructions live with the [Rust crate](../crates/sharpearena/),
 [Python distribution](../crates/sharpearena-py/), and
@@ -32,6 +34,7 @@ Registry-specific instructions live with the [Rust crate](../crates/sharpearena/
 | Which package owns each responsibility? | [Architecture](architecture.md) |
 | What is guaranteed, and where does the boundary stop? | [Integrity and security](integrity-and-security.md) |
 | What has been measured, and what has not? | [Evidence and current status](evidence.md) |
+| Which RL-contract behaviours have tests, and which are open? | [RL-contract coverage matrix](rl-contract-coverage.md) |
 | Which seeds, gates, and reports define an evaluation? | [`EVALUATION.md`](../EVALUATION.md) |
 | Where are the paper and committed evidence? | [`paper/`](../paper/) |
 

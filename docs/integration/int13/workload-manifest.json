@@ -1,0 +1,50 @@
+{
+  "manifest_version": 1,
+  "manifest_id": "int13.baseline.v1",
+  "ticket": "INT-13",
+  "task": "sharpearena.synthetic_panel.daily",
+  "step_definition": "One step is one full market tick for one lane: the engine applies that lane's Decision at the current daily bar, clears fills under the cost model, marks the book and advances the cursor by one bar. A batched call over B lanes counts B steps. This unit is not a token, not a tool call and not an agent turn.",
+  "panel": {
+    "n_symbols": 4,
+    "n_days": 120,
+    "distribution_mode": "calm",
+    "vol_clustering": 0.0,
+    "jump_burst_probability": 0.0
+  },
+  "action_policy": {
+    "name": "constant_target_weight",
+    "target_weight": 0.25,
+    "action": "buy",
+    "confidence": 0.5,
+    "rationale": ""
+  },
+  "reward_scheme": "engine default (StepResult.reward), unmodified",
+  "precision": "f64 throughout; no reduced-precision path",
+  "autoreset_mode": "next_step",
+  "costs": "CostModel::default()",
+  "seeding": {
+    "lane_seed": "lane index i, scenario seed = exec seed = i",
+    "scalar_seed_sequence": "0..episodes"
+  },
+  "scaling": {
+    "lane_counts": [1, 2, 4, 8, 16, 32, 64, 128, 256, 512],
+    "thread_counts": [1, 2, 4, 8, 16, 32, 64],
+    "thread_scaling_lanes": 256
+  },
+  "measurement": {
+    "repetitions": 15,
+    "warmup": "2 discarded repetitions per measured cell, executed immediately before the timed repetitions of that cell, on the same constructed objects",
+    "timed_unit": "steps per second within one repetition; repetitions are the independent observations",
+    "uncertainty": "median, mean, sample standard deviation over repetitions, and a 95 percent normal-approximation interval on the mean; n is reported so the interval can be re-derived",
+    "clock": "std::time::Instant (Rust), time.perf_counter (Python)"
+  },
+  "environment_record_required": [
+    "cpu model, physical cores, logical processors, base clock",
+    "os name and build",
+    "rustc and cargo version, cargo profile",
+    "C compiler used for the Python extension",
+    "python version, pyo3 version, package versions",
+    "rayon thread allocation for each measured cell",
+    "warm-up policy actually applied"
+  ]
+}
