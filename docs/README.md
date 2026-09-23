@@ -34,6 +34,7 @@ Registry-specific instructions live with the [Rust crate](../crates/sharpearena/
 | Which package owns each responsibility? | [Architecture](architecture.md) |
 | What is guaranteed, and where does the boundary stop? | [Integrity and security](integrity-and-security.md) |
 | What has been measured, and what has not? | [Evidence and current status](evidence.md) |
+| Which RL-contract behaviours have tests, and which are open? | [RL-contract coverage matrix](rl-contract-coverage.md) |
 | Which seeds, gates, and reports define an evaluation? | [`EVALUATION.md`](../EVALUATION.md) |
 | Where are the paper and committed evidence? | [`paper/`](../paper/) |
 
