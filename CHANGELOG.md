@@ -10,6 +10,10 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ## [Unreleased]
 
+### Added
+
+- py: `sharpearena.integrations`, a subpackage the base package does not import, holding the shared structures every framework adapter fills and the checker that proves an adapter reproduces the engine. `integrations.contracts` adds the three pieces of the C01 to C07 integration contract that no existing type owned: `AttemptCounts`, which refuses a record whose completed, refused and failed counts do not sum to the attempts, whose completions exceed what was planned, or that omits a count, because an absent count is not zero; `ExactnessDomain`, which names which comparisons are exact and which carry a tolerance and refuses a field with no declared rule rather than choosing one; and `TrustClass`, which keeps provenance separate from a digest, since matching bytes do not make deserialising them safe. `integrations.parity` replays one deterministic fixture down two paths, the native `TradingEnv` with decisions encoded from the wire schema restated in that module, and the adapter under test, then compares reward, NAV, observation digest, both terminal flags, the outcome label, the attempt counts and the effective-config readback under `ENGINE_EXACTNESS`, which admits no tolerances. Sharing the adapter's own encoder would make the comparison circular, so it is not shared. A comparison that could not actually happen raises `ParityUnavailable` rather than reporting parity: a missing or disagreeing engine spec hash, an adapter that would not import or construct, records of different fixtures, or no compared step. `CORE_FIXTURES` covers a run to the window end, a run that stops before it, and an action outside the declared bounds that both paths must refuse; an adapter that clips it instead is recorded as a contract violation rather than as agreement. `docs/integrations/contracts.md` maps each contract clause to the module that owns it and `docs/integrations/inventory.md` records what the tree already contains, the three supported autoreset modes and the version matrix these checks ran under.
+
 ## [0.31.0] - 2026-09-18
 
 ### Breaking
