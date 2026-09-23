@@ -1,18 +1,25 @@
 # Third-party logos used in this repository
 
-Nine logos are vendored here and shown beside the interfaces they name, in the
-root README's "Choose an interface" table and in
-[`docs/integrations/inventory.md`](../../integrations/inventory.md). Each file
+Thirteen logos are vendored here and shown beside the ecosystems they name, in
+the root README's "Choose an interface" table, in
+[`docs/integrations/inventory.md`](../../integrations/inventory.md) and in
+[`docs/integrations/support-status.md`](../../integrations/support-status.md). Each file
 was downloaded from the project's own official source and committed byte for
 byte: none has been recoloured, cropped, rescaled or otherwise modified.
 
-Eight of the nine have a `-dark` companion, and the tables select between them
-with a `<picture>` element keyed on `prefers-color-scheme`. That matters because
-most of these marks are near-black ink on transparency, which disappears against
-GitHub's dark theme. Every `-dark` file is the project's own published
-light-on-dark variant, downloaded from the path recorded below, so no recolouring
-was needed to make them legible. TypeScript is the exception and needs no
-companion: its mark is blue on both themes.
+Eight of them have a `-dark` companion, and the tables select between them with a
+`<picture>` element keyed on `prefers-color-scheme`. That matters because most of
+these marks are near-black ink on transparency, which disappears against GitHub's
+dark theme. Every `-dark` file is the project's own published light-on-dark
+variant, downloaded from the path recorded below, so no recolouring was needed to
+make them legible.
+
+Five have no companion, for two different reasons. TypeScript, Ray and EnvPool
+need none: each is a coloured mark that holds up on either background.
+Stable-Baselines3 and TorchRL publish exactly one image and no dark variant, so
+that is what is committed. They are legible on a dark background but not tuned
+for it. Recolouring either one to fix that is not an option, since it would break
+the rule that every file here is byte-identical to what its project publishes.
 
 | File | Project | Downloaded from | Governing terms |
 |---|---|---|---|
@@ -24,6 +31,10 @@ companion: its mark is blue on both themes.
 | `mcp.svg`, `mcp-dark.svg` | Model Context Protocol | `modelcontextprotocol/docs`, `main`, `logo/light.svg` and `logo/dark.svg` | Repository LICENSE is the MIT License (Copyright 2024-2025 Anthropic, PBC and contributors). The mark itself is held by LF Projects, LLC; see the note below on why this one is wrapped in a link. |
 | `hud.svg`, `hud-dark.svg` | HUD | `hud-evals/hud-python`, `main`, `docs/logo/hud_logo.svg` and `docs/logo/hud_logo_dark.svg` | Repository LICENSE is the MIT License. |
 | `harbor.png`, `harbor-dark.png` | Harbor | `harbor-framework/harbor`, `main`, `docs-mintlify/harbor-wordmark-light.png` and `harbor-wordmark-dark.png`, the pair its own `docs.json` selects between | Repository LICENSE is Apache 2.0. |
+| `ray.svg` | Ray and RLlib | `ray-project/ray`, `master`, `doc/source/_static/img/ray_logo.svg` | Repository LICENSE is Apache 2.0. Ray was transferred to the PyTorch Foundation, a Linux Foundation project, on 2025-10-22, and the announcement names neutral trademark management as a reason for the move, so this one is wrapped in a link to <https://www.ray.io> on the same LF clause as MCP. |
+| `torchrl.png` | TorchRL | `pytorch/rl`, `main`, `docs/source/_static/img/logo.png` | Repository LICENSE is the MIT License. The PyTorch mark is held by the Linux Foundation, so this one is wrapped in a link to <https://pytorch.org/rl>, again on the LF logo-as-link clause. |
+| `stable-baselines3.png` | Stable-Baselines3 | `DLR-RM/stable-baselines3`, `master`, `docs/_static/img/logo.png` | Repository LICENSE is the MIT License. |
+| `envpool.svg` | EnvPool | `sail-sg/envpool`, `main`, `docs/_static/images/envpool-logo.svg` | Repository LICENSE is Apache 2.0. |
 | `prime-intellect.png`, `prime-intellect-dark.png` | Prime Intellect, for `verifiers` and Prime-RL | the light-mode and dark-mode pair the Prime-RL README itself serves, at `github.com/user-attachments/assets/40c36e38-c5bd-4c5a-9cb3-f7b902cd155d` and `.../6414bc9b-126b-41ca-9307-9e982430cde8` | No published brand policy. Both project READMEs use this company mark as their own header, so it is the mark upstream itself puts on these projects. The use here is nominative: it names the library this package integrates with. |
 
 ## The MCP logo is a link, deliberately
@@ -56,13 +67,27 @@ that, with [`support-status.md`](../../integrations/support-status.md) and the
 INT-08 and INT-09 reports behind it. Support status is stated in words, in the
 column beside the logo, because that is where a reader can check it.
 
-No logo appears on a row this tree does not implement. CleanRL, Ray and RLlib,
-Stable-Baselines3, TorchRL, PufferLib and EnvPool have no integration here, so
-crediting them would assert something false.
+The ecosystems this tree does not integrate carry their logos too, in the "Not
+present in this tree" table of `support-status.md` and in the "No" rows of
+`inventory.md`. That is identification, not a claim, and it is safe precisely
+because of where it sits: the column immediately to the right of each of those
+logos reads "Not supported" or "Ruled out". A logo cannot be read as a support
+claim in a table whose own status column denies support on the same line. The
+rule that matters is therefore not "only supported things get a logo" but "the
+status column must always be visible beside the logo". If a logo is ever moved
+somewhere that column does not travel with it, it has to come out.
 
 Three interfaces carry no logo because no third party stands behind them: the
 JSON contract, the SharpeBench bridge and the functional view are this
 project's own surfaces.
+
+Two projects carry no logo because neither publishes one. CleanRL's README shows
+only badges, and the favicon its documentation site serves is the stock MkDocs
+Material book glyph rather than a mark of its own, so vendoring it would have
+credited CleanRL with someone else's icon. PufferLib's README header is a
+composite banner of game art rather than a logo, and no separate mark exists in
+its repository or on its site. Both are named in text, and both should get a
+logo the day they publish one.
 
 ## The point that governs all of this
 
@@ -101,6 +126,10 @@ ae239dea9d037a331575487390bf900d6baacf896991185b3dd861ac4b9941d5  mcp-dark.svg
 ec16d2d86e91da3e2c598d8609115562c04e47b576b905b131ffbc4a621224dc  hud.svg
 fcd011e2bd2c689ef2fcca792bddd8008431f8a31a73449a5957334432512908  harbor-dark.png
 b83402339c81f73b83c7e6409d3fa9e8fbab3a333060a06ffe0d3692a80bc4de  harbor.png
+3e0a4485bc180e36ffd18aa63b0850b64b5234182cf625fcb7247851ab8b1e44  ray.svg
+486e50f468a323aa5530a958f5f19cc36853c0b8150aae1024fcd99d9c933df5  torchrl.png
+e50155b4afd58f3bbbb2f052f837bc221223fde9e0094047390c69ede3782f51  stable-baselines3.png
+2e776fa7b2db5b54d4e53a4364446342443155b4fd97a70d13f7153b7ba46b5a  envpool.svg
 e70261c6840a7f0e590c492f560c40692f958e3ddfa324452a2e4e4d615c2cf0  prime-intellect-dark.png
 70a2a6f0cc4d86355485adc5ea9aca0c7171a3c6c5a426ba6fb8496d95490335  prime-intellect.png
 ```

@@ -23,11 +23,11 @@ stale (HUD and Harbor, below) is corrected.
 | <a href="https://modelcontextprotocol.io"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/mcp-dark.svg"><img src="../assets/logos/mcp.svg" alt="" height="11"></picture></a> MCP | Yes | `mcp_server.py` | Guarded behind `FastMCP is None` |
 | Functional view | Yes | `functional.py` (`SharpeArenaFuncEnv`) | Three-way probe ending in a local shim, so the module always imports |
 | CleanRL | No | Nothing in the tree | |
-| Ray, RLlib | No | Only a literature citation in `paper/review/environment-genre-study-2026.md` | |
+| <a href="https://www.ray.io"><img src="../assets/logos/ray.svg" alt="" height="12"></a> Ray, RLlib | No | Only a literature citation in `paper/review/environment-genre-study-2026.md` | |
 | <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/hud-dark.svg"><img src="../assets/logos/hud.svg" alt="" height="14"></picture> HUD | Yes, as a local feasibility fixture, not a supported integration | `examples/hud/`, `crates/sharpearena-py/tests/test_hud_local.py`. Only `LocalRuntime` and `SubprocessRuntime` were exercised; `DockerRuntime`, `ModalRuntime`, and `HUDRuntime` were not. Report: `docs/integrations/INT-08-hud-local-feasibility.md`. | Not imported by the package; the fixture depends on the `hud` PyPI package |
 | <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/harbor-dark.png"><img src="../assets/logos/harbor.png" alt="" height="13"></picture> Harbor | Yes, as a local feasibility fixture, not a supported integration | `integrations/harbor/` (task package, fixtures, tampering jobs). Ran on Docker Desktop over WSL2. Report: `docs/integrations/INT-09-harbor-local-feasibility.md`. | Not imported by the package; the fixture depends on the `harbor` PyPI package |
-| Stable-Baselines3 | No | Only the phrase "SB3-style MLP feature extractors" in `spaces.py:5`, a docstring | |
-| TorchRL, PufferLib, EnvPool | No | Nothing in the tree | |
+| <img src="../assets/logos/stable-baselines3.png" alt="" height="16"> Stable-Baselines3 | No | Only the phrase "SB3-style MLP feature extractors" in `spaces.py:5`, a docstring | |
+| <a href="https://pytorch.org/rl"><img src="../assets/logos/torchrl.png" alt="" height="10"></a> <img src="../assets/logos/envpool.svg" alt="" height="10"> TorchRL, PufferLib, EnvPool | No | Nothing in the tree | |
 
 Every row above with an upstream project of its own carries that project's logo;
 see [`docs/assets/logos/`](../assets/logos/) for each file's source and the terms
