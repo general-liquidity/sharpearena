@@ -139,12 +139,12 @@ A short, runnable example for every row below except Gymnasium (see
 |:--|:--|
 | <img src="docs/assets/logos/gymnasium.svg" alt="" height="18"> Gymnasium (scalar and vector) | The default Python route: `SharpeArenaEnv`, `SharpeArenaVectorEnv`, registered `SharpeArena/<Tier>[-Eval]-v1` IDs. |
 | <img src="docs/assets/logos/pettingzoo.svg" alt="" height="18"> PettingZoo | Multi-agent parallel envs: shared-market impact and the limit-order book. |
-| `verifiers` / Prime-RL | RLVR-style multi-turn rollout with an XML decision parser, for training with Prime-RL. |
+| <img src="docs/assets/logos/prime-intellect.png" alt="" height="18"> `verifiers` / Prime-RL | RLVR-style multi-turn rollout with an XML decision parser, for training with Prime-RL. |
 | <img src="docs/assets/logos/minari.svg" alt="" height="18"> Minari | Offline-RL dataset export, including a train/test split. |
-| MCP | An MCP server for connecting an agent over that protocol. |
+| <a href="https://modelcontextprotocol.io"><img src="docs/assets/logos/mcp.svg" alt="" height="18"></a> MCP | An MCP server for connecting an agent over that protocol. |
 | JSON contract | stdin/stdout or `POST /decide`, for an external agent in any language; not a standalone Arena CLI. |
-| HUD | A task and grader for the HUD agent SDK, exercised locally with a deterministic agent double: `examples/hud/`. |
-| Harbor | A Harbor task package with a separate-container verifier and tampering fixtures: `integrations/harbor/`. |
+| <img src="docs/assets/logos/hud.svg" alt="" height="18"> HUD | A task and grader for the HUD agent SDK, exercised locally with a deterministic agent double: `examples/hud/`. |
+| <img src="docs/assets/logos/harbor.png" alt="" height="18"> Harbor | A Harbor task package with a separate-container verifier and tampering fixtures: `integrations/harbor/`. |
 | SharpeBench bridge | Compiles episode evidence into the inputs the benchmark scores: `bench_bridge.py`. |
 | Functional view | A replay interface over recorded history, not an accelerator-native engine: `functional.py`. |
 | <img src="docs/assets/logos/webassembly.svg" alt="" height="18"> <img src="docs/assets/logos/typescript.svg" alt="" height="18"> WASM and TypeScript | The same engine compiled for JavaScript runtimes: `crates/sharpearena-wasm/`. |
@@ -162,11 +162,14 @@ evidence does not cover. Read
 and where, and [the contract map](docs/integrations/contracts.md) for which
 module owns each contract clause.
 
-A logo above marks a project whose own published terms allow it to appear here;
-its absence says nothing about how well that interface works.
-[`docs/assets/logos/`](docs/assets/logos/) records where each file came from,
-what governs its use, and why the remaining interfaces are named in text only.
-Each project is its own trademark holder, and none of them endorses this one.
+Every interface above with an upstream project of its own carries that project's
+logo. The three without one, the JSON contract, the SharpeBench bridge and the
+functional view, have no third party behind them to credit. A logo says who
+built the thing this package talks to, and nothing about how far that route is
+supported here, which the column beside it and the support-status table state in
+words. [`docs/assets/logos/`](docs/assets/logos/) records where each file came
+from and what governs its use. Each project is its own trademark holder, and
+none of them endorses this one.
 
 ## How the Sharpe suite fits
 
