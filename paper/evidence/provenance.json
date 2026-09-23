@@ -212,8 +212,8 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "46d4b6c264b7b1b77db488a3f2bec341c19d4630",
-  "generated_at_head_dirty": false,
+  "generated_at_head": "17b6d6093c2a4f6aacd3f91fb76a2049959a2549",
+  "generated_at_head_dirty": true,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
   ],
@@ -234,7 +234,7 @@
     },
     {
       "path": ".github/workflows/ci.yml",
-      "sha256": "d1e16170c754ce6a21011856cb3a3810eb064a1be155e0c8cde6334c64ff76e0"
+      "sha256": "9c922e8f6497c5f223b4fb7c48dc73beec4658299de9a04fcdb24a9c24afa8d2"
     },
     {
       "path": ".github/workflows/release.yml",
@@ -885,6 +885,10 @@
       "sha256": "b89fb1ff3dfb4a55984cb07bc96fca011afa9b36f16cd7f61ceb84f615b6fe63"
     },
     {
+      "path": "scripts/check-packaged-adapter.py",
+      "sha256": "9a1a5f89c1c7ef81645bd17aeb7da8cc5841360309dd81d9a09ce5c1dd8396eb"
+    },
+    {
       "path": "scripts/check-packaged-consumer.py",
       "sha256": "e67782dca6b0d6d98dcbccadd9ec23f90d7e339d1c87081a4faa25b7ef75b2ae"
     },
@@ -922,6 +926,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "f33e02061ad17acb475e7e21eaefc8a3d5c3bbb57f2e8679d4a29bd9463118a8",
+  "source_snapshot_sha256": "c12f96e1c8a606232d18d75b6898e1c34a33c6d34f3feea278ccb506d748f429",
   "validator": "paper/src/check-provenance.py"
 }
