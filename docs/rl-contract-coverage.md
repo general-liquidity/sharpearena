@@ -16,6 +16,27 @@ and warns that learner support depends on which one is active
 implements all three; `crates/sharpearena/src/vec_env.rs` carries the enum and
 `AutoresetMode::from_label` accepts `next_step`, `same_step` and `disabled` only.
 
+Four upstream details this matrix was checked against, at the installed gymnasium
+1.3.0:
+
+- Under `NEXT_STEP` there is no final-observation key at all, and the recycling step
+  reports reward zero with both flags false. That step is bookkeeping rather than an
+  environment transition, so an accounting or parity test has to exclude it.
+  `test_vector.py::test_next_step_defers_reset_to_following_step` pins exactly that.
+- Under `SAME_STEP` the terminal observation is carried as `final_obs`, not
+  `final_observation`. The repository uses `final_obs` throughout: `vec_env.rs`,
+  `vector.py`, `test_vector.py` and `test_equivalence.py` agree, and no source or test
+  reads `final_observation`.
+- `Box.contains` casts safely, so a dtype change at the native boundary can keep
+  passing a space-membership check while breaking a consumer. The added dtype test
+  compares dtypes rather than relying on `contains`.
+- The official checkers assert types, space membership, a single seeded reset and the
+  reset signature. They do not check reward correctness, whether `terminated` is
+  semantically right, `info` contents, action validity, episode boundaries or autoreset,
+  and there is no vector-environment checker. `test_conformance.py::test_check_env_passes`
+  and `test_gymnasium_env_checker_passes` are therefore a floor, not coverage; the rows
+  below are the gate.
+
 ## Matrix
 
 Existing checks were reused as they stand. Nothing in the "existing coverage" column was
@@ -27,6 +48,8 @@ rewritten, duplicated or re-counted as new work.
 | Reseeding through `reset(seed=k)` selects a reproducible scenario | `test_gym.py::test_reset_seed_selects_scenario`, `test_seed_bands.py::test_gym_env_places_an_eval_seed_in_the_held_out_band` | none | covered before |
 | Same seed reproduces the trajectory; different seeds diverge | `test_gym.py::test_determinism_same_seed_identical_rewards`, `test_conformance.py::test_same_seed_identical_reset_obs`, `test_different_seed_reset_obs_differ` | none | covered before |
 | Observation and action spaces match the dataset and hold under the Gymnasium checker | `test_conformance.py::test_gymnasium_env_checker_passes`, `test_vector.py::test_vector_wrapper_reset_step_shapes`, `test_registration.py::test_make_resolves_each_tier` | none | covered before |
+| Observation dtypes crossing the native boundary match the declared space | none: `contains` casts safely, so the existing membership assertions pass on a narrowed dtype | `test_rl_contract.py::test_observation_dtypes_match_the_declared_space_across_the_binding` | gap closed |
+| A recycled lane restarts its own scenario rather than drawing a new one | `test_vector.py::test_auto_reset_keeps_batch_running` (that recycling happens) | `test_rl_contract.py::test_autoreset_restarts_the_same_lane_scenario` | gap closed |
 | Invalid actions are refused before any lane advances | `test_action_validation.py` (all cases), `test_checkpoint.py::test_checkpoint_wrapper_rejects_invalid_actions_before_advance`, `test_gym.py::test_native_binding_rejects_bad_json` | none | covered before |
 | Scenario and execution seeds are distinct streams resolved from one user seed | `test_gym.py::test_reset_info_carries_split_seeds`, `test_equivalence.py::test_batched_equals_scalar_under_execution_noise` | `test_rl_contract.py::test_execution_seed_moves_fills_without_moving_the_price_path`, `test_scenario_seed_moves_the_price_path` | gap closed |
 | `terminated` is a blow-up, reached inside the horizon | none: every prior `terminated` assertion ran against a stub env, never the engine | `test_rl_contract.py::test_insolvency_terminates_inside_the_horizon_without_truncating` | gap closed |
@@ -79,6 +102,17 @@ asserts each reward equals the step's NAV ratio minus one, then shows that feedi
 held-out seed's `mean_return` and `deflated_sharpe` from a hand-rolled reward series, so
 a rescaling introduced anywhere between the step reward and the reported metric fails.
 
+`test_observation_dtypes_match_the_declared_space_across_the_binding` compares each
+observation array's dtype against its declared space rather than asking whether the space
+contains it. It also records the action-dtype asymmetry: the action space is float32, a
+float64 action is not contained in it, and `step` accepts that float64 action anyway,
+which is what lets the checkpoint layer replay the exact bytes it recorded.
+
+`test_autoreset_restarts_the_same_lane_scenario` shows that a recycled lane returns to bar
+zero of the scenario its construction seed selected, under both recycling modes. Episodes
+after the first in a lane are replays. A collection loop that treats every recycled
+episode as a fresh sample is counting one scenario many times.
+
 `test_the_adapter_runs_with_every_optional_dependency_blocked` installs an import blocker
 for `verifiers`, `minari`, `pettingzoo`, `mcp`, `torch` and `jax` in a subprocess before
 importing `sharpearena`, then constructs, resets and steps both the scalar and the vector
@@ -101,6 +135,8 @@ intended test only.
 | `LaneConfig::build` seeds the scenario generator from the execution seed, rebuilt and installed as a wheel | both stream-separation tests only |
 | `SharpeArenaVectorEnv` dispatches lane 0's action to every lane | the lane-independence test only |
 | The autoreset label table maps `next_step` to `SAME_STEP` | the metadata test for `next_step` only |
+| `_decode_obs` narrows the decoded closes to float32 | the dtype test only; `test_gym.py` and `test_conformance.py` stay green, which is the gap |
+| `step_lane`'s `SameStep` branch relabels the terminal observation as the restart instead of using the reset lane's own observation, rebuilt and installed as a wheel | the `same_step` case of the autoreset-restart test; the `next_step` case, unaffected by this branch, stays green |
 | The dependency blocker is pointed at a required dependency | the blocked-dependency subprocess, confirming the blocker bites |
 
 A spec-hash or import mismatch cannot stand in for these failures. The suite already
@@ -129,3 +165,16 @@ added tests assert numeric and flag-level behaviour that those checks do not pro
 - Coverage of the packaged adapter comes from the wheel built by CI on Linux and, for
   this ticket, a locally built Windows wheel. Other platforms are covered by the existing
   cross-platform jobs, which do not run the adapter script.
+- Seed independence across lanes is not an upstream guarantee, and an autoreset calls the
+  lane's reset with no seed. Aligned-seed parity therefore holds for the first episode of
+  each lane, which is what `test_equivalence.py` and the new autoreset test assert. No
+  claim is made about the independence of later episodes in the same lane.
+- Checkpoint and restore under `gymnasium.vector.AsyncVectorEnv` is untested and
+  undocumented upstream. Gymnasium mentions `EzPickle` for environments wrapping C or C++
+  code, which would cover a Rust handle crossing a process boundary, without stating what
+  such an environment must do to be picklable. `SharpeArenaVectorEnv` is a native batched
+  environment rather than an async wrapper, so the question does not arise in the covered
+  paths, and nothing here establishes a contract for the async one.
+- The `next_step` recycling step is bookkeeping: reward zero, both flags false, no final
+  observation. Nothing here establishes how a consumer should fold that step into an
+  episode return; the tests only pin that the step is shaped that way.

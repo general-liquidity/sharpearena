@@ -104,6 +104,54 @@ def test_running_out_of_bars_truncates_and_repeats_the_last_bar(n_symbols, n_day
     assert reward != 0.0, "the truncating step earns a return, it is not padding"
 
 
+def test_observation_dtypes_match_the_declared_space_across_the_binding():
+    """`Box.contains` casts safely, so an observation that crossed the native boundary as
+    float32 would stop being contained in the float64 space it is declared against. The
+    action space is float32 while `step` accepts an exact float64 action, which the
+    checkpoint layer relies on to replay the bytes it recorded."""
+    env = SharpeArenaEnv(n_symbols=2, n_days=20, seed=1)
+    observation, _info = env.reset()
+
+    for key, space in env.observation_space.spaces.items():
+        assert observation[key].dtype == space.dtype == np.float64
+    assert env.observation_space.contains(observation)
+
+    assert env.action_space.dtype == np.float32
+    exact = np.array([0.123456789123, 0.234567891234])
+    assert not np.array_equal(exact, exact.astype(np.float32))
+    assert not env.action_space.contains(exact)
+    _obs, reward, _terminated, _truncated, _info = env.step(exact)
+    assert isinstance(reward, float)
+
+
+# -- autoreset replays the lane scenario -------------------------------------
+
+
+@pytest.mark.parametrize("mode", ["next_step", "same_step"])
+def test_autoreset_restarts_the_same_lane_scenario(mode):
+    """Autoreset calls the lane's own reset, which returns it to bar zero of the scenario
+    its construction seed selected. A second episode in a lane is a replay of the first,
+    not a new draw, so only the first episode per lane is an independent sample."""
+    env = SharpeArenaVectorEnv(
+        seeds=[1], n_symbols=2, n_days=10, autoreset_mode=mode
+    )
+    observation, _infos = env.reset()
+    start = observation["closes"][0].copy()
+
+    action = np.zeros((1, 2), dtype=np.float32)
+    restarts = []
+    for _ in range(40):
+        observation, _rewards, _terminated, _truncated, infos = env.step(action)
+        if infos["first"][0]:
+            restarts.append(observation["closes"][0].copy())
+        if len(restarts) == 2:
+            break
+
+    assert len(restarts) == 2, "expected the lane to recycle twice"
+    for restart in restarts:
+        assert np.array_equal(restart, start)
+
+
 # -- scenario versus execution RNG ------------------------------------------
 
 
