@@ -1,0 +1,29 @@
+schema_version = "1.4"
+
+[metadata]
+tags = ["sharpearena", "int-09", "feasibility"]
+
+# Agent-side environment. The agent never receives the tests/ directory in
+# separate-verifier mode, so private evaluator inputs live there and not here.
+# network_mode is intentionally left at the Harbor default here. The intended
+# setting is "no-network"; the Docker provider refuses it on this host because
+# the WSL2 kernel lacks CONFIG_NFT_FIB_INET, so its egress-control sidecar is
+# unavailable. See docs/integrations/INT-09-harbor-local-feasibility.md.
+[environment]
+build_timeout_sec = 600.0
+
+[agent]
+timeout_sec = 300.0
+
+# Separate verifier: its own container, its own image, its own inputs.
+[verifier]
+timeout_sec = 300.0
+environment_mode = "separate"
+
+# Built from tests/Dockerfile, not from the agent's environment/ context.
+[verifier.environment]
+
+# No explicit [[artifacts]] entry: Harbor always collects the agent convention
+# directory /logs/artifacts, and a redundant entry is recorded as "skipped",
+# which then fails regrade artifact-coverage validation. The grader reads one
+# path out of that directory and refuses everything else.

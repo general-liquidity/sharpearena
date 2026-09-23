@@ -1,0 +1,14 @@
+# One local job that runs every INT-09 tampering fixture against the same
+# separate-verifier task. Paths are relative to integrations/harbor.
+datasets:
+  - path: tasks
+
+agents:
+  - import_path: sa_harbor_fixtures.agents:HonestAgent
+  - import_path: sa_harbor_fixtures.agents:ForgedRewardAgent
+  - import_path: sa_harbor_fixtures.agents:WritableGraderPathAgent
+  - import_path: sa_harbor_fixtures.agents:MissingFinalActionAgent
+  - import_path: sa_harbor_fixtures.agents:PathTraversalAgent
+  - import_path: sa_harbor_fixtures.agents:StaleOutputsAgent
+  - import_path: sa_harbor_fixtures.agents:CrossTaskStateAgent
+  - import_path: sa_harbor_fixtures.agents:PrivateEvaluatorReadAgent
