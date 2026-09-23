@@ -21,6 +21,7 @@ and delivery checks. The 2026-09-07 audit is a completed historical checkpoint.
 | Commit forecasts now and score them after resolution | [Prospective forecast evidence](forecast-evidence.md) |
 | Interpret baseline scores, unavailable estimates and intervals | [Statistical confidence](statistical-confidence.md) |
 | Add a framework adapter, or check one against the engine | [Integration contracts](integrations/contracts.md) and [inventory](integrations/inventory.md) |
+| See what's tested, specified, or ruled out per interface | [Support status](integrations/support-status.md) |
 
 Registry-specific instructions live with the [Rust crate](../crates/sharpearena/),
 [Python distribution](../crates/sharpearena-py/), and

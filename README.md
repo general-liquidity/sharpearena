@@ -36,7 +36,13 @@ discipline.
 
 ## Quick start
 
-### Python / Gymnasium
+### Python
+
+`pip install sharpearena` gives you the Rust-backed engine plus Gymnasium, the
+scalar and vector environment, and the registered difficulty IDs. It is one
+route among several over the same engine; see
+[Choose an interface](#choose-an-interface) for PettingZoo, `verifiers`,
+Minari, MCP, and the JSON agent contract.
 
 ```bash
 pip install sharpearena
@@ -113,13 +119,38 @@ console.log(run.returns.length, run.cost);
 | Surface | Install | Best for |
 |:--|:--|:--|
 | Rust | `cargo add sharpearena` | The deterministic environment, scenario generation, vector stepping, execution, market clearing, and governed wire contract. |
-| Python | `pip install sharpearena` | Gymnasium and the scalar/vector environment. Optional extras add PettingZoo, `verifiers`, Minari, MCP, and local-model tooling. |
+| Python | `pip install sharpearena` | Gymnasium and the scalar/vector environment, plus optional extras for PettingZoo, `verifiers`, Minari, MCP, and local-model tooling. See [Choose an interface](#choose-an-interface). |
 | npm | `npm i @general-liquidity/sharpearena` | Named baselines, synthetic data, replay, stress suites, walk-forward windows, and regime tags under Node or Bun. |
 | JSON contract | stdin/stdout or `POST /decide` | The observation/decision protocol for an external runner; not a standalone Arena CLI. |
 
 Package-specific usage lives beside each distribution: the
 [Rust crate](crates/sharpearena/), [Python package](crates/sharpearena-py/), and
 [npm package](npm/sharpearena/).
+
+## Choose an interface
+
+The Python package is the surface above; underneath it, several interfaces sit
+over the same engine, and Gymnasium is one of them, not the only one. Four are
+optional extras (`pip install "sharpearena[pettingzoo,verifiers,minari,mcp]"`):
+
+| Interface | What it's for |
+|:--|:--|
+| Gymnasium (scalar and vector) | The default Python route: `SharpeArenaEnv`, `SharpeArenaVectorEnv`, registered `SharpeArena/<Tier>[-Eval]-v1` IDs. |
+| PettingZoo | Multi-agent parallel envs: shared-market impact and the limit-order book. |
+| `verifiers` / Prime-RL | RLVR-style multi-turn rollout with an XML decision parser, for training with Prime-RL. |
+| Minari | Offline-RL dataset export, including a train/test split. |
+| MCP | An MCP server for connecting an agent over that protocol. |
+| JSON contract | stdin/stdout or `POST /decide`, for an external agent in any language; not a standalone Arena CLI. |
+
+Each row's actual test coverage differs; none of them has been used to produce
+a reported benchmark result yet. The
+[support status table](docs/integrations/support-status.md) states, per
+interface, what is contract-tested, what is only specified, and what is
+deliberately not supported (CleanRL, Ray/RLlib, Stable-Baselines3, TorchRL,
+HUD, PufferLib, EnvPool), with the evidence for each. Read
+[the integration inventory](docs/integrations/inventory.md) for what exists
+and where, and [the contract map](docs/integrations/contracts.md) for which
+module owns each contract clause.
 
 ## How the Sharpe suite fits
 
@@ -263,6 +294,7 @@ effective configuration, and release topology.
 | Interpret the current results honestly | [Evidence and current status](docs/evidence.md) · [`EVALUATION.md`](EVALUATION.md) |
 | Train an agent | [Gymnasium guide](docs/gymnasium.md) · [Training guide](docs/training.md) |
 | Connect an external agent | [Agent contract](docs/agent-contract.md) |
+| Check what's tested, specified, or ruled out per interface | [Support status](docs/integrations/support-status.md) |
 | Commit and export prospective forecasts | [Prospective forecast evidence](docs/forecast-evidence.md) |
 | Run local open-weight models | [Local-agent architecture](docs/LOCAL_AGENT_ARCHITECTURE.md) · [Model matrix](docs/LOCAL_MODEL_MATRIX_2026.md) |
 | Operate or publish a release | [`RELEASING.md`](RELEASING.md) |
