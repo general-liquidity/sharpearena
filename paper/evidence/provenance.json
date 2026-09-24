@@ -212,7 +212,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "630acdf6d667c509784a776d3df1f7fa33ba19b7",
+  "generated_at_head": "e28021386703a7617ae4faab7cac9c1776d1a1db",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -254,7 +254,7 @@
     },
     {
       "path": "crates/sharpearena-py/pyproject.toml",
-      "sha256": "a01464141e5f0ec22c74a26569007fb96518d226ce730d65cca287e99a79e5c5"
+      "sha256": "fd93c98fcb0117eebc9de78410889fec044bab0d4a6ece8db7cc5d9c363eaf28"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/__init__.py",
@@ -537,10 +537,6 @@
       "sha256": "5f0036836d1b44aaf42b61ee96fa6fe7884d0b9c309ddad12cb6803a99765d08"
     },
     {
-      "path": "crates/sharpearena-py/python/sharpearena/sb3_env.py",
-      "sha256": "28ea15f7523ee9b24a5e356a862af6e4f370655a796c4bd621ac4812ba9e487c"
-    },
-    {
       "path": "crates/sharpearena-py/python/sharpearena/spaces.py",
       "sha256": "0ea0850797115dcc2b589f80e5711722e0c6a0aeae7e668a0766aa92a4195d83"
     },
@@ -555,6 +551,10 @@
     {
       "path": "crates/sharpearena-py/python/sharpearena/strategy_generation.py",
       "sha256": "87b62c60a2a4cab3b831b6216921fd039c53acc8ab4b5a208e4932e8e6678cb9"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/torchrl_env.py",
+      "sha256": "669679f9b55231a494674b94ed71b3abb9f12efbd103b617b38adf7a9b9f8aa5"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/trace.py",
@@ -942,6 +942,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "a1d8b11fdb5190931126a3535275988aff983f3693e005bfc1b707efe0bce872",
+  "source_snapshot_sha256": "9790b259c136ffcdc305aee09581cccd4fd2d092f0109b096b63541645bde94d",
   "validator": "paper/src/check-provenance.py"
 }

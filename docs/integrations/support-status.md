@@ -34,6 +34,10 @@ design implies:
 
 The five optional extras that gate these routes are `verifiers`, `minari`, `pettingzoo`,
 `mcp`, `sb3` (`crates/sharpearena-py/pyproject.toml`). Nothing above reaches "empirically
+| <a href="https://pytorch.org/rl"><img src="../assets/logos/torchrl.png" alt="" height="12"></a> TorchRL (`torchrl_env.py`, `SharpeArenaTorchRLEnv`) | Contract-tested | `tests/test_torchrl.py`: `torchrl.envs.utils.check_env_specs` passes; the adapter reproduces the engine under `integrations.parity` (`CORE_FIXTURES`); a `torchrl.collectors.Collector` batch survives `torch.save`/`torch.load` and replays its recorded actions against a fresh engine bit-for-bit. The import is guarded behind `_require_torchrl()`; construction raises `TorchRLUnavailable` when `torchrl` is absent. No runnable training recipe exists yet, which is why this stops short of workflow-tested. |
+
+The five optional extras that gate these routes are `verifiers`, `minari`, `pettingzoo`,
+`mcp`, `torchrl` (`crates/sharpearena-py/pyproject.toml`). Nothing above reaches "empirically
 evaluated": no paper or `EVALUATION.md` result currently runs through any of these
 adapters. The paper's evidence uses the Rust engine and the SharpeBench bridge
 directly, not a Gymnasium, PettingZoo, `verifiers`, or Stable-Baselines3 rollout.
@@ -45,6 +49,7 @@ directly, not a Gymnasium, PettingZoo, `verifiers`, or Stable-Baselines3 rollout
 | CleanRL | Not supported | [CleanRL: dependency ranges don't intersect](#cleanrl-dependency-ranges-dont-intersect), below. |
 | <a href="https://www.ray.io"><img src="../assets/logos/ray.svg" alt="" height="14"></a> Ray, RLlib | Not supported | `inventory.md`: no code, only a literature citation in `paper/review/environment-genre-study-2026.md`. |
 | <a href="https://pytorch.org/rl"><img src="../assets/logos/torchrl.png" alt="" height="12"></a> TorchRL | Not supported | `inventory.md`: nothing in the tree. |
+| <img src="../assets/logos/stable-baselines3.png" alt="" height="18"> Stable-Baselines3 | Not supported | `inventory.md`: the string "SB3-style MLP feature extractors" in a `spaces.py:5` docstring is the only occurrence; no SB3 import or adapter exists. |
 | <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/hud-dark.svg"><img src="../assets/logos/hud.svg" alt="" height="14"></picture> HUD | Local feasibility only, not a supported integration | [HUD: a local feasibility check, now in the tree](#hud-a-local-feasibility-check-now-in-the-tree), below. |
 | <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/harbor-dark.png"><img src="../assets/logos/harbor.png" alt="" height="13"></picture> Harbor | Local feasibility only, not a supported integration | `integrations/harbor/`, recorded in [INT-09](INT-09-harbor-local-feasibility.md). A local job ran end to end under Harbor 0.23.0 on Docker Desktop over WSL2 with a separate-container verifier, and seven of eight tampering fixtures are refused. The evidence covers that one host: it is not evidence against kernel-level container escape, and network egress is untested because `no-network` is unavailable there. Harbor's built-in job aggregation counts a missing or crashed reward as 0, so a custom metric is required before any job-level number means what it appears to. |
 | PufferLib | Ruled out | [Ruled out: PufferLib and EnvPool](#ruled-out-pufferlib-and-envpool), below. |
