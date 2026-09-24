@@ -25,7 +25,7 @@ design implies:
 | <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/gymnasium-dark.svg"><img src="../assets/logos/gymnasium.svg" alt="" height="16"></picture> Gymnasium, scalar and vector | Operationally exercised | `check_env.py` and `check_determinism_across_constructors` enforce the Gymnasium contract; `tests/test_gym.py`, `tests/test_vector.py`, `tests/test_integration_parity.py` cover it in CI. The built wheel was additionally installed and stepped in a clean virtual environment outside the checkout (`inventory.md`, version matrix section). |
 | <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/pettingzoo-dark.svg"><img src="../assets/logos/pettingzoo.svg" alt="" height="16"></picture> PettingZoo (`pettingzoo_env.py`, `lob_env.py`, `market_env.py`) | Contract-tested | `tests/test_pettingzoo.py`. The import is guarded; the class only exists when `pettingzoo` is installed. |
 | <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/minari-dark.svg"><img src="../assets/logos/minari.svg" alt="" height="16"></picture> Minari (`minari_export.py`) | Contract-tested | `tests/test_minari.py` exercises `to_minari`, `to_minari_train_test`, and `seed_band_metadata`. |
-| <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/prime-intellect-dark.png"><img src="../assets/logos/prime-intellect.png" alt="" height="11"></picture> `verifiers` / Prime-RL | Workflow-tested | `tests/test_verifiers.py` and `tests/test_verifiers_episode_outcomes.py`, plus the runnable `examples/prime-rl/rl.toml` recipe. `verifiers_env.py` states it was verified against `verifiers` 0.1.14; the CI pin is 0.3.1, and reconciling the two is open (`inventory.md`). |
+| <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/prime-intellect-dark.png"><img src="../assets/logos/prime-intellect.png" alt="" height="11"></picture> `verifiers` / Prime-RL | Workflow-tested | `tests/test_verifiers.py` and `tests/test_verifiers_episode_outcomes.py`, plus the runnable `examples/prime-rl/rl.toml` recipe. `verifiers_env.py` states it was verified against `verifiers` 0.3.1, matching the CI pin (INT-10, `inventory.md`, closed). A structural capability probe (`UnsupportedVerifiersAPIError`) and a test pinning the claimed version to the CI pin guard against the two drifting again. |
 | <a href="https://modelcontextprotocol.io"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/mcp-dark.svg"><img src="../assets/logos/mcp.svg" alt="" height="11"></picture></a> MCP (`mcp_server.py`) | Contract-tested | `tests/test_mcp_server.py`. The import is guarded behind `FastMCP is None`. |
 | Functional view (`functional.py`, `SharpeArenaFuncEnv`) | Contract-tested | `tests/test_functional.py`. |
 | SharpeBench bridge (`bench_bridge.py`) | Contract-tested | Imported and exercised by `tests/test_confidence_pairing.py`, `tests/test_finish_reasons.py`, and `tests/test_local_agents.py`. |
@@ -35,21 +35,31 @@ design implies:
 The five optional extras that gate these routes are `verifiers`, `minari`, `pettingzoo`,
 `mcp`, `sb3` (`crates/sharpearena-py/pyproject.toml`). Nothing above reaches "empirically
 | <a href="https://pytorch.org/rl"><img src="../assets/logos/torchrl.png" alt="" height="12"></a> TorchRL (`torchrl_env.py`, `SharpeArenaTorchRLEnv`) | Contract-tested | `tests/test_torchrl.py`: `torchrl.envs.utils.check_env_specs` passes; the adapter reproduces the engine under `integrations.parity` (`CORE_FIXTURES`); a `torchrl.collectors.Collector` batch survives `torch.save`/`torch.load` and replays its recorded actions against a fresh engine bit-for-bit. The import is guarded behind `_require_torchrl()`; construction raises `TorchRLUnavailable` when `torchrl` is absent. No runnable training recipe exists yet, which is why this stops short of workflow-tested. |
+| <a href="https://www.ray.io"><img src="../assets/logos/ray.svg" alt="" height="14"></a> Ray executor (`ray_executor.py`, INT-06) | Contract-tested (locally; not wired into CI, see note below) | `tests/test_ray_executor.py`: `run_episodes_local` is checked step-for-step against `integrations.parity.engine_rollout` on `CORE_FIXTURES`; `report_digest` is checked identical across 0, 2 and 3 Ray workers on one seeded batch; `reduce_results`'s double-counting guard (an identical retry result is dropped, a conflicting one is refused) is exercised directly. Run against `ray` 2.58.0: 13 passed, 1 skipped (the no-Ray guard test, which only runs when Ray is absent). |
+| <a href="https://www.ray.io"><img src="../assets/logos/ray.svg" alt="" height="14"></a> RLlib single- and multi-agent routes (`rllib_env.py`, INT-07) | Contract-tested (locally; not wired into CI, see note below) | `tests/test_rllib.py`: registration through `ray.tune.registry`, the `TimeLimit`-not-termination horizon wrapper, and the flatten/unflatten round trip checked bit-for-bit against the native engine via `integrations.parity.check_adapter_parity` on `CORE_FIXTURES`, for both the single-agent creator and (guarded on `pettingzoo` too) the multi-agent env against the `MultiAgentSharpeArenaEnv` it wraps. Run against `ray[rllib]` 2.58.0 and `pettingzoo` 1.26.1: 14 passed, 1 skipped. Building and training one PPO iteration (single-agent, and multi-agent with `num_envs_per_env_runner=2`, confirming the upstream "not vectorizable" restriction is stale at 2.58.0) was additionally verified by hand with `torch==2.14.0+cpu`; that step needs `torch`, which is not part of the `ray` extra or this test file, so it is local evidence rather than an automated test. |
 
-The five optional extras that gate these routes are `verifiers`, `minari`, `pettingzoo`,
-`mcp`, `torchrl` (`crates/sharpearena-py/pyproject.toml`). Nothing above reaches "empirically
+The seven optional extras that gate these routes are `verifiers`, `minari`,
+`pettingzoo`, `mcp`, `sb3`, `torchrl`, and `ray`
+(`crates/sharpearena-py/pyproject.toml`). `ray` is not installed by CI:
+`ray[rllib]==2.58.0` pins `gymnasium==1.2.2` exactly, which conflicts with this
+repository's `gymnasium==1.3.0` CI pin (`crates/sharpearena-py/ci-requirements.txt`)
+in one `pip install --requirement` invocation. The two Ray test files therefore run
+locally rather than in CI today; `docs/integrations/inventory.md`'s version matrix
+records the full local suite (1837 passed, 15 skipped) run under `gymnasium==1.2.2`
+to confirm nothing else in the tree regresses on that version. `sb3` is left out of
+CI for a different reason, its torch dependency being the largest any extra here
+declares; `tests/test_sb3.py`'s pure-mapping tests still run everywhere, only its
+`stable_baselines3`-gated cases skip on CI. Nothing above reaches "empirically
 evaluated": no paper or `EVALUATION.md` result currently runs through any of these
 adapters. The paper's evidence uses the Rust engine and the SharpeBench bridge
-directly, not a Gymnasium, PettingZoo, `verifiers`, or Stable-Baselines3 rollout.
+directly, not a Gymnasium, PettingZoo, `verifiers`, Stable-Baselines3, TorchRL, or
+Ray rollout.
 
 ## Not present in this tree
 
 | Ecosystem | Status | Where recorded |
 |---|---|---|
 | CleanRL | Not supported | [CleanRL: dependency ranges don't intersect](#cleanrl-dependency-ranges-dont-intersect), below. |
-| <a href="https://www.ray.io"><img src="../assets/logos/ray.svg" alt="" height="14"></a> Ray, RLlib | Not supported | `inventory.md`: no code, only a literature citation in `paper/review/environment-genre-study-2026.md`. |
-| <a href="https://pytorch.org/rl"><img src="../assets/logos/torchrl.png" alt="" height="12"></a> TorchRL | Not supported | `inventory.md`: nothing in the tree. |
-| <img src="../assets/logos/stable-baselines3.png" alt="" height="18"> Stable-Baselines3 | Not supported | `inventory.md`: the string "SB3-style MLP feature extractors" in a `spaces.py:5` docstring is the only occurrence; no SB3 import or adapter exists. |
 | <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/hud-dark.svg"><img src="../assets/logos/hud.svg" alt="" height="14"></picture> HUD | Local feasibility only, not a supported integration | [HUD: a local feasibility check, now in the tree](#hud-a-local-feasibility-check-now-in-the-tree), below. |
 | <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/harbor-dark.png"><img src="../assets/logos/harbor.png" alt="" height="13"></picture> Harbor | Local feasibility only, not a supported integration | `integrations/harbor/`, recorded in [INT-09](INT-09-harbor-local-feasibility.md). A local job ran end to end under Harbor 0.23.0 on Docker Desktop over WSL2 with a separate-container verifier, and seven of eight tampering fixtures are refused. The evidence covers that one host: it is not evidence against kernel-level container escape, and network egress is untested because `no-network` is unavailable there. Harbor's built-in job aggregation counts a missing or crashed reward as 0, so a custom metric is required before any job-level number means what it appears to. |
 | PufferLib | Ruled out | [Ruled out: PufferLib and EnvPool](#ruled-out-pufferlib-and-envpool), below. |

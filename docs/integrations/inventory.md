@@ -23,12 +23,12 @@ stale (HUD and Harbor, below) is corrected.
 | <a href="https://modelcontextprotocol.io"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/mcp-dark.svg"><img src="../assets/logos/mcp.svg" alt="" height="11"></picture></a> MCP | Yes | `mcp_server.py` | Guarded behind `FastMCP is None` |
 | Functional view | Yes | `functional.py` (`SharpeArenaFuncEnv`) | Three-way probe ending in a local shim, so the module always imports |
 | CleanRL | No | Nothing in the tree | |
-| <a href="https://www.ray.io"><img src="../assets/logos/ray.svg" alt="" height="12"></a> Ray, RLlib | No | Only a literature citation in `paper/review/environment-genre-study-2026.md` | |
+| <a href="https://www.ray.io"><img src="../assets/logos/ray.svg" alt="" height="12"></a> Ray, RLlib | Yes | `ray_executor.py` (INT-06: `run_episodes`, a Ray task per episode with a deterministic, completion-order-independent reduction) and `rllib_env.py` (INT-07: `sharpearena_env_creator`, `SharpeArenaMultiAgentEnv`, single- and multi-agent PPO configs) | Guarded; both modules import with no Ray installed and raise `RayUnavailable` / `RLlibUnavailable` only on construction |
 | <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/hud-dark.svg"><img src="../assets/logos/hud.svg" alt="" height="14"></picture> HUD | Yes, as a local feasibility fixture, not a supported integration | `examples/hud/`, `crates/sharpearena-py/tests/test_hud_local.py`. Only `LocalRuntime` and `SubprocessRuntime` were exercised; `DockerRuntime`, `ModalRuntime`, and `HUDRuntime` were not. Report: `docs/integrations/INT-08-hud-local-feasibility.md`. | Not imported by the package; the fixture depends on the `hud` PyPI package |
 | <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/harbor-dark.png"><img src="../assets/logos/harbor.png" alt="" height="13"></picture> Harbor | Yes, as a local feasibility fixture, not a supported integration | `integrations/harbor/` (task package, fixtures, tampering jobs). Ran on Docker Desktop over WSL2. Report: `docs/integrations/INT-09-harbor-local-feasibility.md`. | Not imported by the package; the fixture depends on the `harbor` PyPI package |
 | <img src="../assets/logos/stable-baselines3.png" alt="" height="16"> Stable-Baselines3 | Yes | `sb3_env.py` (`SharpeArenaSB3VecEnv` over the native batched engine, fixed at `autoreset_mode="same_step"`) | Guarded; `stable_baselines3.common.vec_env.base_vec_env.VecEnv` falls back to `object` and construction raises `SB3Unavailable` |
-| <a href="https://pytorch.org/rl"><img src="../assets/logos/torchrl.png" alt="" height="10"></a> TorchRL | Yes | `torchrl_env.py` (`SharpeArenaTorchRLEnv`, an `EnvBase` subclass) | Guarded; `EnvBase` falls back to `object` and construction raises `TorchRLUnavailable` |
 | <img src="../assets/logos/envpool.svg" alt="" height="10"> PufferLib, EnvPool | No | Nothing in the tree | |
+| <a href="https://pytorch.org/rl"><img src="../assets/logos/torchrl.png" alt="" height="10"></a> TorchRL | Yes | `torchrl_env.py` (`SharpeArenaTorchRLEnv`, an `EnvBase` subclass) | Guarded; `EnvBase` falls back to `object` and construction raises `TorchRLUnavailable` |
 
 Every row above with an upstream project of its own carries that project's logo;
 see [`docs/assets/logos/`](../assets/logos/) for each file's source and the terms
@@ -38,17 +38,29 @@ support claim: the "Present" column beside it, and
 the rows carrying a logo are local feasibility fixtures rather than supported
 integrations. Rows for ecosystems this tree does not implement carry no logo.
 
-The declared optional extras are exactly six: `verifiers`, `minari`, `pettingzoo`,
-`mcp`, `sb3`, `torchrl` (`crates/sharpearena-py/pyproject.toml`). `sb3` and `torchrl`
-both pull in torch, the largest dependency any extra here declares, so both are left
-out of `ci-requirements.txt`, and `tests/test_sb3.py` / `tests/test_torchrl.py` skip
-their torch-gated cases on CI; the pure-mapping tests (the union rule, the
-`TimeLimit.truncated` term, the encoding round trip) still run everywhere. The
-INT-18 installed-wheel matrix draws the same line for the same reason: see the
-"Installed-wheel compatibility matrix" section below for what is and is not
-exercised against a built wheel for these two. The plan's warning holds: generic
-Gymnasium and Farama compatibility is real and already tested, and the gap is the
-six named consumer routes, not the interfaces they consume.
+The declared optional extras are seven: `verifiers`, `minari`, `pettingzoo`, `mcp`,
+`sb3`, `torchrl`, and `ray` (`crates/sharpearena-py/pyproject.toml`). `sb3`,
+`torchrl` and `ray` are each left out of `ci-requirements.txt`, and
+`tests/test_sb3.py` / `tests/test_torchrl.py` / `tests/test_ray_executor.py` /
+`tests/test_rllib.py` skip their extra-gated cases on CI, each for its own
+reason: `sb3` and `torchrl` both pull in torch, the largest single dependency
+any extra here declares; `ray[rllib]==2.58.0` pins `gymnasium==1.2.2` exactly,
+which conflicts with this tree's CI pin of `gymnasium==1.3.0` in a single `pip
+install --requirement` invocation (see the version matrix below). The
+pure-mapping tests (the union rule, the `TimeLimit.truncated` term, the
+encoding round trip) still run everywhere. `torchrl` and `ray` are
+version-bounded rather than open (`torchrl>=0.14,<0.15`,
+`ray[rllib]>=2.58.0,<3`): INT-06/INT-07 were checked against Ray 2.58.0's
+actual behaviour rather than a floor (the Tune-registry requirement, the
+Dict-observation RLModule failure, and whether multi-agent env runners
+vectorise have each changed across recent Ray releases), and INT-12 similarly
+against TorchRL's 0.14 `EnvBase` contract. The INT-18 installed-wheel matrix
+excludes the same three extras from its own per-extra install cells, for their
+own reasons rather than one shared one: see the "Installed-wheel compatibility
+matrix" section below for what is and is not exercised against a built wheel
+for `sb3`, `torchrl` and `ray`. The plan's warning holds: generic Gymnasium and
+Farama compatibility is real and already tested, and the gap is the seven
+named consumer routes, not the interfaces they consume.
 
 ### Two claims with thin test backing
 
@@ -58,8 +70,11 @@ false claim. Neither has a direct test:
 - `wrappers_vector.py` (`VectorCausalNormalizeObservation`, `VectorRecordEpisodeStatistics`)
   has no test file, and no test names either class.
 - `spaces.py` (`flatten_obs`, `unflatten_obs`, `flat_dim`, `FlattenObservation`) is
-  exercised only indirectly, through `PreprocessingConfig(flatten=True)` in
-  `tests/test_preprocessing.py`.
+  exercised indirectly through `PreprocessingConfig(flatten=True)` in
+  `tests/test_preprocessing.py`, and now also directly: INT-07's
+  `tests/test_rllib.py` runs `FlattenObservation`'s round trip through
+  `integrations.parity.check_adapter_parity` on `CORE_FIXTURES`, so the claim is
+  bit-for-bit against the native engine rather than shape-only.
 
 Both belong to INT-03, which is where the Gymnasium surface is brought to contract
 coverage.
@@ -106,18 +121,51 @@ suite passed under it (1893 passed, 2 skipped).
 | h5py | via the Minari extra | 3.16.0 | 3.13.0 |
 | jax / jaxlib | via the Minari extra | 0.11.1 | 0.6.1 |
 | pillow | via the Minari extra | 12.3.0 | 11.2.1 |
-| verifiers | extra, `verifiers>=0.3.1,<0.4` (INT-18) | 0.3.1 | 0.1.14 |
+| verifiers | extra, `>=0.3.1,<0.4` | 0.3.1 | 0.1.14 (this row only; see the INT-10 caveat below for the separate 0.3.1 pass) |
 | mcp | extra, unpinned | 1.30.0 | not installed |
 | pytest | not shipped | 9.1.1 | 8.4.2 |
+| ray / ray[rllib] | extra, `>=2.58.0,<3` | not installed | 2.58.0 |
+| torch (RLlib training only) | not declared by any extra | not installed | 2.14.0+cpu |
 | OS / architecture | not constrained | Linux runners | Windows 11 26220, x86-64 (AMD64) |
+
+`ray[rllib]==2.58.0` pins `gymnasium==1.2.2` exactly, which conflicts with this
+tree's CI pin of `gymnasium==1.3.0` in a single `pip install --requirement`
+invocation; the base package's own `gymnasium>=1.0` floor admits 1.2.2 and the
+full 1893-test suite passed under it (recorded above as this row's evidence run),
+but that pin conflict is why `ray` is not installed in CI and why
+`tests/test_ray_executor.py` and `tests/test_rllib.py` are exercised locally
+rather than in the pinned matrix. `torch` is needed only to actually build and
+train an RLlib `AlgorithmConfig` (`AlgorithmConfig.build_algo()`); it is not part
+of the `ray` extra, and `sharpearena_env_creator`, registration, and config
+construction were all checked without it. See
+[`docs/interfaces.md`](../interfaces.md#ray-and-rllib) for the runnable examples
+and their captured output.
 
 Caveats a later ticket must not read past:
 
 - The Python floor is the base package's. It does not carry to any optional learner,
   and each extra needs its own range.
-- `verifiers_env.py` states it was verified against `verifiers` 0.1.14, which is the
-  version installed here; CI pins 0.3.1. Those are different APIs, and INT-10 owns the
-  reconciliation.
+- INT-10 is closed: `verifiers_env.py` now states it was verified against `verifiers`
+  0.3.1, matching the CI pin. The module targets 0.3.1's `verifiers.legacy` v0 API
+  (`MultiTurnEnv`, `stop`/`cleanup`, `Rubric`), which 0.3.1 aliases transparently onto
+  the top-level `verifiers.*` names, the same surface the module was previously
+  verified against at 0.1.14, so the fix was re-verifying and re-pinning, not a
+  rewrite. The 0.3.1 pass built a separate isolated venv (`verifiers==0.3.1`, plus
+  `numpy`, `gymnasium`, `pytest`, `jsonschema`, but not `pettingzoo`/`minari`/`mcp`,
+  which this narrower venv did not need) against this tree's already-built extension
+  and ran the full `tests/` suite except `test_hud_local.py` (unrelated to `verifiers`,
+  needs the separate `hud` package and Docker): 1811 passed, 65 skipped, no source
+  changes, no deprecation warnings. The 65 skips are the `pettingzoo`/`minari`/`mcp`
+  tests this venv could not exercise, not anything about `verifiers`; the two
+  `verifiers`-specific files (`test_verifiers.py`, `test_verifiers_episode_outcomes.py`,
+  82 tests) are part of that 1811. This is a separate, narrower-dependency venv from
+  the one the "Verified here" column above documents (which predates this pass and
+  used `verifiers` 0.1.14 among a wider set of extras), so that column keeps its
+  0.1.14 value rather than implying that exact environment was rerun.
+  `tests/test_verifiers.py::test_verified_version_matches_ci_pin` fails CI if the
+  module's claimed version and the pin ever diverge again, and
+  `UnsupportedVerifiersAPIError` (a structural capability probe, not a version-string
+  check) fails loudly if a future `verifiers` release drops or reshapes that surface.
 - Gymnasium's three autoreset modes exist as an enum only from 1.1. The guarded import
   in `vector.py` is what keeps 1.0 working, and a pinned combination must record the
   Gymnasium version and the mode together.

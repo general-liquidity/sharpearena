@@ -30,15 +30,16 @@ DIST_IMPORTS: Dict[str, Tuple[str, ...]] = {
     "mcp": ("mcp",),
     "stable-baselines3": ("stable_baselines3",),
     "torchrl": ("torchrl",),
+    "ray": ("ray",),
 }
 
 # Asserted absent only where it is actually true: in the no-extras environment `run_none()`
-# checks, where none of the six declared extras, sb3 and torchrl included, are installed.
+# checks, where none of the seven declared extras, sb3/torchrl/ray included, are installed.
 # It is not a claim about every cell this matrix runs, because it no longer can be: sb3 and
-# torchrl each declare a real dependency on torch (see INSTALL_MATRIX_EXCLUDED below), so an
-# sb3 or torchrl cell would find it importable by design. "No accelerator is needed" stays a
-# tested claim for the bare wheel; it was never meant to hold once an extra legitimately
-# wants one.
+# torchrl each declare a real dependency on torch, and `ray[rllib]` can pull it too (see
+# INSTALL_MATRIX_EXCLUDED below), so an sb3, torchrl or ray cell would find it importable by
+# design. "No accelerator is needed" stays a tested claim for the bare wheel; it was never
+# meant to hold once an extra legitimately wants one.
 ACCELERATOR_IMPORTS: Tuple[str, ...] = ("torch", "jax")
 
 # Extras whose real behavior is not exercised against an installed wheel in CI, with the
@@ -47,20 +48,36 @@ ACCELERATOR_IMPORTS: Tuple[str, ...] = ("torch", "jax")
 # `EXERCISES` but never neither, and removing an entry without adding the other fails CI
 # the same way an unlisted extra always has.
 #
-# sb3 and torchrl both pull torch, the heaviest dependency any extra here declares.
-# `ci-requirements.txt` already excludes it for that reason, so `tests/test_sb3.py` and
-# `tests/test_torchrl.py` skip in the source-tree suite too; a `wheel-extras` cell for
-# either would add a second and third heavy torch install to a matrix deliberately sized
-# to stay near fifteen minutes. What is NOT skipped: `GUARDS["sb3"]` and
-# `GUARDS["torchrl"]` still run in `wheel-no-extras`, for free, since that job never
-# installs any extra either way, and they are what prove `SharpeArenaSB3VecEnv(...)` and
-# `SharpeArenaTorchRLEnv(...)` refuse by name with the dependency absent. What IS
-# unexercised against an installed wheel: the actual SB3 `VecEnv` / TorchRL `EnvBase`
-# route with the extra present. Revisit if a CPU-only torch wheel becomes cheap enough to
-# pin, or if the added CI minutes are explicitly accepted.
+# Three extras, three different reasons, none of them "we didn't get to it":
+#
+# - sb3 and torchrl both pull torch, the heaviest single dependency any extra here
+#   declares. `ci-requirements.txt` already excludes both for that reason, so
+#   `tests/test_sb3.py` and `tests/test_torchrl.py` skip in the source-tree suite too.
+# - ray[rllib]==2.58.0 pins gymnasium==1.2.2 exactly, which conflicts with the CI pin
+#   of gymnasium==1.3.0 in a single `pip install --requirement` invocation
+#   (`docs/integrations/inventory.md`'s version matrix). `ray` is excluded from
+#   `ci-requirements.txt`, and `tests/test_ray_executor.py` / `tests/test_rllib.py`
+#   skip in the source-tree suite, for that pin conflict rather than for size, though
+#   `ray[rllib]` is also a large multi-package install in its own right.
+#
+# A `wheel-extras` cell for any of the three would either add a heavy torch install or
+# force the wheel-extras job onto an incompatible gymnasium, to a matrix deliberately
+# sized to stay near fifteen minutes. What is NOT skipped: `GUARDS["sb3"]`,
+# `GUARDS["torchrl"]` and `GUARDS["ray"]` still run in `wheel-no-extras`, for free, since
+# that job never installs any extra either way, and they are what prove
+# `SharpeArenaSB3VecEnv(...)`, `SharpeArenaTorchRLEnv(...)`, `run_episodes(...,
+# num_workers=1)` and `sharpearena_env_creator()` all refuse by name with the dependency
+# absent. What IS unexercised against an installed wheel: the actual SB3 `VecEnv` /
+# TorchRL `EnvBase` / Ray task / RLlib route with the extra present. Revisit if a
+# CPU-only torch wheel becomes cheap enough to pin, if the gymnasium pin conflict is
+# resolved upstream, or if the added CI minutes are explicitly accepted.
 INSTALL_MATRIX_EXCLUDED: Dict[str, str] = {
     "sb3": "pulls torch; excluded from ci-requirements.txt for the same reason",
     "torchrl": "pulls torch; excluded from ci-requirements.txt for the same reason",
+    "ray": (
+        "ray[rllib]==2.58.0 pins gymnasium==1.2.2, conflicting with the CI gymnasium "
+        "pin (1.3.0); excluded from ci-requirements.txt for the same reason"
+    ),
 }
 
 _REQUIREMENT_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*")
@@ -380,6 +397,26 @@ def _guard_torchrl() -> List[str]:
     ]
 
 
+def _guard_ray() -> List[str]:
+    from sharpearena.ray_executor import run_episodes
+    from sharpearena.rllib_env import sharpearena_env_creator
+
+    return [
+        # num_workers=1 takes the Ray path; num_workers=0 (the default) stays local and
+        # never imports Ray, which would prove nothing about this guard.
+        _expect_refusal(
+            lambda: run_episodes([], num_workers=1),
+            "ray is not installed",
+            "run_episodes([], num_workers=1)",
+        ),
+        _expect_refusal(
+            sharpearena_env_creator,
+            "ray[rllib] is not installed",
+            "sharpearena_env_creator()",
+        ),
+    ]
+
+
 EXERCISES: Dict[str, Callable[[], str]] = {
     "pettingzoo": _exercise_pettingzoo,
     "minari": _exercise_minari,
@@ -394,6 +431,7 @@ GUARDS: Dict[str, Callable[[], List[str]]] = {
     "verifiers": _guard_verifiers,
     "sb3": _guard_sb3,
     "torchrl": _guard_torchrl,
+    "ray": _guard_ray,
 }
 
 # The adapter modules that carry a guard. Importing each of them has to work with no
@@ -405,4 +443,6 @@ GUARDED_MODULES: Tuple[str, ...] = (
     "sharpearena.verifiers_env",
     "sharpearena.sb3_env",
     "sharpearena.torchrl_env",
+    "sharpearena.ray_executor",
+    "sharpearena.rllib_env",
 )
