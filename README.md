@@ -131,9 +131,11 @@ Package-specific usage lives beside each distribution: the
 
 The Python package is the surface above; underneath it, several interfaces sit
 over the same engine, and Gymnasium is one of them, not the only one. Six are
-optional extras (`pip install "sharpearena[pettingzoo,verifiers,minari,mcp,sb3,torchrl]"`).
-A short, runnable example for every row below except Gymnasium (see
-[Quick start](#quick-start)) is in [the interface examples](docs/interfaces.md).
+optional extras (`pip install "sharpearena[pettingzoo,verifiers,minari,mcp,sb3,torchrl]"`);
+Ray/RLlib is a seventh, version-bounded extra installed separately
+(`pip install "sharpearena[ray]"`). A short, runnable example for every row below
+except Gymnasium (see [Quick start](#quick-start)) is in
+[the interface examples](docs/interfaces.md).
 
 | Interface | What it's for |
 |:--|:--|
@@ -147,6 +149,7 @@ A short, runnable example for every row below except Gymnasium (see
 | JSON contract | stdin/stdout or `POST /decide`, for an external agent in any language; not a standalone Arena CLI. |
 | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/logos/hud-dark.svg"><img src="docs/assets/logos/hud.svg" alt="" height="16"></picture> HUD | A task and grader for the HUD agent SDK, exercised locally with a deterministic agent double: `examples/hud/`. |
 | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/logos/harbor-dark.png"><img src="docs/assets/logos/harbor.png" alt="" height="15"></picture> Harbor | A Harbor task package with a separate-container verifier and tampering fixtures: `integrations/harbor/`. |
+| <a href="https://www.ray.io"><img src="docs/assets/logos/ray.svg" alt="" height="16"></a> Ray and RLlib | A Ray executor with deterministic, worker-count-independent reduction, plus single- and multi-agent RLlib PPO routes: `ray_executor.py`, `rllib_env.py`. |
 | SharpeBench bridge | Compiles episode evidence into the inputs the benchmark scores: `bench_bridge.py`. |
 | Functional view | A replay interface over recorded history, not an accelerator-native engine: `functional.py`. |
 | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/logos/webassembly-dark.svg"><img src="docs/assets/logos/webassembly.svg" alt="" height="18"></picture> <img src="docs/assets/logos/typescript.svg" alt="" height="18"> WASM and TypeScript | The same engine compiled for JavaScript runtimes: `crates/sharpearena-wasm/`. |
@@ -155,7 +158,7 @@ Each row's actual test coverage differs; none of them has been used to produce
 a reported benchmark result yet. The
 [support status table](docs/integrations/support-status.md) states, per
 interface, what is contract-tested, what is only specified, and what is not
-supported (CleanRL, Ray and RLlib) or ruled out
+supported (CleanRL) or ruled out
 (PufferLib, EnvPool), with the evidence for each. The HUD and Harbor routes
 are local feasibility work rather than supported integrations: each ran on one
 host with a deterministic agent and no model call, and each records what its
