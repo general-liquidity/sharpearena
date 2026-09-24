@@ -207,6 +207,34 @@ jobs:
       - name: check-provenance (manifest matches the tree)
         run: python paper/src/check-provenance.py
 
+  docs-integrity:
+    name: docs integrity (absence claims, vendored logos)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      # Three false absence claims shipped in one day, each written by someone who had
+      # looked once in one place. The rule against that was already written down, and a
+      # written rule is training rather than a device. This is the device.
+      - name: No tracked Markdown asserts the absence of something present
+        run: python scripts/check-absence-claims.py
+      # docs/assets/logos/README.md records a SHA-256 per vendored asset and asserts each
+      # file is byte-identical to what its project publishes. Until this step existed,
+      # nothing read those hashes back. Offline on purpose: the record is the pinned
+      # reference, and a gate that fetched upstream would fail on someone else's rebrand.
+      - name: Vendored logos match their recorded hashes
+        run: python scripts/check-logo-assets.py
+      # A gate with no failing case is not evidence, so the gates themselves are tested
+      # against planted defects in throwaway checkouts. No compiled extension is
+      # involved, so this needs pytest and nothing else.
+      - name: The gates catch a planted defect and stay quiet on a true statement
+        run: |
+          python -m pip install --quiet "pytest==9.1.1"
+          python -m pytest -q crates/sharpearena-py/tests/test_docs_integrity_gates.py
+
   npm:
     name: npm (wasm wrapper)
     runs-on: ubuntu-latest

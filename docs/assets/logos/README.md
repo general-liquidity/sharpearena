@@ -15,11 +15,17 @@ variant, downloaded from the path recorded below, so no recolouring was needed t
 make them legible.
 
 Five have no companion, for two different reasons. TypeScript, Ray and EnvPool
-need none: each is a coloured mark that holds up on either background.
-Stable-Baselines3 and TorchRL publish exactly one image and no dark variant, so
-that is what is committed. They are legible on a dark background but not tuned
-for it. Recolouring either one to fix that is not an option, since it would break
-the rule that every file here is byte-identical to what its project publishes.
+publish one coloured mark each and no dark variant. Stable-Baselines3 and TorchRL
+publish exactly one image and no dark variant either, so that is what is
+committed. Recolouring any of them is not an option, since it would break the
+rule that every file here is byte-identical to what its project publishes.
+
+Those five are the ones whose legibility is not settled by construction, and
+[the measurements below](#whether-these-marks-are-actually-legible) say two of
+them do not in fact hold up on both backgrounds: Ray's wordmark disappears
+against the dark theme, and Stable-Baselines3 goes pale against the light one.
+An earlier version of this paragraph asserted that all three of TypeScript, Ray
+and EnvPool held up on either background. Only TypeScript does, comfortably.
 
 | File | Project | Downloaded from | Governing terms |
 |---|---|---|---|
@@ -137,6 +143,104 @@ e70261c6840a7f0e590c492f560c40692f958e3ddfa324452a2e4e4d615c2cf0  prime-intellec
 An upstream hash that no longer matches means the project has changed its logo,
 not that this copy is wrong. Replace the file from the same path and update the
 hash, rather than editing the file here.
+
+## Whether these marks are actually legible
+
+The `<picture>` pairs above were verified only as far as GitHub's HTML sanitizer
+preserving the markup. That the marks can be read once rendered was assumed, and
+assuming it is what the rest of this page exists to argue against.
+
+So each file was rendered and measured. Method: rasterise at 128 pixels tall
+(lanczos3, SVGs at 300 DPI), composite each pixel over GitHub's light background
+`#ffffff` and over its dark background `#0d1117`, and compute the WCAG contrast
+ratio of the composited pixel against that background. "Mean" is the
+alpha-weighted mean of those ratios over every pixel the mark paints, so
+antialiased edges and semi-transparent plates count for what they are rather
+than as solid ink. "Ink at 3:1" is the alpha-weighted fraction of the mark that
+reaches 3:1, the WCAG threshold for non-text content. The measurement is of
+colour, not of stroke weight: a mark can clear these numbers and still be hard to
+read at the 10 to 18 pixel heights the tables use.
+
+No file was altered to produce any of this. The rasters were rendered from the
+committed bytes into a scratch directory and discarded.
+
+| File | Served on | Mean, light | Ink at 3:1, light | Mean, dark | Ink at 3:1, dark |
+|---|---|---|---|---|---|
+| `gymnasium.svg` | light | 17.37 | 0.95 | 1.10 | 0.00 |
+| `gymnasium-dark.svg` | dark | 1.00 | 0.00 | 15.89 | 0.96 |
+| `pettingzoo.svg` | light | 16.82 | 0.93 | 1.10 | 0.00 |
+| `pettingzoo-dark.svg` | dark | 1.00 | 0.00 | 15.43 | 0.96 |
+| `minari.svg` | light | 15.76 | 0.92 | 1.09 | 0.00 |
+| `minari-dark.svg` | dark | 1.00 | 0.00 | 14.55 | 0.95 |
+| `webassembly.svg` | light | 5.30 | 0.99 | 3.52 | 0.98 |
+| `webassembly-dark.svg` | dark | 1.00 | 0.00 | 18.74 | 1.00 |
+| `mcp.svg` | light | 19.58 | 0.98 | 1.06 | 0.00 |
+| `mcp-dark.svg` | dark | 1.00 | 0.00 | 17.74 | 0.98 |
+| `hud.svg` | light | 14.50 | 0.99 | 1.26 | 0.00 |
+| `hud-dark.svg` | dark | 1.00 | 0.00 | 18.46 | 1.00 |
+| `harbor.png` | light | 17.69 | 0.98 | 1.00 | 0.00 |
+| `harbor-dark.png` | dark | 1.09 | 0.00 | 16.42 | 0.99 |
+| `prime-intellect.png` | light | 19.77 | 0.98 | 1.11 | 0.00 |
+| `prime-intellect-dark.png` | dark | 1.00 | 0.00 | 17.87 | 0.99 |
+| `typescript.svg` | both | 3.87 | 0.81 | 6.82 | 1.00 |
+| `envpool.svg` | both | 2.79 | 0.56 | 5.37 | 0.88 |
+| `ray.svg` | both | 12.57 | 0.91 | 2.97 | 0.38 |
+| `stable-baselines3.png` | both | 1.29 | 0.05 | 17.10 | 0.99 |
+| `torchrl.png` | both | 1.55 | 0.07 | 17.63 | 0.97 |
+
+The eight `<picture>` pairs all behave as intended. Each file clears 14:1 in the
+theme it is served on and collapses to roughly 1:1 in the other, which is the
+whole reason the pair exists: the near-1 figure is the disappearance the dark
+companion was added to prevent, measured, and it is never served in that theme.
+
+Legible without qualification: all sixteen paired files in their own theme, plus
+TypeScript, which is the only one of the five unpaired marks that clears 3:1 on
+both. WebAssembly is unpaired in practice on light and clears both as well.
+
+Marginal, and named as such rather than left implied:
+
+- **EnvPool, on light.** A mean of 2.79 with 56 percent of the mark at 3:1 or
+  better. The blue wordmark on white sits just under the threshold on average.
+  It reads, but it is the weakest of the unpaired marks on light after
+  Stable-Baselines3. EnvPool publishes no dark or high-contrast variant.
+- **Stable-Baselines3, on light.** A mean of 1.29 with 5 percent of the mark at
+  3:1. The published image is a pale cartoon on an opaque near-white plate that
+  covers 83 percent of the frame, so on a white page the plate vanishes into the
+  background and what remains is pastel line art. On dark it reads easily, but as
+  a bright white card rather than as a mark. Upstream publishes one file,
+  `docs/_static/img/logo.png`, and no variant.
+- **TorchRL, on dark.** It is legible: the wordmark is dark on an opaque white
+  plate covering 91 percent of the frame, so it reaches 17.63 on dark and 7.5
+  percent of the frame stays above 3:1 on light. The plate is the reason for
+  both, and on a dark page it renders as a white rectangle rather than as a mark.
+  That is a visual-integration cost, not a legibility failure.
+
+Failing, in the sense that the mark's main element cannot be read:
+
+- **Ray, on dark.** A mean of 2.97 with only 38 percent of the mark at 3:1. The
+  cyan glyph survives; the word "RAY" beside it is near-black and disappears
+  into `#0d1117`. Ray publishes no dark variant: `ray_logo.svg` and
+  `ray_logo.png` under `doc/source/_static/img/`, `ray_header_logo.png` under
+  `doc/source/images/` and `ray_svg_logo.svg` under
+  `doc/source/ray-overview/images/` are the only logo assets in the repository,
+  and the two that are not duplicates measure the same 2.97 on dark.
+
+Three fixes for Ray that do not alter the file, none of them applied here
+because each is a judgement about the table rather than about the asset:
+
+1. Wrap it the way the dark pairs are wrapped, once Ray publishes a dark
+   variant. Nothing to do until it does.
+2. Leave the mark and accept that it reads as its glyph alone on dark. Ray's row
+   is a "No" row in `inventory.md` and a "Not supported" row in
+   `support-status.md`, so the logo is identification beside text that names the
+   project anyway.
+3. Remove it. A logo that resolves to a cyan glyph on half of all readers'
+   screens identifies less than the word "Ray" already does in the same cell.
+
+Option 2 is what the tree currently does, now with the cost written down instead
+of assumed away. Recolouring, cropping to the glyph or compositing a background
+behind any of these marks is excluded by the byte-identity rule at the top of
+this page, and that rule is enforced by `scripts/check-logo-assets.py`.
 
 ## A correction worth keeping
 

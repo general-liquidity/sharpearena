@@ -1,0 +1,42 @@
+{
+  "_README": [
+    "Exemptions for scripts/check-absence-claims.py. One entry excuses ONE claim, quoted",
+    "verbatim, in ONE named file, with a written reason. There is no file-level,",
+    "directory-level or pattern-level opt-out, and no marker inside the prose itself, so",
+    "an exemption cannot be added sideways or made to cover text nobody has read. Because",
+    "an entry is bound to exact wording, editing the sentence retires it and the gate",
+    "speaks again; an entry whose quote no longer appears anywhere fails the gate as a",
+    "stale exemption, so dead ones cannot pile up here unnoticed.",
+    "",
+    "This file cannot stop someone who sets out to silence a true finding. Nothing short",
+    "of review can, and a check that claimed otherwise would be making exactly the kind of",
+    "unverified absence claim the gate exists to catch. What the shape does achieve is",
+    "that silencing cannot be quiet or wholesale: it costs one legible line here, naming",
+    "the sentence and the reason, in a diff a reviewer reads.",
+    "",
+    "Every entry below is prose that deliberately restates a claim now known to be false,",
+    "as a record of the correction. Nothing here excuses a claim anyone still believes."
+  ],
+  "exemptions": [
+    {
+      "file": "docs/assets/logos/README.md",
+      "claim": "said Harbor published no logo and that MCP published none outside a content-hashed documentation CDN",
+      "reason": "The \"A correction worth keeping\" section restates the two false claims on purpose, so the record of what was wrong survives. The sentence immediately following says both were wrong and gives the upstream paths that disprove them."
+    },
+    {
+      "file": "docs/assets/logos/README.md",
+      "claim": "the MCP specification repository indeed has no logo while",
+      "reason": "Same correction section. This clause is the true half of the correction: the specification repository really does publish no logo, and the sentence goes on to name the three assets modelcontextprotocol/docs publishes. The gate cannot tell the two repositories apart because it cannot read either of them."
+    },
+    {
+      "file": "CHANGELOG.md",
+      "claim": "It said Harbor published no logo, when `docs-mintlify/harbor-logo.png` sits in the same repository",
+      "reason": "A released changelog entry recording that the previous entry was wrong. It states the false claim in order to correct it in the same sentence, and released entries are history rather than current assertions, so it is not rewritten."
+    },
+    {
+      "file": "CHANGELOG.md",
+      "claim": "Harbor publishes no logo in its repository or on its site",
+      "reason": "The released entry that carried the original error. Keep a Changelog entries describe the state at a release and are not edited afterwards; the entry above it in this same file records the correction, which is where a reader is told the current answer."
+    }
+  ]
+}
