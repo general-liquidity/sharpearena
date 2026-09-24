@@ -27,10 +27,8 @@ stale (HUD and Harbor, below) is corrected.
 | <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/hud-dark.svg"><img src="../assets/logos/hud.svg" alt="" height="14"></picture> HUD | Yes, as a local feasibility fixture, not a supported integration | `examples/hud/`, `crates/sharpearena-py/tests/test_hud_local.py`. Only `LocalRuntime` and `SubprocessRuntime` were exercised; `DockerRuntime`, `ModalRuntime`, and `HUDRuntime` were not. Report: `docs/integrations/INT-08-hud-local-feasibility.md`. | Not imported by the package; the fixture depends on the `hud` PyPI package |
 | <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/harbor-dark.png"><img src="../assets/logos/harbor.png" alt="" height="13"></picture> Harbor | Yes, as a local feasibility fixture, not a supported integration | `integrations/harbor/` (task package, fixtures, tampering jobs). Ran on Docker Desktop over WSL2. Report: `docs/integrations/INT-09-harbor-local-feasibility.md`. | Not imported by the package; the fixture depends on the `harbor` PyPI package |
 | <img src="../assets/logos/stable-baselines3.png" alt="" height="16"> Stable-Baselines3 | Yes | `sb3_env.py` (`SharpeArenaSB3VecEnv` over the native batched engine, fixed at `autoreset_mode="same_step"`) | Guarded; `stable_baselines3.common.vec_env.base_vec_env.VecEnv` falls back to `object` and construction raises `SB3Unavailable` |
-| <a href="https://pytorch.org/rl"><img src="../assets/logos/torchrl.png" alt="" height="10"></a> <img src="../assets/logos/envpool.svg" alt="" height="10"> TorchRL, PufferLib, EnvPool | No | Nothing in the tree | |
-| <img src="../assets/logos/stable-baselines3.png" alt="" height="16"> Stable-Baselines3 | No | Only the phrase "SB3-style MLP feature extractors" in `spaces.py:5`, a docstring | |
-| <a href="https://pytorch.org/rl"><img src="../assets/logos/torchrl.png" alt="" height="10"></a> TorchRL | Yes | `torchrl_env.py` (`SharpeArenaTorchRLEnv`, an `EnvBase` subclass) | Guarded; `EnvBase` falls back to `object` and construction raises `TorchRLUnavailable` |
 | <img src="../assets/logos/envpool.svg" alt="" height="10"> PufferLib, EnvPool | No | Nothing in the tree | |
+| <a href="https://pytorch.org/rl"><img src="../assets/logos/torchrl.png" alt="" height="10"></a> TorchRL | Yes | `torchrl_env.py` (`SharpeArenaTorchRLEnv`, an `EnvBase` subclass) | Guarded; `EnvBase` falls back to `object` and construction raises `TorchRLUnavailable` |
 
 Every row above with an upstream project of its own carries that project's logo;
 see [`docs/assets/logos/`](../assets/logos/) for each file's source and the terms
@@ -141,8 +139,8 @@ Caveats a later ticket must not read past:
 - INT-10 is closed: `verifiers_env.py` now states it was verified against `verifiers`
   0.3.1, matching the CI pin. The module targets 0.3.1's `verifiers.legacy` v0 API
   (`MultiTurnEnv`, `stop`/`cleanup`, `Rubric`), which 0.3.1 aliases transparently onto
-  the top-level `verifiers.*` names — the same surface the module was previously
-  verified against at 0.1.14 — so the fix was re-verifying and re-pinning, not a
+  the top-level `verifiers.*` names, the same surface the module was previously
+  verified against at 0.1.14, so the fix was re-verifying and re-pinning, not a
   rewrite. The 0.3.1 pass built a separate isolated venv (`verifiers==0.3.1`, plus
   `numpy`, `gymnasium`, `pytest`, `jsonschema`, but not `pettingzoo`/`minari`/`mcp`,
   which this narrower venv did not need) against this tree's already-built extension
