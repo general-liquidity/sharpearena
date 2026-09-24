@@ -10,7 +10,8 @@ Every example on this page was run against this tree and this page states which
 package versions it ran against. Install the extra it names before you run it:
 `pip install "sharpearena[pettingzoo,verifiers,minari,mcp]"` installs those four
 at once; `sb3` is left out of that combined install because it pulls in torch,
-the largest dependency any extra here declares.
+the largest dependency any extra here declares, and `ray` is left out because it
+is bounded separately (see below).
 
 ## PettingZoo
 
@@ -304,6 +305,94 @@ outputs: ['/tmp/.../compiled/00-synthetic-calm.submissions.json']
 A real field run replaces `FixedModel` with `OllamaClient` or
 `OpenAICompatibleClient` from the same module; see the [local-agent
 architecture](LOCAL_AGENT_ARCHITECTURE.md) guide for that path.
+
+## Ray and RLlib
+
+`sharpearena.ray_executor` (INT-06) runs episodes across Ray tasks with a
+deterministic reduction: `run_episodes` places results by `episode_id` rather than
+completion order, so the reduced, canonically-digested report is identical whether
+it ran locally (`num_workers=0`, no Ray import at all) or on any number of Ray
+workers. Ray retries a task at least once, not exactly once; the guard against
+double-counting a retry is in `reduce_results`, not a comment: a duplicate result
+for an `episode_id` already placed is dropped when identical and raises
+`ExecutorViolation` when it differs, because two different answers under one
+identity means the episode was not the pure function of its spec the retry safety
+depends on.
+
+```python
+import ray
+from sharpearena.ray_executor import EpisodeSpec, run_episodes, report_digest
+from sharpearena.integrations.parity import deterministic_actions
+
+specs = [
+    EpisodeSpec(
+        episode_id=f"ep-{i}", seed=i, n_symbols=3, n_days=20, max_steps=15,
+        actions=deterministic_actions(n_symbols=3, n_steps=15, seed=i),
+    )
+    for i in range(4)
+]
+ray.init(num_cpus=2, include_dashboard=False, log_to_driver=False)
+report = run_episodes(specs, num_workers=2)
+ray.shutdown()
+print(report_digest(report))
+```
+
+Run against `ray[rllib]` 2.58.0. Output:
+
+```
+59cd261135f95e3b4d359b0ec0b9bac335edb0bbb392219072a7fb70de35fac1
+```
+
+`run_episodes(specs, num_workers=0)` on the same `specs` produces the identical
+digest; `tests/test_ray_executor.py::test_report_digest_is_identical_across_worker_counts`
+checks this at 0, 2 and 3 workers rather than asserting it once by hand.
+
+`sharpearena.rllib_env` (INT-07) registers single-agent and multi-agent PPO routes
+through `ray.tune.registry.register_env`, not Gymnasium's own registry, because
+`SingleAgentEnvRunner.make_env` resolves environments from the Tune registry and
+Gymnasium's registry does not reach a remote `EnvRunner` actor. Both routes wrap
+the environment's `Dict` observation in `FlattenObservation`
+(`sharpearena.spaces`) before RLlib sees it, because the default RLModules have no
+encoder for a `Dict` observation space; `tests/test_rllib.py` proves the
+flatten/unflatten round trip reproduces the native engine's observation bit for
+bit, through the same `integrations.parity` checker every other adapter is held
+to, rather than only checking the tensor shape.
+
+```python
+from sharpearena.rllib_env import single_agent_config
+
+cfg = single_agent_config(env_config={"n_symbols": 3, "n_days": 20}, num_env_runners=0)
+print(cfg.env, cfg.num_env_runners)
+```
+
+Run against `ray[rllib]` 2.58.0. Output:
+
+```
+sharpearena-single-agent 0
+```
+
+Both `single_agent_config` and `multi_agent_config` (the latter with every seat on
+one shared policy, since the seats are symmetric by construction) were built and
+trained for one PPO iteration by hand against this Ray build with
+`torch==2.14.0+cpu` installed, including the multi-agent route with
+`num_envs_per_env_runner=2`: both upstream `rllib-env` and `multi-agent-envs`
+pages still state multi-agent setups are not vectorizable, and that restriction is
+stale at 2.58.0 (`MultiAgentEnvRunner.make_env` calls `gymnasium.make_vec` and
+asserts a `VectorMultiAgentEnv` result). `torch` is not part of this package's
+`ray` extra or its CI dependency set, so that training step is local evidence, not
+CI-verified; `docs/integrations/support-status.md` records the distinction. The
+config-construction and flatten-parity tests above run with `ray[rllib]` alone.
+
+`pip install "sharpearena[ray]"` installs `ray[rllib]>=2.58.0,<3`, bounded rather
+than open like the four extras above: the registry route, the Dict-observation
+RLModule failure, and the multi-agent vectorisation behaviour were each checked
+against 2.58.0 specifically, not assumed from an older Ray release. `ray[rllib]`
+2.58.0 also pins `gymnasium==1.2.2` exactly, which conflicts with this repository's
+own CI pin of `gymnasium==1.3.0`
+(`crates/sharpearena-py/ci-requirements.txt`); the base package's
+`gymnasium>=1.0` floor admits 1.2.2 and the full suite passes under it (verified
+here), but that conflict is why `ray`/`rllib` is not installed in CI today and
+these two test files run locally rather than as part of the pinned CI matrix.
 
 ## HUD and Harbor
 
