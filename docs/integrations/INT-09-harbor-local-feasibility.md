@@ -23,7 +23,8 @@ is confirmed or contradicted by that run, this says so explicitly.
 - Agent: the built-in **oracle** agent (`solution/solve.sh` / a scripted
   shell command) for the honest fixture, and eight deterministic
   `BaseAgent` subclasses (`integrations/harbor/fixtures/sa_harbor_fixtures`)
-  for the tampering fixtures. No model was called anywhere in this session.
+  for the honest-control trial plus the seven tampering fixtures. No model
+  was called anywhere in this session.
 
 Everything below is a property of this Docker-Desktop-on-WSL2 boundary. It
 is not evidence about a native Linux host, a Windows-container host, or any
@@ -115,11 +116,35 @@ So: the four fixtures that combine an attack with a legitimate submission
 (`writable_grader_path`, `stale_outputs`, `cross_task_state`,
 `private_evaluator_read`) all score exactly the honest-action reward,
 proving the attack achieved nothing beyond what honest behavior would have
-earned. `forged_reward` and `missing_final_action` are refused with a
-distinct, attributable code from the grader itself
-(`_require_clean_verifier_dir` / step validation in
-`tests/grade.py`). `path_traversal` is refused too, but not by the
-grader - see below.
+earned - the grader accepts these trials (`accepted: true`); it does not
+refuse them. `forged_reward` is refused with `artifact_missing`, raised by
+`_read_artifact()` because the fixture never writes
+`/logs/artifacts/actions.jsonl` at all - a submission-absence check, not a
+tamper-specific one, and not `_require_clean_verifier_dir()`'s
+`pre_existing_reward_file` (that code is never raised in any trial - see
+below). `missing_final_action` is refused with `missing_final_action`, a
+schema/step-validation check that would fire identically on a sloppy honest
+submission. `path_traversal` is refused too, but not by the grader - see
+below.
+
+Two codes in `tests/grade.py` exist specifically to catch tampering -
+`_require_clean_verifier_dir()`'s `pre_existing_reward_file` and
+`_read_artifact()`'s `artifact_not_regular_file` (the symlink check). Neither
+fired in any of the eight trials run for this evidence. `pre_existing_reward_file`
+did not fire because `forged_reward` writes into its own container's
+`/logs/verifier`, and the separate verifier's `/logs/verifier` is created fresh
+by `main()` (`VERIFIER_DIR.mkdir(...)`) inside its own container, which never
+sees that write - the same isolation property §3 exists to demonstrate makes
+this particular tamper-specific check structurally unreachable by any fixture
+that respects the container boundary. `artifact_not_regular_file` did not fire
+because `path_traversal`'s dangling symlink crashed Harbor's own artifact
+re-upload before `grade.py` ever ran (§5), so the check inside the grader
+never got the chance to look at it. Put together: of the seven tampering
+fixtures (the eighth trial, `honest`, is the control, not an attack), zero
+were caught by a check written to detect tampering specifically; two were
+caught by generic submission/schema checks that also apply to a malformed
+honest run; four were accepted with the attack having zero effect on the
+score; and one crashed the trial before grading began.
 
 ## 4. Aggregation: missing rewards read as zero unless you write a custom metric
 
@@ -184,6 +209,37 @@ path is excluded from collection in the first place. That is scoped out
 of this feasibility pass; recorded here as a real, reproduced finding, not
 a hypothetical.
 
+**A second escape, same class, found by reading the grader rather than by
+running Harbor.** `main()` in `tests/grade.py` catches only its own
+`Refusal` exception:
+
+```python
+try:
+    _require_clean_verifier_dir()
+    records = _validate(_read_artifact())
+    ...
+except Refusal as refusal:
+    ...
+```
+
+`_read_artifact()` guards artifact size (`artifact_oversized` above
+`MAX_ARTIFACT_BYTES`, 64 KiB) before it decodes the file, but the size check
+is `size > MAX_ARTIFACT_BYTES`, not `>=`, so a file of exactly 64 KiB clears
+it. Any artifact containing a byte that is not valid UTF-8 (`b"\xff" * 65536`
+reproduces it, and so does a single stray non-UTF-8 byte at any size at or
+under the limit) then reaches `ARTIFACT.read_text(encoding="utf-8")`, which
+raises `UnicodeDecodeError` - not a `Refusal`, so `main()`'s `except` does
+not catch it. Verified directly
+against the committed `grade.py` (its functions called from a script, not
+through Harbor or Docker): the call raises uncaught, and neither
+`report.json` nor `reward.txt` is written - the same failure shape as
+`path_traversal`, a trial that ends without the grader's reason-coded
+contract, except this one lives entirely inside the grader's own Python
+rather than in Harbor's artifact-collection pipeline. No fixture in
+`sa_harbor_fixtures/scripts.py` currently exercises this path; it is a
+defect found by reading the code, not a result from any of the eight
+recorded trials.
+
 ## 6. Reference-doc drift confirmed against the installed package
 
 - **`schema_version`**: the reference doc's "follow the reference, not the
@@ -230,9 +286,20 @@ Within the boundary in §1:
   **zero effect** on the actual reward. The four "attack + honest
   submission" fixtures all score exactly the honest result.
 - A dangling-symlink artifact is not silently trusted either, but the
-  refusal path for it is an unhandled Harbor-side exception rather than
-  the grader's own reason-coded refusal (§5) - a real gap, reproduced
-  once, not closed by this task package as it stands.
+  path for it is an unhandled Harbor-side exception rather than the
+  grader's own reason-coded refusal (§5) - a real gap, reproduced once,
+  not closed by this task package as it stands. The grader's own
+  `artifact_not_regular_file` check, written for exactly this case, never
+  gets to run. A second, code-level escape in the same class - an
+  oversized-but-not-quite non-UTF-8 artifact raising an uncaught
+  `UnicodeDecodeError` past `main()`'s `except Refusal` - is verified by
+  direct inspection of `tests/grade.py` (§5); no fixture currently
+  exercises it.
+- Neither of the grader's two tamper-specific reason codes
+  (`pre_existing_reward_file`, `artifact_not_regular_file`) fired in any of
+  the eight trials. The two refusals that did fire (`artifact_missing`,
+  `missing_final_action`) are generic submission/schema checks, not
+  tamper detection - see §3.
 
 What this does **not** cover, and must not be read as covering:
 
@@ -273,6 +340,6 @@ follow-on work, not part of this feasibility/boundary check.
 | Toolchain required on Windows | Python 3.12 + `pip install harbor` + Docker Desktop with the WSL2 Linux-container backend; `no-network` mode is unavailable on this host (confirmed, not assumed) |
 | Separate verifier runs and receives only declared artifacts | Yes - confirmed by probe evidence across 8 trials, not by documentation alone |
 | Private state / future inputs stay outside the agent boundary | Yes, when the agent doesn't fabricate the paths itself (1 of 8 fixtures did, self-evidently, and still scored the honest result) |
-| Tampering fixtures refused | 7 of 8 cleanly (distinct reward/refusal code or provably zero-effect); 1 of 8 (`path_traversal`) refused via an unhandled infrastructure exception, not the grader's own contract - a genuine, reproduced gap |
+| Tampering fixtures' outcome (7 attack fixtures; `honest` is the control, not counted here) | 0 of 7 caught by a tamper-specific reason code - the grader's two dedicated checks (`pre_existing_reward_file`, `artifact_not_regular_file`) never fired. 2 of 7 (`forged_reward`, `missing_final_action`) refused on a generic submission/schema code that a malformed honest run would also trip. 4 of 7 were accepted (`accepted: true`) with the attack scoring no better than honest behavior - zero-effect, not refused. 1 of 7 (`path_traversal`) crashed the trial before `grade.py` ran, ungraded - a genuine, reproduced gap, not a refusal |
 | Replay through canonical engine + SharpeBench bridge | Not attempted - out of scope per this ticket, blocked on the shared evidence contract |
 | Isolation claim | Container/process boundary only; explicitly not a claim against kernel-level escape, network egress, or any non-Docker-Desktop provider |
