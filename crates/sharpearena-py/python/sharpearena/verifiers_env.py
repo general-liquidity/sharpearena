@@ -15,16 +15,29 @@ deflated Sharpe as a secondary objective. Failed or incomplete episodes receive 
 composite reward of -1, never credit for a favorable prefix. Their observed returns
 remain in the trace; no replacement decisions or unobserved bars are fabricated.
 
-Verified against ``verifiers`` 0.1.14: ``MultiTurnEnv.env_response(messages, state) ->
-Messages`` (mutating ``state`` in place), ``is_completed`` is ``@final`` (terminate via a
-``@vf.stop`` handler), and ``vf.Rubric(funcs=, weights=)`` filters reward-func args by
-signature.
+Verified against ``verifiers`` 0.3.1 (``VERIFIED_VERIFIERS_VERSION`` below, matching the
+CI pin in ``crates/sharpearena-py/ci-requirements.txt``): ``MultiTurnEnv.env_response(
+messages, state) -> Messages`` (mutating ``state`` in place), ``is_completed`` is
+``@final`` (terminate via a ``@vf.stop`` handler), and ``vf.Rubric(funcs=, weights=)``
+filters reward-func args by signature.
+
+0.3.1 ships a ``verifiers.v1`` stack alongside the unchanged ``verifiers.legacy`` v0
+stack this module targets; ``verifiers.legacy``'s top-level names (``MultiTurnEnv``,
+``stop``, ``cleanup``, ``Rubric``, ``UserMessage``, ``InfraError``, ...) are aliased
+back onto ``verifiers.<name>`` by a meta path finder, so code written against the 0.1.x
+API resolves unchanged (this module was re-run against 0.3.1, tests included, with no
+source changes and no deprecation warnings). :func:`_check_verifiers_capability` probes
+that surface structurally rather than trusting the version string, so a future release
+that drops or reshapes ``verifiers.legacy`` fails loudly here instead of deep inside a
+rollout.
 """
 
 from __future__ import annotations
 
+import inspect
 import json
 import math
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
 from typing import Any, Optional, Sequence
 
 import numpy as np
@@ -47,6 +60,11 @@ from .mandate import (
 )
 from .sharpearena_py import score_run  # the real SharpeBench scorer (pyo3)
 
+#: The ``verifiers`` release this module's rollout/rubric code was last verified
+#: against. Kept in sync with the CI pin (``ci-requirements.txt``) by
+#: ``tests/test_verifiers.py::test_verified_version_matches_ci_pin``.
+VERIFIED_VERIFIERS_VERSION = "0.3.1"
+
 try:  # pragma: no cover - exercised only when verifiers is installed
     import verifiers as vf
 
@@ -54,6 +72,70 @@ try:  # pragma: no cover - exercised only when verifiers is installed
 except Exception:  # noqa: BLE001 - any import failure means "not available"
     vf = None  # type: ignore[assignment]
     _HAS_VERIFIERS = False
+
+
+class UnsupportedVerifiersAPIError(RuntimeError):
+    """The installed ``verifiers`` package does not expose the v0/``MultiTurnEnv``
+    surface :class:`SharpeArenaVerifiersEnv` is built against. Not raised for a
+    missing install (that is ``verifiers is not installed``, handled separately) —
+    only when ``verifiers`` imports but its shape does not match. See INT-10 in
+    ``docs/integrations/inventory.md``.
+    """
+
+
+def _verifiers_capability_gaps(vf_module: Any) -> list[str]:
+    """Structural probe of exactly the ``vf.*`` surface this module calls: never a
+    version-string comparison. A legacy alias can outlive several releases
+    unchanged (see the module docstring), and pinning the check to a version
+    string would either false-positive on a compatible bump or miss a real one
+    that keeps the version number's shape but reshapes the surface."""
+    gaps: list[str] = []
+    multi_turn_env = getattr(vf_module, "MultiTurnEnv", None)
+    if multi_turn_env is None:
+        gaps.append("verifiers.MultiTurnEnv")
+    else:
+        env_response = getattr(multi_turn_env, "env_response", None)
+        if env_response is None:
+            gaps.append("MultiTurnEnv.env_response")
+        else:
+            params = set(inspect.signature(env_response).parameters)
+            if not {"messages", "state"}.issubset(params):
+                gaps.append("MultiTurnEnv.env_response(messages, state)")
+    for name in ("stop", "cleanup", "UserMessage", "InfraError", "XMLParser"):
+        if getattr(vf_module, name, None) is None:
+            gaps.append(f"verifiers.{name}")
+    rubric = getattr(vf_module, "Rubric", None)
+    if rubric is None:
+        gaps.append("verifiers.Rubric")
+    else:
+        try:
+            rubric_params = set(inspect.signature(rubric.__init__).parameters)
+        except (TypeError, ValueError):
+            rubric_params = set()
+        if not {"funcs", "weights"}.issubset(rubric_params):
+            gaps.append("Rubric(funcs=, weights=)")
+    return gaps
+
+
+def _check_verifiers_capability() -> None:
+    """Raise :class:`UnsupportedVerifiersAPIError` if the installed ``verifiers``
+    lacks the surface this module needs. Called before any rollout/rubric
+    machinery touches ``vf``, so a mismatch fails at the call site with a named
+    error rather than as a raw ``AttributeError``/``TypeError`` from inside
+    ``verifiers`` internals."""
+    gaps = _verifiers_capability_gaps(vf)
+    if not gaps:
+        return
+    try:
+        installed = _pkg_version("verifiers")
+    except PackageNotFoundError:
+        installed = "unknown"
+    raise UnsupportedVerifiersAPIError(
+        f"installed verifiers=={installed} is missing the surface "
+        f"SharpeArenaVerifiersEnv needs: {', '.join(gaps)}. Verified against "
+        f"verifiers=={VERIFIED_VERIFIERS_VERSION}'s legacy v0 API; see INT-10 in "
+        "docs/integrations/inventory.md."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -267,6 +349,7 @@ if _HAS_VERIFIERS:
             allow_short: bool = True,
             **kwargs: Any,
         ) -> None:
+            _check_verifiers_capability()
             if int(max_episode_bars) <= 0:
                 raise ValueError("max_episode_bars must be positive")
             super().__init__(**kwargs)
@@ -487,6 +570,7 @@ def load_environment(dataset: Any = None, **kwargs: Any):
             "verifiers is not installed. Install PrimeIntellect 'verifiers' to load "
             "this environment; the rest of the sharpearena package works without it."
         )
+    _check_verifiers_capability()
     n_symbols = int(kwargs.pop("n_symbols", 4))
     n_days = int(kwargs.pop("n_days", 120))
     n_windows = int(kwargs.pop("n_windows", 16))
@@ -538,4 +622,6 @@ __all__ = [
     "load_environment",
     "render_observation",
     "SharpeArenaVerifiersEnv",
+    "UnsupportedVerifiersAPIError",
+    "VERIFIED_VERIFIERS_VERSION",
 ]

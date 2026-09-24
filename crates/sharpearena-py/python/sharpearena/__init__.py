@@ -377,7 +377,9 @@ from .strategy_generation import (
 from .trace import SCHEMA_VERSION, RolloutTraceWriter, load_trace, trace_to_returns
 from .vector import SharpeArenaVectorEnv
 from .verifiers_env import (
+    VERIFIED_VERIFIERS_VERSION,
     SharpeArenaVerifiersEnv,
+    UnsupportedVerifiersAPIError,
     build_rubric,
     load_environment,
     mandate_reward,
@@ -513,6 +515,8 @@ __all__ = [
     "generalization_gap",
     "cross_regime_transfer",
     "SharpeArenaVerifiersEnv",
+    "UnsupportedVerifiersAPIError",
+    "VERIFIED_VERIFIERS_VERSION",
     "load_environment",
     "build_rubric",
     "build_scenario_dataset",

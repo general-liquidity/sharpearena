@@ -98,7 +98,7 @@ suite passed under it (1893 passed, 2 skipped).
 | h5py | via the Minari extra | 3.16.0 | 3.13.0 |
 | jax / jaxlib | via the Minari extra | 0.11.1 | 0.6.1 |
 | pillow | via the Minari extra | 12.3.0 | 11.2.1 |
-| verifiers | extra, unpinned | 0.3.1 | 0.1.14 |
+| verifiers | extra, `>=0.3.1,<0.4` | 0.3.1 | 0.1.14 (this row only; see the INT-10 caveat below for the separate 0.3.1 pass) |
 | mcp | extra, unpinned | 1.30.0 | not installed |
 | pytest | not shipped | 9.1.1 | 8.4.2 |
 | OS / architecture | not constrained | Linux runners | Windows 11 26220, x86-64 (AMD64) |
@@ -107,9 +107,27 @@ Caveats a later ticket must not read past:
 
 - The Python floor is the base package's. It does not carry to any optional learner,
   and each extra needs its own range.
-- `verifiers_env.py` states it was verified against `verifiers` 0.1.14, which is the
-  version installed here; CI pins 0.3.1. Those are different APIs, and INT-10 owns the
-  reconciliation.
+- INT-10 is closed: `verifiers_env.py` now states it was verified against `verifiers`
+  0.3.1, matching the CI pin. The module targets 0.3.1's `verifiers.legacy` v0 API
+  (`MultiTurnEnv`, `stop`/`cleanup`, `Rubric`), which 0.3.1 aliases transparently onto
+  the top-level `verifiers.*` names — the same surface the module was previously
+  verified against at 0.1.14 — so the fix was re-verifying and re-pinning, not a
+  rewrite. The 0.3.1 pass built a separate isolated venv (`verifiers==0.3.1`, plus
+  `numpy`, `gymnasium`, `pytest`, `jsonschema`, but not `pettingzoo`/`minari`/`mcp`,
+  which this narrower venv did not need) against this tree's already-built extension
+  and ran the full `tests/` suite except `test_hud_local.py` (unrelated to `verifiers`,
+  needs the separate `hud` package and Docker): 1811 passed, 65 skipped, no source
+  changes, no deprecation warnings. The 65 skips are the `pettingzoo`/`minari`/`mcp`
+  tests this venv could not exercise, not anything about `verifiers`; the two
+  `verifiers`-specific files (`test_verifiers.py`, `test_verifiers_episode_outcomes.py`,
+  82 tests) are part of that 1811. This is a separate, narrower-dependency venv from
+  the one the "Verified here" column above documents (which predates this pass and
+  used `verifiers` 0.1.14 among a wider set of extras), so that column keeps its
+  0.1.14 value rather than implying that exact environment was rerun.
+  `tests/test_verifiers.py::test_verified_version_matches_ci_pin` fails CI if the
+  module's claimed version and the pin ever diverge again, and
+  `UnsupportedVerifiersAPIError` (a structural capability probe, not a version-string
+  check) fails loudly if a future `verifiers` release drops or reshapes that surface.
 - Gymnasium's three autoreset modes exist as an enum only from 1.1. The guarded import
   in `vector.py` is what keeps 1.0 working, and a pinned combination must record the
   Gymnasium version and the mode together.

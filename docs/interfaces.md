@@ -49,10 +49,13 @@ those.
 
 `sharpearena.verifiers_env` is a multi-turn `verifiers` environment: one bar per
 turn, a parsed `<action>` decision, and a reward built from the real SharpeBench
-kernel. The module docstring states it was verified against `verifiers` 0.1.14.
-This example ran against that same version, installed in this tree; CI pins 0.3.1,
-which is a different API, so run this against 0.1.14 until that gap is closed
-(tracked as INT-10 in `docs/integrations/inventory.md`).
+kernel. The module docstring states it was verified against `verifiers` 0.3.1,
+which is also the CI pin (INT-10, `docs/integrations/inventory.md`, is closed).
+0.3.1 keeps the same v0/`MultiTurnEnv` API this module targets as
+`verifiers.legacy`, aliased transparently onto the top-level `verifiers.*` names, so
+no source change was needed; a structural capability probe
+(`sharpearena.verifiers_env.UnsupportedVerifiersAPIError`) now guards that surface so
+a future release that drops or reshapes it fails loudly instead of silently.
 
 ```python
 from sharpearena.verifiers_env import load_environment
@@ -62,7 +65,7 @@ print(type(env).__name__)
 print(env.dataset)
 ```
 
-Run against `verifiers` 0.1.14, installed with `pip install "sharpearena[verifiers]"`.
+Run against `verifiers` 0.3.1, installed with `pip install "sharpearena[verifiers]"`.
 Output:
 
 ```
