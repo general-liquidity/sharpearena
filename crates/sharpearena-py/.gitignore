@@ -5,4 +5,7 @@
 /python/sharpearena/sharpearena_py*.so
 .pytest_cache/
 *.whl
-Cargo.lock
+
+# Cargo.lock is COMMITTED here, like the workspace's. This crate is excluded from the
+# workspace, so it resolves its own graph, and that graph is what the published wheel is
+# built from: ignoring it meant every wheel came from a fresh unreviewed resolution.

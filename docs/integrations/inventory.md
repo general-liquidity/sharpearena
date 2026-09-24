@@ -98,7 +98,7 @@ suite passed under it (1893 passed, 2 skipped).
 | h5py | via the Minari extra | 3.16.0 | 3.13.0 |
 | jax / jaxlib | via the Minari extra | 0.11.1 | 0.6.1 |
 | pillow | via the Minari extra | 12.3.0 | 11.2.1 |
-| verifiers | extra, unpinned | 0.3.1 | 0.1.14 |
+| verifiers | extra, `verifiers>=0.3.1,<0.4` (INT-18) | 0.3.1 | 0.1.14 |
 | mcp | extra, unpinned | 1.30.0 | not installed |
 | pytest | not shipped | 9.1.1 | 8.4.2 |
 | OS / architecture | not constrained | Linux runners | Windows 11 26220, x86-64 (AMD64) |
@@ -115,7 +115,31 @@ Caveats a later ticket must not read past:
   Gymnasium version and the mode together.
 - Minari's PyPI release is 0.5.3 while 0.5.4 is tagged upstream, and their NumPy floors
   differ. Pin what is installed, not what a changelog describes.
-- No Linux or macOS run backs this row. The verified column is one machine.
+- This table is the source-tree pin/verified split; the row above it (`Python`, "not
+  pinned") is about what the source-tree `python` job installs, not the range CI holds
+  the published wheel to.
+
+### Installed-wheel compatibility matrix (INT-18)
+
+The table above is what the source-tree suite runs against. It says nothing about the
+*installed* wheel: a source checkout can shadow a broken package layout, an extra can
+resolve fine in one graph and fail in another, and a guard written for "the dependency
+is absent" is untested wherever every extra happens to be installed already. Three CI
+jobs, generated from `crates/sharpearena-py/pyproject.toml` rather than hand-listed so
+a newly declared extra gets a cell automatically, close that gap:
+
+| Job | Covers |
+|---|---|
+| `wheel-install-import` | Builds the wheel with `maturin build --locked` and installs it into a clean venv outside the checkout, on the declared floor (3.9), the version the rest of CI uses (3.12), and the newest released interpreter (3.14), all on Linux; then 3.12 on macOS and Windows. Drives the native binding and the packaged Gymnasium adapter. |
+| `wheel-no-extras` | Installs the bare wheel with none of the four optional extras present, asserts the base environment steps, and asserts every guarded adapter module (`pettingzoo_env`, `minari_export`, `mcp_server`, `verifiers_env`) imports and refuses **by name** rather than dying on a bare `ImportError`. This is what makes "every adapter is guarded" a tested claim instead of an assumption read off the source. |
+| `wheel-extras` | One cell per declared extra (`verifiers`, `minari`, `pettingzoo`, `mcp`), installing `sharpearena[<extra>]` from the built wheel and running the real adapter behind it: a PettingZoo tournament, a Minari export, the MCP tool list, the verifiers environment build. |
+
+Representative rather than combinatorial: the interpreters between 3.9 and 3.14 differ
+from each other in nothing this package touches, so the OS axis and the version axis
+each get covered once rather than crossed. `scripts/optional_extras.py` is the single
+registry the extras job, the no-extras job and `check-packaged-adapter.py` all read
+from; `validate_coverage()` refuses to run when a declared extra has no exercise or
+guard entry, so the matrix cannot quietly shrink as the package grows.
 
 The INT-02 tests were additionally run against an installed wheel
 (`sharpearena-0.31.0-cp312-cp312-win_amd64.whl`, built from this tree) in a clean

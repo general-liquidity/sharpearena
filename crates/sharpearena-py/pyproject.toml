@@ -35,13 +35,27 @@ sharpearena-strategy-search = "sharpearena.strategy_cli:main"
 sharpearena-paper = "sharpearena.paper_cli:main"
 
 [project.optional-dependencies]
-verifiers = ["verifiers"]
+# Bounded to the range CI installs and exercises. Unbounded, `pip install
+# "sharpearena[verifiers]"` resolved to whatever was newest, which is not the API this
+# adapter is tested against: the module docstring and `docs/interfaces.md` record
+# verification at 0.1.14, `ci-requirements.txt` pins 0.3.1, and the source suite plus the
+# installed-wheel extras matrix both run against 0.3.1. Which version the adapter should
+# target is INT-10's question; this bound only stops the declared extra resolving to one
+# nothing here has run.
+verifiers = ["verifiers>=0.3.1,<0.4"]
 # minari keeps h5py behind its own `hdf5` extra and jax behind `create`, and its HDF5
 # storage imports PIL without declaring pillow at all, so a bare `minari` reproduces
 # the environment CI had while every Minari test silently skipped.
 minari = ["minari[create,hdf5]", "pillow"]
 pettingzoo = ["pettingzoo"]
-mcp = ["mcp"]
+# Bounded below 2.0, verified against the INT-18 installed-wheel matrix: an unbounded
+# `mcp = ["mcp"]` resolved to 2.2.0, whose `mcp.server.fastmcp` import shape changed
+# enough that `mcp_server.py`'s own guard could not import `FastMCP`, was caught by its
+# broad `except Exception`, and reported "mcp is not installed" while mcp was installed.
+# 1.30.0, the version `ci-requirements.txt` pins and the source suite runs against,
+# imports cleanly; this bound is what stops the declared extra resolving to a release
+# nothing here has run against.
+mcp = ["mcp>=1.30.0,<2.0"]
 
 # Defaults for `vf-eval sharpearena` (read by verifiers' eval script from this table).
 # A bare `vf-eval sharpearena` then scores 16 scenarios x 3 rollouts of the v1 taskset.

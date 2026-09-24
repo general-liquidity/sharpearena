@@ -1,0 +1,333 @@
+"""The one place that says which optional extras exist and what proves each one.
+
+`crates/sharpearena-py/pyproject.toml` declares the extras. This module declares the
+coverage for them, and :func:`validate_coverage` refuses when the two disagree. An extra
+added to the package without an entry here fails CI instead of going quietly uncovered,
+which is the failure mode a hand-maintained list reproduces every time it goes stale.
+
+The exercises run against whatever `sharpearena` the interpreter resolves, so they belong
+in a virtual environment holding an installed wheel and nothing from the checkout. None of
+them calls a model, reaches the network or opens a window.
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+from typing import Callable, Dict, List, Tuple
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+PYPROJECT = REPO_ROOT / "crates" / "sharpearena-py" / "pyproject.toml"
+
+# Every distribution an extra may require, mapped to the names it is imported under.
+# A requirement whose distribution is missing from this table fails validation, so
+# widening an existing extra is as visible as adding a new one.
+DIST_IMPORTS: Dict[str, Tuple[str, ...]] = {
+    "verifiers": ("verifiers",),
+    "minari": ("minari",),
+    "pillow": ("PIL",),
+    "pettingzoo": ("pettingzoo",),
+    "mcp": ("mcp",),
+}
+
+# Not declared by any extra, and not a dependency of anything the package imports. The
+# adapter checks assert its absence so "no accelerator is needed" stays a tested claim
+# rather than an assumption about what a runner happens to have.
+ACCELERATOR_IMPORTS: Tuple[str, ...] = ("torch", "jax")
+
+_REQUIREMENT_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*")
+
+
+def read_extras() -> Dict[str, List[str]]:
+    """`[project.optional-dependencies]` as declared, read with a real TOML parser."""
+    try:
+        import tomllib
+    except ModuleNotFoundError as error:  # Python < 3.11
+        raise SystemExit(
+            "reading the declared extras needs tomllib (Python 3.11+); run this check "
+            "on a newer interpreter, or pass the names in explicitly"
+        ) from error
+    with PYPROJECT.open("rb") as handle:
+        document = tomllib.load(handle)
+    return dict(document["project"].get("optional-dependencies", {}))
+
+
+def requirement_distribution(requirement: str) -> str:
+    """`minari[create,hdf5]` -> `minari`; `numpy>=1.21` -> `numpy`."""
+    match = _REQUIREMENT_NAME.match(requirement.strip())
+    if match is None:
+        raise SystemExit(f"cannot read a distribution name out of {requirement!r}")
+    return match.group(0).lower().replace("_", "-")
+
+
+def optional_import_names() -> List[str]:
+    """Every module name an installed extra would make importable."""
+    names: List[str] = []
+    for requirements in read_extras().values():
+        for requirement in requirements:
+            for name in DIST_IMPORTS[requirement_distribution(requirement)]:
+                if name not in names:
+                    names.append(name)
+    return sorted(names)
+
+
+def extra_import_names(extra: str) -> List[str]:
+    requirements = read_extras()[extra]
+    names: List[str] = []
+    for requirement in requirements:
+        for name in DIST_IMPORTS[requirement_distribution(requirement)]:
+            if name not in names:
+                names.append(name)
+    return names
+
+
+def validate_coverage() -> List[str]:
+    """Refuse a declared extra with no exercise, an exercise for no declared extra, and a
+    requirement whose distribution this module cannot map to an import name."""
+    declared = read_extras()
+    covered = set(EXERCISES)
+    uncovered = sorted(set(declared) - covered)
+    if uncovered:
+        raise SystemExit(
+            f"pyproject declares {', '.join(uncovered)} with no entry in EXERCISES; add "
+            "one so the extra is actually exercised against the installed wheel"
+        )
+    orphaned = sorted(covered - set(declared))
+    if orphaned:
+        raise SystemExit(
+            f"EXERCISES covers {', '.join(orphaned)}, which pyproject no longer declares"
+        )
+    for extra, requirements in declared.items():
+        for requirement in requirements:
+            distribution = requirement_distribution(requirement)
+            if distribution not in DIST_IMPORTS:
+                raise SystemExit(
+                    f"the {extra} extra requires {distribution!r}, which DIST_IMPORTS "
+                    "cannot map to an import name; add it so the absence check covers it"
+                )
+    missing_guards = sorted(set(declared) - set(GUARDS))
+    if missing_guards:
+        raise SystemExit(
+            f"no guard check for {', '.join(missing_guards)}; the base package is supposed "
+            "to refuse by name when an extra is absent, and that has to be asserted"
+        )
+    return sorted(declared)
+
+
+# ---------------------------------------------------------------------------
+# What each extra does when it is installed
+# ---------------------------------------------------------------------------
+
+
+def _exercise_pettingzoo() -> str:
+    from pettingzoo import ParallelEnv
+
+    from sharpearena.pettingzoo_env import MultiAgentSharpeArenaEnv
+
+    env = MultiAgentSharpeArenaEnv(n_agents=2, n_symbols=4, n_days=30, seed=1)
+    if not isinstance(env, ParallelEnv):
+        raise SystemExit("the multi-agent env is not a pettingzoo ParallelEnv")
+    env.reset(seed=1)
+    for agent in env.agents:
+        env.action_space(agent).seed(0)
+    rewards: dict = {}
+    for _ in range(5):
+        actions = {agent: env.action_space(agent).sample() for agent in env.agents}
+        _observations, rewards, _terminations, _truncations, _infos = env.step(actions)
+    if set(rewards) != set(env.possible_agents):
+        raise SystemExit(f"rewards cover {sorted(rewards)}, not the roster")
+    return f"stepped a {len(env.possible_agents)}-agent tournament: {sorted(rewards)}"
+
+
+def _exercise_minari() -> str:
+    import tempfile
+
+    from sharpearena import SharpeArenaEnv
+    from sharpearena.dataset import EVAL_SEED_BASE
+    from sharpearena.minari_export import to_minari_train_test
+    from sharpearena.trace import RolloutTraceWriter
+
+    def record(seed: int, path: Path) -> SharpeArenaEnv:
+        env = SharpeArenaEnv(n_symbols=4, n_days=30, seed=seed)
+        observation, _info = env.reset(seed=seed)
+        writer = RolloutTraceWriter(str(path), config={"n_symbols": 4, "n_days": 30})
+        env.action_space.seed(seed)
+        for step in range(10):
+            action = env.action_space.sample()
+            observation, reward, terminated, truncated, info = env.step(action)
+            writer.record_step(
+                step=step,
+                observation=observation,
+                decision=action,
+                reward=reward,
+                info=info,
+            )
+            if terminated or truncated:
+                break
+        writer.finalize()
+        writer.close()
+        return env
+
+    with tempfile.TemporaryDirectory() as tmp:
+        directory = Path(tmp)
+        train_env = record(1, directory / "train.jsonl")
+        record(EVAL_SEED_BASE, directory / "test.jsonl")
+        # A unique id per run: Minari refuses to recreate an id already on disk, and a
+        # rerun of this job on the same runner image would otherwise fail on that rather
+        # than on anything about the package.
+        dataset_id = f"sharpearena/ci-{directory.name.lower()}"
+        train, test = to_minari_train_test(
+            str(directory / "train.jsonl"),
+            str(directory / "test.jsonl"),
+            f"{dataset_id}-v0",
+            observation_space=train_env.observation_space,
+            action_space=train_env.action_space,
+        )
+    if train.total_episodes != 1 or test.total_episodes != 1:
+        raise SystemExit(
+            f"exported {train.total_episodes} train and {test.total_episodes} test "
+            "episodes, expected one of each"
+        )
+    if not train.id.endswith("-train-v0") or not test.id.endswith("-test-v0"):
+        raise SystemExit(f"unexpected dataset ids: {train.id}, {test.id}")
+    return f"exported {train.id} and {test.id} over disjoint seed bands"
+
+
+def _exercise_mcp() -> str:
+    import asyncio
+
+    from sharpearena.mcp_server import build_server
+
+    server = build_server(env_kwargs={"n_symbols": 4, "n_days": 30, "seed": 1})
+    tools = {tool.name for tool in asyncio.run(server.list_tools())}
+    if tools != {"reset", "step", "spec"}:
+        raise SystemExit(f"the MCP server exposes {sorted(tools)}, not reset/step/spec")
+    return "built the MCP server and listed reset, step and spec with no transport"
+
+
+def _exercise_verifiers() -> str:
+    import verifiers as vf
+
+    from sharpearena import verifiers_env
+
+    if not verifiers_env._HAS_VERIFIERS:
+        raise SystemExit("verifiers is installed but the module did not bind to it")
+    if not issubclass(verifiers_env.SharpeArenaVerifiersEnv, vf.MultiTurnEnv):
+        raise SystemExit(
+            "SharpeArenaVerifiersEnv is the placeholder class, so the real one did not "
+            "compile against the installed verifiers"
+        )
+    env = verifiers_env.load_environment(
+        n_windows=2, n_symbols=4, n_days=30, max_episode_bars=10
+    )
+    rows = len(env.dataset)
+    if rows != 2:
+        raise SystemExit(f"the built dataset holds {rows} rows, expected 2")
+    return f"loaded the multi-turn environment over {rows} scenario rows"
+
+
+# ---------------------------------------------------------------------------
+# What the base package does when the extra is absent
+# ---------------------------------------------------------------------------
+
+
+def _expect_refusal(call: Callable[[], object], fragment: str, what: str) -> str:
+    try:
+        call()
+    except RuntimeError as error:
+        if fragment not in str(error):
+            raise SystemExit(
+                f"{what} raised a RuntimeError that does not name the missing "
+                f"dependency: {error}"
+            ) from None
+        return f"{what} refused with {str(error).split('.')[0]!r}"
+    except BaseException as error:  # noqa: BLE001 - the type is the finding
+        raise SystemExit(
+            f"{what} raised {type(error).__name__} instead of the guarded RuntimeError: "
+            f"{error}"
+        ) from None
+    raise SystemExit(f"{what} succeeded with the dependency absent; the guard is gone")
+
+
+def _guard_pettingzoo() -> List[str]:
+    from sharpearena.pettingzoo_env import MultiAgentSharpeArenaEnv, make_aec_env
+
+    return [
+        _expect_refusal(
+            lambda: MultiAgentSharpeArenaEnv(n_agents=2),
+            "pettingzoo is not installed",
+            "MultiAgentSharpeArenaEnv(...)",
+        ),
+        _expect_refusal(
+            lambda: make_aec_env(n_agents=2),
+            "pettingzoo is not installed",
+            "make_aec_env(...)",
+        ),
+    ]
+
+
+def _guard_minari() -> List[str]:
+    from sharpearena.minari_export import to_minari
+
+    return [
+        _expect_refusal(
+            lambda: to_minari(
+                [], "sharpearena/guard-v0", observation_space=None, action_space=None
+            ),
+            "minari is not installed",
+            "to_minari(...)",
+        )
+    ]
+
+
+def _guard_mcp() -> List[str]:
+    from sharpearena.mcp_server import build_server
+
+    return [
+        _expect_refusal(
+            build_server,
+            "mcp is not installed",
+            "build_server()",
+        )
+    ]
+
+
+def _guard_verifiers() -> List[str]:
+    from sharpearena.verifiers_env import SharpeArenaVerifiersEnv, load_environment
+
+    return [
+        _expect_refusal(
+            load_environment,
+            "verifiers is not installed",
+            "load_environment()",
+        ),
+        _expect_refusal(
+            SharpeArenaVerifiersEnv,
+            "verifiers is not installed",
+            "SharpeArenaVerifiersEnv(...)",
+        ),
+    ]
+
+
+EXERCISES: Dict[str, Callable[[], str]] = {
+    "pettingzoo": _exercise_pettingzoo,
+    "minari": _exercise_minari,
+    "mcp": _exercise_mcp,
+    "verifiers": _exercise_verifiers,
+}
+
+GUARDS: Dict[str, Callable[[], List[str]]] = {
+    "pettingzoo": _guard_pettingzoo,
+    "minari": _guard_minari,
+    "mcp": _guard_mcp,
+    "verifiers": _guard_verifiers,
+}
+
+# The adapter modules that carry a guard. Importing each of them has to work with no
+# extra installed, which is a separate claim from the guard refusing when called.
+GUARDED_MODULES: Tuple[str, ...] = (
+    "sharpearena.pettingzoo_env",
+    "sharpearena.minari_export",
+    "sharpearena.mcp_server",
+    "sharpearena.verifiers_env",
+)
