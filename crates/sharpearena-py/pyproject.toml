@@ -35,7 +35,13 @@ sharpearena-strategy-search = "sharpearena.strategy_cli:main"
 sharpearena-paper = "sharpearena.paper_cli:main"
 
 [project.optional-dependencies]
-verifiers = ["verifiers"]
+# sharpearena.verifiers_env targets the `verifiers.legacy` v0 API (MultiTurnEnv,
+# stop/cleanup, Rubric), aliased transparently onto the top-level `verifiers.*` names.
+# Verified at 0.3.1 (matches the CI pin); the floor excludes 0.1.x/0.2.x, which this
+# tree has not run the suite against, and the ceiling stops at the next major so a
+# release that drops the legacy alias is not installed silently. See INT-10 in
+# docs/integrations/inventory.md.
+verifiers = ["verifiers>=0.3.1,<0.4"]
 # minari keeps h5py behind its own `hdf5` extra and jax behind `create`, and its HDF5
 # storage imports PIL without declaring pillow at all, so a bare `minari` reproduces
 # the environment CI had while every Minari test silently skipped.

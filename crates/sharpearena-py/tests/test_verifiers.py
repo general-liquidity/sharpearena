@@ -5,6 +5,8 @@ Skipped when ``verifiers`` is not installed; the rest of the package works witho
 
 import asyncio
 import json
+import re
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -38,7 +40,9 @@ from sharpearena.rewards import (
     turnover_penalized,
 )
 from sharpearena.verifiers_env import (
+    VERIFIED_VERIFIERS_VERSION,
     SharpeArenaVerifiersEnv,
+    UnsupportedVerifiersAPIError,
     build_rubric,
     deflated_sharpe_reward,
     load_environment,
@@ -47,6 +51,11 @@ from sharpearena.verifiers_env import (
     process_check_reward,
     realized_return_reward,
 )
+from sharpearena.verifiers_env import (
+    _check_verifiers_capability,
+    _verifiers_capability_gaps,
+)
+import sharpearena.verifiers_env as verifiers_env_module
 
 RETS = [0.01, -0.005, 0.012, 0.003, -0.001, 0.008, -0.002, 0.006]
 
@@ -585,3 +594,86 @@ def test_build_rubric_and_load_environment_thread_reward_scheme():
     # default keeps the original realized-return primary (back-compat).
     base = load_environment(n_windows=2, n_symbols=2, n_days=20)
     assert "realized_return_reward" in _func_names(base.rubric)
+
+
+def test_verified_version_matches_ci_pin():
+    """INT-10: the module's claimed-verified ``verifiers`` version must equal the CI
+    pin, or CI is exercising an API this module was never checked against. Catches
+    the exact drift this ticket closed if either side moves without the other."""
+    ci_requirements = Path(__file__).resolve().parents[1] / "ci-requirements.txt"
+    text = ci_requirements.read_text(encoding="utf-8")
+    match = re.search(r"^verifiers==(\S+)$", text, re.MULTILINE)
+    assert match is not None, "ci-requirements.txt must pin verifiers=="
+    assert match.group(1) == VERIFIED_VERIFIERS_VERSION, (
+        f"ci-requirements.txt pins verifiers=={match.group(1)} but "
+        f"verifiers_env.VERIFIED_VERIFIERS_VERSION says {VERIFIED_VERIFIERS_VERSION!r} "
+        "was verified; update whichever one is stale and re-run the suite."
+    )
+
+
+def test_capability_check_passes_for_installed_verifiers():
+    """The installed ``verifiers`` (the CI pin) must satisfy the structural probe;
+    if this fails, the version pin moved to a release SharpeArenaVerifiersEnv was
+    never actually run against."""
+    _check_verifiers_capability()
+
+
+def test_capability_probe_flags_every_required_symbol_on_a_bare_module():
+    """A module with none of the required names reports every gap, not a subset —
+    the probe is exhaustive, not shortcut on the first miss."""
+
+    class _BareModule:
+        pass
+
+    gaps = _verifiers_capability_gaps(_BareModule())
+    for expected in (
+        "verifiers.MultiTurnEnv",
+        "verifiers.stop",
+        "verifiers.cleanup",
+        "verifiers.UserMessage",
+        "verifiers.InfraError",
+        "verifiers.XMLParser",
+        "verifiers.Rubric",
+    ):
+        assert expected in gaps
+
+
+def test_capability_probe_flags_reshaped_rubric_without_flagging_the_rest():
+    """A ``Rubric`` that dropped ``funcs``/``weights`` is caught specifically — the
+    probe checks shape, not just presence — while everything else still passes."""
+
+    class _ReshapedRubric:
+        def __init__(self, callables=None):
+            pass
+
+    class _PartialModule:
+        MultiTurnEnv = vf.MultiTurnEnv
+        stop = vf.stop
+        cleanup = vf.cleanup
+        UserMessage = vf.UserMessage
+        InfraError = vf.InfraError
+        XMLParser = vf.XMLParser
+        Rubric = _ReshapedRubric
+
+    gaps = _verifiers_capability_gaps(_PartialModule())
+    assert gaps == ["Rubric(funcs=, weights=)"]
+
+
+def test_check_verifiers_capability_raises_named_error_not_a_silent_fallback():
+    """A verifiers install missing the required surface must raise
+    :class:`UnsupportedVerifiersAPIError` naming the gaps, never fall back to
+    silently building an env that would score rewards differently. Restores the
+    real module afterward so later tests still exercise the installed verifiers."""
+
+    class _BareModule:
+        pass
+
+    original = verifiers_env_module.vf
+    verifiers_env_module.vf = _BareModule()
+    try:
+        with pytest.raises(UnsupportedVerifiersAPIError, match="MultiTurnEnv"):
+            _check_verifiers_capability()
+    finally:
+        verifiers_env_module.vf = original
+    # the restore worked; the real check passes again.
+    _check_verifiers_capability()

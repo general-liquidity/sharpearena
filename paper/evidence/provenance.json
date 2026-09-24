@@ -212,7 +212,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "3b9f7862caa5831c06d2c6916688927359f6abde",
+  "generated_at_head": "ad5f4c33244422e0f7d98e3b36e143de29b69277",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -254,11 +254,11 @@
     },
     {
       "path": "crates/sharpearena-py/pyproject.toml",
-      "sha256": "c4b8e1e76317d1587313a2106278a5d83f4727071460e3fb644751d1d07e27a1"
+      "sha256": "da620b749016bc09a108912f6bde004fd04926af440f5296930ffbc81df49391"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/__init__.py",
-      "sha256": "cd9850252c7db2ab6f5bb9936084c56b8dd166512869ca47818761a9c2dc7ae5"
+      "sha256": "89277946ac5e8b0cff74e2091e57b904e3e4cf30f307bf4da04958f3824ebf72"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/_action_validation.py",
@@ -582,7 +582,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/verifiers_env.py",
-      "sha256": "922dbcb9520f6ed686ffd494ea180c6f17d9c5608ae244ea7d6231c3cf17d83e"
+      "sha256": "0394570fef76b52044ff5f625eec0ae1c2e941d680b9a089e53cf8d964a29447"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/wrappers.py",
@@ -954,6 +954,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "0bf6c749f7145e3123d52ef2392fb2473042e4a90d2c44c0157d22b57ab984fb",
+  "source_snapshot_sha256": "48954b9b18d93cd6069881ef9559d57467fd83d356570a70d30d1f88b7fbecc0",
   "validator": "paper/src/check-provenance.py"
 }

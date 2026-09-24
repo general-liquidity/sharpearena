@@ -168,5 +168,7 @@ These need an owner decision and block only the routes named:
    and INT-07.
 3. **What L2 completion means per route**, which the plan itself lists as unresolved.
    `AttemptCounts` gives the shape of the evidence but not the threshold.
-4. **The `verifiers` version.** The module states 0.1.14 and CI pins 0.3.1. Until INT-10
-   reconciles them, no verifiers-dependent claim should name a single supported version.
+4. ~~**The `verifiers` version.**~~ Settled by INT-10: the module now states 0.3.1,
+   matching the CI pin, and `pyproject.toml`'s `verifiers` extra carries a matching
+   `>=0.3.1,<0.4` bound. A version-pin drift test guards against this reopening
+   silently.
