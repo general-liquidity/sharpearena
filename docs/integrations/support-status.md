@@ -61,7 +61,7 @@ Ray rollout.
 |---|---|---|
 | CleanRL | Not supported | [CleanRL: dependency ranges don't intersect](#cleanrl-dependency-ranges-dont-intersect), below. |
 | <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/hud-dark.svg"><img src="../assets/logos/hud.svg" alt="" height="14"></picture> HUD | Local feasibility only, not a supported integration | [HUD: a local feasibility check, now in the tree](#hud-a-local-feasibility-check-now-in-the-tree), below. |
-| <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/harbor-dark.png"><img src="../assets/logos/harbor.png" alt="" height="13"></picture> Harbor | Local feasibility only, not a supported integration | `integrations/harbor/`, recorded in [INT-09](INT-09-harbor-local-feasibility.md). A local job ran end to end under Harbor 0.23.0 on Docker Desktop over WSL2 with a separate-container verifier, and seven of eight tampering fixtures are refused. The evidence covers that one host: it is not evidence against kernel-level container escape, and network egress is untested because `no-network` is unavailable there. Harbor's built-in job aggregation counts a missing or crashed reward as 0, so a custom metric is required before any job-level number means what it appears to. |
+| <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/harbor-dark.png"><img src="../assets/logos/harbor.png" alt="" height="13"></picture> Harbor | Local feasibility only, not a supported integration | `integrations/harbor/`, recorded in [INT-09](INT-09-harbor-local-feasibility.md). A local job ran end to end under Harbor 0.23.0 on Docker Desktop over WSL2 with a separate-container verifier. Of the seven tampering fixtures run (an eighth, honest, trial is the control), none was caught by a tamper-specific reason code - the grader's two dedicated checks never fired; two were refused on a generic submission/schema code; four were accepted with the attack scoring no better than an honest run; one crashed the trial before grading. The evidence covers that one host: it is not evidence against kernel-level container escape, and network egress is untested because `no-network` is unavailable there. Harbor's built-in job aggregation counts a missing or crashed reward as 0, so a custom metric is required before any job-level number means what it appears to. |
 | PufferLib | Ruled out | [Ruled out: PufferLib and EnvPool](#ruled-out-pufferlib-and-envpool), below. |
 | <img src="../assets/logos/envpool.svg" alt="" height="12"> EnvPool | Ruled out | [Ruled out: PufferLib and EnvPool](#ruled-out-pufferlib-and-envpool), below. |
 
@@ -141,11 +141,15 @@ full record is in [INT-09](INT-09-harbor-local-feasibility.md).
 What the check established, on one host and no more: a local job ran end to end on Docker Desktop over WSL2 with Harbor
 v0.23.0, completing in about 83 seconds with the recorded reward. A separate verifier
 container ran, and in the fixtures that tested it, the private evaluator files and
-grader were unreachable from the agent's own container. Of eight tampering fixtures,
-seven were refused or scored no better than an honest run, four of those by scoring
-exactly the honest reward. One fixture (path traversal) was refused by an unhandled
-exception during artifact re-upload rather than by the grader's own reason-coded
-contract, which that check records as a real gap, not a pass.
+grader were unreachable from the agent's own container. Of the seven tampering
+fixtures run (an eighth trial, honest, is the control, not an attack), none was
+caught by a reason code written to detect tampering specifically - the grader's two
+dedicated checks never fired in any trial. Two were refused on a generic
+submission/schema code that a malformed honest run would also trip; four were
+accepted, the attack scoring no better than an honest run; one (path traversal)
+crashed the trial before grading, on an unhandled exception during artifact
+re-upload rather than the grader's own reason-coded contract, which that check
+records as a real gap, not a pass.
 
 That check does not cover native Linux, Windows containers, or any cloud provider; it
 is Docker Desktop on WSL2 only. It is not evidence against kernel-level container
