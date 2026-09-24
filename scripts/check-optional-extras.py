@@ -5,21 +5,28 @@ Three modes, all driven by the registry in `scripts/optional_extras.py`, which i
 validated against `crates/sharpearena-py/pyproject.toml` on every run:
 
 ``--emit-matrix``
-    Print the declared extras and the import names they bring, as JSON, and write them
-    to ``$GITHUB_OUTPUT`` when CI set it. The extras leg of the compatibility matrix is
+    Print the *installable* extras (declared extras minus ``INSTALL_MATRIX_EXCLUDED``)
+    and the import names any declared extra brings, as JSON, and write them to
+    ``$GITHUB_OUTPUT`` when CI set it. The extras leg of the compatibility matrix is
     generated from this, so a newly declared extra gets a cell without anyone editing
-    the workflow.
+    the workflow, unless it is heavy enough to be recorded as excluded instead (sb3 and
+    torchrl, currently, both for pulling torch).
 
 ``--extra NAME``
     Assert the extra's dependencies are importable, then run the real adapter behind it
     against the installed package: a PettingZoo tournament, a Minari export, the MCP
     tool list, the verifiers environment build. No model call, no network, no window.
+    Refuses with the recorded reason for a declared-but-excluded extra (sb3, torchrl)
+    rather than silently doing nothing.
 
 ``--none``
     Assert that nothing any extra would install is importable, that the base package
     imports and steps, that every guarded adapter module still imports, and that each
     guard refuses by name rather than dying on an ``ImportError``. This is the check
-    that makes "every adapter is guarded" a tested claim.
+    that makes "every adapter is guarded" a tested claim, for every declared extra,
+    including sb3 and torchrl: no ``wheel-extras`` cell installs either, but the guard
+    that refuses without them costs nothing to run here since neither is installed in
+    this environment regardless.
 
 ``--extra`` and ``--none`` must run from outside the checkout, in a virtual environment
 holding the installed wheel, or the import resolves to the source tree and proves
@@ -47,7 +54,9 @@ from optional_extras import (  # noqa: E402
     EXERCISES,
     GUARDED_MODULES,
     GUARDS,
+    INSTALL_MATRIX_EXCLUDED,
     extra_import_names,
+    installable_extras,
     optional_import_names,
     validate_coverage,
 )
@@ -72,6 +81,12 @@ def importable(name: str) -> bool:
 
 
 def run_extra(extra: str) -> int:
+    if extra in INSTALL_MATRIX_EXCLUDED:
+        raise SystemExit(
+            f"{extra!r} is declared but deliberately excluded from the installed-wheel "
+            f"matrix: {INSTALL_MATRIX_EXCLUDED[extra]}. Its guard is still checked by "
+            "--none; there is no --extra exercise for it by design."
+        )
     if extra not in EXERCISES:
         raise SystemExit(f"{extra!r} is not a declared extra")
     missing = [name for name in extra_import_names(extra) if not importable(name)]
@@ -118,8 +133,13 @@ def run_none() -> int:
 
 
 def emit_matrix() -> int:
-    extras = validate_coverage()
-    payload = {"extras": extras, "optional_imports": optional_import_names()}
+    validate_coverage()
+    extras = installable_extras()
+    payload = {
+        "extras": extras,
+        "optional_imports": optional_import_names(),
+        "excluded_from_install_matrix": dict(sorted(INSTALL_MATRIX_EXCLUDED.items())),
+    }
     output = os.environ.get("GITHUB_OUTPUT")
     if output:
         with open(output, "a", encoding="utf-8") as handle:

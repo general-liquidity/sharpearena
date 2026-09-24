@@ -427,6 +427,10 @@ jobs:
   # jobs (INT-18) hold that claim to the declared range, to the operating systems the
   # Rust suite already covers, and to the optional extras, with the extras leg generated
   # from pyproject.toml so a newly declared extra gets a cell rather than going unnoticed.
+  # Not every declared extra gets a `wheel-extras` cell: sb3 and torchrl both pull torch,
+  # so they are recorded in `scripts/optional_extras.py`'s `INSTALL_MATRIX_EXCLUDED` with
+  # a reason instead, and the `extras` output below only ever lists the installable ones.
+  # Their absence-guard still runs, for free, inside `wheel-no-extras`.
 
   extras:
     name: declared extras (matrix source)
@@ -441,8 +445,9 @@ jobs:
         with:
           python-version: "3.12"
       # Also the gate on coverage: the script refuses when pyproject declares an extra
-      # that `scripts/optional_extras.py` has no exercise and no guard check for, so the
-      # matrix cannot quietly shrink away from what the package offers.
+      # that `scripts/optional_extras.py` has no exercise, no recorded install-matrix
+      # exclusion, or no guard check, so the matrix cannot quietly shrink away from what
+      # the package offers, and an exclusion cannot quietly turn into an accidental gap.
       - name: Read the declared extras
         id: declared
         run: python scripts/check-optional-extras.py --emit-matrix

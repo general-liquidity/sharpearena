@@ -28,12 +28,40 @@ DIST_IMPORTS: Dict[str, Tuple[str, ...]] = {
     "pillow": ("PIL",),
     "pettingzoo": ("pettingzoo",),
     "mcp": ("mcp",),
+    "stable-baselines3": ("stable_baselines3",),
+    "torchrl": ("torchrl",),
 }
 
-# Not declared by any extra, and not a dependency of anything the package imports. The
-# adapter checks assert its absence so "no accelerator is needed" stays a tested claim
-# rather than an assumption about what a runner happens to have.
+# Asserted absent only where it is actually true: in the no-extras environment `run_none()`
+# checks, where none of the six declared extras, sb3 and torchrl included, are installed.
+# It is not a claim about every cell this matrix runs, because it no longer can be: sb3 and
+# torchrl each declare a real dependency on torch (see INSTALL_MATRIX_EXCLUDED below), so an
+# sb3 or torchrl cell would find it importable by design. "No accelerator is needed" stays a
+# tested claim for the bare wheel; it was never meant to hold once an extra legitimately
+# wants one.
 ACCELERATOR_IMPORTS: Tuple[str, ...] = ("torch", "jax")
+
+# Extras whose real behavior is not exercised against an installed wheel in CI, with the
+# guard that stops the gap from being silent: `INSTALL_MATRIX_EXCLUDED` is walked by
+# `validate_coverage()` exactly like `EXERCISES`, so an extra can be listed here or in
+# `EXERCISES` but never neither, and removing an entry without adding the other fails CI
+# the same way an unlisted extra always has.
+#
+# sb3 and torchrl both pull torch, the heaviest dependency any extra here declares.
+# `ci-requirements.txt` already excludes it for that reason, so `tests/test_sb3.py` and
+# `tests/test_torchrl.py` skip in the source-tree suite too; a `wheel-extras` cell for
+# either would add a second and third heavy torch install to a matrix deliberately sized
+# to stay near fifteen minutes. What is NOT skipped: `GUARDS["sb3"]` and
+# `GUARDS["torchrl"]` still run in `wheel-no-extras`, for free, since that job never
+# installs any extra either way, and they are what prove `SharpeArenaSB3VecEnv(...)` and
+# `SharpeArenaTorchRLEnv(...)` refuse by name with the dependency absent. What IS
+# unexercised against an installed wheel: the actual SB3 `VecEnv` / TorchRL `EnvBase`
+# route with the extra present. Revisit if a CPU-only torch wheel becomes cheap enough to
+# pin, or if the added CI minutes are explicitly accepted.
+INSTALL_MATRIX_EXCLUDED: Dict[str, str] = {
+    "sb3": "pulls torch; excluded from ci-requirements.txt for the same reason",
+    "torchrl": "pulls torch; excluded from ci-requirements.txt for the same reason",
+}
 
 _REQUIREMENT_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*")
 
@@ -82,20 +110,32 @@ def extra_import_names(extra: str) -> List[str]:
 
 
 def validate_coverage() -> List[str]:
-    """Refuse a declared extra with no exercise, an exercise for no declared extra, and a
+    """Refuse a declared extra with no exercise and no recorded install-matrix exclusion,
+    an exercise or exclusion for no declared extra, an extra carrying both, and a
     requirement whose distribution this module cannot map to an import name."""
     declared = read_extras()
     covered = set(EXERCISES)
-    uncovered = sorted(set(declared) - covered)
+    excluded = set(INSTALL_MATRIX_EXCLUDED)
+    both = sorted(covered & excluded)
+    if both:
+        raise SystemExit(
+            f"{', '.join(both)} is in both EXERCISES and INSTALL_MATRIX_EXCLUDED; an "
+            "extra is either exercised against an installed wheel or excluded with a "
+            "reason, never both"
+        )
+    uncovered = sorted(set(declared) - covered - excluded)
     if uncovered:
         raise SystemExit(
-            f"pyproject declares {', '.join(uncovered)} with no entry in EXERCISES; add "
-            "one so the extra is actually exercised against the installed wheel"
+            f"pyproject declares {', '.join(uncovered)} with no entry in EXERCISES and "
+            "no recorded reason in INSTALL_MATRIX_EXCLUDED; add one so the extra is "
+            "either exercised against the installed wheel or its absence from that "
+            "matrix is a stated decision instead of a gap"
         )
-    orphaned = sorted(covered - set(declared))
+    orphaned = sorted((covered | excluded) - set(declared))
     if orphaned:
         raise SystemExit(
-            f"EXERCISES covers {', '.join(orphaned)}, which pyproject no longer declares"
+            f"EXERCISES or INSTALL_MATRIX_EXCLUDED covers {', '.join(orphaned)}, which "
+            "pyproject no longer declares"
         )
     for extra, requirements in declared.items():
         for requirement in requirements:
@@ -112,6 +152,13 @@ def validate_coverage() -> List[str]:
             "to refuse by name when an extra is absent, and that has to be asserted"
         )
     return sorted(declared)
+
+
+def installable_extras() -> List[str]:
+    """Declared extras that get their own `wheel-extras` cell: `EXERCISES` minus whatever
+    `INSTALL_MATRIX_EXCLUDED` has recorded a reason to leave out. Call after
+    `validate_coverage()`, which is what guarantees this partition is exhaustive."""
+    return sorted(set(EXERCISES) - set(INSTALL_MATRIX_EXCLUDED))
 
 
 # ---------------------------------------------------------------------------
@@ -309,6 +356,30 @@ def _guard_verifiers() -> List[str]:
     ]
 
 
+def _guard_sb3() -> List[str]:
+    from sharpearena.sb3_env import SharpeArenaSB3VecEnv
+
+    return [
+        _expect_refusal(
+            SharpeArenaSB3VecEnv,
+            "stable-baselines3 is not installed",
+            "SharpeArenaSB3VecEnv(...)",
+        )
+    ]
+
+
+def _guard_torchrl() -> List[str]:
+    from sharpearena.torchrl_env import SharpeArenaTorchRLEnv
+
+    return [
+        _expect_refusal(
+            SharpeArenaTorchRLEnv,
+            "torchrl is not installed",
+            "SharpeArenaTorchRLEnv(...)",
+        )
+    ]
+
+
 EXERCISES: Dict[str, Callable[[], str]] = {
     "pettingzoo": _exercise_pettingzoo,
     "minari": _exercise_minari,
@@ -321,6 +392,8 @@ GUARDS: Dict[str, Callable[[], List[str]]] = {
     "minari": _guard_minari,
     "mcp": _guard_mcp,
     "verifiers": _guard_verifiers,
+    "sb3": _guard_sb3,
+    "torchrl": _guard_torchrl,
 }
 
 # The adapter modules that carry a guard. Importing each of them has to work with no
@@ -330,4 +403,6 @@ GUARDED_MODULES: Tuple[str, ...] = (
     "sharpearena.minari_export",
     "sharpearena.mcp_server",
     "sharpearena.verifiers_env",
+    "sharpearena.sb3_env",
+    "sharpearena.torchrl_env",
 )
