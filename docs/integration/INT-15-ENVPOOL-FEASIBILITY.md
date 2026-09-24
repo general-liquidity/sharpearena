@@ -171,10 +171,25 @@ asynchrony, which hides straggler lanes by returning the first `batch_size` comp
 rather than waiting for the slowest. That advantage is real for environments with
 high per-step variance.
 
-It is not the constraint this project is under. The INT-13 baseline
-([INT-13-BASELINE-PERFORMANCE.md](INT-13-BASELINE-PERFORMANCE.md)) measures where
-SharpeArena's throughput is actually going, and an asynchronous C++ pool does not address
-it. Replacing a synchronous parallel batch with an asynchronous one also changes the
+Asynchrony is not the constraint this project is under, but the sentence that used to
+stand here, that our batch being fully parallel settles the question, does not survive
+measurement. The INT-13 baseline
+([INT-13-BASELINE-PERFORMANCE.md](INT-13-BASELINE-PERFORMANCE.md)) has now measured its
+native half, and what it finds is that the synchronous Rayon batch is the cost. One scalar
+transition is 1.43 us; `step_batch` adds 42.9 us per call at 2 lanes and 1,250.7 us at
+512, and at a fixed 256 lanes throughput peaks at 580,908 steps/s on a 4-thread pool and
+degrades to 203,735 steps/s at 64 threads, below the 699,049 steps/s one core reaches
+stepping a single lane. The fork-join barrier per batched call, not straggler lanes, is
+what the number points at.
+
+That is a real finding and it does not reopen this ticket, because the cheapest fix for it
+is in this tree. Chunking lanes so a Rayon task carries many transitions, or stepping
+serially below a lane threshold, both target the measured residual directly and are local
+changes to `crates/sharpearena/src/vec_env.rs`. Neither needs a C++ environment inside the
+EnvPool tree, an `extern "C"` ABI on the finance engine, or a Bazel build. An asynchronous
+pool would have to beat an unmeasured fix to a bottleneck we can reach ourselves, and no
+such comparison exists. Replacing a synchronous parallel batch with an asynchronous one
+also changes the
 lane-to-step correspondence that the deterministic, byte-identical batch semantics depend
 on, which would need its own parity argument before it could be considered an
 optimisation rather than a semantic change.
@@ -204,4 +219,8 @@ investigation and cannot be reported as a shipped adapter.
 - A separately approved ADR authorising a flat-numeric C ABI on the Rust engine, with
   conformance tests and a named owner, justified by more than one trainer.
 - A measured workload where per-lane step variance is large enough that asynchronous
-  batching beats the synchronous Rayon batch, which the INT-13 baseline does not show.
+  batching beats the synchronous Rayon batch, measured against a `step_batch` that has
+  already had the INT-13 fork-join residual addressed. The INT-13 baseline does not
+  settle this either way: it records aggregate throughput per batched call and never
+  records an individual lane's completion time, so it has nothing to say about per-lane
+  variance.
