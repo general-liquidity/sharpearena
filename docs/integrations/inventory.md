@@ -39,19 +39,28 @@ the rows carrying a logo are local feasibility fixtures rather than supported
 integrations. Rows for ecosystems this tree does not implement carry no logo.
 
 The declared optional extras are seven: `verifiers`, `minari`, `pettingzoo`, `mcp`,
-`sb3`, `torchrl`, and `ray` (`crates/sharpearena-py/pyproject.toml`). `sb3` pulls
-in torch, the largest dependency any extra here declares, so it is left out of
-`ci-requirements.txt` and `tests/test_sb3.py` skips its `stable_baselines3`-gated
-cases on CI; the pure-mapping tests (the union rule, the `TimeLimit.truncated`
-term, the encoding round trip) still run everywhere. `torchrl` and `ray` are
-version-bounded rather than open (`torchrl>=0.14,<0.15`, `ray[rllib]>=2.58.0,<3`):
-INT-06/INT-07 were checked against Ray 2.58.0's actual behaviour rather than a
-floor (the Tune-registry requirement, the Dict-observation RLModule failure, and
-whether multi-agent env runners vectorise have each changed across recent Ray
-releases), and INT-12 similarly against TorchRL's 0.14 `EnvBase` contract. The
-plan's warning holds: generic Gymnasium and Farama compatibility is real and
-already tested, and the gap is the seven named consumer routes, not the
-interfaces they consume.
+`sb3`, `torchrl`, and `ray` (`crates/sharpearena-py/pyproject.toml`). `sb3`,
+`torchrl` and `ray` are each left out of `ci-requirements.txt`, and
+`tests/test_sb3.py` / `tests/test_torchrl.py` / `tests/test_ray_executor.py` /
+`tests/test_rllib.py` skip their extra-gated cases on CI, each for its own
+reason: `sb3` and `torchrl` both pull in torch, the largest single dependency
+any extra here declares; `ray[rllib]==2.58.0` pins `gymnasium==1.2.2` exactly,
+which conflicts with this tree's CI pin of `gymnasium==1.3.0` in a single `pip
+install --requirement` invocation (see the version matrix below). The
+pure-mapping tests (the union rule, the `TimeLimit.truncated` term, the
+encoding round trip) still run everywhere. `torchrl` and `ray` are
+version-bounded rather than open (`torchrl>=0.14,<0.15`,
+`ray[rllib]>=2.58.0,<3`): INT-06/INT-07 were checked against Ray 2.58.0's
+actual behaviour rather than a floor (the Tune-registry requirement, the
+Dict-observation RLModule failure, and whether multi-agent env runners
+vectorise have each changed across recent Ray releases), and INT-12 similarly
+against TorchRL's 0.14 `EnvBase` contract. The INT-18 installed-wheel matrix
+excludes the same three extras from its own per-extra install cells, for their
+own reasons rather than one shared one: see the "Installed-wheel compatibility
+matrix" section below for what is and is not exercised against a built wheel
+for `sb3`, `torchrl` and `ray`. The plan's warning holds: generic Gymnasium and
+Farama compatibility is real and already tested, and the gap is the seven
+named consumer routes, not the interfaces they consume.
 
 ### Two claims with thin test backing
 
@@ -162,7 +171,46 @@ Caveats a later ticket must not read past:
   Gymnasium version and the mode together.
 - Minari's PyPI release is 0.5.3 while 0.5.4 is tagged upstream, and their NumPy floors
   differ. Pin what is installed, not what a changelog describes.
-- No Linux or macOS run backs this row. The verified column is one machine.
+- This table is the source-tree pin/verified split; the row above it (`Python`, "not
+  pinned") is about what the source-tree `python` job installs, not the range CI holds
+  the published wheel to.
+
+### Installed-wheel compatibility matrix (INT-18)
+
+The table above is what the source-tree suite runs against. It says nothing about the
+*installed* wheel: a source checkout can shadow a broken package layout, an extra can
+resolve fine in one graph and fail in another, and a guard written for "the dependency
+is absent" is untested wherever every extra happens to be installed already. Three CI
+jobs, generated from `crates/sharpearena-py/pyproject.toml` rather than hand-listed so
+a newly declared extra gets a cell automatically, close that gap:
+
+| Job | Covers |
+|---|---|
+| `wheel-install-import` | Builds the wheel with `maturin build --locked` and installs it into a clean venv outside the checkout, on the declared floor (3.9), the version the rest of CI uses (3.12), and the newest released interpreter (3.14), all on Linux; then 3.12 on macOS and Windows. Drives the native binding and the packaged Gymnasium adapter. |
+| `wheel-no-extras` | Installs the bare wheel with none of the six optional extras present, asserts the base environment steps, and asserts every guarded adapter module (`pettingzoo_env`, `minari_export`, `mcp_server`, `verifiers_env`, `sb3_env`, `torchrl_env`) imports and refuses **by name** rather than dying on a bare `ImportError`. This is what makes "every adapter is guarded" a tested claim instead of an assumption read off the source, for all six declared extras including the two below that never get a `wheel-extras` cell. |
+| `wheel-extras` | One cell per *installable* declared extra (`verifiers`, `minari`, `pettingzoo`, `mcp`), installing `sharpearena[<extra>]` from the built wheel and running the real adapter behind it: a PettingZoo tournament, a Minari export, the MCP tool list, the verifiers environment build. |
+
+Representative rather than combinatorial: the interpreters between 3.9 and 3.14 differ
+from each other in nothing this package touches, so the OS axis and the version axis
+each get covered once rather than crossed. `scripts/optional_extras.py` is the single
+registry the extras job, the no-extras job and `check-packaged-adapter.py` all read
+from; `validate_coverage()` refuses to run when a declared extra has no exercise, no
+recorded install-matrix exclusion, or no guard entry, so the matrix cannot quietly
+shrink as the package grows and an exclusion cannot quietly rot into an accidental gap.
+
+Two of the six declared extras, `sb3` and `torchrl`, are deliberately excluded from
+`wheel-extras`: both pull torch, the heaviest dependency any extra here declares, and
+`ci-requirements.txt` already excludes it from the source-tree suite for the same
+reason (`tests/test_sb3.py`, `tests/test_torchrl.py` skip their torch-gated cases on
+CI). Adding a `wheel-extras` cell for either would install torch a second and third
+time on a matrix sized to stay near fifteen minutes. `scripts/optional_extras.py`'s
+`INSTALL_MATRIX_EXCLUDED` records the reason and is checked by `validate_coverage()`
+the same way `EXERCISES` is, so the exclusion cannot silently expand to cover an
+unrelated future extra. What is still proven, for free, in `wheel-no-extras`: that
+`SharpeArenaSB3VecEnv(...)` and `SharpeArenaTorchRLEnv(...)` refuse by name with the
+dependency absent, since neither job ever installs either extra anyway. What is not
+proven against an installed wheel: the real SB3 `VecEnv` / TorchRL `EnvBase` route
+with the extra present.
 
 The INT-02 tests were additionally run against an installed wheel
 (`sharpearena-0.31.0-cp312-cp312-win_amd64.whl`, built from this tree) in a clean

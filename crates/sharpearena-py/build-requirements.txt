@@ -1,0 +1,4 @@
+# The build backend pyproject.toml declares, pinned so every wheel this repository
+# builds, in CI and by hand, comes out of the same maturin. An unpinned build tool is a
+# floating input to an artifact the version matrix is meant to hold still.
+maturin==1.15.0

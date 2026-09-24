@@ -47,7 +47,14 @@ verifiers = ["verifiers>=0.3.1,<0.4"]
 # the environment CI had while every Minari test silently skipped.
 minari = ["minari[create,hdf5]", "pillow"]
 pettingzoo = ["pettingzoo"]
-mcp = ["mcp"]
+# Bounded below 2.0, verified against the INT-18 installed-wheel matrix: an unbounded
+# `mcp = ["mcp"]` resolved to 2.2.0, whose `mcp.server.fastmcp` import shape changed
+# enough that `mcp_server.py`'s own guard could not import `FastMCP`, was caught by its
+# broad `except Exception`, and reported "mcp is not installed" while mcp was installed.
+# 1.30.0, the version `ci-requirements.txt` pins and the source suite runs against,
+# imports cleanly; this bound is what stops the declared extra resolving to a release
+# nothing here has run against.
+mcp = ["mcp>=1.30.0,<2.0"]
 # SB3 pulls in torch, which is the largest dependency any extra here has. It is left out
 # of `ci-requirements.txt` for that reason, so `tests/test_sb3.py` skips on CI; the floor
 # is 2.9.0 because that is the release whose `DummyVecEnv.step_wait` mapping `sb3_env.py`

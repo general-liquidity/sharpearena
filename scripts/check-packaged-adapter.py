@@ -24,14 +24,31 @@ can drive the packaged adapter, and nothing about what a learner would learn.
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
 from pathlib import Path
 
-OPTIONAL_DEPENDENCIES = ("verifiers", "minari", "pettingzoo", "mcp", "torch", "jax")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+
+def optional_dependencies() -> tuple:
+    """The names an installed extra would make importable, plus the accelerators.
+
+    Read from the declared extras rather than restated here: a hand-kept list stops
+    covering the next extra someone adds and nothing says so. `SHARPEARENA_OPTIONAL_IMPORTS`
+    carries the same names for interpreters older than the 3.11 that `tomllib` needs; with
+    neither available this refuses rather than checking a list it cannot vouch for.
+    """
+    from optional_extras import ACCELERATOR_IMPORTS, optional_import_names
+
+    passed = os.environ.get("SHARPEARENA_OPTIONAL_IMPORTS")
+    if passed:
+        return tuple(passed.split()) + ACCELERATOR_IMPORTS
+    return tuple(optional_import_names()) + ACCELERATOR_IMPORTS
 
 
 def assert_no_optional_dependencies() -> None:
-    present = [name for name in OPTIONAL_DEPENDENCIES if importlib.util.find_spec(name)]
+    present = [name for name in optional_dependencies() if importlib.util.find_spec(name)]
     if present:
         raise SystemExit(
             f"{', '.join(present)} is importable; this check must run in an environment "
