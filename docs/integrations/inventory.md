@@ -23,7 +23,7 @@ stale (HUD and Harbor, below) is corrected.
 | <a href="https://modelcontextprotocol.io"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/mcp-dark.svg"><img src="../assets/logos/mcp.svg" alt="" height="11"></picture></a> MCP | Yes | `mcp_server.py` | Guarded behind `FastMCP is None` |
 | Functional view | Yes | `functional.py` (`SharpeArenaFuncEnv`) | Three-way probe ending in a local shim, so the module always imports |
 | CleanRL | No | Nothing in the tree | |
-| <a href="https://www.ray.io"><img src="../assets/logos/ray.svg" alt="" height="12"></a> Ray, RLlib | No | Only a literature citation in `paper/review/environment-genre-study-2026.md` | |
+| <a href="https://www.ray.io"><img src="../assets/logos/ray.svg" alt="" height="12"></a> Ray, RLlib | Yes | `ray_executor.py` (INT-06: `run_episodes`, a Ray task per episode with a deterministic, completion-order-independent reduction) and `rllib_env.py` (INT-07: `sharpearena_env_creator`, `SharpeArenaMultiAgentEnv`, single- and multi-agent PPO configs) | Guarded; both modules import with no Ray installed and raise `RayUnavailable` / `RLlibUnavailable` only on construction |
 | <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/hud-dark.svg"><img src="../assets/logos/hud.svg" alt="" height="14"></picture> HUD | Yes, as a local feasibility fixture, not a supported integration | `examples/hud/`, `crates/sharpearena-py/tests/test_hud_local.py`. Only `LocalRuntime` and `SubprocessRuntime` were exercised; `DockerRuntime`, `ModalRuntime`, and `HUDRuntime` were not. Report: `docs/integrations/INT-08-hud-local-feasibility.md`. | Not imported by the package; the fixture depends on the `hud` PyPI package |
 | <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/harbor-dark.png"><img src="../assets/logos/harbor.png" alt="" height="13"></picture> Harbor | Yes, as a local feasibility fixture, not a supported integration | `integrations/harbor/` (task package, fixtures, tampering jobs). Ran on Docker Desktop over WSL2. Report: `docs/integrations/INT-09-harbor-local-feasibility.md`. | Not imported by the package; the fixture depends on the `harbor` PyPI package |
 | <img src="../assets/logos/stable-baselines3.png" alt="" height="16"> Stable-Baselines3 | Yes | `sb3_env.py` (`SharpeArenaSB3VecEnv` over the native batched engine, fixed at `autoreset_mode="same_step"`) | Guarded; `stable_baselines3.common.vec_env.base_vec_env.VecEnv` falls back to `object` and construction raises `SB3Unavailable` |
@@ -40,17 +40,20 @@ support claim: the "Present" column beside it, and
 the rows carrying a logo are local feasibility fixtures rather than supported
 integrations. Rows for ecosystems this tree does not implement carry no logo.
 
-The declared optional extras are exactly six: `verifiers`, `minari`, `pettingzoo`,
-`mcp`, `sb3`, `torchrl` (`crates/sharpearena-py/pyproject.toml`). `sb3` pulls in torch, the
-largest dependency any extra here declares, so it is left out of
+The declared optional extras are seven: `verifiers`, `minari`, `pettingzoo`, `mcp`,
+`sb3`, `torchrl`, and `ray` (`crates/sharpearena-py/pyproject.toml`). `sb3` pulls
+in torch, the largest dependency any extra here declares, so it is left out of
 `ci-requirements.txt` and `tests/test_sb3.py` skips its `stable_baselines3`-gated
 cases on CI; the pure-mapping tests (the union rule, the `TimeLimit.truncated`
-term, the encoding round trip) still run everywhere. The plan's warning holds:
-generic Gymnasium and Farama compatibility is real and already tested, and the
-gap is the six remaining named consumer routes, not the interfaces they consume.
-`mcp`, `torchrl` (`crates/sharpearena-py/pyproject.toml`). The plan's warning holds: generic
-Gymnasium and Farama compatibility is real and already tested, and the gap is the
-seven named consumer routes, not the interfaces they consume.
+term, the encoding round trip) still run everywhere. `torchrl` and `ray` are
+version-bounded rather than open (`torchrl>=0.14,<0.15`, `ray[rllib]>=2.58.0,<3`):
+INT-06/INT-07 were checked against Ray 2.58.0's actual behaviour rather than a
+floor (the Tune-registry requirement, the Dict-observation RLModule failure, and
+whether multi-agent env runners vectorise have each changed across recent Ray
+releases), and INT-12 similarly against TorchRL's 0.14 `EnvBase` contract. The
+plan's warning holds: generic Gymnasium and Farama compatibility is real and
+already tested, and the gap is the seven named consumer routes, not the
+interfaces they consume.
 
 ### Two claims with thin test backing
 
@@ -60,8 +63,11 @@ false claim. Neither has a direct test:
 - `wrappers_vector.py` (`VectorCausalNormalizeObservation`, `VectorRecordEpisodeStatistics`)
   has no test file, and no test names either class.
 - `spaces.py` (`flatten_obs`, `unflatten_obs`, `flat_dim`, `FlattenObservation`) is
-  exercised only indirectly, through `PreprocessingConfig(flatten=True)` in
-  `tests/test_preprocessing.py`.
+  exercised indirectly through `PreprocessingConfig(flatten=True)` in
+  `tests/test_preprocessing.py`, and now also directly: INT-07's
+  `tests/test_rllib.py` runs `FlattenObservation`'s round trip through
+  `integrations.parity.check_adapter_parity` on `CORE_FIXTURES`, so the claim is
+  bit-for-bit against the native engine rather than shape-only.
 
 Both belong to INT-03, which is where the Gymnasium surface is brought to contract
 coverage.
@@ -111,7 +117,22 @@ suite passed under it (1893 passed, 2 skipped).
 | verifiers | extra, unpinned | 0.3.1 | 0.1.14 |
 | mcp | extra, unpinned | 1.30.0 | not installed |
 | pytest | not shipped | 9.1.1 | 8.4.2 |
+| ray / ray[rllib] | extra, `>=2.58.0,<3` | not installed | 2.58.0 |
+| torch (RLlib training only) | not declared by any extra | not installed | 2.14.0+cpu |
 | OS / architecture | not constrained | Linux runners | Windows 11 26220, x86-64 (AMD64) |
+
+`ray[rllib]==2.58.0` pins `gymnasium==1.2.2` exactly, which conflicts with this
+tree's CI pin of `gymnasium==1.3.0` in a single `pip install --requirement`
+invocation; the base package's own `gymnasium>=1.0` floor admits 1.2.2 and the
+full 1893-test suite passed under it (recorded above as this row's evidence run),
+but that pin conflict is why `ray` is not installed in CI and why
+`tests/test_ray_executor.py` and `tests/test_rllib.py` are exercised locally
+rather than in the pinned matrix. `torch` is needed only to actually build and
+train an RLlib `AlgorithmConfig` (`AlgorithmConfig.build_algo()`); it is not part
+of the `ray` extra, and `sharpearena_env_creator`, registration, and config
+construction were all checked without it. See
+[`docs/interfaces.md`](../interfaces.md#ray-and-rllib) for the runnable examples
+and their captured output.
 
 Caveats a later ticket must not read past:
 

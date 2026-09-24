@@ -52,6 +52,15 @@ sb3 = ["stable-baselines3>=2.9.0"]
 # 0.14-current. A wider bound would silently pick up the scheduled 0.15 reset()
 # set_state default change this adapter has not been verified against.
 torchrl = ["torchrl>=0.14,<0.15"]
+# RLlib ships in the same wheel as Ray (rllib_env.py), so one extra covers both
+# ray_executor.py (INT-06) and rllib_env.py (INT-07). Bounded, unlike the other
+# extras above: `ray_executor.py` and `rllib_env.py` were verified against 2.58.0
+# specifically (registry behaviour, RLModule Dict-observation support, and whether
+# multi-agent env runners vectorise all changed across recent Ray releases per its
+# own changelog), so an unbounded floor would silently drift onto a Ray this tree has
+# not checked. The `[rllib]` variant additionally pins gymnasium==1.2.2, which this
+# package's gymnasium>=1.0 floor admits.
+ray = ["ray[rllib]>=2.58.0,<3"]
 
 # Defaults for `vf-eval sharpearena` (read by verifiers' eval script from this table).
 # A bare `vf-eval sharpearena` then scores 16 scenarios x 3 rollouts of the v1 taskset.
