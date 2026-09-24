@@ -130,8 +130,8 @@ Package-specific usage lives beside each distribution: the
 ## Choose an interface
 
 The Python package is the surface above; underneath it, several interfaces sit
-over the same engine, and Gymnasium is one of them, not the only one. Four are
-optional extras (`pip install "sharpearena[pettingzoo,verifiers,minari,mcp]"`).
+over the same engine, and Gymnasium is one of them, not the only one. Five are
+optional extras (`pip install "sharpearena[pettingzoo,verifiers,minari,mcp,sb3]"`).
 A short, runnable example for every row below except Gymnasium (see
 [Quick start](#quick-start)) is in [the interface examples](docs/interfaces.md).
 
@@ -141,6 +141,7 @@ A short, runnable example for every row below except Gymnasium (see
 | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/logos/pettingzoo-dark.svg"><img src="docs/assets/logos/pettingzoo.svg" alt="" height="18"></picture> PettingZoo | Multi-agent parallel envs: shared-market impact and the limit-order book. |
 | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/logos/prime-intellect-dark.png"><img src="docs/assets/logos/prime-intellect.png" alt="" height="13"></picture> `verifiers` / Prime-RL | RLVR-style multi-turn rollout with an XML decision parser, for training with Prime-RL. |
 | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/logos/minari-dark.svg"><img src="docs/assets/logos/minari.svg" alt="" height="18"></picture> Minari | Offline-RL dataset export, including a train/test split. |
+| <img src="docs/assets/logos/stable-baselines3.png" alt="" height="18"> Stable-Baselines3 | `SharpeArenaSB3VecEnv`, an SB3 `VecEnv` over the native batched engine, fixed at same-step autoreset to match SB3's own contract. |
 | <a href="https://modelcontextprotocol.io"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/logos/mcp-dark.svg"><img src="docs/assets/logos/mcp.svg" alt="" height="13"></picture></a> MCP | An MCP server for connecting an agent over that protocol. |
 | JSON contract | stdin/stdout or `POST /decide`, for an external agent in any language; not a standalone Arena CLI. |
 | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/logos/hud-dark.svg"><img src="docs/assets/logos/hud.svg" alt="" height="16"></picture> HUD | A task and grader for the HUD agent SDK, exercised locally with a deterministic agent double: `examples/hud/`. |
@@ -153,7 +154,7 @@ Each row's actual test coverage differs; none of them has been used to produce
 a reported benchmark result yet. The
 [support status table](docs/integrations/support-status.md) states, per
 interface, what is contract-tested, what is only specified, and what is not
-supported (CleanRL, Ray and RLlib, Stable-Baselines3, TorchRL) or ruled out
+supported (CleanRL, Ray and RLlib, TorchRL) or ruled out
 (PufferLib, EnvPool), with the evidence for each. The HUD and Harbor routes
 are local feasibility work rather than supported integrations: each ran on one
 host with a deterministic agent and no model call, and each records what its

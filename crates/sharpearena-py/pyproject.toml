@@ -42,6 +42,11 @@ verifiers = ["verifiers"]
 minari = ["minari[create,hdf5]", "pillow"]
 pettingzoo = ["pettingzoo"]
 mcp = ["mcp"]
+# SB3 pulls in torch, which is the largest dependency any extra here has. It is left out
+# of `ci-requirements.txt` for that reason, so `tests/test_sb3.py` skips on CI; the floor
+# is 2.9.0 because that is the release whose `DummyVecEnv.step_wait` mapping `sb3_env.py`
+# reproduces and whose source `test_reference_semantics_still_match_installed_sb3` reads.
+sb3 = ["stable-baselines3>=2.9.0"]
 
 # Defaults for `vf-eval sharpearena` (read by verifiers' eval script from this table).
 # A bare `vf-eval sharpearena` then scores 16 scenarios x 3 rollouts of the v1 taskset.
