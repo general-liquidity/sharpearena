@@ -212,7 +212,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "fffa32070458a0ecd098a11f93ca8b4650c07648",
+  "generated_at_head": "e28021386703a7617ae4faab7cac9c1776d1a1db",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -254,7 +254,7 @@
     },
     {
       "path": "crates/sharpearena-py/pyproject.toml",
-      "sha256": "b02025eb445372719b06116e0cf4ae43d038340fff5993b93e3aaa569dad8395"
+      "sha256": "fd93c98fcb0117eebc9de78410889fec044bab0d4a6ece8db7cc5d9c363eaf28"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/__init__.py",
@@ -551,6 +551,10 @@
     {
       "path": "crates/sharpearena-py/python/sharpearena/strategy_generation.py",
       "sha256": "87b62c60a2a4cab3b831b6216921fd039c53acc8ab4b5a208e4932e8e6678cb9"
+    },
+    {
+      "path": "crates/sharpearena-py/python/sharpearena/torchrl_env.py",
+      "sha256": "669679f9b55231a494674b94ed71b3abb9f12efbd103b617b38adf7a9b9f8aa5"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/trace.py",
@@ -938,6 +942,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "61c43dff7c239ffa1637a39f092fa4ca02d69a1e6821c2e87bbc55f97abf44c9",
+  "source_snapshot_sha256": "9790b259c136ffcdc305aee09581cccd4fd2d092f0109b096b63541645bde94d",
   "validator": "paper/src/check-provenance.py"
 }
