@@ -8,8 +8,8 @@ without reading the module source first.
 
 Every example on this page was run against this tree and this page states which
 package versions it ran against. Install the extra it names before you run it:
-`pip install "sharpearena[pettingzoo,verifiers,minari,mcp]"` installs all four at
-once.
+`pip install "sharpearena[pettingzoo,verifiers,minari,mcp,torchrl]"` installs all
+five at once.
 
 ## PettingZoo
 
@@ -136,6 +136,41 @@ sharpearena/quickstart-test-v0 1
 Minari stores an exported dataset under a local dataset-id path and refuses to
 recreate an id that already exists on disk; pick a new `dataset_id` or delete the
 old one before re-running this example a second time.
+
+## TorchRL
+
+`SharpeArenaTorchRLEnv` (`crates/sharpearena-py/python/sharpearena/torchrl_env.py`)
+is a `torchrl.envs.EnvBase` subclass driving the same engine as
+`SharpeArenaEnv` underneath. TorchRL environments read and write `TensorDict`
+instances rather than the Gymnasium 5-tuple, and the step output lives under a
+`"next"` entry; a policy is any callable that sets an `"action"` key on the
+tensordict it is handed. `equal_weight_policy` below is not a learner, only a
+deterministic policy that makes the rollout reproducible for this example.
+
+```python
+from sharpearena.torchrl_env import SharpeArenaTorchRLEnv, equal_weight_policy
+
+env = SharpeArenaTorchRLEnv(n_symbols=4, n_days=30, seed=1)
+policy = equal_weight_policy(env)
+rollout = env.rollout(5, policy=policy)
+print(rollout.get(("next", "reward")).squeeze(-1).tolist())
+```
+
+Run against `torchrl` 0.14.0 (`tensordict` 0.14.2, `torch` 2.14.0+cpu), installed
+with `pip install "sharpearena[torchrl]"`. Output:
+
+```
+[-0.0031250825670572357, 0.0016629164935610952, 0.001159297585380914, 0.001013520026747372, 0.0003075342205489662]
+```
+
+Observations and the reward cross the TensorDict boundary as `torch.float64`,
+the engine's own width, unless `obs_dtype=torch.float32` is named explicitly.
+Actions cross as `torch.float32`, matching the `Box` `SharpeArenaEnv.action_space`
+advertises; `_action_validation.validated_action` widens them back to `float64`
+before they reach the engine. `docs/rl-contract-coverage.md` states the native
+dtype-parity standard this adapter matches, and `tests/test_torchrl.py` pins
+both directions of the boundary plus a `torchrl.collectors.Collector` round trip
+through serialization and replay.
 
 ## MCP
 

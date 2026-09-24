@@ -14,7 +14,7 @@ and delivery checks. The 2026-09-07 audit is a completed historical checkpoint.
 |---|---|
 | Step, vectorize, or register a Python environment | [Gymnasium guide](gymnasium.md) |
 | Connect an agent over stdio or HTTP | [Agent contract](agent-contract.md) |
-| Get a runnable example for PettingZoo, `verifiers`, Minari, MCP, the JSON contract, or the SharpeBench bridge | [Interface examples](interfaces.md) |
+| Get a runnable example for PettingZoo, `verifiers`, Minari, MCP, TorchRL, the JSON contract, or the SharpeBench bridge | [Interface examples](interfaces.md) |
 | Train with `verifiers` or Prime RL | [Training guide](training.md) |
 | Choose a market, wrapper, or operational surface | [Capability map](capabilities.md) |
 | Run the local open-weight field | [Local-agent architecture](LOCAL_AGENT_ARCHITECTURE.md) |

@@ -27,7 +27,8 @@ stale (HUD and Harbor, below) is corrected.
 | <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/hud-dark.svg"><img src="../assets/logos/hud.svg" alt="" height="14"></picture> HUD | Yes, as a local feasibility fixture, not a supported integration | `examples/hud/`, `crates/sharpearena-py/tests/test_hud_local.py`. Only `LocalRuntime` and `SubprocessRuntime` were exercised; `DockerRuntime`, `ModalRuntime`, and `HUDRuntime` were not. Report: `docs/integrations/INT-08-hud-local-feasibility.md`. | Not imported by the package; the fixture depends on the `hud` PyPI package |
 | <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/harbor-dark.png"><img src="../assets/logos/harbor.png" alt="" height="13"></picture> Harbor | Yes, as a local feasibility fixture, not a supported integration | `integrations/harbor/` (task package, fixtures, tampering jobs). Ran on Docker Desktop over WSL2. Report: `docs/integrations/INT-09-harbor-local-feasibility.md`. | Not imported by the package; the fixture depends on the `harbor` PyPI package |
 | <img src="../assets/logos/stable-baselines3.png" alt="" height="16"> Stable-Baselines3 | No | Only the phrase "SB3-style MLP feature extractors" in `spaces.py:5`, a docstring | |
-| <a href="https://pytorch.org/rl"><img src="../assets/logos/torchrl.png" alt="" height="10"></a> <img src="../assets/logos/envpool.svg" alt="" height="10"> TorchRL, PufferLib, EnvPool | No | Nothing in the tree | |
+| <a href="https://pytorch.org/rl"><img src="../assets/logos/torchrl.png" alt="" height="10"></a> TorchRL | Yes | `torchrl_env.py` (`SharpeArenaTorchRLEnv`, an `EnvBase` subclass) | Guarded; `EnvBase` falls back to `object` and construction raises `TorchRLUnavailable` |
+| <img src="../assets/logos/envpool.svg" alt="" height="10"> PufferLib, EnvPool | No | Nothing in the tree | |
 
 Every row above with an upstream project of its own carries that project's logo;
 see [`docs/assets/logos/`](../assets/logos/) for each file's source and the terms
@@ -37,8 +38,8 @@ support claim: the "Present" column beside it, and
 the rows carrying a logo are local feasibility fixtures rather than supported
 integrations. Rows for ecosystems this tree does not implement carry no logo.
 
-The declared optional extras are exactly four: `verifiers`, `minari`, `pettingzoo`,
-`mcp` (`crates/sharpearena-py/pyproject.toml`). The plan's warning holds: generic
+The declared optional extras are exactly five: `verifiers`, `minari`, `pettingzoo`,
+`mcp`, `torchrl` (`crates/sharpearena-py/pyproject.toml`). The plan's warning holds: generic
 Gymnasium and Farama compatibility is real and already tested, and the gap is the
 seven named consumer routes, not the interfaces they consume.
 

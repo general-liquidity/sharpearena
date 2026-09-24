@@ -48,6 +48,11 @@ verifiers = ["verifiers>=0.3.1,<0.4"]
 minari = ["minari[create,hdf5]", "pillow"]
 pettingzoo = ["pettingzoo"]
 mcp = ["mcp"]
+# Pinned to the 0.14 line: torchrl.envs.EnvBase's _reset/_step/_set_seed contract and
+# the Collector rename (torchrl.collectors.SyncDataCollector -> Collector) are both
+# 0.14-current. A wider bound would silently pick up the scheduled 0.15 reset()
+# set_state default change this adapter has not been verified against.
+torchrl = ["torchrl>=0.14,<0.15"]
 
 # Defaults for `vf-eval sharpearena` (read by verifiers' eval script from this table).
 # A bare `vf-eval sharpearena` then scores 16 scenarios x 3 rollouts of the v1 taskset.
