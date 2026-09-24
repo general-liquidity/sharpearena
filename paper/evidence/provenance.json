@@ -212,7 +212,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "6dd6896cbffd2739bbf1dcbe7311b242a63d4610",
+  "generated_at_head": "fffa32070458a0ecd098a11f93ca8b4650c07648",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -234,7 +234,7 @@
     },
     {
       "path": ".github/workflows/ci.yml",
-      "sha256": "9c922e8f6497c5f223b4fb7c48dc73beec4658299de9a04fcdb24a9c24afa8d2"
+      "sha256": "0fd7c915e3c42b840c48d02e5ca779e37f3a0bdb7035b0137edf96192b651010"
     },
     {
       "path": ".github/workflows/release.yml",
@@ -254,11 +254,11 @@
     },
     {
       "path": "crates/sharpearena-py/pyproject.toml",
-      "sha256": "e0f598790df8dbfb745a4998b0ca7cdd8521cd17be2c80098c3c7a39653a0ffa"
+      "sha256": "b02025eb445372719b06116e0cf4ae43d038340fff5993b93e3aaa569dad8395"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/__init__.py",
-      "sha256": "89277946ac5e8b0cff74e2091e57b904e3e4cf30f307bf4da04958f3824ebf72"
+      "sha256": "cd9850252c7db2ab6f5bb9936084c56b8dd166512869ca47818761a9c2dc7ae5"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/_action_validation.py",
@@ -566,7 +566,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/verifiers_env.py",
-      "sha256": "0394570fef76b52044ff5f625eec0ae1c2e941d680b9a089e53cf8d964a29447"
+      "sha256": "922dbcb9520f6ed686ffd494ea180c6f17d9c5608ae244ea7d6231c3cf17d83e"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/wrappers.py",
@@ -881,8 +881,16 @@
       "sha256": "d3dbfeaad16745ce33bc518d7f22f32ace3ec3a6d83a407ae91a2bd9f9bdcf8a"
     },
     {
+      "path": "scripts/check-absence-claims.py",
+      "sha256": "41781b573f973088d1fc3a106f7b8de53a726ea7e407730405f952a9870ec34c"
+    },
+    {
       "path": "scripts/check-lean-scope.py",
       "sha256": "8bc834dd5269b0376bca57830bb2cde5b5d0c34fc298939e2dfc5211971f5067"
+    },
+    {
+      "path": "scripts/check-logo-assets.py",
+      "sha256": "59d967d607f1d88ee45ef7ea44946f3bddaf3ba54484a15d866dbbad255f883f"
     },
     {
       "path": "scripts/check-optimized-guards.py",
@@ -930,6 +938,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "fa752ca7b037a04e897cc3e75113d4bd6158fb00efcdf6ca3bae0d9bd7cccd00",
+  "source_snapshot_sha256": "61c43dff7c239ffa1637a39f092fa4ca02d69a1e6821c2e87bbc55f97abf44c9",
   "validator": "paper/src/check-provenance.py"
 }
