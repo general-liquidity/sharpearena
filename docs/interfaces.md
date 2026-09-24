@@ -8,8 +8,9 @@ without reading the module source first.
 
 Every example on this page was run against this tree and this page states which
 package versions it ran against. Install the extra it names before you run it:
-`pip install "sharpearena[pettingzoo,verifiers,minari,mcp]"` installs all four at
-once.
+`pip install "sharpearena[pettingzoo,verifiers,minari,mcp]"` installs those four
+at once; `sb3` is left out of that combined install because it pulls in torch,
+the largest dependency any extra here declares.
 
 ## PettingZoo
 
@@ -133,6 +134,41 @@ sharpearena/quickstart-test-v0 1
 Minari stores an exported dataset under a local dataset-id path and refuses to
 recreate an id that already exists on disk; pick a new `dataset_id` or delete the
 old one before re-running this example a second time.
+
+## Stable-Baselines3
+
+`sharpearena.sb3_env.SharpeArenaSB3VecEnv` is a Stable-Baselines3 `VecEnv` over the
+same native batched engine `SharpeArenaVectorEnv` wraps for Gymnasium, fixed at
+`autoreset_mode="same_step"` because that is the only mode whose autoreset and
+terminal-observation semantics match SB3's own contract; see the module docstring
+in `crates/sharpearena-py/python/sharpearena/sb3_env.py` for the mapping and why
+the other two modes are refused. The observation is a single-level `Dict`, so the
+policy is `MultiInputPolicy`.
+
+```python
+from sharpearena.sb3_env import SharpeArenaSB3VecEnv
+from stable_baselines3 import PPO
+from stable_baselines3.common.evaluation import evaluate_policy
+
+train = SharpeArenaSB3VecEnv(seeds=[0, 1], n_symbols=3, n_days=24)
+model = PPO(
+    "MultiInputPolicy", train, n_steps=32, batch_size=16, n_epochs=1,
+    policy_kwargs={"net_arch": [16]}, device="cpu", verbose=0, seed=0,
+)
+model.learn(total_timesteps=64)
+mean_reward, std_reward = evaluate_policy(model, train, n_eval_episodes=2, warn=False)
+print(f"{mean_reward:.6f} +/- {std_reward:.6f}")
+```
+
+Run against `stable-baselines3` 2.9.0, installed with
+`pip install "sharpearena[sb3]"`, and CPU-only `torch`. Output (mean episode
+reward at this tiny a budget is not a benchmark result; see
+`examples/sb3/train_ppo.py` for the runnable recipe with training and evaluation
+lanes drawn from disjoint seed bands):
+
+```
+-0.000219 +/- 0.001918
+```
 
 ## MCP
 
