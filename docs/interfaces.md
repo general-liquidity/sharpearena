@@ -8,8 +8,9 @@ without reading the module source first.
 
 Every example on this page was run against this tree and this page states which
 package versions it ran against. Install the extra it names before you run it:
-`pip install "sharpearena[pettingzoo,verifiers,minari,mcp,torchrl]"` installs all
-five at once.
+`pip install "sharpearena[pettingzoo,verifiers,minari,mcp]"` installs those four
+at once; `sb3` is left out of that combined install because it pulls in torch,
+the largest dependency any extra here declares.
 
 ## PettingZoo
 
@@ -137,40 +138,40 @@ Minari stores an exported dataset under a local dataset-id path and refuses to
 recreate an id that already exists on disk; pick a new `dataset_id` or delete the
 old one before re-running this example a second time.
 
-## TorchRL
+## Stable-Baselines3
 
-`SharpeArenaTorchRLEnv` (`crates/sharpearena-py/python/sharpearena/torchrl_env.py`)
-is a `torchrl.envs.EnvBase` subclass driving the same engine as
-`SharpeArenaEnv` underneath. TorchRL environments read and write `TensorDict`
-instances rather than the Gymnasium 5-tuple, and the step output lives under a
-`"next"` entry; a policy is any callable that sets an `"action"` key on the
-tensordict it is handed. `equal_weight_policy` below is not a learner, only a
-deterministic policy that makes the rollout reproducible for this example.
+`sharpearena.sb3_env.SharpeArenaSB3VecEnv` is a Stable-Baselines3 `VecEnv` over the
+same native batched engine `SharpeArenaVectorEnv` wraps for Gymnasium, fixed at
+`autoreset_mode="same_step"` because that is the only mode whose autoreset and
+terminal-observation semantics match SB3's own contract; see the module docstring
+in `crates/sharpearena-py/python/sharpearena/sb3_env.py` for the mapping and why
+the other two modes are refused. The observation is a single-level `Dict`, so the
+policy is `MultiInputPolicy`.
 
 ```python
-from sharpearena.torchrl_env import SharpeArenaTorchRLEnv, equal_weight_policy
+from sharpearena.sb3_env import SharpeArenaSB3VecEnv
+from stable_baselines3 import PPO
+from stable_baselines3.common.evaluation import evaluate_policy
 
-env = SharpeArenaTorchRLEnv(n_symbols=4, n_days=30, seed=1)
-policy = equal_weight_policy(env)
-rollout = env.rollout(5, policy=policy)
-print(rollout.get(("next", "reward")).squeeze(-1).tolist())
+train = SharpeArenaSB3VecEnv(seeds=[0, 1], n_symbols=3, n_days=24)
+model = PPO(
+    "MultiInputPolicy", train, n_steps=32, batch_size=16, n_epochs=1,
+    policy_kwargs={"net_arch": [16]}, device="cpu", verbose=0, seed=0,
+)
+model.learn(total_timesteps=64)
+mean_reward, std_reward = evaluate_policy(model, train, n_eval_episodes=2, warn=False)
+print(f"{mean_reward:.6f} +/- {std_reward:.6f}")
 ```
 
-Run against `torchrl` 0.14.0 (`tensordict` 0.14.2, `torch` 2.14.0+cpu), installed
-with `pip install "sharpearena[torchrl]"`. Output:
+Run against `stable-baselines3` 2.9.0, installed with
+`pip install "sharpearena[sb3]"`, and CPU-only `torch`. Output (mean episode
+reward at this tiny a budget is not a benchmark result; see
+`examples/sb3/train_ppo.py` for the runnable recipe with training and evaluation
+lanes drawn from disjoint seed bands):
 
 ```
-[-0.0031250825670572357, 0.0016629164935610952, 0.001159297585380914, 0.001013520026747372, 0.0003075342205489662]
+-0.000219 +/- 0.001918
 ```
-
-Observations and the reward cross the TensorDict boundary as `torch.float64`,
-the engine's own width, unless `obs_dtype=torch.float32` is named explicitly.
-Actions cross as `torch.float32`, matching the `Box` `SharpeArenaEnv.action_space`
-advertises; `_action_validation.validated_action` widens them back to `float64`
-before they reach the engine. `docs/rl-contract-coverage.md` states the native
-dtype-parity standard this adapter matches, and `tests/test_torchrl.py` pins
-both directions of the boundary plus a `torchrl.collectors.Collector` round trip
-through serialization and replay.
 
 ## MCP
 

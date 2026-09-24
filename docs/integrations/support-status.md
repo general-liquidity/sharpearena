@@ -30,13 +30,17 @@ design implies:
 | Functional view (`functional.py`, `SharpeArenaFuncEnv`) | Contract-tested | `tests/test_functional.py`. |
 | SharpeBench bridge (`bench_bridge.py`) | Contract-tested | Imported and exercised by `tests/test_confidence_pairing.py`, `tests/test_finish_reasons.py`, and `tests/test_local_agents.py`. |
 | Integration contracts and parity checker (`integrations.contracts`, `integrations.parity`) | Contract-tested | `tests/test_integration_parity.py` tests the checker's own failure modes: a deliberately broken adapter mapping is caught by name, and the three ways a check could report parity without comparing anything are made to raise. |
+| <img src="../assets/logos/stable-baselines3.png" alt="" height="16"> Stable-Baselines3 (`sb3_env.py`, `SharpeArenaSB3VecEnv`) | Workflow-tested | `tests/test_sb3.py` covers the autoreset and terminal-observation mapping (`test_autoreset_is_same_step_and_not_next_step`, which fails if the mapping is inverted), the `TimeLimit.truncated` encoding, engine parity through `integrations.parity`, and a PPO learn-then-evaluate pass on a tiny CPU budget. `test_reference_semantics_still_match_installed_sb3` pins the module against the installed `DummyVecEnv.step_wait` source so an upstream change to the mapping fails a test rather than silently changing what the route computes. Targeted against `stable-baselines3` 2.9.0, the version installed and tested here; the import is guarded and construction raises `SB3Unavailable` without it. `examples/sb3/train_ppo.py` is the runnable recipe. |
+
+The five optional extras that gate these routes are `verifiers`, `minari`, `pettingzoo`,
+`mcp`, `sb3` (`crates/sharpearena-py/pyproject.toml`). Nothing above reaches "empirically
 | <a href="https://pytorch.org/rl"><img src="../assets/logos/torchrl.png" alt="" height="12"></a> TorchRL (`torchrl_env.py`, `SharpeArenaTorchRLEnv`) | Contract-tested | `tests/test_torchrl.py`: `torchrl.envs.utils.check_env_specs` passes; the adapter reproduces the engine under `integrations.parity` (`CORE_FIXTURES`); a `torchrl.collectors.Collector` batch survives `torch.save`/`torch.load` and replays its recorded actions against a fresh engine bit-for-bit. The import is guarded behind `_require_torchrl()`; construction raises `TorchRLUnavailable` when `torchrl` is absent. No runnable training recipe exists yet, which is why this stops short of workflow-tested. |
 
 The five optional extras that gate these routes are `verifiers`, `minari`, `pettingzoo`,
 `mcp`, `torchrl` (`crates/sharpearena-py/pyproject.toml`). Nothing above reaches "empirically
 evaluated": no paper or `EVALUATION.md` result currently runs through any of these
 adapters. The paper's evidence uses the Rust engine and the SharpeBench bridge
-directly, not a Gymnasium, PettingZoo, or `verifiers` rollout.
+directly, not a Gymnasium, PettingZoo, `verifiers`, or Stable-Baselines3 rollout.
 
 ## Not present in this tree
 
@@ -44,6 +48,7 @@ directly, not a Gymnasium, PettingZoo, or `verifiers` rollout.
 |---|---|---|
 | CleanRL | Not supported | [CleanRL: dependency ranges don't intersect](#cleanrl-dependency-ranges-dont-intersect), below. |
 | <a href="https://www.ray.io"><img src="../assets/logos/ray.svg" alt="" height="14"></a> Ray, RLlib | Not supported | `inventory.md`: no code, only a literature citation in `paper/review/environment-genre-study-2026.md`. |
+| <a href="https://pytorch.org/rl"><img src="../assets/logos/torchrl.png" alt="" height="12"></a> TorchRL | Not supported | `inventory.md`: nothing in the tree. |
 | <img src="../assets/logos/stable-baselines3.png" alt="" height="18"> Stable-Baselines3 | Not supported | `inventory.md`: the string "SB3-style MLP feature extractors" in a `spaces.py:5` docstring is the only occurrence; no SB3 import or adapter exists. |
 | <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/hud-dark.svg"><img src="../assets/logos/hud.svg" alt="" height="14"></picture> HUD | Local feasibility only, not a supported integration | [HUD: a local feasibility check, now in the tree](#hud-a-local-feasibility-check-now-in-the-tree), below. |
 | <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/harbor-dark.png"><img src="../assets/logos/harbor.png" alt="" height="13"></picture> Harbor | Local feasibility only, not a supported integration | `integrations/harbor/`, recorded in [INT-09](INT-09-harbor-local-feasibility.md). A local job ran end to end under Harbor 0.23.0 on Docker Desktop over WSL2 with a separate-container verifier, and seven of eight tampering fixtures are refused. The evidence covers that one host: it is not evidence against kernel-level container escape, and network egress is untested because `no-network` is unavailable there. Harbor's built-in job aggregation counts a missing or crashed reward as 0, so a custom metric is required before any job-level number means what it appears to. |

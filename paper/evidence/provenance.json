@@ -212,7 +212,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "aeb56aa284c5485a8d63099fdb3d0ac49d365f55",
+  "generated_at_head": "1153ba7e82f261f688ba6fbf56f2be7664042a3e",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -254,11 +254,11 @@
     },
     {
       "path": "crates/sharpearena-py/pyproject.toml",
-      "sha256": "a7e872e3a244decd9648e7f8b1ebd032eb07e47f93cb4ff2191f6be42d49ee60"
+      "sha256": "9246a0ff19c6987ef3163547826b65fec8b6b643842cc172c3a767fa0a025251"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/__init__.py",
-      "sha256": "89277946ac5e8b0cff74e2091e57b904e3e4cf30f307bf4da04958f3824ebf72"
+      "sha256": "cd9850252c7db2ab6f5bb9936084c56b8dd166512869ca47818761a9c2dc7ae5"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/_action_validation.py",
@@ -537,6 +537,10 @@
       "sha256": "5f0036836d1b44aaf42b61ee96fa6fe7884d0b9c309ddad12cb6803a99765d08"
     },
     {
+      "path": "crates/sharpearena-py/python/sharpearena/sb3_env.py",
+      "sha256": "28ea15f7523ee9b24a5e356a862af6e4f370655a796c4bd621ac4812ba9e487c"
+    },
+    {
       "path": "crates/sharpearena-py/python/sharpearena/spaces.py",
       "sha256": "0ea0850797115dcc2b589f80e5711722e0c6a0aeae7e668a0766aa92a4195d83"
     },
@@ -570,7 +574,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/verifiers_env.py",
-      "sha256": "0394570fef76b52044ff5f625eec0ae1c2e941d680b9a089e53cf8d964a29447"
+      "sha256": "922dbcb9520f6ed686ffd494ea180c6f17d9c5608ae244ea7d6231c3cf17d83e"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/wrappers.py",
@@ -942,6 +946,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "26186193c2da0f9e509b4dd5e8a5dbade1ba66acd34cf96ee947d7367f439cd6",
+  "source_snapshot_sha256": "ce41eeb24d85d74eb449493dc2c66e23c7e9948257ff8f6edc61f99683766b87",
   "validator": "paper/src/check-provenance.py"
 }
