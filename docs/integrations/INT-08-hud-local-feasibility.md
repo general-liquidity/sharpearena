@@ -144,7 +144,10 @@ reproduction:
   `max_concurrent=1`: **completes** (each rollout binds a distinct
   loopback port, `51005`/`51006`, confirmed in the log).
 - Same two tasks with explicit slugs at default concurrency: **completes**,
-  `job.results.keys() == {"calm-a", "calm-b"}`.
+  with the two declared slugs `calm-a` and `fat-a`. The earlier example listed
+  `calm-b` here, contradicting the tasks above; the committed two-scenario test
+  constructs `calm-a` and `fat-a`. This corrects the example, not the historical
+  runtime measurements.
 
 Fixed in this pass: `crates/sharpearena-py/tests/test_hud_local.py`'s
 `_task()` helper now sets `slug=scenario` on every minted `Task`, per the
