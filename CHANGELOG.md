@@ -12,6 +12,10 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ### Fixed
 
+- Market-making parameters declare finite/sign and integer domains before
+  rollout. Legitimate zero-intensity, zero-capacity and zero-penalty limits remain
+  valid, as does signed initial cash. Quote depths remain continuous; positive
+  tick metadata does not imply quote snapping. Equations and random draws are unchanged.
 - Strategy journal acquisition has a configurable five-second default deadline.
   Busy journals raise `JournalBusyError` with the unpersisted outcome available
   to the caller; waiting does not remove another writer's lock or recount a trial.

@@ -33,6 +33,7 @@ from __future__ import annotations
 import math
 import warnings
 from dataclasses import dataclass, replace
+from numbers import Integral, Real
 from typing import Callable, Optional
 
 import numpy as np
@@ -52,6 +53,15 @@ class MMParams:
     per unit time; ``n_steps``/``dt`` set the horizon (total time ``n_steps*dt``). The
     closed-form reference policy is a pure function of these, so the same params instance
     feeds both the env and :func:`closed_form_reference_policy`.
+
+    All real parameters must be finite numeric values, never booleans. ``gamma``,
+    ``kappa``, ``dt`` and ``tick_size`` are strictly positive; the reference formula
+    divides by gamma/kappa rather than implementing their zero limits. Volatility,
+    arrival intensity, penalties, quote-depth limit and initial mid may be zero but not
+    negative. Initial cash may be signed. ``n_steps`` is a positive integer and
+    ``inventory_cap`` a nonnegative integer. Zero inventory capacity disables fills.
+    ``tick_size`` describes a positive price increment; this continuous-depth environment
+    does not snap submitted quotes to a tick grid.
     """
 
     sigma: float = 2.0
@@ -67,6 +77,38 @@ class MMParams:
     max_depth: float = 5.0
     tick_size: float = 0.01
     initial_cash: float = 0.0
+
+    def __post_init__(self) -> None:
+        positive = {"gamma", "kappa", "dt", "tick_size"}
+        for name in (
+            "sigma", "gamma", "kappa", "arrival_rate", "dt", "s0", "phi",
+            "terminal_liq_penalty", "max_depth", "tick_size", "initial_cash",
+        ):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, Real):
+                raise ValueError(f"{name} must be a finite numeric value")
+            try:
+                finite = math.isfinite(value)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise ValueError(f"{name} must be a finite numeric value") from exc
+            if not finite:
+                raise ValueError(f"{name} must be a finite numeric value")
+            if name in positive and value <= 0:
+                raise ValueError(f"{name} must be strictly positive")
+            if name not in positive and name != "initial_cash" and value < 0:
+                raise ValueError(f"{name} must be nonnegative")
+        for name, minimum in (("n_steps", 1), ("inventory_cap", 0)):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, Integral) or value < minimum:
+                raise ValueError(f"{name} must be an integer >= {minimum}")
+            try:
+                finite = math.isfinite(value)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise ValueError(f"{name} must be representable as a finite number") from exc
+            if not finite:
+                raise ValueError(f"{name} must be representable as a finite number")
+        if not math.isfinite(self.horizon):
+            raise ValueError("n_steps * dt must produce a finite horizon")
 
     @property
     def horizon(self) -> float:
@@ -89,7 +131,7 @@ class MarketMakingEnv(gym.Env):
 
     State: inventory ``q``, cash, mid price (a seeded arithmetic random walk) and time
     remaining. Action is ``(bid_depth, ask_depth)`` quote distances from mid (price units,
-    a multiple of ``tick_size``). Each step draws Poisson market-order arrivals per side and
+    continuous depths, not snapped to ``tick_size``). Each step draws Poisson market-order arrivals per side and
     fills the maker's quote with probability ``exp(-kappa*depth)``, updating inventory under
     a hard cap ``+/-inventory_cap``. Reward is the mark-to-mid value change minus a running
     squared-inventory penalty ``phi*q**2``; the terminal step force-liquidates remaining
