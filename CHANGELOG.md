@@ -12,6 +12,11 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ### Fixed
 
+- The installed-extra matrix includes finite Ray worker and single-agent RLlib
+  execution without a learning framework. Distributed reports match local
+  execution; Tune-registered observations/rewards/end flags match native
+  Gymnasium. Forced-local execution and changed RLlib rewards are rejected.
+  This does not claim training or multi-agent Ray/PettingZoo coverage.
 - The installed-extra matrix includes TorchRL TensorDict execution through
   completion with constrained CPU-only Torch. Observations, rewards and all
   three end flags are compared against native Gymnasium; deliberate reward
