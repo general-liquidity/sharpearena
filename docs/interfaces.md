@@ -18,8 +18,16 @@ is bounded separately (see below).
 `MultiAgentSharpeArenaEnv` (`crates/sharpearena-py/python/sharpearena/pettingzoo_env.py`)
 runs a batched tournament: each agent trades its own copy of the same frozen
 scenario, so every agent sees an identical price path, and agents are ranked by
-realized Sharpe at episode end. It does not model shared market impact between
+the kernel's deflated Sharpe at episode end. It does not model shared market impact between
 agents; see the module docstring for that distinction.
+
+`env.final_ranking` is `None` until the whole tournament ends, then returns a
+detached list for every `possible_agents` entry, including agents that finished
+early. Reset clears it. Final-step `infos` still contains only agents that acted
+on that step; do not wait for another step from an agent already removed from
+the live roster. An unavailable kernel score, including a track with fewer than
+two returns, is a reason string rather than zero and sorts after numeric scores.
+`rank` is a zero-based display position, not benchmark eligibility certification.
 
 ```python
 from sharpearena.pettingzoo_env import MultiAgentSharpeArenaEnv

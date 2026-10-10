@@ -12,6 +12,12 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ### Fixed
 
+- Private-copy tournament results are available through a detached
+  `final_ranking` snapshot, including agents that finished before the final
+  step, without reintroducing them into Parallel step dictionaries. Reset clears
+  the result. Fewer than two return observations now have an explicit unavailable
+  reason instead of a fabricated zero score. Row positions are not benchmark
+  eligibility certificates; unavailable results sort after numeric scores.
 - Episode-statistics drawdown includes opening unit equity, including first-step
   losses and complete loss. Vector statistics exclude NEXT_STEP reset-only
   frames while retaining SAME_STEP terminal rewards. Reward-path diagnostics
