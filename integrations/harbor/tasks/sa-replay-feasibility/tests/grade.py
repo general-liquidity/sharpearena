@@ -44,18 +44,31 @@ def _require_clean_verifier_dir() -> None:
 
 
 def _read_artifact() -> list[dict[str, object]]:
-    if not ARTIFACT.exists():
-        raise Refusal("artifact_missing", f"{ARTIFACT} was not collected")
-    if ARTIFACT.is_symlink() or not ARTIFACT.is_file():
-        raise Refusal("artifact_not_regular_file", f"{ARTIFACT} is not a regular file")
-    size = ARTIFACT.stat().st_size
+    try:
+        # Check symlinks before existence: dangling links are non-regular too.
+        if ARTIFACT.is_symlink():
+            raise Refusal("artifact_not_regular_file", f"{ARTIFACT} is a symlink")
+        if not ARTIFACT.exists():
+            raise Refusal("artifact_missing", f"{ARTIFACT} was not collected")
+        if not ARTIFACT.is_file():
+            raise Refusal("artifact_not_regular_file", f"{ARTIFACT} is not a regular file")
+        # Bound the actual read, not just a prior stat of a mutable file.
+        with ARTIFACT.open("rb") as stream:
+            payload = stream.read(MAX_ARTIFACT_BYTES + 1)
+    except OSError as exc:
+        raise Refusal("artifact_unreadable", str(exc)) from exc
+    size = len(payload)
     if size == 0:
         raise Refusal("artifact_empty", f"{ARTIFACT} is empty")
     if size > MAX_ARTIFACT_BYTES:
         raise Refusal("artifact_oversized", f"{size} bytes exceeds {MAX_ARTIFACT_BYTES}")
 
+    try:
+        text = payload.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise Refusal("artifact_unparseable", f"invalid UTF-8: {exc}") from exc
     records: list[dict[str, object]] = []
-    for lineno, line in enumerate(ARTIFACT.read_text(encoding="utf-8").splitlines(), 1):
+    for lineno, line in enumerate(text.splitlines(), 1):
         if not line.strip():
             continue
         try:
@@ -75,7 +88,7 @@ def _validate(records: list[dict[str, object]]) -> list[dict[str, object]]:
             f"expected {EXPECTED_STEPS} decisions, got {len(records)}",
         )
     for index, record in enumerate(records):
-        if record.get("step") != index:
+        if type(record.get("step")) is not int or record.get("step") != index:
             raise Refusal(
                 "step_index_mismatch",
                 f"record {index} carries step {record.get('step')!r}",
@@ -84,7 +97,9 @@ def _validate(records: list[dict[str, object]]) -> list[dict[str, object]]:
         size = record.get("size")
         if not isinstance(size, (int, float)) or isinstance(size, bool):
             raise Refusal("size_not_numeric", f"step {index} size {size!r}")
-        if not 0.0 <= float(size) <= 1.0:
+        # Compare before conversion so an arbitrarily large JSON integer cannot
+        # escape the refusal contract through float overflow.
+        if not 0.0 <= size <= 1.0:
             raise Refusal("size_out_of_range", f"step {index} size {size!r}")
         if index == len(records) - 1:
             if action != TERMINAL_ACTION:
@@ -92,7 +107,7 @@ def _validate(records: list[dict[str, object]]) -> list[dict[str, object]]:
                     "missing_final_action",
                     f"last record action {action!r}, expected {TERMINAL_ACTION!r}",
                 )
-        elif action not in LEGAL_ACTIONS:
+        elif not isinstance(action, str) or action not in LEGAL_ACTIONS:
             raise Refusal("illegal_action", f"step {index} action {action!r}")
     return records
 

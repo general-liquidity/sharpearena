@@ -1,11 +1,10 @@
 # Integration inventory and version matrix (INT-00)
 
-What the tree actually contains on `b9fdf30`, read against the integration plan's
-claims rather than assumed from them. Every row below was checked against the source
-file named in it. Nothing is listed as missing that was not grepped for first. The
-original pass was checked against `d33b249`; this update reread every row against the
-current commit rather than trusting the earlier one, and the one row that had gone
-stale (HUD and Harbor, below) is corrected.
+The original inventory pass covered `d33b249`; the HUD/Harbor correction reread
+the inventory at `b9fdf30`. SB3, TorchRL and Ray/RLlib entries were added later.
+Those audit dates do not establish a new complete inventory or installed-package
+run at the latest commit. The version matrix retains its recorded environments;
+source coverage and freshly executed package coverage are distinct.
 
 ## What already exists
 

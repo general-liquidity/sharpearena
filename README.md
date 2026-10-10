@@ -140,7 +140,7 @@ except Gymnasium (see [Quick start](#quick-start)) is in
 | Interface | What it's for |
 |:--|:--|
 | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/logos/gymnasium-dark.svg"><img src="docs/assets/logos/gymnasium.svg" alt="" height="18"></picture> Gymnasium (scalar and vector) | The default Python route: `SharpeArenaEnv`, `SharpeArenaVectorEnv`, registered `SharpeArena/<Tier>[-Eval]-v1` IDs. |
-| <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/logos/pettingzoo-dark.svg"><img src="docs/assets/logos/pettingzoo.svg" alt="" height="18"></picture> PettingZoo | Multi-agent parallel envs: shared-market impact and the limit-order book. |
+| <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/logos/pettingzoo-dark.svg"><img src="docs/assets/logos/pettingzoo.svg" alt="" height="18"></picture> PettingZoo | Three separate families: private-copy tournaments, shared-impact markets, and limit-order-book tasks. |
 | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/logos/prime-intellect-dark.png"><img src="docs/assets/logos/prime-intellect.png" alt="" height="13"></picture> `verifiers` / Prime-RL | RLVR-style multi-turn rollout with an XML decision parser, for training with Prime-RL. |
 | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/logos/minari-dark.svg"><img src="docs/assets/logos/minari.svg" alt="" height="18"></picture> Minari | Offline-RL dataset export, including a train/test split. |
 | <img src="docs/assets/logos/stable-baselines3.png" alt="" height="18"> Stable-Baselines3 | `SharpeArenaSB3VecEnv`, an SB3 `VecEnv` over the native batched engine, fixed at same-step autoreset to match SB3's own contract. |

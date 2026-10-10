@@ -234,6 +234,8 @@ jobs:
       # reference, and a gate that fetched upstream would fail on someone else's rebrand.
       - name: Vendored logos match their recorded hashes
         run: python scripts/check-logo-assets.py
+      - name: Harbor grader refuses malformed artifacts with reason-coded outputs
+        run: python scripts/test_harbor_grader.py
       # A gate with no failing case is not evidence, so the gates themselves are tested
       # against planted defects in throwaway checkouts. No compiled extension is
       # involved, so this needs pytest and nothing else.

@@ -448,9 +448,8 @@ something to build on yet. No new example is added here.
 `crates/sharpearena-wasm/` compiles the same Rust engine to WebAssembly with
 `wasm-bindgen`, and the [npm package](../npm/sharpearena/) is the supported
 JavaScript and TypeScript surface built on it; its `runBaseline` example is in the
-root [README](../README.md#javascript--typescript). No example calling the raw
-`sharpearena-wasm` bindings directly exists in this tree yet: there is no
-JavaScript or TypeScript file anywhere under `crates/sharpearena-wasm/` or `npm/`
-that does so outside the npm package's own generated bindings and tests. If you
-need the raw crate rather than the npm wrapper, start from
-`crates/sharpearena-wasm/src/lib.rs`.
+root [README](../README.md#javascript--typescript). The
+[throughput benchmark](../npm/sharpearena/bench/throughput.js) imports the raw
+bindings and calls `generate_scenario` and `run_baseline`. It is a baseline
+performance example, not an external-agent tutorial. For the raw export contract,
+read `crates/sharpearena-wasm/src/lib.rs`.

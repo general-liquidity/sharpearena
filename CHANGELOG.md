@@ -10,6 +10,18 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ## [Unreleased]
 
+### Fixed
+
+- Harbor feasibility grader: bounded artifact reads and reason-coded refusals
+  for invalid UTF-8, unreadable files, Boolean step indices, non-string actions,
+  and oversized numeric values. Seven standalone tests exercise the actual
+  grader without Docker; five fail against the prior source. Historical Harbor
+  trial results remain unchanged, and the pre-grader transfer crash is separate.
+- Documentation: restore the complete integration support table, remove the
+  stale Harbor merge condition, distinguish inventory audit dates from later
+  adapter additions, describe the three PettingZoo environment families, and
+  link the existing raw-WASM throughput example.
+
 ### Added
 
 - ci: an installed-package and compatibility matrix (INT-18) for the PyPI wheel, closing the gap the existing packaging gates left: they proved a wheel builds and imports on one interpreter with every extra installed, never that it installs and runs across the versions and extras the package declares. `wheel-install-import` builds with `maturin build --locked` and drives the native binding and the packaged Gymnasium adapter in a clean venv outside the checkout on the declared floor (Python 3.9), the version the rest of CI uses (3.12) and the newest released interpreter (3.14) on Linux, then 3.12 on macOS and Windows. `wheel-no-extras` installs the bare wheel with none of the four optional extras present and asserts every guarded adapter module imports and refuses by name, which is the check that makes "every adapter is guarded" a tested claim rather than an assumption read off the source: with every extra installed, which is what the existing `python` job does, the "absent" branch of each guard is the one nothing ever executes. `wheel-extras` installs `sharpearena[<extra>]` per declared extra and runs the real adapter behind it, a PettingZoo tournament, a Minari export, the MCP tool list, the verifiers environment build. The extras leg is generated from `crates/sharpearena-py/pyproject.toml` through the new `scripts/optional_extras.py` registry rather than hand-listed, and `validate_coverage()` refuses to run when a declared extra has no exercise or guard entry, so the matrix cannot quietly shrink as the package grows. `docs/integrations/inventory.md` records what each job covers.

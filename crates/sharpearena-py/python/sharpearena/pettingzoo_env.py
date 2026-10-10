@@ -9,9 +9,9 @@ and are ranked by their realized SharpeBench ``deflated_sharpe`` at episode end.
 **This is competition, not a shared market.** The agents do **not** interact: there is
 no cross-agent price impact, no endogenous market — one agent's orders never move the
 prices another agent sees. The contest is "who trades the same tape best," scored by the
-real SharpeBench kernel. An endogenous-impact market (where agents' aggregate flow moves
-the book) is a separate, future flagship build; this module deliberately changes nothing
-in the simulator.
+real SharpeBench kernel. The separate ``market_env.EndogenousMarketEnv`` provides
+shared endogenous-impact experiments; ``lob_env`` provides a limit-order-book
+task. Neither changes this module's private-copy tournament economics.
 
 **Parallel, not AEC.** Order submission in a market is *simultaneous* — every agent acts
 on the same bar without seeing the others' action first — so the native API is
