@@ -12,6 +12,13 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ### Fixed
 
+- Episode-statistics drawdown includes opening unit equity, including first-step
+  losses and complete loss. Vector statistics exclude NEXT_STEP reset-only
+  frames while retaining SAME_STEP terminal rewards. Reward-path diagnostics
+  are not native NAV measurements when rewards are shaped, nor ranking inputs.
+- The HUD serialization-interruption regression constructs its replacement
+  grade before patching JSON and verifies the interrupted call received that
+  grade, rather than accidentally interrupting episode construction.
 - Manipulation probes disclose terminal shares, cleared closes, cash and marked
   position value in both arms. Zero terminal target is no longer described as
   guaranteed quantity liquidation. P&L calculations and frozen F6 evidence are unchanged.

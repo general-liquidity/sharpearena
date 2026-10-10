@@ -61,13 +61,17 @@ for `sb3`, `torchrl` and `ray`. The plan's warning holds: generic Gymnasium and
 Farama compatibility is real and already tested, and the gap is the seven
 named consumer routes, not the interfaces they consume.
 
-### Two claims with thin test backing
+### Wrapper and space coverage
 
 `docs/capabilities.md` lists both, and both have a module behind them, so neither is a
-false claim. Neither has a direct test:
+false claim. Coverage differs by component:
 
-- `wrappers_vector.py` (`VectorCausalNormalizeObservation`, `VectorRecordEpisodeStatistics`)
-  has no test file, and no test names either class.
+- `VectorRecordEpisodeStatistics` now has direct tests in
+  `tests/test_vector_episode_statistics.py`: opening-equity drawdown, complete
+  loss, staggered NEXT_STEP resets and SAME_STEP terminal rewards. Its drawdown
+  compounds emitted rewards as simple returns, so shaped rewards need not match
+  native NAV drawdown. These are diagnostics, not benchmark scores.
+  `VectorCausalNormalizeObservation` still has no direct class-specific test.
 - `spaces.py` (`flatten_obs`, `unflatten_obs`, `flat_dim`, `FlattenObservation`) is
   exercised indirectly through `PreprocessingConfig(flatten=True)` in
   `tests/test_preprocessing.py`, and now also directly: INT-07's
