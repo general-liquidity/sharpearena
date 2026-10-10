@@ -81,7 +81,7 @@ import gymnasium
 import sharpearena
 
 envs = gymnasium.make_vec("SharpeArena/Hard-v1", num_envs=8)
-observations, info = envs.reset(seed=7)
+observations, info = envs.reset()
 observations, rewards, terminations, truncations, info = envs.step(
     envs.action_space.sample()
 )
@@ -89,6 +89,19 @@ observations, rewards, terminations, truncations, info = envs.step(
 
 The registered vector entry point is `SharpeArenaVectorEnv`. It drives the native
 batched environment rather than a separate Python market implementation.
+
+Unlike the scalar wrapper, the current vector wrapper fixes lane seeds at
+construction. `reset(seed=...)` does not reseed the native lanes, and autoreset
+replays their existing scenarios rather than drawing fresh independent ones.
+Pass an explicit `seeds` list at construction when you need chosen lane seeds;
+without one, training lanes use consecutive seeds beginning at zero, and
+evaluation lanes begin at `EVAL_SEED_BASE`. Explicit seeds are used as supplied,
+including in evaluation mode, so select the evaluation band yourself in that case.
+
+The vector constructor also currently accepts but does not enforce
+`max_episode_steps`. Episodes follow the native window and termination rules;
+that argument is not a custom vector time limit. These are current limitations,
+not scalar/vector reset or horizon parity guarantees.
 
 ## Reproducible evaluation
 
