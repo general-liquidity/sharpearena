@@ -53,8 +53,8 @@ version-bounded rather than open (`torchrl>=0.14,<0.15`,
 actual behaviour rather than a floor (the Tune-registry requirement, the
 Dict-observation RLModule failure, and whether multi-agent env runners
 vectorise have each changed across recent Ray releases), and INT-12 similarly
-against TorchRL's 0.14 `EnvBase` contract. The INT-18 installed-wheel matrix
-excludes the same three extras from its own per-extra install cells, for their
+against TorchRL's 0.14 `EnvBase` contract. The installed-wheel matrix now has an
+SB3 cell with constrained CPU-only Torch. It still excludes TorchRL and Ray, for their
 own reasons rather than one shared one: see the "Installed-wheel compatibility
 matrix" section below for what is and is not exercised against a built wheel
 for `sb3`, `torchrl` and `ray`. The plan's warning holds: generic Gymnasium and
@@ -190,8 +190,8 @@ a newly declared extra gets a cell automatically, close that gap:
 | Job | Covers |
 |---|---|
 | `wheel-install-import` | Builds the wheel with `maturin build --locked` and installs it into a clean venv outside the checkout, on the declared floor (3.9), the version the rest of CI uses (3.12), and the newest released interpreter (3.14), all on Linux; then 3.12 on macOS and Windows. Drives the native binding and the packaged Gymnasium adapter. |
-| `wheel-no-extras` | Installs the bare wheel with none of the six optional extras present, asserts the base environment steps, and asserts every guarded adapter module (`pettingzoo_env`, `minari_export`, `mcp_server`, `verifiers_env`, `sb3_env`, `torchrl_env`) imports and refuses **by name** rather than dying on a bare `ImportError`. This is what makes "every adapter is guarded" a tested claim instead of an assumption read off the source, for all six declared extras including the two below that never get a `wheel-extras` cell. |
-| `wheel-extras` | One cell per *installable* declared extra (`verifiers`, `minari`, `pettingzoo`, `mcp`), installing `sharpearena[<extra>]` from the built wheel and running the real adapter behind it: a PettingZoo tournament, a Minari export, the MCP tool list, the verifiers environment build. |
+| `wheel-no-extras` | Installs the bare wheel with none of the seven optional extras present. Steps the base environment and checks every guarded module, including Ray/RLlib, imports and refuses by name when called. This covers absence guards, not execution with dependencies installed. |
+| `wheel-extras` | A cell per exercised extra (`verifiers`, `minari`, `pettingzoo`, `mcp`, `sb3`). Installs the built wheel with its extra and drives the adapter. The SB3 cell constrains Torch 2.9.0+cpu, compares two lanes against the native vector route through completion and checks terminal-observation delivery. |
 
 Representative rather than combinatorial: the interpreters between 3.9 and 3.14 differ
 from each other in nothing this package touches, so the OS axis and the version axis
@@ -201,19 +201,13 @@ from; `validate_coverage()` refuses to run when a declared extra has no exercise
 recorded install-matrix exclusion, or no guard entry, so the matrix cannot quietly
 shrink as the package grows and an exclusion cannot quietly rot into an accidental gap.
 
-Two of the six declared extras, `sb3` and `torchrl`, are deliberately excluded from
-`wheel-extras`: both pull torch, the heaviest dependency any extra here declares, and
-`ci-requirements.txt` already excludes it from the source-tree suite for the same
-reason (`tests/test_sb3.py`, `tests/test_torchrl.py` skip their torch-gated cases on
-CI). Adding a `wheel-extras` cell for either would install torch a second and third
-time on a matrix sized to stay near fifteen minutes. `scripts/optional_extras.py`'s
-`INSTALL_MATRIX_EXCLUDED` records the reason and is checked by `validate_coverage()`
-the same way `EXERCISES` is, so the exclusion cannot silently expand to cover an
-unrelated future extra. What is still proven, for free, in `wheel-no-extras`: that
-`SharpeArenaSB3VecEnv(...)` and `SharpeArenaTorchRLEnv(...)` refuse by name with the
-dependency absent, since neither job ever installs either extra anyway. What is not
-proven against an installed wheel: the real SB3 `VecEnv` / TorchRL `EnvBase` route
-with the extra present.
+TorchRL and Ray remain explicitly excluded from `wheel-extras`; their installed
+routes still need execution checks. The source suite's Gymnasium 1.3.0 pin
+conflicts with Ray 2.58.0's 1.2.2 pin, but that is not an incompatibility with the
+base package or a blocker to a separately resolved wheel-consumer venv. SB3's
+new CPU-only cell is separate from the source suite, where torch-dependent tests
+can still skip. `INSTALL_MATRIX_EXCLUDED` and `EXERCISES` are checked as an
+exhaustive partition; a recorded exclusion is not a passing installed route.
 
 The INT-02 tests were additionally run against an installed wheel
 (`sharpearena-0.31.0-cp312-cp312-win_amd64.whl`, built from this tree) in a clean

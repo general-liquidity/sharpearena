@@ -12,6 +12,10 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ### Fixed
 
+- The installed-extra wheel matrix now includes an SB3 execution cell, with
+  constrained CPU-only Torch, two-lane native vector parity through completion
+  and terminal-observation delivery. Consumer checks remove inherited Python
+  source/import paths. TorchRL and Ray remain explicitly unexercised there.
 - The Lean forecast model includes candidate-digest acceptance/refusal and
   claim-identity preservation, plus per-claim history-fold append rules. These
   strengthen the model's binding and revision-order assurance without changing
