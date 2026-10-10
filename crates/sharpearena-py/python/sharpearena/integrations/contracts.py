@@ -26,9 +26,12 @@ the audit path; an adapter fills them from the evidence it already produces.
 
 from __future__ import annotations
 
+import math
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Mapping
+from types import MappingProxyType
+from typing import Any
 
 #: The autoreset modes ``SharpeArenaVectorEnv`` accepts, in the package's own spelling.
 #: Gymnasium's ``AutoresetMode`` enum names the same three (``NEXT_STEP``, ``SAME_STEP``,
@@ -64,6 +67,12 @@ class AttemptCounts:
     declining a decision it will not represent, and a failure is an attempt that broke.
     Collapsing either into a zero-valued completion is the C04/C06 error this type
     exists to prevent, so :meth:`is_complete` requires both to be zero.
+
+    Completeness here is arithmetic relative to the record's declared expected
+    count. An empty workload is valid; this record alone does not prove that its
+    expected count matches an independently committed experiment plan. Consumers
+    requiring that guarantee must use :meth:`require_complete` with that plan's
+    expected count and explicitly opt into empty workloads when appropriate.
     """
 
     expected: int
@@ -77,7 +86,9 @@ class AttemptCounts:
         for field in _COUNT_FIELDS:
             value = getattr(self, field)
             if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-                raise ContractViolation(f"{field} must be a non-negative integer, got {value!r}")
+                raise ContractViolation(
+                    f"{field} must be a non-negative integer, got {value!r}"
+                )
         dispositions = self.completed + self.refused + self.failed
         if dispositions != self.attempted:
             raise ContractViolation(
@@ -97,7 +108,9 @@ class AttemptCounts:
     @property
     def is_complete(self) -> bool:
         """Every planned trial completed, with nothing refused or failed."""
-        return self.completed == self.expected and self.refused == 0 and self.failed == 0
+        return (
+            self.completed == self.expected and self.refused == 0 and self.failed == 0
+        )
 
     def shortfall(self) -> str:
         """Why the run is not complete, or ``""`` when it is.
@@ -109,12 +122,33 @@ class AttemptCounts:
             return ""
         parts = []
         if self.completed < self.expected:
-            parts.append(f"{self.expected - self.completed} of {self.expected} trials not completed")
+            parts.append(
+                f"{self.expected - self.completed} of {self.expected} trials not completed"
+            )
         if self.refused:
             parts.append(f"{self.refused} refused")
         if self.failed:
             parts.append(f"{self.failed} failed")
         return "; ".join(parts)
+
+    def require_complete(self, *, expected: int, allow_empty: bool = False) -> None:
+        """Require completion against the caller's independently declared plan.
+
+        This does not authenticate a plan or its provenance. The caller must
+        obtain ``expected`` from its committed plan, not this record itself.
+        """
+        if isinstance(expected, bool) or not isinstance(expected, int) or expected < 0:
+            raise ContractViolation("planned expected must be a non-negative integer")
+        if not isinstance(allow_empty, bool):
+            raise ContractViolation("allow_empty must be a boolean")
+        if self.expected != expected:
+            raise ContractViolation(
+                f"record expected={self.expected} differs from planned expected={expected}"
+            )
+        if expected == 0 and not allow_empty:
+            raise ContractViolation("empty workload requires explicit allow_empty=True")
+        if not self.is_complete:
+            raise ContractViolation(self.shortfall())
 
     def as_record(self) -> dict[str, Any]:
         """The evidence block, including the derived completeness so a reader of the
@@ -126,11 +160,13 @@ class AttemptCounts:
         }
 
     @classmethod
-    def from_record(cls, payload: Mapping[str, Any]) -> "AttemptCounts":
+    def from_record(cls, payload: Mapping[str, Any]) -> AttemptCounts:
         """Parse a record. A missing count is refused, never defaulted to zero."""
         missing = [field for field in _COUNT_FIELDS if field not in payload]
         if missing:
-            raise ContractViolation(f"attempt counts are missing {missing}; absent is not zero")
+            raise ContractViolation(
+                f"attempt counts are missing {missing}; absent is not zero"
+            )
         return cls(**{field: payload[field] for field in _COUNT_FIELDS})
 
 
@@ -153,12 +189,30 @@ class ExactnessDomain:
     def __post_init__(self) -> None:
         overlap = sorted(set(self.exact) & set(self.tolerances))
         if overlap:
-            raise ContractViolation(f"{overlap} are declared both exact and tolerance-bounded")
+            raise ContractViolation(
+                f"{overlap} are declared both exact and tolerance-bounded"
+            )
         for field, value in self.tolerances.items():
-            if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0.0:
-                raise ContractViolation(f"tolerance for {field} must be a positive number")
+            try:
+                valid = (
+                    not isinstance(value, bool)
+                    and isinstance(value, (int, float))
+                    and math.isfinite(value)
+                    and value > 0.0
+                )
+            except OverflowError:
+                valid = False
+            if not valid:
+                raise ContractViolation(
+                    f"tolerance for {field} must be a finite positive number"
+                )
+        # A caller-owned mutable mapping must not invalidate the checked domain
+        # after construction (the dataclass itself is frozen).
+        object.__setattr__(self, "tolerances", MappingProxyType(dict(self.tolerances)))
         if not self.rationale.strip():
-            raise ContractViolation("an exactness domain must state why its fields are exact")
+            raise ContractViolation(
+                "an exactness domain must state why its fields are exact"
+            )
 
     def is_exact(self, field: str) -> bool:
         return field in self.exact
@@ -185,7 +239,15 @@ class ExactnessDomain:
 #: engine produces these values from the same tape and the same decisions on both sides
 #: of the comparison, so a difference of one ULP is a mapping bug, not float noise.
 ENGINE_EXACTNESS = ExactnessDomain(
-    exact=("reward", "nav", "observation", "terminated", "truncated", "outcome", "step_count"),
+    exact=(
+        "reward",
+        "nav",
+        "observation",
+        "terminated",
+        "truncated",
+        "outcome",
+        "step_count",
+    ),
     tolerances={},
     rationale=(
         "one deterministic engine build replays one tape under one action sequence on "

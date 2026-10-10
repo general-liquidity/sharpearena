@@ -83,7 +83,9 @@ def decision_json(symbols: Sequence[str], weights: Sequence[float]) -> str:
     return json.dumps({"orders": orders, "reasoning": "integrations.parity"})
 
 
-def observation_digest(closes: Sequence[float], positions: Sequence[float], cash: float) -> str:
+def observation_digest(
+    closes: Sequence[float], positions: Sequence[float], cash: float
+) -> str:
     """A canonical digest of the decoded observation, stable across both paths.
 
     Uses ``sharpebench/canonical-json/v1`` so the digest is the same bytes whichever
@@ -98,7 +100,9 @@ def observation_digest(closes: Sequence[float], positions: Sequence[float], cash
     )
 
 
-def _decode_wire_observation(obs_json: str, symbols: Sequence[str]) -> tuple[list, list, float]:
+def _decode_wire_observation(
+    obs_json: str, symbols: Sequence[str]
+) -> tuple[list, list, float]:
     """Decode the engine's ``MarketObservation`` the way the schema documents it."""
     obs = json.loads(obs_json)
     by_symbol = {entry["symbol"]: entry for entry in obs["symbols"]}
@@ -159,7 +163,9 @@ class ParityFixture:
                 f"{self.name}: expect must be complete, incomplete or refused, got {self.expect!r}"
             )
         if not self.actions:
-            raise ParityUnavailable(f"{self.name}: a fixture with no actions compares nothing")
+            raise ParityUnavailable(
+                f"{self.name}: a fixture with no actions compares nothing"
+            )
         widths = {len(action) for action in self.actions}
         if widths != {self.n_symbols}:
             raise ParityUnavailable(
@@ -177,7 +183,9 @@ class ParityFixture:
         low = -self.max_weight if self.allow_short else 0.0
         if any(not math.isfinite(float(value)) for value in action):
             return "not_finite"
-        if any(float(value) < low or float(value) > self.max_weight for value in action):
+        if any(
+            float(value) < low or float(value) > self.max_weight for value in action
+        ):
             return "out_of_bounds"
         return None
 
@@ -287,7 +295,9 @@ def _refused_step(index: int, action: Sequence[float], reason: str) -> StepRecor
 
 def _counts(steps: Sequence[StepRecord], expected_steps: int) -> AttemptCounts:
     refused = sum(1 for step in steps if step.outcome.startswith("refused:"))
-    failed = sum(1 for step in steps if step.outcome.startswith(("accepted:", "failed:")))
+    failed = sum(
+        1 for step in steps if step.outcome.startswith(("accepted:", "failed:"))
+    )
     return AttemptCounts(
         expected=expected_steps,
         attempted=len(steps),
@@ -321,7 +331,9 @@ def engine_rollout(fixture: ParityFixture) -> ParityRecord:
         from ..sharpearena_py import TradingEnv
         from .. import sharpearena_py
     except Exception as exc:  # pragma: no cover - exercised only without the binding
-        raise ParityUnavailable(f"the native sharpearena binding is not importable: {exc}") from exc
+        raise ParityUnavailable(
+            f"the native sharpearena binding is not importable: {exc}"
+        ) from exc
 
     reported = engine_spec_hash(sharpearena_py)
     if reported != EXPECTED_SPEC_HASH:
@@ -331,7 +343,9 @@ def engine_rollout(fixture: ParityFixture) -> ParityRecord:
         )
 
     scenario_seed, exec_seed = resolved_seeds(fixture)
-    env = TradingEnv(seed=scenario_seed, exec_seed=exec_seed, **fixture.scenario_kwargs())
+    env = TradingEnv(
+        seed=scenario_seed, exec_seed=exec_seed, **fixture.scenario_kwargs()
+    )
     obs_json = env.reset()
     symbols = [entry["symbol"] for entry in json.loads(obs_json)["symbols"]]
 
@@ -415,7 +429,9 @@ def adapter_rollout(
 
         spec_hash = engine_spec_hash(sharpearena_py)
     except Exception as exc:  # pragma: no cover - exercised only without the binding
-        raise ParityUnavailable(f"{source} has no native engine underneath: {exc}") from exc
+        raise ParityUnavailable(
+            f"{source} has no native engine underneath: {exc}"
+        ) from exc
 
     native = getattr(env, "_env", None)
     # Follow the supported Gymnasium wrapper chain, not an arbitrary claim that
@@ -430,10 +446,11 @@ def adapter_rollout(
     if not isinstance(native, native_types):
         raise ParityUnavailable(f"{source} exposes no supported native engine readback")
     if isinstance(native, sharpearena_py.VecTradingEnv) and native.num_envs != 1:
-        raise ParityUnavailable(f"{source} must select a single native lane for scalar parity")
+        raise ParityUnavailable(
+            f"{source} must select a single native lane for scalar parity"
+        )
 
     obs, _info = env.reset()
-    symbols = list(env.symbols)
 
     steps: list[StepRecord] = []
     for index, action in enumerate(fixture.actions):
@@ -446,12 +463,16 @@ def adapter_rollout(
             if isinstance(exc, ActionValidationError):
                 steps.append(_refused_step(index, action, exc.code))
             elif isinstance(exc, sharpearena_py.SharpeArenaError):
-                steps.append(_refused_step(index, action, f"engine:{_refusal_code(exc)}"))
+                steps.append(
+                    _refused_step(index, action, f"engine:{_refusal_code(exc)}")
+                )
             else:
-                steps.append(replace(
-                    _refused_step(index, action, type(exc).__name__),
-                    outcome=f"failed:{type(exc).__name__}",
-                ))
+                steps.append(
+                    replace(
+                        _refused_step(index, action, type(exc).__name__),
+                        outcome=f"failed:{type(exc).__name__}",
+                    )
+                )
             break
         if reason is not None:
             # The adapter took an action its own declared bounds reject. Recorded as a
@@ -488,11 +509,16 @@ def adapter_rollout(
             break
 
     try:
-        raw = (native.effective_configs[0] if isinstance(native, sharpearena_py.VecTradingEnv)
-               else native.effective_config)
+        raw = (
+            native.effective_configs[0]
+            if isinstance(native, sharpearena_py.VecTradingEnv)
+            else native.effective_config
+        )
         effective = json.loads(raw)
     except (AttributeError, TypeError, ValueError) as exc:
-        raise ParityUnavailable(f"{source} has no valid effective config readback") from exc
+        raise ParityUnavailable(
+            f"{source} has no valid effective config readback"
+        ) from exc
 
     return ParityRecord(
         fixture=fixture.name,
@@ -506,7 +532,14 @@ def adapter_rollout(
 
 
 _STEP_FIELDS = ("outcome", "reward", "terminated", "truncated", "nav", "observation")
-_CONFIG_FIELDS = ("n_symbols", "n_bars", "window_start", "window_end", "dataset_fnv1a64", "exec_seed")
+_CONFIG_FIELDS = (
+    "n_symbols",
+    "n_bars",
+    "window_start",
+    "window_end",
+    "dataset_fnv1a64",
+    "exec_seed",
+)
 
 
 def _required_nav(info: dict, source: str) -> float:
@@ -550,8 +583,10 @@ def compare(
         raise ParityUnavailable(
             f"fixture {reference.fixture} produced no steps on either path; there is nothing to compare"
         )
-    if not any(left.outcome == right.outcome == "ok"
-               for left, right in zip(reference.steps, candidate.steps)):
+    if not any(
+        left.outcome == right.outcome == "ok"
+        for left, right in zip(reference.steps, candidate.steps)
+    ):
         raise ParityUnavailable(
             f"fixture {reference.fixture} compared no successful engine transition"
         )
@@ -571,7 +606,10 @@ def compare(
             f"{candidate.source} {candidate.counts.as_record()}"
         )
     for field in _CONFIG_FIELDS:
-        if field not in reference.effective_config or field not in candidate.effective_config:
+        if (
+            field not in reference.effective_config
+            or field not in candidate.effective_config
+        ):
             raise ParityUnavailable(f"effective config readback is missing {field}")
         if reference.effective_config[field] != candidate.effective_config[field]:
             mismatches.append(
@@ -584,14 +622,41 @@ def compare(
         for field in _STEP_FIELDS:
             expected = getattr(left, field)
             actual = getattr(right, field)
+            if field in ("reward", "nav"):
+                for value, source in (
+                    (expected, reference.source),
+                    (actual, candidate.source),
+                ):
+                    if value is None:
+                        if left.outcome == right.outcome == "ok":
+                            raise ParityUnavailable(
+                                f"{source} reports no finite numeric {field}"
+                            )
+                        continue
+                    try:
+                        finite = (
+                            not isinstance(value, bool)
+                            and isinstance(value, (int, float))
+                            and math.isfinite(value)
+                        )
+                    except OverflowError:
+                        finite = False
+                    if not finite:
+                        raise ParityUnavailable(
+                            f"{source} reports no finite numeric {field}"
+                        )
             if exactness.is_exact(_domain_field(field)):
                 if expected != actual:
-                    mismatches.append(f"step {left.step} {field}: engine {expected!r}, got {actual!r}")
+                    mismatches.append(
+                        f"step {left.step} {field}: engine {expected!r}, got {actual!r}"
+                    )
                 continue
             tolerance = exactness.tolerance_for(_domain_field(field))
             if expected is None or actual is None:
                 if expected is not actual:
-                    mismatches.append(f"step {left.step} {field}: engine {expected!r}, got {actual!r}")
+                    mismatches.append(
+                        f"step {left.step} {field}: engine {expected!r}, got {actual!r}"
+                    )
             elif abs(float(expected) - float(actual)) > tolerance:
                 mismatches.append(
                     f"step {left.step} {field}: engine {expected!r}, got {actual!r} "
@@ -624,7 +689,11 @@ def check_adapter_parity(
     reference = engine_rollout(fixture)
     candidate = adapter_rollout(fixture, make_env, source=source)
     report = compare(reference, candidate, exactness=exactness)
-    expected = {"complete": "truncated", "incomplete": "incomplete", "refused": "refused"}
+    expected = {
+        "complete": "truncated",
+        "incomplete": "incomplete",
+        "refused": "refused",
+    }
     mismatches = list(report.mismatches)
     for record in (reference, candidate):
         if record.terminal != expected[fixture.expect]:

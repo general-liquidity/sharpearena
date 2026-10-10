@@ -12,6 +12,17 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ### Fixed
 
+- Strategy journal acquisition has a configurable five-second default deadline.
+  Busy journals raise `JournalBusyError` with the unpersisted outcome available
+  to the caller; waiting does not remove another writer's lock or recount a trial.
+- Integration exactness rules reject non-finite tolerances and snapshot their
+  mappings. Batch completion can require an independently supplied plan count.
+  Conformance checks retain their guards under optimized Python and compare
+  terminal flags across instances. Parity refuses invalid reward or NAV values.
+- Benchmark bridge requires explicit finite nonnegative recorded cost and finite
+  positive annualization. Missing cost is not invented as zero; recorded zero
+  remains valid and local compute cost remains excluded. The canonical Python
+  suite now executes all paper producer regressions and refuses skipped coverage.
 - Minari split exports require exact recorded scenario seeds in their declared
   train/test bands. Terminal classification requires finite recorded NAV unless
   explicitly overridden, and failed metadata writes are not reported as success.

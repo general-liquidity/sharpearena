@@ -124,7 +124,11 @@ completed, refused, failed and retried for a rollout batch and have the arithmet
 checked. `AttemptCounts` refuses a record where the dispositions do not sum to the
 attempts, where more trials completed than were planned, or where a count is missing,
 because absent is not zero. `is_complete` requires zero refused and zero failed, so a
-partial run cannot read as a whole one.
+partial run cannot read as a whole one relative to its declared expected count.
+An empty workload is valid arithmetic, not evidence of an experiment. Consumers
+must call `require_complete(expected=<independent plan count>)` to enforce that
+count; empty workloads require `allow_empty=True`. This does not authenticate the
+plan or establish that its count was independently committed.
 
 ## C07: reproducibility and trust class
 
@@ -147,6 +151,13 @@ policy parameters, GPU reductions or distributed optimiser state, and it should 
 narrower than any upstream framework's seeding language implies: Gymnasium does not
 claim seed independence across vector lanes, and RLlib's seeding statement does not
 scope itself for differing worker counts, restarts or asynchronous sampling.
+
+Tolerance values must be finite and positive. The domain snapshots the supplied
+mapping so later caller mutations cannot change the comparison rules. Parity
+also requires finite numeric reward and NAV on successful transitions, even when
+both records contain the same invalid value or the field has a tolerance.
+Environment conformance guards remain active under `python -O`; cross-instance
+determinism checks include both terminal flags, not only observations and reward.
 
 `TrustClass` separates provenance from integrity. A digest establishes that bytes did
 not change; it does not make deserialising them safe and says nothing about who produced

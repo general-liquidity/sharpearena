@@ -16,7 +16,7 @@ proof that the seed actually drives the market, not just the RNG.
 
 from __future__ import annotations
 
-from typing import Callable, Mapping, Optional
+from collections.abc import Callable, Mapping
 
 import numpy as np
 
@@ -30,10 +30,19 @@ def _decoded_equal(a: Obs, b: Obs) -> bool:
 
 
 def _assert_in_space(env, obs: Obs, where: str) -> None:
-    assert env.observation_space.contains(obs), (
-        f"{where}: observation is not contained in env.observation_space "
-        f"(keys={sorted(obs)}, space={env.observation_space})"
+    _require(
+        env.observation_space.contains(obs),
+        (
+            f"{where}: observation is not contained in env.observation_space "
+            f"(keys={sorted(obs)}, space={env.observation_space})"
+        ),
     )
+
+
+def _require(condition, message: str) -> None:
+    """Keep diagnostic validation active under optimized Python too."""
+    if not condition:
+        raise AssertionError(message)
 
 
 def _equal_weight_action(env) -> np.ndarray:
@@ -45,42 +54,49 @@ def _equal_weight_action(env) -> np.ndarray:
 def check_env(
     env,
     *,
-    make_env_for_seed: Optional[Callable[[int], object]] = None,
+    make_env_for_seed: Callable[[int], object] | None = None,
     rollout_cap: int = 1000,
 ) -> None:
     """Validate ``env`` against the SharpeArena conformance contract.
 
     Raises :class:`AssertionError` with a descriptive message on any violation.
+    Validation remains active with ``python -O``; it does not rely on Python's
+    removable ``assert`` statements.
     """
     # -- reset() contract --------------------------------------------------
     out = env.reset()
-    assert isinstance(out, tuple) and len(out) == 2, (
-        "reset() must return a (obs, info) 2-tuple per gymnasium 1.x"
+    _require(
+        isinstance(out, tuple) and len(out) == 2,
+        ("reset() must return a (obs, info) 2-tuple per gymnasium 1.x"),
     )
     obs, info = out
-    assert isinstance(info, dict), "reset() info must be a dict"
+    _require(isinstance(info, dict), "reset() info must be a dict")
     _assert_in_space(env, obs, "reset")
 
     # -- determinism core: reset() is byte-identical on repeat -------------
     obs_a, _ = env.reset()
     obs_b, _ = env.reset()
-    assert _decoded_equal(obs_a, obs_b), (
-        "DETERMINISM VIOLATION: two reset() calls on the same env produced "
-        "different decoded observations; compared exactly with np.array_equal"
+    _require(
+        _decoded_equal(obs_a, obs_b),
+        (
+            "DETERMINISM VIOLATION: two reset() calls on the same env produced "
+            "different decoded observations; compared exactly with np.array_equal"
+        ),
     )
 
     # -- step() contract ---------------------------------------------------
     env.reset()
     action = _equal_weight_action(env)
     result = env.step(action)
-    assert isinstance(result, tuple) and len(result) == 5, (
-        "step() must return a 5-tuple (obs, reward, terminated, truncated, info)"
+    _require(
+        isinstance(result, tuple) and len(result) == 5,
+        ("step() must return a 5-tuple (obs, reward, terminated, truncated, info)"),
     )
     obs, reward, terminated, truncated, info = result
-    assert isinstance(terminated, (bool, np.bool_)), "terminated must be a bool"
-    assert isinstance(truncated, (bool, np.bool_)), "truncated must be a bool"
-    assert np.isfinite(reward), f"reward must be finite, got {reward!r}"
-    assert isinstance(info, dict), "step() info must be a dict"
+    _require(isinstance(terminated, (bool, np.bool_)), "terminated must be a bool")
+    _require(isinstance(truncated, (bool, np.bool_)), "truncated must be a bool")
+    _require(np.isfinite(reward), f"reward must be finite, got {reward!r}")
+    _require(isinstance(info, dict), "step() info must be a dict")
     _assert_in_space(env, obs, "step")
 
     # -- a rollout to a terminal/truncated boundary stays finite -----------
@@ -89,23 +105,27 @@ def check_env(
     steps = 0
     while not done:
         obs, reward, terminated, truncated, info = env.step(action)
-        assert np.isfinite(reward), f"reward went non-finite at step {steps}"
+        _require(np.isfinite(reward), f"reward went non-finite at step {steps}")
         _assert_in_space(env, obs, f"rollout step {steps}")
         done = bool(terminated) or bool(truncated)
         steps += 1
-        assert steps <= rollout_cap, (
-            f"episode failed to reach a boundary within {rollout_cap} steps"
+        _require(
+            steps <= rollout_cap,
+            (f"episode failed to reach a boundary within {rollout_cap} steps"),
         )
-    assert steps > 0, "episode terminated before a single step"
+    _require(steps > 0, "episode terminated before a single step")
 
     # -- cross-construction determinism (optional, the seed-drives-market proof)
     if make_env_for_seed is not None:
         check_determinism_across_constructors(lambda: make_env_for_seed(0))
         e0, _ = make_env_for_seed(0).reset()
         e1, _ = make_env_for_seed(1).reset()
-        assert not _decoded_equal(e0, e1), (
-            "different constructor seeds produced byte-identical observations; "
-            "the seed is not driving the market"
+        _require(
+            not _decoded_equal(e0, e1),
+            (
+                "different constructor seeds produced byte-identical observations; "
+                "the seed is not driving the market"
+            ),
         )
 
 
@@ -122,8 +142,9 @@ def check_determinism_across_constructors(make_env: Callable[[], object]) -> Non
 
     obs_a, _ = env_a.reset()
     obs_b, _ = env_b.reset()
-    assert _decoded_equal(obs_a, obs_b), (
-        "reset() diverged across identical constructions (step 0)"
+    _require(
+        _decoded_equal(obs_a, obs_b),
+        ("reset() diverged across identical constructions (step 0)"),
     )
 
     action = _equal_weight_action(env_a)
@@ -132,16 +153,24 @@ def check_determinism_across_constructors(make_env: Callable[[], object]) -> Non
     while not done:
         ra = env_a.step(action)
         rb = env_b.step(action)
-        assert _decoded_equal(ra[0], rb[0]), (
-            f"observation diverged across identical constructions at step {step}"
+        _require(
+            _decoded_equal(ra[0], rb[0]),
+            (f"observation diverged across identical constructions at step {step}"),
         )
-        assert ra[1] == rb[1], (
-            f"reward diverged across identical constructions at step {step}: "
-            f"{ra[1]!r} != {rb[1]!r}"
+        _require(
+            ra[1] == rb[1],
+            (
+                f"reward diverged across identical constructions at step {step}: "
+                f"{ra[1]!r} != {rb[1]!r}"
+            ),
+        )
+        _require(
+            ra[2:4] == rb[2:4],
+            f"terminal flags diverged across identical constructions at step {step}",
         )
         done = bool(ra[2]) or bool(ra[3])
         step += 1
-        assert step <= 10_000, "rollout did not terminate"
+        _require(step <= 10_000, "rollout did not terminate")
 
 
-__all__ = ["check_env", "check_determinism_across_constructors"]
+__all__ = ["check_determinism_across_constructors", "check_env"]
