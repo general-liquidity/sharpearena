@@ -19,6 +19,28 @@ from sharpearena.sharpearena_py import TradingEnv, VecTradingEnv
 from sharpearena.vector import SharpeArenaVectorEnv
 
 
+@pytest.mark.parametrize("mode", ["calm", "hard", "extreme", "cointegrated_pairs", "regime_shift"])
+def test_native_lane_config_readbacks_match_the_constructed_scalar_lanes(mode):
+    seeds = [13, 29]
+    vector = VecTradingEnv(seeds=seeds, n_symbols=3, n_days=40,
+                           distribution_mode=mode, exec_seed=7)
+    for seed, raw in zip(seeds, vector.effective_configs):
+        scalar = TradingEnv(seed=seed, n_symbols=3, n_days=40,
+                            distribution_mode=mode, exec_seed=7)
+        assert json.loads(raw) == json.loads(scalar.effective_config)
+    before = vector.effective_configs
+    vector.reset_batch()
+    assert vector.effective_configs == before
+
+
+def test_csv_vector_readback_carries_lane_execution_seed_and_shared_data():
+    csv_text = "date,symbol,close\n2026-01-01,A,100\n2026-01-02,A,101\n2026-01-03,A,102\n"
+    vector = VecTradingEnv.from_csv(csv_text, seeds=[13, 29])
+    configs = [json.loads(raw) for raw in vector.effective_configs]
+    assert [config["exec_seed"] for config in configs] == [13, 29]
+    assert configs[0]["dataset_fnv1a64"] == configs[1]["dataset_fnv1a64"]
+
+
 def _flat_decisions(observations, weight):
     decisions = []
     for obs in observations:

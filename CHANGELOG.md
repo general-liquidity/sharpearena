@@ -12,6 +12,11 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ### Fixed
 
+- Integration parity: require an actual successful engine transition, the
+  adapter's native engine, finite NAV and complete configuration readbacks,
+  including the execution seed. Unexpected adapter failures no longer masquerade
+  as expected action refusals, and fixture outcome declarations are enforced.
+  Native vector lanes expose the configuration of the dataset they actually use.
 - Harbor feasibility grader: bounded artifact reads and reason-coded refusals
   for invalid UTF-8, unreadable files, Boolean step indices, non-string actions,
   and oversized numeric values. Seven standalone tests exercise the actual

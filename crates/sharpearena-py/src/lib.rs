@@ -103,9 +103,9 @@ use sharpearena::lob_market::{OrderBook, OrderKind, Side};
 use sharpearena::market::{EllipticUncertaintySet, MarketClearing, MarketParams};
 use sharpearena::vec_env::AutoresetMode;
 use sharpearena::{
-    generate_scenario, score_returns, CostModel, Dataset, Decision, DistributionMode, LaneConfig,
-    Mandate, MandateStyle, RichnessTier, ScenarioSpec, TradingEnv as CoreEnv,
-    VecTradingEnv as CoreVecEnv, Window,
+    generate_scenario, score_returns, CostModel, Dataset, Decision, DistributionMode, Mandate,
+    MandateStyle, RichnessTier, ScenarioSpec, TradingEnv as CoreEnv, VecTradingEnv as CoreVecEnv,
+    Window,
 };
 use sharpebench_core::process::process_score;
 use sharpebench_core::{LifecycleStep, Phase, ProcessEvent, Subject, Trace};
@@ -475,6 +475,7 @@ impl PyTradingEnv {
 #[pyclass(name = "VecTradingEnv")]
 pub struct PyVecTradingEnv {
     inner: CoreVecEnv,
+    effective: Vec<String>,
 }
 
 fn observations_to_json(
@@ -562,24 +563,34 @@ impl PyVecTradingEnv {
             financing_bps,
             max_participation,
         );
-        let configs: Vec<LaneConfig> = seeds
+        let mut effective = Vec::with_capacity(seeds.len());
+        let envs = seeds
             .iter()
-            .map(|&seed| LaneConfig {
-                n_symbols,
-                n_days,
-                seed,
-                exec_seed,
-                distribution_mode: mode,
-                vol_clustering,
-                jump_burst_probability,
-                jump_burst_persistence,
-                jump_burst_size,
-                window,
-                costs,
+            .map(|&seed| {
+                let data = build_dataset(
+                    n_symbols,
+                    n_days,
+                    seed,
+                    mode,
+                    vol_clustering,
+                    jump_burst_probability,
+                    jump_burst_persistence,
+                    jump_burst_size,
+                );
+                let lane_window = window.unwrap_or(Window {
+                    start: 0,
+                    end: data.len(),
+                });
+                let execution_seed = exec_seed.unwrap_or(seed);
+                // Fingerprint the very dataset moved into this lane, not a
+                // regenerated shadow of the environment being attested.
+                effective.push(effective_config_json(&data, &lane_window, execution_seed)?);
+                Ok(CoreEnv::new(data, lane_window, costs, execution_seed))
             })
-            .collect();
+            .collect::<PyResult<Vec<_>>>()?;
         Ok(PyVecTradingEnv {
-            inner: CoreVecEnv::from_configs(&configs).with_autoreset_mode(reset_mode),
+            inner: CoreVecEnv::from_envs(envs, seeds).with_autoreset_mode(reset_mode),
+            effective,
         })
     }
 
@@ -637,12 +648,17 @@ impl PyVecTradingEnv {
             max_participation,
         );
         let reset_mode = parse_autoreset_mode(autoreset_mode)?;
+        let effective = seeds
+            .iter()
+            .map(|&seed| effective_config_json(&data, &window, seed))
+            .collect::<PyResult<Vec<_>>>()?;
         let envs = seeds
             .iter()
             .map(|&seed| CoreEnv::new(data.clone(), window, costs, seed))
             .collect();
         Ok(PyVecTradingEnv {
             inner: CoreVecEnv::from_envs(envs, seeds).with_autoreset_mode(reset_mode),
+            effective,
         })
     }
 
@@ -656,6 +672,12 @@ impl PyVecTradingEnv {
     #[getter]
     fn scenario_seeds(&self) -> Vec<u64> {
         self.inner.seeds().to_vec()
+    }
+
+    /// Per-lane readbacks of the actual constructed datasets, in lane order.
+    #[getter]
+    fn effective_configs(&self) -> Vec<String> {
+        self.effective.clone()
     }
 
     /// The auto-reset mode applied to finished lanes (`next_step | same_step | disabled`).
