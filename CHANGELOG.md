@@ -12,6 +12,10 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ### Fixed
 
+- External workflow actions use resolved full commit SHAs. An offline CI policy
+  gate checks those literal references and rejects Cargo build fallbacks, with
+  planted tag/branch/short-hash and fallback regressions. This does not certify
+  transitive actions, runner images or downloaded tools.
 - Private-copy tournament results are available through a detached
   `final_ranking` snapshot, including agents that finished before the final
   step, without reintroducing them into Parallel step dictionaries. Reset clears
