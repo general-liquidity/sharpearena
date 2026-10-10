@@ -81,7 +81,7 @@ import gymnasium
 import sharpearena
 
 envs = gymnasium.make_vec("SharpeArena/Hard-v1", num_envs=8)
-observations, info = envs.reset()
+observations, info = envs.reset(seed=7)
 observations, rewards, terminations, truncations, info = envs.step(
     envs.action_space.sample()
 )
@@ -90,18 +90,31 @@ observations, rewards, terminations, truncations, info = envs.step(
 The registered vector entry point is `SharpeArenaVectorEnv`. It drives the native
 batched environment rather than a separate Python market implementation.
 
-Unlike the scalar wrapper, the current vector wrapper fixes lane seeds at
-construction. `reset(seed=...)` does not reseed the native lanes, and autoreset
-replays their existing scenarios rather than drawing fresh independent ones.
-Pass an explicit `seeds` list at construction when you need chosen lane seeds;
-without one, training lanes use consecutive seeds beginning at zero, and
-evaluation lanes begin at `EVAL_SEED_BASE`. Explicit seeds are used as supplied,
-including in evaluation mode, so select the evaluation band yourself in that case.
+`reset(seed=k)` rebuilds the native batch on consecutive scenario seeds
+`k, k+1, ...`. `reset(seed=[a, b, ...])` accepts exactly one integer per lane.
+Reset seeds must be nonnegative int64 values; invalid inputs leave the batch
+and any queued action unchanged. The window, scenario knobs, costs and an
+explicit execution seed are preserved; without an execution override, each
+lane's execution seed follows its scenario seed. `scenario_seeds`, native
+dataset readbacks and `info["scenario_seed"]` describe the rebuilt lanes.
+`reset()` keeps the current scenarios and clears pending actions and counters.
+Autoreset also replays those scenarios, not fresh independent draws.
 
-The vector constructor also currently accepts but does not enforce
-`max_episode_steps`. Episodes follow the native window and termination rules;
-that argument is not a custom vector time limit. These are current limitations,
-not scalar/vector reset or horizon parity guarantees.
+Without constructor seeds, training lanes begin at zero and evaluation lanes
+begin at `EVAL_SEED_BASE`. Constructor and explicit reset seeds are literal,
+including in evaluation mode: choose the evaluation band yourself when passing
+them. For example, use `reset(seed=EVAL_SEED_BASE + 7)` for evaluation lanes.
+
+`max_episode_steps` is now enforced as a positive integer cap on executed
+steps per lane, without shortening the data window or changing rewards before
+the cap. The earlier native horizon still wins. A cap sets `truncated`, not
+`terminated` (bankruptcy can independently set that flag). `next_step` resets
+on the following call with zero reward, `same_step` preserves the terminal
+observation/info in `final_obs`/`final_info`, and `disabled` freezes a capped
+lane with zero subsequent reward until explicit reset. Reset calls do not
+consume the cap. `None` preserves the native horizon. Record the cap alongside
+the environment ID and window; a custom cap changes the task length, not the
+frozen scenario/fill rules behind `-v1`.
 
 ## Reproducible evaluation
 

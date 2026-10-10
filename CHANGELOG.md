@@ -12,6 +12,12 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ### Fixed
 
+- Vector reset now rebuilds native lanes for an integer base or per-lane seed
+  list, preserving construction options and updating seed/data readbacks.
+  Positive `max_episode_steps` caps are enforced in the native batch with
+  per-lane counters and all three autoreset modes. Invalid reset inputs are
+  refused before discarding state; default native horizons remain unchanged.
+  This supersedes the runtime limitations documented in the earlier entry below.
 - The Gymnasium guide and Python README expose current vector limitations:
   construction-fixed lane seeds, ignored reset reseeding, repeated autoreset
   scenarios and an unenforced `max_episode_steps` argument. The vector example

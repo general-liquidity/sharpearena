@@ -123,12 +123,13 @@ SharpeBench eligibility certificate or a full benchmark-field score.
 | Benchmark compilation | `sharpearena-compile-bench`; bridge schema 2 adds a validated, rank-neutral p50/p95 operational profile beside score submissions |
 | Strategy search | `sharpearena-strategy-search` |
 
-Vector lane seeds are fixed at construction: `reset(seed=...)` currently does
-not reseed them, and autoreset replays the same scenarios. Use constructor
-`seeds` to select lanes; explicit seeds are not shifted into the evaluation
-band automatically. The vector `max_episode_steps` argument is accepted but
-not enforced; native window and termination rules determine the episode.
-These limitations differ from scalar reset and time-limit behavior.
+Vector `reset(seed=k)` rebuilds native lanes on `k, k+1, ...`; a list supplies
+exactly one nonnegative int64 seed per lane. Unseeded reset and autoreset replay
+the current scenarios. Explicit seeds are literal, not shifted into the eval
+band. `max_episode_steps` enforces a positive executed-step cap per lane, setting
+truncation while preserving the selected autoreset mode; `None` keeps the native
+horizon. Disabled capped lanes freeze with zero subsequent reward. Log custom
+caps with the window and seeds when comparing runs.
 
 See the repository's [Gymnasium guide](../../docs/gymnasium.md),
 [training guide](../../docs/training.md), and
