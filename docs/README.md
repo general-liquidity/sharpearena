@@ -23,6 +23,7 @@ and delivery checks. The 2026-09-07 audit is a completed historical checkpoint.
 | Interpret baseline scores, unavailable estimates and intervals | [Statistical confidence](statistical-confidence.md) |
 | Add a framework adapter, or check one against the engine | [Integration contracts](integrations/contracts.md) and [inventory](integrations/inventory.md) |
 | See what's tested, specified, or ruled out per interface | [Support status](integrations/support-status.md) |
+| Check the current CleanRL, native-bridge and HUD/Harbor scope decisions | [Integration dispositions](integrations/current-dispositions.md) |
 
 Registry-specific instructions live with the [Rust crate](../crates/sharpearena/),
 [Python distribution](../crates/sharpearena-py/), and

@@ -6,6 +6,14 @@ from numbers import Real
 import numpy as np
 
 
+class ActionValidationError(ValueError):
+    """A named wrapper refusal, distinct from an unrelated adapter failure."""
+
+    def __init__(self, code: str, detail: str) -> None:
+        super().__init__(detail)
+        self.code = code
+
+
 def validate_weight_limit(max_weight, allow_short) -> None:
     if (isinstance(max_weight, (bool, np.bool_)) or not isinstance(max_weight, Real)
             or not math.isfinite(max_weight)
@@ -24,14 +32,14 @@ def validated_action(action, action_space) -> np.ndarray:
     try:
         values = np.asarray(action)
     except (ValueError, TypeError) as exc:
-        raise ValueError("action must be a rectangular numeric array") from exc
+        raise ActionValidationError("invalid_shape", "action must be a rectangular numeric array") from exc
     if values.shape != action_space.shape:
-        raise ValueError(f"action shape must be {action_space.shape}, got {values.shape}")
+        raise ActionValidationError("invalid_shape", f"action shape must be {action_space.shape}, got {values.shape}")
     if values.dtype.kind not in "fiu":
-        raise ValueError("action entries must be real numbers, not booleans or strings")
+        raise ActionValidationError("not_numeric", "action entries must be real numbers, not booleans or strings")
     values = values.astype(np.float64, copy=True)
     if not np.isfinite(values).all():
-        raise ValueError("action entries must be finite")
+        raise ActionValidationError("not_finite", "action entries must be finite")
     if ((values < action_space.low) | (values > action_space.high)).any():
-        raise ValueError("action exceeds the configured action-space bounds")
+        raise ActionValidationError("out_of_bounds", "action exceeds the configured action-space bounds")
     return values

@@ -1,11 +1,10 @@
 # Integration inventory and version matrix (INT-00)
 
-What the tree actually contains on `b9fdf30`, read against the integration plan's
-claims rather than assumed from them. Every row below was checked against the source
-file named in it. Nothing is listed as missing that was not grepped for first. The
-original pass was checked against `d33b249`; this update reread every row against the
-current commit rather than trusting the earlier one, and the one row that had gone
-stale (HUD and Harbor, below) is corrected.
+The original inventory pass covered `d33b249`; the HUD/Harbor correction reread
+the inventory at `b9fdf30`. SB3, TorchRL and Ray/RLlib entries were added later.
+Those audit dates do not establish a new complete inventory or installed-package
+run at the latest commit. The version matrix retains its recorded environments;
+source coverage and freshly executed package coverage are distinct.
 
 ## What already exists
 
@@ -42,7 +41,8 @@ The declared optional extras are seven: `verifiers`, `minari`, `pettingzoo`, `mc
 `sb3`, `torchrl`, and `ray` (`crates/sharpearena-py/pyproject.toml`). `sb3`,
 `torchrl` and `ray` are each left out of `ci-requirements.txt`, and
 `tests/test_sb3.py` / `tests/test_torchrl.py` / `tests/test_ray_executor.py` /
-`tests/test_rllib.py` skip their extra-gated cases on CI, each for its own
+`tests/test_rllib.py` can skip their extra-gated cases in the ordinary source-suite
+job, not in all CI jobs, each for its own
 reason: `sb3` and `torchrl` both pull in torch, the largest single dependency
 any extra here declares; `ray[rllib]==2.58.0` pins `gymnasium==1.2.2` exactly,
 which conflicts with this tree's CI pin of `gymnasium==1.3.0` in a single `pip
@@ -54,21 +54,26 @@ version-bounded rather than open (`torchrl>=0.14,<0.15`,
 actual behaviour rather than a floor (the Tune-registry requirement, the
 Dict-observation RLModule failure, and whether multi-agent env runners
 vectorise have each changed across recent Ray releases), and INT-12 similarly
-against TorchRL's 0.14 `EnvBase` contract. The INT-18 installed-wheel matrix
-excludes the same three extras from its own per-extra install cells, for their
-own reasons rather than one shared one: see the "Installed-wheel compatibility
+against TorchRL's 0.14 `EnvBase` contract. The installed-wheel matrix now has
+SB3 and TorchRL cells with constrained CPU-only Torch, plus finite Ray worker
+and single-agent RLlib execution. See the "Installed-wheel compatibility
 matrix" section below for what is and is not exercised against a built wheel
-for `sb3`, `torchrl` and `ray`. The plan's warning holds: generic Gymnasium and
-Farama compatibility is real and already tested, and the gap is the seven
-named consumer routes, not the interfaces they consume.
+for `sb3`, `torchrl` and `ray`. Generic Gymnasium and Farama compatibility does
+not establish every downstream consumer contract. The named routes now have
+their own bounded checks; training, extra combinations and every permitted
+dependency version are separate verification questions.
 
-### Two claims with thin test backing
+### Wrapper and space coverage
 
 `docs/capabilities.md` lists both, and both have a module behind them, so neither is a
-false claim. Neither has a direct test:
+false claim. Coverage differs by component:
 
-- `wrappers_vector.py` (`VectorCausalNormalizeObservation`, `VectorRecordEpisodeStatistics`)
-  has no test file, and no test names either class.
+- `VectorRecordEpisodeStatistics` now has direct tests in
+  `tests/test_vector_episode_statistics.py`: opening-equity drawdown, complete
+  loss, staggered NEXT_STEP resets and SAME_STEP terminal rewards. Its drawdown
+  compounds emitted rewards as simple returns, so shaped rewards need not match
+  native NAV drawdown. These are diagnostics, not benchmark scores.
+  `VectorCausalNormalizeObservation` still has no direct class-specific test.
 - `spaces.py` (`flatten_obs`, `unflatten_obs`, `flat_dim`, `FlattenObservation`) is
   exercised indirectly through `PreprocessingConfig(flatten=True)` in
   `tests/test_preprocessing.py`, and now also directly: INT-07's
@@ -125,16 +130,18 @@ suite passed under it (1893 passed, 2 skipped).
 | mcp | extra, unpinned | 1.30.0 | not installed |
 | pytest | not shipped | 9.1.1 | 8.4.2 |
 | ray / ray[rllib] | extra, `>=2.58.0,<3` | not installed | 2.58.0 |
-| torch (RLlib training only) | not declared by any extra | not installed | 2.14.0+cpu |
+| torch (historical RLlib training environment) | not required by the `ray` extra | not in source-suite requirements | 2.14.0+cpu |
 | OS / architecture | not constrained | Linux runners | Windows 11 26220, x86-64 (AMD64) |
 
 `ray[rllib]==2.58.0` pins `gymnasium==1.2.2` exactly, which conflicts with this
 tree's CI pin of `gymnasium==1.3.0` in a single `pip install --requirement`
 invocation; the base package's own `gymnasium>=1.0` floor admits 1.2.2 and the
 full 1893-test suite passed under it (recorded above as this row's evidence run),
-but that pin conflict is why `ray` is not installed in CI and why
+but that pin conflict is why `ray` is not installed in the source-suite job and why
 `tests/test_ray_executor.py` and `tests/test_rllib.py` are exercised locally
-rather than in the pinned matrix. `torch` is needed only to actually build and
+rather than in that pinned source matrix. The separate `wheel-extras` Ray cell
+installs a separately resolved consumer graph and exercises workers and the
+single-agent adapter, not those full suites or learning. `torch` is needed only to actually build and
 train an RLlib `AlgorithmConfig` (`AlgorithmConfig.build_algo()`); it is not part
 of the `ray` extra, and `sharpearena_env_creator`, registration, and config
 construction were all checked without it. See
@@ -187,8 +194,8 @@ a newly declared extra gets a cell automatically, close that gap:
 | Job | Covers |
 |---|---|
 | `wheel-install-import` | Builds the wheel with `maturin build --locked` and installs it into a clean venv outside the checkout, on the declared floor (3.9), the version the rest of CI uses (3.12), and the newest released interpreter (3.14), all on Linux; then 3.12 on macOS and Windows. Drives the native binding and the packaged Gymnasium adapter. |
-| `wheel-no-extras` | Installs the bare wheel with none of the six optional extras present, asserts the base environment steps, and asserts every guarded adapter module (`pettingzoo_env`, `minari_export`, `mcp_server`, `verifiers_env`, `sb3_env`, `torchrl_env`) imports and refuses **by name** rather than dying on a bare `ImportError`. This is what makes "every adapter is guarded" a tested claim instead of an assumption read off the source, for all six declared extras including the two below that never get a `wheel-extras` cell. |
-| `wheel-extras` | One cell per *installable* declared extra (`verifiers`, `minari`, `pettingzoo`, `mcp`), installing `sharpearena[<extra>]` from the built wheel and running the real adapter behind it: a PettingZoo tournament, a Minari export, the MCP tool list, the verifiers environment build. |
+| `wheel-no-extras` | Installs the bare wheel with none of the seven optional extras present. Steps the base environment and checks every guarded module, including Ray/RLlib, imports and refuses by name when called. This covers absence guards, not execution with dependencies installed. |
+| `wheel-extras` | A cell per exercised extra (`verifiers`, `minari`, `pettingzoo`, `mcp`, `sb3`, `torchrl`, `ray`). Installs the built wheel with its extra and drives the adapter. SB3 and TorchRL constrain Torch 2.9.0+cpu. SB3 compares two lanes against the native vector route through completion and checks terminal-observation delivery. TorchRL compares TensorDict observations, rewards and all three end flags against native Gymnasium through completion. Both cells reject deliberate reward corruption; TorchRL also rejects corrupted truncation flags. Ray compares distributed episode reports with local execution and steps a Tune-registered single-agent environment through completion against native observations/rewards/end flags; forced-local execution and corrupted RLlib rewards must fail. |
 
 Representative rather than combinatorial: the interpreters between 3.9 and 3.14 differ
 from each other in nothing this package touches, so the OS axis and the version axis
@@ -198,19 +205,18 @@ from; `validate_coverage()` refuses to run when a declared extra has no exercise
 recorded install-matrix exclusion, or no guard entry, so the matrix cannot quietly
 shrink as the package grows and an exclusion cannot quietly rot into an accidental gap.
 
-Two of the six declared extras, `sb3` and `torchrl`, are deliberately excluded from
-`wheel-extras`: both pull torch, the heaviest dependency any extra here declares, and
-`ci-requirements.txt` already excludes it from the source-tree suite for the same
-reason (`tests/test_sb3.py`, `tests/test_torchrl.py` skip their torch-gated cases on
-CI). Adding a `wheel-extras` cell for either would install torch a second and third
-time on a matrix sized to stay near fifteen minutes. `scripts/optional_extras.py`'s
-`INSTALL_MATRIX_EXCLUDED` records the reason and is checked by `validate_coverage()`
-the same way `EXERCISES` is, so the exclusion cannot silently expand to cover an
-unrelated future extra. What is still proven, for free, in `wheel-no-extras`: that
-`SharpeArenaSB3VecEnv(...)` and `SharpeArenaTorchRLEnv(...)` refuse by name with the
-dependency absent, since neither job ever installs either extra anyway. What is not
-proven against an installed wheel: the real SB3 `VecEnv` / TorchRL `EnvBase` route
-with the extra present.
+No declared extra is excluded from `wheel-extras`. The source suite's Gymnasium 1.3.0 pin
+conflicts with Ray 2.58.0's 1.2.2 pin, but that is not an incompatibility with the
+base package or a blocker to a separately resolved wheel-consumer venv. The
+CPU-only cells are separate from the source suite, where torch-dependent tests
+can still skip. `INSTALL_MATRIX_EXCLUDED` and `EXERCISES` are checked as an
+exhaustive partition; a recorded exclusion is not a passing installed route.
+
+The local Ray consumer resolved 2.59.0, with no learning framework installed.
+This verifies finite worker and single-agent environment execution, not PPO
+training or the Ray/PettingZoo multi-agent combination. Historical 2.58.0
+training evidence is not replaced or extended by these checks. Neither these
+cells nor their dependency guards establish every permitted dependency version.
 
 The INT-02 tests were additionally run against an installed wheel
 (`sharpearena-0.31.0-cp312-cp312-win_amd64.whl`, built from this tree) in a clean

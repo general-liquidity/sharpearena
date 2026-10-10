@@ -9,6 +9,14 @@ for its prospective forecast protocol, and proves them about the model:
 - exact decomposition, minimization, and uniqueness of fixed-point binary
   Brier scoring.
 
+The revision model now includes a per-claim left fold over an arbitrary history:
+another claim's append and a late append preserve the result; the last appended
+eligible record replaces it. Selection is not maximum timestamp or maximum
+ordinal. Binding proofs require the submitted digest to equal the accepted
+digest and preserve the claim ID; a different digest is refused. These are
+model-level statements, not cryptographic collision-resistance or ordinal
+allocation proofs. The supplied list is assumed to be append order.
+
 Build it with:
 
 ```console

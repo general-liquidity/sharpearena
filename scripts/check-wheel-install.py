@@ -81,20 +81,51 @@ def wheel_version(wheel: Path) -> str:
     return parts[1]
 
 
-def verify(wheel: Path, extras: list, checks: list) -> None:
+def verify(wheel: Path, extras: list, checks: list, cpu_torch: bool = False) -> None:
     requirement = str(wheel)
     if extras:
         requirement = f"{requirement}[{','.join(extras)}]"
     # What the installed distribution has to report back, so a sharpearena already on the
     # interpreter cannot answer for the wheel this cell built.
     environment = dict(os.environ, SHARPEARENA_EXPECTED_VERSION=wheel_version(wheel))
+    environment.pop("PYTHONPATH", None)
+    environment.pop("PYTHONHOME", None)
     with tempfile.TemporaryDirectory() as tmp:
         workdir = Path(tmp)
         venv = workdir / "consumer"
-        run([sys.executable, "-m", "venv", str(venv)])
+        run([sys.executable, "-m", "venv", str(venv)], env=environment)
         python = venv_python(venv)
-        run([python, "-m", "pip", "install", "--quiet", "--upgrade", "pip"])
-        run([python, "-m", "pip", "install", "--quiet", requirement])
+        run(
+            [python, "-m", "pip", "install", "--quiet", "--upgrade", "pip"],
+            env=environment,
+        )
+        constraints = []
+        if cpu_torch:
+            run(
+                [
+                    python,
+                    "-m",
+                    "pip",
+                    "install",
+                    "--quiet",
+                    "torch==2.9.0+cpu",
+                    "--index-url",
+                    "https://download.pytorch.org/whl/cpu",
+                ],
+                env=environment,
+            )
+            constraint = workdir / "cpu-torch.txt"
+            constraint.write_text("torch==2.9.0+cpu\n", encoding="utf-8")
+            constraints = ["--constraint", constraint]
+        run(
+            [python, "-m", "pip", "install", "--quiet", *constraints, requirement],
+            env=environment,
+        )
+        if cpu_torch:
+            run(
+                [python, "-c", "import torch; assert torch.version.cuda is None"],
+                env=environment,
+            )
         elsewhere = workdir / "elsewhere"
         elsewhere.mkdir()
         for check in checks:
@@ -109,9 +140,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build", action="store_true", help="build the wheel and stop")
     parser.add_argument("--out", default=None, help="where --build writes the wheel")
-    parser.add_argument("--wheel", default=None, help="an already built wheel to verify")
+    parser.add_argument(
+        "--wheel", default=None, help="an already built wheel to verify"
+    )
     parser.add_argument("--extra", action="append", default=[], dest="extras")
     parser.add_argument("--run", action="append", default=[], dest="checks")
+    parser.add_argument(
+        "--cpu-torch",
+        action="store_true",
+        help="install and constrain Torch 2.9.0+cpu for an SB3 or TorchRL wheel cell",
+    )
     parser.add_argument(
         "--github-env",
         action="store_true",
@@ -138,7 +176,9 @@ def main() -> int:
     checks = list(arguments.checks)
     if not checks:
         raise SystemExit("--wheel needs at least one --run check to be worth anything")
-    verify(wheel, arguments.extras, checks)
+    if arguments.cpu_torch and arguments.extras not in (["sb3"], ["torchrl"]):
+        raise SystemExit("--cpu-torch supports exactly --extra sb3 or --extra torchrl")
+    verify(wheel, arguments.extras, checks, arguments.cpu_torch)
     print(f"verified {wheel.name} with extras {arguments.extras or 'none'}")
     return 0
 

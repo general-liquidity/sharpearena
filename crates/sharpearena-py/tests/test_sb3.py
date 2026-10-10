@@ -304,6 +304,10 @@ class _ScalarSB3View:
     def symbols(self):
         return self.venv.symbols
 
+    @property
+    def _env(self):
+        return self.venv.vector_env._env
+
     def reset(self):
         return _lane(self.venv.reset()), {}
 

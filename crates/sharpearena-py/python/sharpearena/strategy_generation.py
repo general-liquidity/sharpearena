@@ -8,6 +8,7 @@ only the selected strategy touches the test split.
 
 from __future__ import annotations
 
+import errno
 import json
 import math
 import os
@@ -47,6 +48,7 @@ STRATEGY_EVIDENCE_CLASS = "retrospective_generated_strategy"
 STRATEGY_SCHEMA_VERSION = 3
 TEST_SPLIT_CENSUS_SCOPE = "earlier-records-in-this-journal-file-only"
 MAX_GENERATED_CANDIDATES = 256
+DEFAULT_JOURNAL_LOCK_TIMEOUT = 5.0
 SUPPORTED_INDICATORS = {"price", "sma", "ema", "momentum", "rsi", "volatility"}
 COMPARISON_OPS = {"gt", "gte", "lt", "lte"}
 BOOLEAN_OPS = {"and", "or"}
@@ -1050,7 +1052,9 @@ def _journal_consultation(record: Any) -> tuple[Optional[dict[str, Any]], bool, 
     return None, False, 0
 
 
-def _test_window_bars(dataset: DatasetSpec, seeds: Sequence[int]) -> tuple[int, int, int]:
+def _test_window_bars(
+    dataset: DatasetSpec, seeds: Sequence[int]
+) -> tuple[int, int, int]:
     """The half-open bar interval a test split steps, and its dataset's bar count.
 
     Both come from the kernel's read-back of the environment it builds, so an
@@ -1290,11 +1294,47 @@ def _source_dating(
     }
 
 
+class JournalBusyError(TimeoutError):
+    """The journal owner did not release its lock before the acquisition deadline.
+
+    No record was appended; the caller can retain its outcome and retry later. The live
+    owner's lock is never removed or broken to make the append appear successful.
+    """
+
+    code = "journal_busy"
+
+    def __init__(self, path: Path, timeout: float):
+        self.path = path
+        self.timeout = timeout
+        self.pending_record: Optional[dict[str, Any]] = None
+        super().__init__(f"journal {path} remained busy for {timeout:g} seconds")
+
+
+def _lock_timeout(value: float) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("journal_lock_timeout must be a finite non-negative number")
+    try:
+        timeout = float(value)
+    except (ValueError, OverflowError) as exc:
+        raise ValueError(
+            "journal_lock_timeout must be a finite non-negative number"
+        ) from exc
+    if not math.isfinite(timeout) or timeout < 0:
+        raise ValueError("journal_lock_timeout must be a finite non-negative number")
+    return timeout
+
+
 class StrategySearchRunner:
     """Generate, count, validate, select, and test strategies without executing code."""
 
-    def __init__(self, generator: StrategyGenerator):
+    def __init__(
+        self,
+        generator: StrategyGenerator,
+        *,
+        journal_lock_timeout: float = DEFAULT_JOURNAL_LOCK_TIMEOUT,
+    ):
         self.generator = generator
+        self.journal_lock_timeout = _lock_timeout(journal_lock_timeout)
 
     def run(self, plan: StrategySearchPlan, evidence_path: Path) -> dict[str, Any]:
         split_identity = consulted_split_identity(
@@ -1342,9 +1382,7 @@ class StrategySearchRunner:
                 # A seed the kernel withheld has no median to enter; selection
                 # refuses (KernelScoreUnavailable, persisted as a failed search)
                 # rather than ranking a candidate on its no-skill floor.
-                value = median(
-                    kernel_deflated_sharpe(item["score"]) for item in scores
-                )
+                value = median(kernel_deflated_sharpe(item["score"]) for item in scores)
                 ranking.append((value, candidate.candidate_id, candidate))
             ranking.sort(key=lambda item: (-item[0], item[1]))
             selected = ranking[0][2]
@@ -1413,7 +1451,12 @@ class StrategySearchRunner:
                 window_bars,
                 True,
                 observed_n_trials,
+                lock_timeout=self.journal_lock_timeout,
             )
+        except JournalBusyError:
+            # A busy persistence path is not a failed strategy result. Retrying the same
+            # locked path to log a failure would double the wait and obscure the outcome.
+            raise
         except Exception as error:
             observed = None
             if generated is not None:
@@ -1474,18 +1517,26 @@ class StrategySearchRunner:
                 window_bars,
                 test_consulted,
                 observed,
+                lock_timeout=self.journal_lock_timeout,
             )
             raise
 
 
 @contextmanager
-def _journal_lock(path: Path) -> Iterator[None]:
+def _journal_lock(
+    path: Path, *, timeout: float = DEFAULT_JOURNAL_LOCK_TIMEOUT
+) -> Iterator[None]:
     """Hold an exclusive lock on ``<journal>.lock`` for one census read and append.
 
     Searches that share a journal can run at the same time; each record's
     census must still describe exactly the lines before it.
+    Acquisition uses a monotonic deadline; zero means one immediate attempt. Contention
+    raises ``JournalBusyError`` without changing the journal or the owner's lock. Other
+    OS errors propagate immediately rather than being mistaken for a busy owner.
     """
 
+    timeout = _lock_timeout(timeout)
+    deadline = time.monotonic() + timeout
     lock_path = path.with_name(path.name + ".lock")
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     with lock_path.open("a+b") as handle:
@@ -1497,8 +1548,13 @@ def _journal_lock(path: Path) -> Iterator[None]:
                 try:
                     msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
                     break
-                except OSError:
-                    time.sleep(0.05)
+                except OSError as exc:
+                    if exc.errno not in (errno.EACCES, errno.EAGAIN, errno.EDEADLK):
+                        raise
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise JournalBusyError(path, timeout) from exc
+                    time.sleep(min(0.05, remaining))
             try:
                 yield
             finally:
@@ -1507,7 +1563,17 @@ def _journal_lock(path: Path) -> Iterator[None]:
         else:
             import fcntl
 
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            while True:
+                try:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except OSError as exc:
+                    if exc.errno not in (errno.EACCES, errno.EAGAIN):
+                        raise
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise JournalBusyError(path, timeout) from exc
+                    time.sleep(min(0.05, remaining))
             try:
                 yield
             finally:
@@ -1521,16 +1587,24 @@ def _append_with_census(
     window_bars: tuple[int, int, int],
     test_consulted: bool,
     observed_n_trials: Any,
+    *,
+    lock_timeout: float = DEFAULT_JOURNAL_LOCK_TIMEOUT,
 ) -> dict[str, Any]:
     """Stamp the census of the lines now in ``path`` and append, under the lock."""
 
-    with _journal_lock(path):
-        prior = _prior_test_consultations(path, identity, window_bars)
-        record["test_split_census"] = _test_split_census(
-            prior, test_consulted, observed_n_trials
-        )
-        normalized = json.loads(_canonical_bytes(record))
-        _write_evidence(path, normalized)
+    try:
+        with _journal_lock(path, timeout=lock_timeout):
+            prior = _prior_test_consultations(path, identity, window_bars)
+            record["test_split_census"] = _test_split_census(
+                prior, test_consulted, observed_n_trials
+            )
+            normalized = json.loads(_canonical_bytes(record))
+            _write_evidence(path, normalized)
+    except JournalBusyError as exc:
+        # This outcome has not entered the census. Expose it to callers so they can
+        # preserve it rather than rerunning generation/evaluation solely to retry IO.
+        exc.pending_record = record
+        raise
     return normalized
 
 
@@ -1547,6 +1621,7 @@ def _write_evidence(path: Path, evidence: dict[str, Any]) -> None:
 __all__ = [
     "CandidateRejection",
     "GenerationResult",
+    "JournalBusyError",
     "OllamaStrategyGenerator",
     "MAX_GENERATED_CANDIDATES",
     "STRATEGY_GENERATION_SCHEMA",

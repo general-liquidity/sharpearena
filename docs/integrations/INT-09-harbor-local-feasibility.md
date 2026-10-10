@@ -209,6 +209,18 @@ path is excluded from collection in the first place. That is scoped out
 of this feasibility pass; recorded here as a real, reproduced finding, not
 a hypothetical.
 
+**Current implementation note, 2026-10-10.** The UTF-8 escape described below
+is repaired in the local grader source. It reads at most 64 KiB plus one byte,
+refuses oversize input before decoding, and converts decoding failures to
+`artifact_unparseable` and artifact I/O failures to `artifact_unreadable`.
+Boolean step indices, non-string actions and overflowing numeric sizes are
+also refused. `python scripts/test_harbor_grader.py` exercises the actual
+`main()` and checks both report and reward outputs without Harbor or Docker.
+The seven-case suite passes after the repair and fails in five cases against
+an isolated copy of the original grader. This does not rerun the eight recorded
+trials, repair Harbor's pre-grader artifact-transfer failure, or establish
+container isolation. The following paragraph records the pre-repair finding.
+
 **A second escape, same class, found by reading the grader rather than by
 running Harbor.** `main()` in `tests/grade.py` catches only its own
 `Refusal` exception:
@@ -293,8 +305,9 @@ Within the boundary in §1:
   gets to run. A second, code-level escape in the same class - an
   oversized-but-not-quite non-UTF-8 artifact raising an uncaught
   `UnicodeDecodeError` past `main()`'s `except Refusal` - is verified by
-  direct inspection of `tests/grade.py` (§5); no fixture currently
-  exercises it.
+  direct inspection of the original `tests/grade.py` (§5). The 2026-10-10
+  local repair and standalone regression suite are described there separately;
+  no recorded Harbor trial exercises that repair.
 - Neither of the grader's two tamper-specific reason codes
   (`pre_existing_reward_file`, `artifact_not_regular_file`) fired in any of
   the eight trials. The two refusals that did fire (`artifact_missing`,

@@ -205,6 +205,10 @@ class RecordEpisodeStatistics(gym.Wrapper):
     seconds) plus trading-specific ``sharpe`` and ``max_drawdown`` computed from the
     episode's per-step reward series, so SharpeBench / verifiers can read summary
     stats straight off ``info`` without re-deriving them from a return log.
+
+    Drawdown compounds emitted rewards as simple returns from opening equity
+    one; shaped rewards need not reproduce native NAV drawdown. These summaries
+    are diagnostics, not SharpeBench scores or ranking inputs.
     """
 
     def __init__(self, env: gym.Env) -> None:
@@ -228,7 +232,7 @@ class RecordEpisodeStatistics(gym.Wrapper):
     def _max_drawdown(rewards: np.ndarray) -> float:
         if rewards.size == 0:
             return 0.0
-        equity = np.cumprod(1.0 + rewards)
+        equity = np.concatenate(([1.0], np.cumprod(1.0 + rewards)))
         peak = np.maximum.accumulate(equity)
         return float(np.max((peak - equity) / peak))
 

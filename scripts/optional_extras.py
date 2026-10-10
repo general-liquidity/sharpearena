@@ -48,37 +48,13 @@ ACCELERATOR_IMPORTS: Tuple[str, ...] = ("torch", "jax")
 # `EXERCISES` but never neither, and removing an entry without adding the other fails CI
 # the same way an unlisted extra always has.
 #
-# Three extras, three different reasons, none of them "we didn't get to it":
-#
-# - sb3 and torchrl both pull torch, the heaviest single dependency any extra here
-#   declares. `ci-requirements.txt` already excludes both for that reason, so
-#   `tests/test_sb3.py` and `tests/test_torchrl.py` skip in the source-tree suite too.
-# - ray[rllib]==2.58.0 pins gymnasium==1.2.2 exactly, which conflicts with the CI pin
-#   of gymnasium==1.3.0 in a single `pip install --requirement` invocation
-#   (`docs/integrations/inventory.md`'s version matrix). `ray` is excluded from
-#   `ci-requirements.txt`, and `tests/test_ray_executor.py` / `tests/test_rllib.py`
-#   skip in the source-tree suite, for that pin conflict rather than for size, though
-#   `ray[rllib]` is also a large multi-package install in its own right.
-#
-# A `wheel-extras` cell for any of the three would either add a heavy torch install or
-# force the wheel-extras job onto an incompatible gymnasium, to a matrix deliberately
-# sized to stay near fifteen minutes. What is NOT skipped: `GUARDS["sb3"]`,
-# `GUARDS["torchrl"]` and `GUARDS["ray"]` still run in `wheel-no-extras`, for free, since
-# that job never installs any extra either way, and they are what prove
-# `SharpeArenaSB3VecEnv(...)`, `SharpeArenaTorchRLEnv(...)`, `run_episodes(...,
-# num_workers=1)` and `sharpearena_env_creator()` all refuse by name with the dependency
-# absent. What IS unexercised against an installed wheel: the actual SB3 `VecEnv` /
-# TorchRL `EnvBase` / Ray task / RLlib route with the extra present. Revisit if a
-# CPU-only torch wheel becomes cheap enough to pin, if the gymnasium pin conflict is
-# resolved upstream, or if the added CI minutes are explicitly accepted.
-INSTALL_MATRIX_EXCLUDED: Dict[str, str] = {
-    "sb3": "pulls torch; excluded from ci-requirements.txt for the same reason",
-    "torchrl": "pulls torch; excluded from ci-requirements.txt for the same reason",
-    "ray": (
-        "ray[rllib]==2.58.0 pins gymnasium==1.2.2, conflicting with the CI gymnasium "
-        "pin (1.3.0); excluded from ci-requirements.txt for the same reason"
-    ),
-}
+# All seven extras currently have execution cells. SB3 and TorchRL constrain
+# CPU-only Torch. Ray resolves its own Gymnasium dependency independently of
+# source-suite pins, runs workers and single-agent RLlib parity without training.
+# This does not establish the multi-agent Ray/PettingZoo combination, learner
+# construction or every version permitted by the dependency ranges. Absence
+# guards run separately in wheel-no-extras.
+INSTALL_MATRIX_EXCLUDED: Dict[str, str] = {}
 
 _REQUIREMENT_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*")
 
@@ -290,6 +266,190 @@ def _exercise_verifiers() -> str:
     return f"loaded the multi-turn environment over {rows} scenario rows"
 
 
+def _exercise_ray() -> str:
+    from importlib.metadata import version
+    import os
+    import ray
+    import numpy as np
+    from ray.tune.registry import _global_registry, ENV_CREATOR
+    from sharpearena import SharpeArenaEnv
+    from sharpearena.ray_executor import EpisodeSpec, report_digest, run_episodes
+    from sharpearena.rllib_env import SINGLE_AGENT_ENV, register_sharpearena_envs
+    from sharpearena.spaces import flatten_obs
+
+    assert not ray.is_initialized(), "consumer must not reuse an existing cluster"
+    ray.init(num_cpus=2, include_dashboard=False, log_to_driver=False)
+    try:
+        specs = [
+            EpisodeSpec(
+                episode_id=f"installed-{seed}",
+                seed=seed,
+                n_symbols=2,
+                n_days=8,
+                max_steps=12,
+                actions=((0.5, 0.5),) * 12,
+            )
+            for seed in (1, 2)
+        ]
+        local = run_episodes(specs, num_workers=0)
+        distributed = run_episodes(specs, num_workers=2, deadline_s=90)
+        assert distributed.num_workers == 2
+        assert distributed.counts.is_complete
+        assert all(result.status == "completed" for result in distributed.results)
+        assert report_digest(local) == report_digest(distributed)
+
+        @ray.remote
+        def installed_worker_identity():
+            import os
+            import sharpearena
+
+            return os.getpid(), sharpearena.__file__
+
+        worker_pid, module_path = ray.get(
+            installed_worker_identity.remote(), timeout=30
+        )
+        assert worker_pid != os.getpid()
+        assert "site-packages" in Path(module_path).parts
+        register_sharpearena_envs()
+        creator = _global_registry.get(ENV_CREATOR, SINGLE_AGENT_ENV)
+        kwargs = dict(seed=1, n_symbols=2, n_days=8)
+        env = creator(kwargs)
+        reference = SharpeArenaEnv(**kwargs)
+        try:
+            observed, _ = env.reset()
+            expected, _ = reference.reset()
+            np.testing.assert_array_equal(
+                observed, flatten_obs(reference.observation_space, expected)
+            )
+            finished = False
+            for _ in range(12):
+                action = np.full(2, 0.5, dtype=np.float32)
+                observed, reward, terminated, truncated, _ = env.step(action)
+                expected, native_reward, native_terminated, native_truncated, _ = (
+                    reference.step(action)
+                )
+                np.testing.assert_array_equal(
+                    observed, flatten_obs(reference.observation_space, expected)
+                )
+                assert reward == native_reward
+                assert terminated == native_terminated
+                assert truncated == native_truncated
+                if terminated or truncated:
+                    finished = True
+                    break
+            assert finished, "RLlib consumer never reached episode completion"
+        finally:
+            env.close()
+            reference.close()
+    finally:
+        ray.shutdown()
+    return (
+        f"Ray {version('ray')}: installed worker reports match local execution; "
+        "Tune-registered single-agent observations, rewards and end flags match native"
+    )
+
+
+def _exercise_torchrl() -> str:
+    from importlib.metadata import version
+    import torch
+    from torchrl.envs import EnvBase
+    from sharpearena import SharpeArenaEnv
+    from sharpearena.torchrl_env import OBSERVATION_KEYS, SharpeArenaTorchRLEnv
+
+    kwargs = dict(seed=1, n_symbols=2, n_days=8)
+    env = SharpeArenaTorchRLEnv(**kwargs)
+    reference = SharpeArenaEnv(**kwargs)
+    try:
+        assert isinstance(env, EnvBase)
+        observed = env.reset()
+        expected, _ = reference.reset()
+
+        def compare_observations(tensors, arrays):
+            for key in OBSERVATION_KEYS:
+                assert tensors[key].dtype == torch.float64
+                assert torch.equal(tensors[key], torch.as_tensor(arrays[key]))
+
+        compare_observations(observed, expected)
+        action = torch.full((2,), 0.5, dtype=torch.float32)
+        finished = False
+        for _ in range(16):
+            observed.set("action", action.clone())
+            following = env.step(observed)["next"]
+            expected, reward, terminated, truncated, _ = reference.step(action.numpy())
+            compare_observations(following, expected)
+            assert following["reward"].dtype == torch.float64
+            assert following["reward"].item() == reward
+            for key, value in (
+                ("terminated", terminated),
+                ("truncated", truncated),
+                ("done", terminated or truncated),
+            ):
+                assert following[key].dtype == torch.bool
+                assert following[key].shape == (1,)
+                assert following[key].item() == bool(value)
+            if terminated or truncated:
+                finished = True
+                break
+            observed = following
+        assert finished, "TorchRL installed check never reached episode completion"
+    finally:
+        env.close()
+        reference.close()
+    return (
+        f"TorchRL {version('torchrl')}, Torch {version('torch')}: "
+        "installed TensorDict observations, rewards and end flags "
+        "match native Gymnasium"
+    )
+
+
+def _exercise_sb3() -> str:
+    from importlib.metadata import version
+    import numpy as np
+    from stable_baselines3.common.vec_env import VecEnv
+    from sharpearena.sb3_env import SharpeArenaSB3VecEnv
+    from sharpearena.vector import SharpeArenaVectorEnv
+
+    kwargs = dict(seeds=[1, 2], n_symbols=2, n_days=8)
+    env = SharpeArenaSB3VecEnv(**kwargs)
+    reference = SharpeArenaVectorEnv(autoreset_mode="same_step", **kwargs)
+    try:
+        if not isinstance(env, VecEnv):
+            raise SystemExit("the installed SB3 adapter is not a VecEnv")
+        observed = env.reset()
+        expected, _ = reference.reset()
+        for key in expected:
+            np.testing.assert_array_equal(observed[key], expected[key])
+        actions = np.zeros((2, 2), dtype=np.float32)
+        finished = False
+        for _ in range(16):
+            observed, rewards, done, infos = env.step(actions)
+            expected, expected_rewards, terminated, truncated, expected_infos = (
+                reference.step(actions)
+            )
+            np.testing.assert_array_equal(rewards, expected_rewards)
+            np.testing.assert_array_equal(done, terminated | truncated)
+            for key in expected:
+                np.testing.assert_array_equal(observed[key], expected[key])
+            for lane in range(2):
+                if done[lane]:
+                    finished = True
+                    if "terminal_observation" not in infos[lane]:
+                        raise SystemExit("SB3 terminal observation was not delivered")
+                    for key, value in expected_infos["final_obs"][lane].items():
+                        np.testing.assert_array_equal(
+                            infos[lane]["terminal_observation"][key], value
+                        )
+        if not finished:
+            raise SystemExit("the SB3 wheel check never exercised episode completion")
+    finally:
+        env.close()
+        reference.close()
+    return (
+        f"SB3 {version('stable-baselines3')}, Torch {version('torch')}: "
+        "stepped two installed lanes through completion with native vector parity"
+    )
+
+
 # ---------------------------------------------------------------------------
 # What the base package does when the extra is absent
 # ---------------------------------------------------------------------------
@@ -418,6 +578,9 @@ def _guard_ray() -> List[str]:
 
 
 EXERCISES: Dict[str, Callable[[], str]] = {
+    "ray": _exercise_ray,
+    "torchrl": _exercise_torchrl,
+    "sb3": _exercise_sb3,
     "pettingzoo": _exercise_pettingzoo,
     "minari": _exercise_minari,
     "mcp": _exercise_mcp,

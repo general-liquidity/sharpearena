@@ -103,6 +103,13 @@ Every `score_run` consumer in this package goes through these helpers; none
 substitutes a default. The multi-agent ranking places an unscorable agent after
 every scored one with the reason in its cell.
 
+For the private-copy PettingZoo tournament, fewer than two observed returns are
+also explicitly unavailable, not a numeric zero. `env.final_ranking` exposes a
+detached whole-roster result after all agents finish, including agents removed
+earlier; it is `None` before completion and after reset. Step dictionaries retain
+the Parallel live-agent contract. Row `rank` is a display position, not a
+SharpeBench eligibility certificate or a full benchmark-field score.
+
 ## Other surfaces
 
 | Task | Surface |

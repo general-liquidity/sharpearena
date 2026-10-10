@@ -30,6 +30,30 @@ from sharpearena.integrations.parity import (
 FIXTURES = {fixture.name: fixture for fixture in CORE_FIXTURES}
 
 
+@pytest.mark.parametrize("field", ["reward", "nav"])
+@pytest.mark.parametrize(
+    "value", [float("nan"), float("inf"), -float("inf"), None, True, 10**400]
+)
+@pytest.mark.parametrize("tolerant", [False, True])
+def test_invalid_step_numbers_cannot_establish_parity(field, value, tolerant):
+    from sharpearena.integrations.contracts import ENGINE_EXACTNESS, ExactnessDomain
+
+    record = engine_rollout(FIXTURES["calm-incomplete"])
+    broken = dataclasses.replace(record.steps[0], **{field: value})
+    record = dataclasses.replace(record, steps=(broken,) + record.steps[1:])
+    domain = ENGINE_EXACTNESS
+    if tolerant:
+        domain = ExactnessDomain(
+            exact=tuple(name for name in domain.exact if name != field),
+            tolerances={field: 0.01},
+            rationale="synthetic finite-data boundary regression",
+        )
+    with pytest.raises(ParityUnavailable, match=f"finite numeric {field}"):
+        compare(
+            record, dataclasses.replace(record, source="candidate"), exactness=domain
+        )
+
+
 class _Delegating:
     """A real ``SharpeArenaEnv`` behind a mapping a subclass breaks on purpose."""
 
@@ -91,28 +115,45 @@ def test_the_shipped_adapter_reproduces_the_engine(fixture):
 @pytest.mark.parametrize("fixture", CORE_FIXTURES, ids=lambda f: f.name)
 def test_each_fixture_reaches_the_outcome_it_declares(fixture):
     record = engine_rollout(fixture)
-    expected = {"complete": "truncated", "incomplete": "incomplete", "refused": "refused"}
+    expected = {
+        "complete": "truncated",
+        "incomplete": "incomplete",
+        "refused": "refused",
+    }
     assert record.terminal == expected[fixture.expect]
 
 
 @pytest.mark.parametrize(
     "broken, fixture_name, expected",
     [
-        pytest.param(_SwapsTerminalFlags, "calm-complete", "terminated", id="swapped terminal flags"),
+        pytest.param(
+            _SwapsTerminalFlags,
+            "calm-complete",
+            "terminated",
+            id="swapped terminal flags",
+        ),
         pytest.param(
             _ClipsInsteadOfRefusing,
             "calm-refused-out-of-bounds",
             "accepted:out_of_bounds",
             id="clips instead of refusing",
         ),
-        pytest.param(_PermutesSymbols, "calm-complete", "reward", id="permuted symbol order"),
-        pytest.param(_DropsLastBar, "calm-complete", "truncated", id="hidden truncation"),
+        pytest.param(
+            _PermutesSymbols, "calm-complete", "reward", id="permuted symbol order"
+        ),
+        pytest.param(
+            _DropsLastBar, "calm-complete", "truncated", id="hidden truncation"
+        ),
     ],
 )
 def test_a_broken_adapter_mapping_is_caught(broken, fixture_name, expected):
-    report = check_adapter_parity(FIXTURES[fixture_name], broken, source=broken.__name__)
+    report = check_adapter_parity(
+        FIXTURES[fixture_name], broken, source=broken.__name__
+    )
     assert not report.ok
-    assert any(expected in mismatch for mismatch in report.mismatches), report.mismatches
+    assert any(expected in mismatch for mismatch in report.mismatches), (
+        report.mismatches
+    )
     with pytest.raises(ParityMismatch):
         report.require_parity()
 
@@ -136,7 +177,9 @@ def test_a_record_without_an_engine_spec_hash_cannot_be_compared():
 def test_two_engine_builds_cannot_be_compared_to_each_other():
     fixture = FIXTURES["calm-complete"]
     reference = engine_rollout(fixture)
-    candidate = dataclasses.replace(adapter_rollout(fixture), spec_hash="0000000000000000")
+    candidate = dataclasses.replace(
+        adapter_rollout(fixture), spec_hash="0000000000000000"
+    )
     with pytest.raises(ParityUnavailable, match="engine spec"):
         compare(reference, candidate)
 
@@ -153,3 +196,93 @@ def test_records_of_different_fixtures_cannot_be_compared():
     candidate = adapter_rollout(FIXTURES["calm-incomplete"])
     with pytest.raises(ParityUnavailable, match="different fixtures"):
         compare(reference, candidate)
+
+
+class _UnrelatedStepFailure(_Delegating):
+    def step(self, action):
+        raise RuntimeError("unrelated adapter failure")
+
+
+def test_unrelated_exception_cannot_impersonate_a_bounds_refusal():
+    fixture = dataclasses.replace(
+        FIXTURES["calm-refused-out-of-bounds"],
+        actions=((0.125, 0.25, -0.125), (5.0, 0.0, 0.0)),
+    )
+
+    class FailsOnlyInvalidAction(_Delegating):
+        def step(self, action):
+            if abs(float(action[0])) > 0.5:
+                raise RuntimeError("not an action validation refusal")
+            return super().step(action)
+
+    assert not check_adapter_parity(fixture, FailsOnlyInvalidAction).ok
+
+
+def test_original_first_action_false_agreement_is_unavailable():
+    fixture = ParityFixture(
+        name="original-c1",
+        n_symbols=3,
+        n_days=40,
+        seed=5,
+        max_weight=0.5,
+        actions=((5.0, 0.0, 0.0),),
+        expect="complete",
+    )
+    with pytest.raises(ParityUnavailable, match="transition"):
+        check_adapter_parity(fixture, _UnrelatedStepFailure)
+
+
+def test_fixture_expectation_is_enforced_not_only_validated():
+    fixture = dataclasses.replace(FIXTURES["calm-incomplete"], expect="complete")
+    report = check_adapter_parity(fixture)
+    assert not report.ok
+    assert any("expected outcome" in mismatch for mismatch in report.mismatches)
+
+
+def test_missing_config_readback_is_unavailable():
+    reference = engine_rollout(FIXTURES["calm-complete"])
+    candidate = dataclasses.replace(
+        adapter_rollout(FIXTURES["calm-complete"]), effective_config={}
+    )
+    with pytest.raises(ParityUnavailable, match="effective config"):
+        compare(reference, candidate)
+
+
+def test_missing_nav_is_not_favorable_default_equity():
+    class MissingNav(_Delegating):
+        def step(self, action):
+            obs, reward, terminated, truncated, info = super().step(action)
+            info.pop("nav", None)
+            return obs, reward, terminated, truncated, info
+
+    with pytest.raises(ParityUnavailable, match="nav"):
+        adapter_rollout(FIXTURES["calm-incomplete"], MissingNav)
+
+
+def test_missing_execution_seed_readback_is_unavailable():
+    reference = engine_rollout(FIXTURES["calm-complete"])
+    candidate = adapter_rollout(FIXTURES["calm-complete"])
+    config = dict(candidate.effective_config)
+    config.pop("exec_seed")
+    with pytest.raises(ParityUnavailable, match="effective config"):
+        compare(reference, dataclasses.replace(candidate, effective_config=config))
+
+
+def test_changed_execution_seed_readback_is_a_mismatch():
+    reference = engine_rollout(FIXTURES["calm-complete"])
+    candidate = adapter_rollout(FIXTURES["calm-complete"])
+    config = dict(candidate.effective_config)
+    config["exec_seed"] += 1
+    report = compare(reference, dataclasses.replace(candidate, effective_config=config))
+    assert not report.ok
+    assert any("exec_seed" in mismatch for mismatch in report.mismatches)
+
+
+def test_imported_extension_does_not_attest_an_unrelated_adapter():
+    class UnrelatedEngine(_Delegating):
+        def __init__(self, fixture):
+            super().__init__(fixture)
+            self._env = object()
+
+    with pytest.raises(ParityUnavailable, match="native engine"):
+        adapter_rollout(FIXTURES["calm-incomplete"], UnrelatedEngine)

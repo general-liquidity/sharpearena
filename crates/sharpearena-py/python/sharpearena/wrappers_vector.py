@@ -1,12 +1,10 @@
 """Point-in-time-SAFE vector wrappers over :class:`~sharpearena.vector.SharpeArenaVectorEnv`.
 
-These mirror :mod:`gymnasium.wrappers.vector` for the leak-free transforms, but operate
-against SharpeArena's gym3 **same-step** autoreset contract (a finished lane is reset in
-place on the same step, surfaced via ``infos["first"][i] == True``) rather than the 1.x
-``NEXT_STEP`` default the stock vector wrappers assume. The stock wrappers also assert the
-``autoreset_mode`` metadata is an :class:`~gymnasium.vector.AutoresetMode` enum; SharpeArena
-tags it as the string ``"same_step"`` and reports lane ends through ``first`` — so we
-subclass :class:`~gymnasium.vector.VectorWrapper` directly and honour that contract.
+These mirror :mod:`gymnasium.wrappers.vector` for the leak-free transforms and
+honour SharpeArena's per-lane ``first`` reset marker. Under SAME_STEP the terminal
+reward and end flags accompany the new episode's observation. Under NEXT_STEP
+the following reset-only frame has ``first=True`` with no end flag, and is not
+a reward sample or an executed episode step. Both modes are supported.
 
 The causal property is identical to the single-env wrappers: the value emitted for bar
 ``t`` of a lane is computed from that lane's bars ``0..t-1`` only; bar ``t`` is folded in
@@ -83,7 +81,8 @@ class VectorCausalNormalizeObservation(VectorWrapper):
             "VectorCausalNormalizeObservation expects a Dict single_observation_space"
         )
         self._stats: dict[str, _LaneWelford] = {
-            k: _LaneWelford(self.num_envs, tuple(s.shape)) for k, s in base.spaces.items()
+            k: _LaneWelford(self.num_envs, tuple(s.shape))
+            for k, s in base.spaces.items()
         }
         self.single_observation_space = spaces.Dict(
             {
@@ -91,7 +90,9 @@ class VectorCausalNormalizeObservation(VectorWrapper):
                 for k, s in base.spaces.items()
             }
         )
-        self.observation_space = batch_space(self.single_observation_space, self.num_envs)
+        self.observation_space = batch_space(
+            self.single_observation_space, self.num_envs
+        )
 
     def _apply(self, obs: dict, first: np.ndarray) -> dict:
         out: dict[str, np.ndarray] = {}
@@ -134,6 +135,10 @@ class VectorRecordEpisodeStatistics(VectorWrapper):
     boolean mask of lanes that ended this step; non-ending lanes hold zeros. The lane's
     accumulators reset after recording (its observation is already the new episode's t0
     under same-step autoreset).
+
+    Drawdown compounds the emitted rewards as simple returns from opening equity
+    one. This is a reward-path diagnostic, not necessarily native NAV drawdown
+    when a wrapper shapes rewards. Reset-only NEXT_STEP frames are excluded.
     """
 
     def __init__(self, env: VectorEnv) -> None:
@@ -153,7 +158,7 @@ class VectorRecordEpisodeStatistics(VectorWrapper):
     def _max_drawdown(rewards: np.ndarray) -> float:
         if rewards.size == 0:
             return 0.0
-        equity = np.cumprod(1.0 + rewards)
+        equity = np.concatenate(([1.0], np.cumprod(1.0 + rewards)))
         peak = np.maximum.accumulate(equity)
         return float(np.max((peak - equity) / peak))
 
@@ -169,7 +174,16 @@ class VectorRecordEpisodeStatistics(VectorWrapper):
         obs, rewards, terminated, truncated, infos = self.env.step(actions)
         rewards_arr = np.asarray(rewards, dtype=np.float64)
         done = np.asarray(terminated, dtype=bool) | np.asarray(truncated, dtype=bool)
+        first = np.asarray(
+            infos.get("first", np.zeros(self.num_envs, dtype=bool)), dtype=bool
+        )
+        # NEXT_STEP resets are observations, not executed transitions. A
+        # SAME_STEP terminal/reset carries done=True and still counts its reward.
+        reset_only = first & ~done
         for i in range(self.num_envs):
+            if reset_only[i]:
+                self._t0[i] = time.perf_counter()
+                continue
             self._rewards[i].append(float(rewards_arr[i]))
             self._lengths[i] += 1
 

@@ -3,6 +3,7 @@ h5py==3.16.0
 jax==0.11.1
 jaxlib==0.11.1
 jsonschema==4.26.0
+matplotlib==3.10.0
 mcp==1.30.0
 minari==0.5.3
 numpy==2.5.3

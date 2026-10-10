@@ -38,7 +38,7 @@ the root README can stay task-oriented.
 | Limit-order book | Integer ticks, price-time matching, limit/market/cancel/modify, call auction, depth and sweep-cost queries; PettingZoo `LOBMarketEnv` values each agent's inventory at the mid of other controllers' resting quotes, or at the last fill between two different controllers while those quotes lack a side (`mark="ex_own_mid"`, the default; `controllers` groups the seats one entrant runs; `"book_mid"` replays the pre-2026-09-16 mark) and offers an opt-in seeded same-bar seat shuffle (`priority="seeded_shuffle"`; default `"agent_index"`) |
 | Ecology | Deterministic population selection, mutation, regime/liquidity shocks, outcome and coalition classification |
 | Adverse selection | Paired informed/uninformed meta-order arms and exact markout decomposition |
-| Manipulation diagnostics | Symmetric/asymmetric schedules, impact boundary and size-response sweeps, explicit finite-grid scope, rank-neutral per-follower seat-removal externality (live P&L minus P&L with the manipulator held flat on the same seed) |
+| Manipulation diagnostics | Symmetric/asymmetric target-weight schedules, impact boundary and size-response sweeps, explicit finite-grid scope, rank-neutral per-follower seat-removal externality (live P&L minus P&L with the manipulator held at zero target on the same seed); terminal shares, cleared prices, cash and marked position value for the live/reference arms |
 | Impact robustness | Paired point-estimate against worst-case report over an opt-in elliptic uncertainty set (`impact_misspecification_gap`: returns mark the held position at the exogenous mid and report the arm's own impact mark beside them, refusing unpaired arms or a cleared mid at or below zero; `sign_guaranteed` holds only for an eta-only set with identical weights in both arms), and the meta-order impact-shape probe (`meta_order_impact_shape`: execution exponent, post-execution relaxation ratio, duration exponent); both rank-neutral |
 
 ## Agent operations
@@ -56,6 +56,21 @@ the root README can stay task-oriented.
 
 ## Known limits
 
+- Returning a manipulation schedule to zero target weight does not guarantee
+  zero share quantity: weight changes execute at different cleared prices. Probe
+  P&L remains terminal marked NAV minus initial capital, not necessarily realized
+  cash profit. Terminal marked position value is a contribution to NAV, not an
+  independently attributed profit or cost basis. Historical manually constructed
+  results leave unavailable terminal fields as `None`; frozen F6 evidence is unchanged.
+- Market-making attribution regressions cover finite synthetic currency scales
+  from `1e-9` to `1e12`, including signed cash, with cancellation-aware binary64
+  error budgets. They do not establish correctness for overflow or every finite input.
+- Shuffle construction tests exhaust legal Fisher-Yates choice tuples for one
+  through five seats. Uniform independent choices imply uniform permutations by
+  that bijection. This is not proof that an arbitrary seed sample supplies such
+  choices: the finite 53-bit bucket mapping can differ by one word for bounds
+  that do not divide its range. First-seat and pairwise marginals alone cannot
+  establish the joint permutation law.
 - One prospective field is retained as a superseded engineering pilot: three
   older, already-cached local model snapshots, one fixed forecast scaffold, 24
   binary contracts, and six settlement-clock blocks. It validates lifecycle

@@ -29,28 +29,33 @@ design implies:
 | <a href="https://modelcontextprotocol.io"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/mcp-dark.svg"><img src="../assets/logos/mcp.svg" alt="" height="11"></picture></a> MCP (`mcp_server.py`) | Contract-tested | `tests/test_mcp_server.py`. The import is guarded behind `FastMCP is None`. |
 | Functional view (`functional.py`, `SharpeArenaFuncEnv`) | Contract-tested | `tests/test_functional.py`. |
 | SharpeBench bridge (`bench_bridge.py`) | Contract-tested | Imported and exercised by `tests/test_confidence_pairing.py`, `tests/test_finish_reasons.py`, and `tests/test_local_agents.py`. |
-| Integration contracts and parity checker (`integrations.contracts`, `integrations.parity`) | Contract-tested | `tests/test_integration_parity.py` tests the checker's own failure modes: a deliberately broken adapter mapping is caught by name, and the three ways a check could report parity without comparing anything are made to raise. |
+| Integration contracts and parity checker (`integrations.contracts`, `integrations.parity`) | Contract-tested | `tests/test_integration_parity.py` covers broken mappings, unexpected adapter failures, fixture outcome declarations, required finite NAV, native engine identity and complete configuration readbacks including execution seed. A comparison requires at least one successful engine transition on both paths; matching first-action refusals alone do not establish parity. `test_vector.py` checks native lane readbacks against scalar construction for all five distribution modes and CSV execution seeds. |
 | <img src="../assets/logos/stable-baselines3.png" alt="" height="16"> Stable-Baselines3 (`sb3_env.py`, `SharpeArenaSB3VecEnv`) | Workflow-tested | `tests/test_sb3.py` covers the autoreset and terminal-observation mapping (`test_autoreset_is_same_step_and_not_next_step`, which fails if the mapping is inverted), the `TimeLimit.truncated` encoding, engine parity through `integrations.parity`, and a PPO learn-then-evaluate pass on a tiny CPU budget. `test_reference_semantics_still_match_installed_sb3` pins the module against the installed `DummyVecEnv.step_wait` source so an upstream change to the mapping fails a test rather than silently changing what the route computes. Targeted against `stable-baselines3` 2.9.0, the version installed and tested here; the import is guarded and construction raises `SB3Unavailable` without it. `examples/sb3/train_ppo.py` is the runnable recipe. |
-
-The five optional extras that gate these routes are `verifiers`, `minari`, `pettingzoo`,
-`mcp`, `sb3` (`crates/sharpearena-py/pyproject.toml`). Nothing above reaches "empirically
 | <a href="https://pytorch.org/rl"><img src="../assets/logos/torchrl.png" alt="" height="12"></a> TorchRL (`torchrl_env.py`, `SharpeArenaTorchRLEnv`) | Contract-tested | `tests/test_torchrl.py`: `torchrl.envs.utils.check_env_specs` passes; the adapter reproduces the engine under `integrations.parity` (`CORE_FIXTURES`); a `torchrl.collectors.Collector` batch survives `torch.save`/`torch.load` and replays its recorded actions against a fresh engine bit-for-bit. The import is guarded behind `_require_torchrl()`; construction raises `TorchRLUnavailable` when `torchrl` is absent. No runnable training recipe exists yet, which is why this stops short of workflow-tested. |
-| <a href="https://www.ray.io"><img src="../assets/logos/ray.svg" alt="" height="14"></a> Ray executor (`ray_executor.py`, INT-06) | Contract-tested (locally; not wired into CI, see note below) | `tests/test_ray_executor.py`: `run_episodes_local` is checked step-for-step against `integrations.parity.engine_rollout` on `CORE_FIXTURES`; `report_digest` is checked identical across 0, 2 and 3 Ray workers on one seeded batch; `reduce_results`'s double-counting guard (an identical retry result is dropped, a conflicting one is refused) is exercised directly. Run against `ray` 2.58.0: 13 passed, 1 skipped (the no-Ray guard test, which only runs when Ray is absent). |
-| <a href="https://www.ray.io"><img src="../assets/logos/ray.svg" alt="" height="14"></a> RLlib single- and multi-agent routes (`rllib_env.py`, INT-07) | Contract-tested (locally; not wired into CI, see note below) | `tests/test_rllib.py`: registration through `ray.tune.registry`, the `TimeLimit`-not-termination horizon wrapper, and the flatten/unflatten round trip checked bit-for-bit against the native engine via `integrations.parity.check_adapter_parity` on `CORE_FIXTURES`, for both the single-agent creator and (guarded on `pettingzoo` too) the multi-agent env against the `MultiAgentSharpeArenaEnv` it wraps. Run against `ray[rllib]` 2.58.0 and `pettingzoo` 1.26.1: 14 passed, 1 skipped. Building and training one PPO iteration (single-agent, and multi-agent with `num_envs_per_env_runner=2`, confirming the upstream "not vectorizable" restriction is stale at 2.58.0) was additionally verified by hand with `torch==2.14.0+cpu`; that step needs `torch`, which is not part of the `ray` extra or this test file, so it is local evidence rather than an automated test. |
+| <a href="https://www.ray.io"><img src="../assets/logos/ray.svg" alt="" height="14"></a> Ray executor (`ray_executor.py`, INT-06) | Operationally exercised (selected installed-wheel paths) | `tests/test_ray_executor.py`: `run_episodes_local` is checked step-for-step against `integrations.parity.engine_rollout` on `CORE_FIXTURES`; `report_digest` is checked identical across 0, 2 and 3 Ray workers on one seeded batch; `reduce_results`'s double-counting guard (an identical retry result is dropped, a conflicting one is refused) is exercised directly. Historical local run against `ray` 2.58.0: 13 passed, 1 skipped (the no-Ray guard test, which only runs when Ray is absent). Current `wheel-extras` CI installs the Ray extra separately and compares a two-worker episode batch with local execution, including installed-worker identity. This is finite executor coverage, not training. |
+| <a href="https://www.ray.io"><img src="../assets/logos/ray.svg" alt="" height="14"></a> RLlib single- and multi-agent routes (`rllib_env.py`, INT-07) | Operationally exercised (selected installed-wheel paths) | `tests/test_rllib.py`: registration through `ray.tune.registry`, the `TimeLimit`-not-termination horizon wrapper, and the flatten/unflatten round trip checked bit-for-bit against the native engine via `integrations.parity.check_adapter_parity` on `CORE_FIXTURES`, for both the single-agent creator and (guarded on `pettingzoo` too) the multi-agent env against the `MultiAgentSharpeArenaEnv` it wraps. Historical local run against `ray[rllib]` 2.58.0 and `pettingzoo` 1.26.1: 14 passed, 1 skipped. Building and training one PPO iteration (single-agent, and multi-agent with `num_envs_per_env_runner=2`, confirming the upstream "not vectorizable" restriction is stale at 2.58.0) was additionally verified by hand with `torch==2.14.0+cpu`; that step needs `torch`, which is not part of the `ray` extra or this test file, so it is local evidence rather than an automated test. Current `wheel-extras` CI also steps the Tune-registered single-agent route through completion against native observations, rewards and end flags. The multi-agent route and PPO training remain historical local evidence, not coverage of that CI cell. |
 
 The seven optional extras that gate these routes are `verifiers`, `minari`,
 `pettingzoo`, `mcp`, `sb3`, `torchrl`, and `ray`
-(`crates/sharpearena-py/pyproject.toml`). `ray` is not installed by CI:
+(`crates/sharpearena-py/pyproject.toml`). All seven have separate installed-wheel
+execution cells in CI; see the [installed-wheel matrix](inventory.md#installed-wheel-compatibility-matrix-int-18).
+That matrix is distinct from the source-suite requirement set:
 `ray[rllib]==2.58.0` pins `gymnasium==1.2.2` exactly, which conflicts with this
 repository's `gymnasium==1.3.0` CI pin (`crates/sharpearena-py/ci-requirements.txt`)
-in one `pip install --requirement` invocation. The two Ray test files therefore run
-locally rather than in CI today; `docs/integrations/inventory.md`'s version matrix
+in one `pip install --requirement` invocation. The full Ray test files therefore
+remain outside that source-suite job; the separately resolved Ray wheel cell
+executes its own bounded checks. `docs/integrations/inventory.md`'s version matrix
 records the full local suite (1837 passed, 15 skipped) run under `gymnasium==1.2.2`
 to confirm nothing else in the tree regresses on that version. `sb3` is left out of
-CI for a different reason, its torch dependency being the largest any extra here
-declares; `tests/test_sb3.py`'s pure-mapping tests still run everywhere, only its
-`stable_baselines3`-gated cases skip on CI. Nothing above reaches "empirically
-evaluated": no paper or `EVALUATION.md` result currently runs through any of these
+the source-suite requirement set for a different reason, its torch dependency
+being the largest any extra here declares; `tests/test_sb3.py`'s pure-mapping
+tests still run everywhere, only its
+`stable_baselines3`-gated cases can skip in that job. The SB3 wheel cell instead
+checks installed two-lane execution and terminal observations against the native
+vector route with CPU-only Torch; it does not run the PPO training study. TorchRL
+has its own installed TensorDict/reward/end-flag check through completion.
+Nothing above reaches "empirically evaluated": no paper or `EVALUATION.md`
+result currently runs through any of these
 adapters. The paper's evidence uses the Rust engine and the SharpeBench bridge
 directly, not a Gymnasium, PettingZoo, `verifiers`, Stable-Baselines3, TorchRL, or
 Ray rollout.
@@ -98,6 +103,11 @@ package's; both figures come from each project's own micro-benchmark harness on 
 own reference environments.
 
 ## CleanRL: dependency ranges don't intersect
+
+The [2026-10-10 disposition review](current-dispositions.md) rechecked the
+upstream manifest at a pinned commit and confirmed the reviewed conflict.
+That review also distinguishes the native bridge decisions and HUD/Harbor
+fixture scope from supported adapters.
 
 CleanRL pins `gymnasium==0.29.1` and declares `requires-python >=3.8,<3.11`. This
 package declares `gymnasium>=1.0` (`crates/sharpearena-py/pyproject.toml`; the CI pin
@@ -159,6 +169,8 @@ unavailable on that host and the task ran at Docker's default network policy. Th
 installed package's `schema_version` default is `"1.4"`, not the `"1.3"` an earlier
 planning reference recorded.
 
-Until that work is merged into this tree, Harbor's status here stays "not
-integrated." Treat the paragraph above as a pointer to PR #99, not as documentation of
-a capability this package ships.
+The standalone fixture is present in this tree, but remains a local feasibility
+check rather than a supported package integration. The recorded container run
+does not validate later grader changes. The invalid-UTF-8 and malformed-schema
+repairs have a standalone regression suite (`python scripts/test_harbor_grader.py`);
+Harbor's pre-grader artifact-transfer crash remains a separate upstream boundary.

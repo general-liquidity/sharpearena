@@ -34,6 +34,20 @@ class BenchBridgeError(ValueError):
     """Raw field evidence is incomplete, conflicting, or not scoreable."""
 
 
+def _finite_number(value: Any, field: str, *, positive: bool = False) -> float:
+    """Require recorded numeric evidence, not a missing-value or coercion default."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise BenchBridgeError(f"{field} must be a recorded finite number")
+    try:
+        number = float(value)
+    except (ValueError, OverflowError) as exc:
+        raise BenchBridgeError(f"{field} must be a recorded finite number") from exc
+    if not math.isfinite(number) or (number <= 0 if positive else number < 0):
+        domain = "positive" if positive else "nonnegative"
+        raise BenchBridgeError(f"{field} must be finite and {domain}")
+    return number
+
+
 def _canonical_bytes(value: Any) -> bytes:
     return json.dumps(
         value, sort_keys=True, separators=(",", ":"), ensure_ascii=False
@@ -468,6 +482,13 @@ def _validate_field(records: Sequence[dict[str, Any]]) -> dict[str, Any]:
             raise BenchBridgeError(
                 f"field contains a failed/incomplete cell: {failure}"
             )
+        _finite_number(record.get("cost"), "run cost")
+        dataset = record.get("dataset")
+        if not isinstance(dataset, dict):
+            raise BenchBridgeError("completed cell contains no dataset object")
+        _finite_number(
+            dataset.get("periods_per_year"), "periods_per_year", positive=True
+        )
         model_config = record.get("model_config")
         if not isinstance(model_config, dict):
             raise BenchBridgeError("completed cell contains no model_config object")
@@ -675,7 +696,13 @@ def _safe_dataset_name(dataset_id: str, dataset_index: int) -> str:
 def compile_benchmark_evidence(
     journal_paths: Sequence[Path], output_dir: Path
 ) -> dict[str, Any]:
-    """Validate a complete field and emit dataset-specific SharpeBench inputs."""
+    """Validate a complete field and emit dataset-specific SharpeBench inputs.
+
+    Run cost must be explicitly recorded, finite and nonnegative; absence is not zero.
+    Existing explicit zero self-reports remain unchanged and do not establish that local
+    compute is free. Dataset annualization must be a finite positive numeric value.
+    Both boundaries are checked across the field before any output is written.
+    """
 
     records, attempts, sources = _read_journals(journal_paths)
     shape = _validate_field(records)
@@ -689,7 +716,9 @@ def compile_benchmark_evidence(
                 f"dataset index {dataset_index} has conflicting metadata"
             )
         dataset = json.loads(next(iter(dataset_variants)))
-        periods_per_year = float(dataset["periods_per_year"])
+        periods_per_year = _finite_number(
+            dataset.get("periods_per_year"), "periods_per_year", positive=True
+        )
         submissions = []
         model_entries = []
         seen_agent_ids: set[str] = set()
@@ -713,9 +742,7 @@ def compile_benchmark_evidence(
             seen_agent_ids.add(agent_id)
             runs = []
             for record in model_records:
-                cost = float(record.get("cost", 0.0))
-                if not math.isfinite(cost) or cost < 0.0:
-                    raise BenchBridgeError("run cost must be finite and nonnegative")
+                cost = _finite_number(record.get("cost"), "run cost")
                 runs.append(
                     {
                         "returns": record["returns"],

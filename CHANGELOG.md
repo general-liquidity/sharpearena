@@ -10,6 +10,89 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ## [Unreleased]
 
+### Fixed
+
+- Integration support and inventory prose distinguish the ordinary source suite
+  from the separate installed-wheel CI cells. Ray is no longer described as
+  absent from all CI; bounded worker and single-agent checks do not imply the
+  historical full suites, multi-agent route or training run there.
+- The installed-extra matrix includes finite Ray worker and single-agent RLlib
+  execution without a learning framework. Distributed reports match local
+  execution; Tune-registered observations/rewards/end flags match native
+  Gymnasium. Forced-local execution and changed RLlib rewards are rejected.
+  This does not claim training or multi-agent Ray/PettingZoo coverage.
+- The installed-extra matrix includes TorchRL TensorDict execution through
+  completion with constrained CPU-only Torch. Observations, rewards and all
+  three end flags are compared against native Gymnasium; deliberate reward
+  and truncation corruption must fail. Ray has a separate finite execution cell.
+- The installed-extra wheel matrix now includes an SB3 execution cell, with
+  constrained CPU-only Torch, two-lane native vector parity through completion
+  and terminal-observation delivery. Consumer checks remove inherited Python
+  source/import paths. TorchRL and Ray have their own separate execution cells.
+- The Lean forecast model includes candidate-digest acceptance/refusal and
+  claim-identity preservation, plus per-claim history-fold append rules. These
+  strengthen the model's binding and revision-order assurance without changing
+  runtime scores or claiming a Python/Rust refinement proof.
+- External workflow actions use resolved full commit SHAs. An offline CI policy
+  gate checks those literal references and rejects Cargo build fallbacks, with
+  planted tag/branch/short-hash and fallback regressions. This does not certify
+  transitive actions, runner images or downloaded tools.
+- Private-copy tournament results are available through a detached
+  `final_ranking` snapshot, including agents that finished before the final
+  step, without reintroducing them into Parallel step dictionaries. Reset clears
+  the result. Fewer than two return observations now have an explicit unavailable
+  reason instead of a fabricated zero score. Row positions are not benchmark
+  eligibility certificates; unavailable results sort after numeric scores.
+- Episode-statistics drawdown includes opening unit equity, including first-step
+  losses and complete loss. Vector statistics exclude NEXT_STEP reset-only
+  frames while retaining SAME_STEP terminal rewards. Reward-path diagnostics
+  are not native NAV measurements when rewards are shaped, nor ranking inputs.
+- The HUD serialization-interruption regression constructs its replacement
+  grade before patching JSON and verifies the interrupted call received that
+  grade, rather than accidentally interrupting episode construction.
+- Manipulation probes disclose terminal shares, cleared closes, cash and marked
+  position value in both arms. Zero terminal target is no longer described as
+  guaranteed quantity liquidation. P&L calculations and frozen F6 evidence are unchanged.
+- Attribution and seat-shuffle coverage now includes finite currency scales and
+  exhaustive one-to-five-seat construction checks. These are bounded synthetic
+  tests, not new empirical results or an unrestricted arithmetic/RNG guarantee.
+- Market-making parameters declare finite/sign and integer domains before
+  rollout. Legitimate zero-intensity, zero-capacity and zero-penalty limits remain
+  valid, as does signed initial cash. Quote depths remain continuous; positive
+  tick metadata does not imply quote snapping. Equations and random draws are unchanged.
+- Strategy journal acquisition has a configurable five-second default deadline.
+  Busy journals raise `JournalBusyError` with the unpersisted outcome available
+  to the caller; waiting does not remove another writer's lock or recount a trial.
+- Integration exactness rules reject non-finite tolerances and snapshot their
+  mappings. Batch completion can require an independently supplied plan count.
+  Conformance checks retain their guards under optimized Python and compare
+  terminal flags across instances. Parity refuses invalid reward or NAV values.
+- Benchmark bridge requires explicit finite nonnegative recorded cost and finite
+  positive annualization. Missing cost is not invented as zero; recorded zero
+  remains valid and local compute cost remains excluded. The canonical Python
+  suite now executes all paper producer regressions and refuses skipped coverage.
+- Minari split exports require exact recorded scenario seeds in their declared
+  train/test bands. Terminal classification requires finite recorded NAV unless
+  explicitly overridden, and failed metadata writes are not reported as success.
+- MCP parses against configured weight limits and returns typed input refusals
+  without advancing the episode. It serializes calls to one shared episode and
+  requires reset after completion; unrelated runtime failures remain failures.
+  Decision parsing rejects non-string actions and unrepresentable numeric values.
+- Integration parity: require an actual successful engine transition, the
+  adapter's native engine, finite NAV and complete configuration readbacks,
+  including the execution seed. Unexpected adapter failures no longer masquerade
+  as expected action refusals, and fixture outcome declarations are enforced.
+  Native vector lanes expose the configuration of the dataset they actually use.
+- Harbor feasibility grader: bounded artifact reads and reason-coded refusals
+  for invalid UTF-8, unreadable files, Boolean step indices, non-string actions,
+  and oversized numeric values. Seven standalone tests exercise the actual
+  grader without Docker; five fail against the prior source. Historical Harbor
+  trial results remain unchanged, and the pre-grader transfer crash is separate.
+- Documentation: restore the complete integration support table, remove the
+  stale Harbor merge condition, distinguish inventory audit dates from later
+  adapter additions, describe the three PettingZoo environment families, and
+  link the existing raw-WASM throughput example.
+
 ### Added
 
 - ci: an installed-package and compatibility matrix (INT-18) for the PyPI wheel, closing the gap the existing packaging gates left: they proved a wheel builds and imports on one interpreter with every extra installed, never that it installs and runs across the versions and extras the package declares. `wheel-install-import` builds with `maturin build --locked` and drives the native binding and the packaged Gymnasium adapter in a clean venv outside the checkout on the declared floor (Python 3.9), the version the rest of CI uses (3.12) and the newest released interpreter (3.14) on Linux, then 3.12 on macOS and Windows. `wheel-no-extras` installs the bare wheel with none of the four optional extras present and asserts every guarded adapter module imports and refuses by name, which is the check that makes "every adapter is guarded" a tested claim rather than an assumption read off the source: with every extra installed, which is what the existing `python` job does, the "absent" branch of each guard is the one nothing ever executes. `wheel-extras` installs `sharpearena[<extra>]` per declared extra and runs the real adapter behind it, a PettingZoo tournament, a Minari export, the MCP tool list, the verifiers environment build. The extras leg is generated from `crates/sharpearena-py/pyproject.toml` through the new `scripts/optional_extras.py` registry rather than hand-listed, and `validate_coverage()` refuses to run when a declared extra has no exercise or guard entry, so the matrix cannot quietly shrink as the package grows. `docs/integrations/inventory.md` records what each job covers.

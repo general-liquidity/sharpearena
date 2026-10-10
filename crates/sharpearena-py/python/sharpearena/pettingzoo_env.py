@@ -9,9 +9,9 @@ and are ranked by their realized SharpeBench ``deflated_sharpe`` at episode end.
 **This is competition, not a shared market.** The agents do **not** interact: there is
 no cross-agent price impact, no endogenous market — one agent's orders never move the
 prices another agent sees. The contest is "who trades the same tape best," scored by the
-real SharpeBench kernel. An endogenous-impact market (where agents' aggregate flow moves
-the book) is a separate, future flagship build; this module deliberately changes nothing
-in the simulator.
+real SharpeBench kernel. The separate ``market_env.EndogenousMarketEnv`` provides
+shared endogenous-impact experiments; ``lob_env`` provides a limit-order-book
+task. Neither changes this module's private-copy tournament economics.
 
 **Parallel, not AEC.** Order submission in a market is *simultaneous* — every agent acts
 on the same bar without seeing the others' action first — so the native API is
@@ -28,12 +28,12 @@ clear ``RuntimeError`` when it is absent.
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from typing import Any, Optional
-
-import numpy as np
 
 from .kernel_score import (
     KernelScore,
+    UNAVAILABLE_KERNEL_VALUE,
     is_kernel_score_unavailable,
     kernel_score_or_unavailable,
 )
@@ -57,13 +57,13 @@ def _agent_ids(n_agents: int) -> list[str]:
 
 
 def _deflated_sharpe(returns: list[float], n_trials: int) -> KernelScore:
-    """The real SharpeBench deflated Sharpe for a return series, or 0.0 for <2 bars.
+    """The real SharpeBench deflated Sharpe, or an explicit unavailable reason.
 
     A composite the kernel withheld with a typed error yields the
     ``unavailable_scoring_kernel_error: ...`` reason string instead of the floor.
     """
     if len(returns) < 2:
-        return 0.0
+        return f"{UNAVAILABLE_KERNEL_VALUE}: fewer than two return observations"
     return kernel_score_or_unavailable(json.loads(score_run(returns, n_trials)))
 
 
@@ -90,7 +90,11 @@ class MultiAgentSharpeArenaEnv(ParallelEnv):
     its tie-breaks) is reproducible.
     """
 
-    metadata = {"render_modes": [], "name": "sharpearena_competition_v0", "is_parallelizable": True}
+    metadata = {
+        "render_modes": [],
+        "name": "sharpearena_competition_v0",
+        "is_parallelizable": True,
+    }
 
     def __init__(
         self,
@@ -132,6 +136,7 @@ class MultiAgentSharpeArenaEnv(ParallelEnv):
 
         self._envs: dict[str, SharpeArenaEnv] = {}
         self._returns: dict[str, list[float]] = {}
+        self._final_ranking: Optional[list[dict[str, Any]]] = None
         self._symbols: list[str] = []
 
         # Build one env per agent at the shared scenario seed to discover the symbol axis
@@ -165,7 +170,12 @@ class MultiAgentSharpeArenaEnv(ParallelEnv):
         composite the kernel withheld is placed after every scored agent with the
         reason string in its ``deflated_sharpe`` cell."""
         scored = [
-            {"agent": agent, "deflated_sharpe": _deflated_sharpe(self._returns[agent], self._n_trials)}
+            {
+                "agent": agent,
+                "deflated_sharpe": _deflated_sharpe(
+                    self._returns[agent], self._n_trials
+                ),
+            }
             for agent in self.possible_agents
         ]
         scored.sort(key=_ranking_key)
@@ -191,6 +201,17 @@ class MultiAgentSharpeArenaEnv(ParallelEnv):
     def scenario_seed(self) -> int:
         return self._scenario_seed
 
+    @property
+    def final_ranking(self) -> Optional[list[dict[str, Any]]]:
+        """A detached result for the whole roster, or None before tournament end.
+
+        Early-finished agents remain in this result, but are not resurrected in
+        Parallel step dictionaries. Reset clears it. ``rank`` is a zero-based
+        display position, not a SharpeBench eligibility certification. Unavailable
+        scores are reason strings sorted after all numeric scores.
+        """
+        return deepcopy(self._final_ranking)
+
     def reset(
         self, seed: Optional[int] = None, options: Optional[dict] = None
     ) -> tuple[dict[str, Any], dict[str, dict]]:
@@ -207,6 +228,7 @@ class MultiAgentSharpeArenaEnv(ParallelEnv):
 
         self.agents = list(self.possible_agents)
         self._returns = {agent: [] for agent in self.possible_agents}
+        self._final_ranking = None
 
         observations: dict[str, Any] = {}
         infos: dict[str, dict] = {}
@@ -218,10 +240,17 @@ class MultiAgentSharpeArenaEnv(ParallelEnv):
 
     def step(
         self, actions: dict[str, Any]
-    ) -> tuple[dict[str, Any], dict[str, float], dict[str, bool], dict[str, bool], dict[str, dict]]:
+    ) -> tuple[
+        dict[str, Any],
+        dict[str, float],
+        dict[str, bool],
+        dict[str, bool],
+        dict[str, dict],
+    ]:
         """Fan each agent's action to its own env, advance one bar, and return per-agent
         dicts. An agent that terminates (blows up) is removed from ``self.agents``; at the
         episode end the cross-agent ``deflated_sharpe`` ranking is placed in ``infos``.
+        The detached ``final_ranking`` property also serves agents removed earlier.
         """
         observations: dict[str, Any] = {}
         rewards: dict[str, float] = {}
@@ -230,7 +259,9 @@ class MultiAgentSharpeArenaEnv(ParallelEnv):
         infos: dict[str, dict] = {}
 
         for agent in self.agents:  # canonical order
-            obs, reward, terminated, truncated, info = self._envs[agent].step(actions[agent])
+            obs, reward, terminated, truncated, info = self._envs[agent].step(
+                actions[agent]
+            )
             self._returns[agent].append(float(reward))
             observations[agent] = obs
             rewards[agent] = float(reward)
@@ -240,14 +271,17 @@ class MultiAgentSharpeArenaEnv(ParallelEnv):
 
         # Episode is over for an agent that blew up or ran out of bars. When every live
         # agent is done, attach the cross-agent leaderboard to each agent's info.
-        episode_over = all(
-            terminations[agent] or truncations[agent] for agent in self.agents
-        ) if self.agents else True
-        if episode_over:
+        episode_over = (
+            all(terminations[agent] or truncations[agent] for agent in self.agents)
+            if self.agents
+            else True
+        )
+        if episode_over and self._final_ranking is None:
             ranking = self._ranking()
+            self._final_ranking = deepcopy(ranking)
             by_agent = {row["agent"]: row for row in ranking}
             for agent in self.agents:
-                infos[agent]["ranking"] = ranking
+                infos[agent]["ranking"] = deepcopy(ranking)
                 infos[agent]["rank"] = by_agent[agent]["rank"]
                 infos[agent]["deflated_sharpe"] = by_agent[agent]["deflated_sharpe"]
 
