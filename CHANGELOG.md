@@ -12,6 +12,10 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ### Fixed
 
+- The installed-extra matrix includes TorchRL TensorDict execution through
+  completion with constrained CPU-only Torch. Observations, rewards and all
+  three end flags are compared against native Gymnasium; deliberate reward
+  and truncation corruption must fail. Ray installed execution remains open.
 - The installed-extra wheel matrix now includes an SB3 execution cell, with
   constrained CPU-only Torch, two-lane native vector parity through completion
   and terminal-observation delivery. Consumer checks remove inherited Python

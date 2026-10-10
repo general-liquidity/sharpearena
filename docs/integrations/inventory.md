@@ -54,8 +54,8 @@ actual behaviour rather than a floor (the Tune-registry requirement, the
 Dict-observation RLModule failure, and whether multi-agent env runners
 vectorise have each changed across recent Ray releases), and INT-12 similarly
 against TorchRL's 0.14 `EnvBase` contract. The installed-wheel matrix now has an
-SB3 cell with constrained CPU-only Torch. It still excludes TorchRL and Ray, for their
-own reasons rather than one shared one: see the "Installed-wheel compatibility
+SB3 and TorchRL cells with constrained CPU-only Torch. It still excludes Ray:
+see the "Installed-wheel compatibility
 matrix" section below for what is and is not exercised against a built wheel
 for `sb3`, `torchrl` and `ray`. The plan's warning holds: generic Gymnasium and
 Farama compatibility is real and already tested, and the gap is the seven
@@ -191,7 +191,7 @@ a newly declared extra gets a cell automatically, close that gap:
 |---|---|
 | `wheel-install-import` | Builds the wheel with `maturin build --locked` and installs it into a clean venv outside the checkout, on the declared floor (3.9), the version the rest of CI uses (3.12), and the newest released interpreter (3.14), all on Linux; then 3.12 on macOS and Windows. Drives the native binding and the packaged Gymnasium adapter. |
 | `wheel-no-extras` | Installs the bare wheel with none of the seven optional extras present. Steps the base environment and checks every guarded module, including Ray/RLlib, imports and refuses by name when called. This covers absence guards, not execution with dependencies installed. |
-| `wheel-extras` | A cell per exercised extra (`verifiers`, `minari`, `pettingzoo`, `mcp`, `sb3`). Installs the built wheel with its extra and drives the adapter. The SB3 cell constrains Torch 2.9.0+cpu, compares two lanes against the native vector route through completion and checks terminal-observation delivery. |
+| `wheel-extras` | A cell per exercised extra (`verifiers`, `minari`, `pettingzoo`, `mcp`, `sb3`, `torchrl`). Installs the built wheel with its extra and drives the adapter. SB3 and TorchRL constrain Torch 2.9.0+cpu. SB3 compares two lanes against the native vector route through completion and checks terminal-observation delivery. TorchRL compares TensorDict observations, rewards and all three end flags against native Gymnasium through completion. Both cells reject deliberate reward corruption; TorchRL also rejects corrupted truncation flags. |
 
 Representative rather than combinatorial: the interpreters between 3.9 and 3.14 differ
 from each other in nothing this package touches, so the OS axis and the version axis
@@ -201,11 +201,11 @@ from; `validate_coverage()` refuses to run when a declared extra has no exercise
 recorded install-matrix exclusion, or no guard entry, so the matrix cannot quietly
 shrink as the package grows and an exclusion cannot quietly rot into an accidental gap.
 
-TorchRL and Ray remain explicitly excluded from `wheel-extras`; their installed
+Ray remains explicitly excluded from `wheel-extras`; its installed
 routes still need execution checks. The source suite's Gymnasium 1.3.0 pin
 conflicts with Ray 2.58.0's 1.2.2 pin, but that is not an incompatibility with the
-base package or a blocker to a separately resolved wheel-consumer venv. SB3's
-new CPU-only cell is separate from the source suite, where torch-dependent tests
+base package or a blocker to a separately resolved wheel-consumer venv. The
+CPU-only cells are separate from the source suite, where torch-dependent tests
 can still skip. `INSTALL_MATRIX_EXCLUDED` and `EXERCISES` are checked as an
 exhaustive partition; a recorded exclusion is not a passing installed route.
 
