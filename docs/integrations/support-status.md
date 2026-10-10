@@ -96,6 +96,11 @@ own reference environments.
 
 ## CleanRL: dependency ranges don't intersect
 
+The [2026-10-10 disposition review](current-dispositions.md) rechecked the
+upstream manifest at a pinned commit and confirmed the reviewed conflict.
+That review also distinguishes the native bridge decisions and HUD/Harbor
+fixture scope from supported adapters.
+
 CleanRL pins `gymnasium==0.29.1` and declares `requires-python >=3.8,<3.11`. This
 package declares `gymnasium>=1.0` (`crates/sharpearena-py/pyproject.toml`; the CI pin
 is `gymnasium==1.3.0`, `crates/sharpearena-py/ci-requirements.txt`). Both pins were
