@@ -1,5 +1,7 @@
 """Terminal tournament delivery does not invent numeric scores or revive agents."""
 
+from copy import deepcopy
+
 import numpy as np
 import pytest
 
@@ -71,7 +73,7 @@ def test_result_snapshots_are_detached_and_reset_clears_them():
     env.reset()
     env.step({agent: np.zeros(2) for agent in env.agents})
     last = env.step({"agent_1": np.zeros(2)})
-    expected = env.final_ranking
+    expected = deepcopy(env.final_ranking)
     last[4]["agent_1"]["ranking"][0]["agent"] = "caller mutation"
     snapshot = env.final_ranking
     snapshot[0]["agent"] = "another caller mutation"
