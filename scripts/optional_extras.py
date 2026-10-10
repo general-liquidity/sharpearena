@@ -48,31 +48,13 @@ ACCELERATOR_IMPORTS: Tuple[str, ...] = ("torch", "jax")
 # `EXERCISES` but never neither, and removing an entry without adding the other fails CI
 # the same way an unlisted extra always has.
 #
-# One remaining exclusion, not an executed installed adapter check:
-#
-# SB3 and TorchRL have CPU-only Torch cells, independently of source requirements.
-# - ray[rllib]==2.58.0 pins gymnasium==1.2.2 exactly, which conflicts with the CI pin
-#   of gymnasium==1.3.0 in a single `pip install --requirement` invocation
-#   (`docs/integrations/inventory.md`'s version matrix). `ray` is excluded from
-#   `ci-requirements.txt`, and `tests/test_ray_executor.py` / `tests/test_rllib.py`
-#   skip in the source-tree suite, for that pin conflict rather than for size, though
-#   `ray[rllib]` is also a large multi-package install in its own right.
-#
-# A Ray cell still needs a separately exercised dependency set. What is NOT
-# skipped: `GUARDS["sb3"]`,
-# `GUARDS["torchrl"]` and `GUARDS["ray"]` still run in `wheel-no-extras`, for free, since
-# that job never installs any extra either way, and they are what prove
-# `SharpeArenaSB3VecEnv(...)`, `SharpeArenaTorchRLEnv(...)`, `run_episodes(...,
-# num_workers=1)` and `sharpearena_env_creator()` all refuse by name with the dependency
-# absent. What IS unexercised against an installed wheel: the actual
-# Ray task / RLlib route with the extra present. The source-suite pin conflict
-# does not prevent a separately resolved installed consumer environment.
-INSTALL_MATRIX_EXCLUDED: Dict[str, str] = {
-    "ray": (
-        "installed Ray/RLlib execution check remains unimplemented; the source-suite "
-        "Gymnasium pin conflict does not prevent a separate consumer venv"
-    ),
-}
+# All seven extras currently have execution cells. SB3 and TorchRL constrain
+# CPU-only Torch. Ray resolves its own Gymnasium dependency independently of
+# source-suite pins, runs workers and single-agent RLlib parity without training.
+# This does not establish the multi-agent Ray/PettingZoo combination, learner
+# construction or every version permitted by the dependency ranges. Absence
+# guards run separately in wheel-no-extras.
+INSTALL_MATRIX_EXCLUDED: Dict[str, str] = {}
 
 _REQUIREMENT_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*")
 
@@ -282,6 +264,89 @@ def _exercise_verifiers() -> str:
     if rows != 2:
         raise SystemExit(f"the built dataset holds {rows} rows, expected 2")
     return f"loaded the multi-turn environment over {rows} scenario rows"
+
+
+def _exercise_ray() -> str:
+    from importlib.metadata import version
+    import os
+    import ray
+    import numpy as np
+    from ray.tune.registry import _global_registry, ENV_CREATOR
+    from sharpearena import SharpeArenaEnv
+    from sharpearena.ray_executor import EpisodeSpec, report_digest, run_episodes
+    from sharpearena.rllib_env import SINGLE_AGENT_ENV, register_sharpearena_envs
+    from sharpearena.spaces import flatten_obs
+
+    assert not ray.is_initialized(), "consumer must not reuse an existing cluster"
+    ray.init(num_cpus=2, include_dashboard=False, log_to_driver=False)
+    try:
+        specs = [
+            EpisodeSpec(
+                episode_id=f"installed-{seed}",
+                seed=seed,
+                n_symbols=2,
+                n_days=8,
+                max_steps=12,
+                actions=((0.5, 0.5),) * 12,
+            )
+            for seed in (1, 2)
+        ]
+        local = run_episodes(specs, num_workers=0)
+        distributed = run_episodes(specs, num_workers=2, deadline_s=90)
+        assert distributed.num_workers == 2
+        assert distributed.counts.is_complete
+        assert all(result.status == "completed" for result in distributed.results)
+        assert report_digest(local) == report_digest(distributed)
+
+        @ray.remote
+        def installed_worker_identity():
+            import os
+            import sharpearena
+
+            return os.getpid(), sharpearena.__file__
+
+        worker_pid, module_path = ray.get(
+            installed_worker_identity.remote(), timeout=30
+        )
+        assert worker_pid != os.getpid()
+        assert "site-packages" in Path(module_path).parts
+        register_sharpearena_envs()
+        creator = _global_registry.get(ENV_CREATOR, SINGLE_AGENT_ENV)
+        kwargs = dict(seed=1, n_symbols=2, n_days=8)
+        env = creator(kwargs)
+        reference = SharpeArenaEnv(**kwargs)
+        try:
+            observed, _ = env.reset()
+            expected, _ = reference.reset()
+            np.testing.assert_array_equal(
+                observed, flatten_obs(reference.observation_space, expected)
+            )
+            finished = False
+            for _ in range(12):
+                action = np.full(2, 0.5, dtype=np.float32)
+                observed, reward, terminated, truncated, _ = env.step(action)
+                expected, native_reward, native_terminated, native_truncated, _ = (
+                    reference.step(action)
+                )
+                np.testing.assert_array_equal(
+                    observed, flatten_obs(reference.observation_space, expected)
+                )
+                assert reward == native_reward
+                assert terminated == native_terminated
+                assert truncated == native_truncated
+                if terminated or truncated:
+                    finished = True
+                    break
+            assert finished, "RLlib consumer never reached episode completion"
+        finally:
+            env.close()
+            reference.close()
+    finally:
+        ray.shutdown()
+    return (
+        f"Ray {version('ray')}: installed worker reports match local execution; "
+        "Tune-registered single-agent observations, rewards and end flags match native"
+    )
 
 
 def _exercise_torchrl() -> str:
@@ -513,6 +578,7 @@ def _guard_ray() -> List[str]:
 
 
 EXERCISES: Dict[str, Callable[[], str]] = {
+    "ray": _exercise_ray,
     "torchrl": _exercise_torchrl,
     "sb3": _exercise_sb3,
     "pettingzoo": _exercise_pettingzoo,

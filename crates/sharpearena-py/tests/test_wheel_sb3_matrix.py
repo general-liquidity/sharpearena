@@ -30,6 +30,12 @@ def test_torchrl_is_an_exercised_declared_extra_not_an_exclusion():
     assert "torchrl" not in optional_extras.INSTALL_MATRIX_EXCLUDED
 
 
+def test_ray_is_an_exercised_declared_extra_not_an_exclusion():
+    assert "ray" in optional_extras.validate_coverage()
+    assert "ray" in optional_extras.installable_extras()
+    assert "ray" not in optional_extras.INSTALL_MATRIX_EXCLUDED
+
+
 @pytest.mark.parametrize("extra", ["sb3", "torchrl"])
 def test_cpu_torch_is_constrained_and_source_import_paths_are_removed(
     monkeypatch, extra

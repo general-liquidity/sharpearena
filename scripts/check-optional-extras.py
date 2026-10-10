@@ -9,14 +9,14 @@ validated against `crates/sharpearena-py/pyproject.toml` on every run:
     and the import names any declared extra brings, as JSON, and write them to
     ``$GITHUB_OUTPUT`` when CI set it. The extras leg of the compatibility matrix is
     generated from this, so a newly declared extra gets a cell without anyone editing
-    the workflow, unless explicitly recorded as excluded (Ray currently).
+    the workflow, unless explicitly recorded as excluded (none currently).
     SB3 and TorchRL have constrained CPU-only Torch cells.
 
 ``--extra NAME``
     Assert the extra's dependencies are importable, then run the real adapter behind it
     against the installed package: a PettingZoo tournament, a Minari export, the MCP
     tool list, the verifiers environment build. No model call, no network, no window.
-    Refuses with the recorded reason for a declared-but-excluded extra (ray)
+    Refuses with the recorded reason for any declared-but-excluded extra
     rather than silently doing nothing.
 
 ``--none``

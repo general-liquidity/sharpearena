@@ -433,9 +433,9 @@ jobs:
   # jobs (INT-18) hold that claim to the declared range, to the operating systems the
   # Rust suite already covers, and to the optional extras, with the extras leg generated
   # from pyproject.toml so a newly declared extra gets a cell rather than going unnoticed.
-  # SB3 and TorchRL use constrained CPU Torch. Ray remains explicitly excluded
-  # until its installed execution check is implemented. All absence guards run
-  # separately inside `wheel-no-extras`.
+  # SB3 and TorchRL use constrained CPU Torch. Ray runs finite distributed
+  # episodes and single-agent RLlib parity without a learning framework.
+  # All absence guards run separately inside `wheel-no-extras`.
 
   extras:
     name: declared extras (matrix source)
@@ -581,6 +581,8 @@ jobs:
             torch_options=(--cpu-torch --run scripts/test-sb3-wheel-check.py)
           elif [ "$EXTRA" = torchrl ]; then
             torch_options=(--cpu-torch --run scripts/test-torchrl-wheel-check.py)
+          elif [ "$EXTRA" = ray ]; then
+            torch_options=(--run scripts/test-ray-wheel-check.py)
           fi
           python scripts/check-wheel-install.py --wheel "${wheels[0]}" \
             --extra "$EXTRA" "${torch_options[@]}" \
