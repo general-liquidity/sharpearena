@@ -22,6 +22,7 @@ use crate::{
     generate_scenario, CostModel, Dataset, Decision, DistributionMode, MarketObservation,
     ScenarioSpec, StepInfo, TradingEnv, Window,
 };
+use std::num::NonZeroUsize;
 
 /// Per-lane construction config: a panel of `n_symbols` × `n_days` under
 /// `distribution_mode`, seeded by `seed`, over an optional `window` (full series when
@@ -143,7 +144,7 @@ impl AutoresetMode {
 /// The result of one batched step (structure-of-arrays, length `B`).
 ///
 /// `terminated[i]` means lane `i` blew up (NAV ≤ 0); `truncated[i]` means it ran out of
-/// bars; `first[i]` means a new episode just started this step (lane `i` was
+/// bars or reached an explicit episode limit; `first[i]` means a new episode just started this step (lane `i` was
 /// auto-reset, so `observations[i]` is the new episode's t0). `rewards`/`infos` always
 /// describe the step that just executed. Under [`AutoresetMode::SameStep`], a lane that
 /// finished this step carries its terminal obs/info in `final_obs[i]`/`final_info[i]`
@@ -183,9 +184,29 @@ fn step_lane(
     decision: &Decision,
     pending_reset: &mut bool,
     mode: AutoresetMode,
+    elapsed: &mut usize,
+    capped_final: &mut Option<(MarketObservation, f64, bool)>,
+    limit: Option<NonZeroUsize>,
 ) -> LaneOutcome {
+    if let Some((observation, nav, terminated)) = capped_final {
+        return LaneOutcome {
+            observation: observation.clone(),
+            reward: 0.0,
+            terminated: *terminated,
+            truncated: true,
+            first: false,
+            info: StepInfo {
+                nav: *nav,
+                carry: 0.0,
+                events: Vec::new(),
+            },
+            final_obs: None,
+            final_info: None,
+        };
+    }
     if mode == AutoresetMode::NextStep && *pending_reset {
         *pending_reset = false;
+        *elapsed = 0;
         let observation = env.reset();
         let info = StepInfo {
             nav: observation.cash,
@@ -205,12 +226,15 @@ fn step_lane(
     }
 
     let res = env.step(decision.clone());
+    *elapsed = elapsed.saturating_add(1);
     let terminated = res.info.nav <= 0.0;
-    let truncated = res.done;
+    let capped = limit.is_some_and(|limit| *elapsed >= limit.get());
+    let truncated = res.done || capped;
     let ended = terminated || truncated;
 
     match mode {
         AutoresetMode::SameStep if ended => {
+            *elapsed = 0;
             let final_info = StepInfo {
                 nav: res.info.nav,
                 carry: res.info.carry,
@@ -229,6 +253,9 @@ fn step_lane(
             }
         }
         _ => {
+            if capped && mode == AutoresetMode::Disabled {
+                *capped_final = Some((res.observation.clone(), res.info.nav, terminated));
+            }
             if ended && mode == AutoresetMode::NextStep {
                 *pending_reset = true;
             }
@@ -278,6 +305,9 @@ pub struct VecTradingEnv {
     seeds: Vec<u64>,
     mode: AutoresetMode,
     pending_reset: Vec<bool>,
+    elapsed_steps: Vec<usize>,
+    capped_final: Vec<Option<(MarketObservation, f64, bool)>>,
+    episode_limit: Option<NonZeroUsize>,
 }
 
 impl VecTradingEnv {
@@ -286,11 +316,16 @@ impl VecTradingEnv {
         let envs: Vec<TradingEnv> = configs.iter().map(LaneConfig::build).collect();
         let seeds = configs.iter().map(|c| c.seed).collect();
         let pending_reset = vec![false; envs.len()];
+        let elapsed_steps = vec![0; envs.len()];
+        let capped_final = vec![None; envs.len()];
         VecTradingEnv {
             envs,
             seeds,
             mode: AutoresetMode::default(),
             pending_reset,
+            elapsed_steps,
+            capped_final,
+            episode_limit: None,
         }
     }
 
@@ -303,17 +338,31 @@ impl VecTradingEnv {
             "envs and seeds must have equal length"
         );
         let pending_reset = vec![false; envs.len()];
+        let elapsed_steps = vec![0; envs.len()];
+        let capped_final = vec![None; envs.len()];
         VecTradingEnv {
             envs,
             seeds,
             mode: AutoresetMode::default(),
             pending_reset,
+            elapsed_steps,
+            capped_final,
+            episode_limit: None,
         }
     }
 
     /// Select the auto-reset mode (builder form). Defaults to [`AutoresetMode::NextStep`].
     pub fn with_autoreset_mode(mut self, mode: AutoresetMode) -> Self {
         self.mode = mode;
+        self
+    }
+
+    /// Cap executed steps per lane without shortening the market-data window.
+    /// The positive limit is a truncation, not bankruptcy. Autoreset uses the
+    /// selected mode; a disabled capped lane freezes with zero subsequent reward.
+    /// Without a limit the historical native horizon is unchanged.
+    pub fn with_episode_limit(mut self, limit: NonZeroUsize) -> Self {
+        self.episode_limit = Some(limit);
         self
     }
 
@@ -341,11 +390,13 @@ impl VecTradingEnv {
     /// observation (in lane order). Clears any pending deferred reset.
     pub fn reset_batch(&mut self) -> Vec<MarketObservation> {
         self.pending_reset.iter_mut().for_each(|p| *p = false);
+        self.elapsed_steps.fill(0);
+        self.capped_final.fill(None);
         self.envs.iter_mut().map(TradingEnv::reset).collect()
     }
 
     /// Step every lane with its decision (`decisions[i]` drives lane `i`) and apply
-    /// same-step auto-reset. `decisions.len()` must equal the lane count.
+    /// the selected auto-reset mode. `decisions.len()` must equal the lane count.
     pub fn step_batch(&mut self, decisions: &[Decision]) -> BatchStep {
         assert_eq!(
             decisions.len(),
@@ -354,6 +405,7 @@ impl VecTradingEnv {
         );
 
         let mode = self.mode;
+        let limit = self.episode_limit;
 
         #[cfg(not(target_arch = "wasm32"))]
         let outcomes: Vec<LaneOutcome> = self
@@ -361,7 +413,11 @@ impl VecTradingEnv {
             .par_iter_mut()
             .zip(decisions.par_iter())
             .zip(self.pending_reset.par_iter_mut())
-            .map(|((env, decision), pending)| step_lane(env, decision, pending, mode))
+            .zip(self.elapsed_steps.par_iter_mut())
+            .zip(self.capped_final.par_iter_mut())
+            .map(|((((env, decision), pending), elapsed), final_state)| {
+                step_lane(env, decision, pending, mode, elapsed, final_state, limit)
+            })
             .collect();
 
         #[cfg(target_arch = "wasm32")]
@@ -370,7 +426,11 @@ impl VecTradingEnv {
             .iter_mut()
             .zip(decisions.iter())
             .zip(self.pending_reset.iter_mut())
-            .map(|((env, decision), pending)| step_lane(env, decision, pending, mode))
+            .zip(self.elapsed_steps.iter_mut())
+            .zip(self.capped_final.iter_mut())
+            .map(|((((env, decision), pending), elapsed), final_state)| {
+                step_lane(env, decision, pending, mode, elapsed, final_state, limit)
+            })
             .collect();
 
         BatchStep::from_outcomes(outcomes)
@@ -487,8 +547,18 @@ mod tests {
                     .iter_mut()
                     .zip(decs.iter())
                     .zip(ser.pending_reset.iter_mut())
-                    .map(|((env, decision), pending)| {
-                        step_lane(env, decision, pending, AutoresetMode::NextStep)
+                    .zip(ser.elapsed_steps.iter_mut())
+                    .zip(ser.capped_final.iter_mut())
+                    .map(|((((env, decision), pending), elapsed), final_state)| {
+                        step_lane(
+                            env,
+                            decision,
+                            pending,
+                            AutoresetMode::NextStep,
+                            elapsed,
+                            final_state,
+                            None,
+                        )
                     })
                     .collect(),
             );
@@ -512,6 +582,53 @@ mod tests {
                 );
             }
             par_obs = par_step.observations;
+        }
+    }
+
+    #[test]
+    fn episode_limit_counts_each_lane_and_resets_counters() {
+        for mode in [
+            AutoresetMode::NextStep,
+            AutoresetMode::SameStep,
+            AutoresetMode::Disabled,
+        ] {
+            let mut env = VecTradingEnv::from_configs(&[
+                LaneConfig::new(2, 1, 11),
+                LaneConfig::new(2, 10, 29),
+            ])
+            .with_autoreset_mode(mode)
+            .with_episode_limit(NonZeroUsize::new(2).unwrap());
+            let initial = env.reset_batch();
+            let decisions = decisions_for(&initial, 0.0);
+            let first = env.step_batch(&decisions);
+            assert_eq!(first.truncated, [true, false]);
+            let second = env.step_batch(&decisions);
+            assert!(second.truncated[1]);
+            assert!(!second.terminated[1]);
+            if mode == AutoresetMode::SameStep {
+                assert!(second.first[1]);
+                assert!(second.final_obs[1].is_some());
+                assert_eq!(env.elapsed_steps, [0, 0]);
+            } else if mode == AutoresetMode::NextStep {
+                assert!(!second.first[1]);
+                let reset = env.step_batch(&decisions);
+                assert!(reset.first[1]);
+                assert!(!reset.truncated[1]);
+                assert_eq!(reset.rewards[1], 0.0);
+                assert_eq!(env.elapsed_steps[1], 0);
+            } else {
+                let frozen = env.step_batch(&decisions);
+                assert!(frozen.truncated[1]);
+                assert_eq!(frozen.rewards[1], 0.0);
+                assert_eq!(
+                    serde_json::to_string(&second.observations[1]).unwrap(),
+                    serde_json::to_string(&frozen.observations[1]).unwrap()
+                );
+            }
+            env.reset_batch();
+            assert_eq!(env.elapsed_steps, [0, 0]);
+            assert!(env.capped_final.iter().all(Option::is_none));
+            assert!(!env.step_batch(&decisions).truncated[1]);
         }
     }
 

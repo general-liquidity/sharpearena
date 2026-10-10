@@ -511,6 +511,7 @@ impl PyVecTradingEnv {
         jump_burst_probability = 0.0,
         jump_burst_persistence = 0.0,
         jump_burst_size = 0.0,
+        max_episode_steps = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -531,7 +532,15 @@ impl PyVecTradingEnv {
         jump_burst_probability: f64,
         jump_burst_persistence: f64,
         jump_burst_size: f64,
+        max_episode_steps: Option<usize>,
     ) -> PyResult<Self> {
+        let limit = max_episode_steps
+            .map(|steps| {
+                std::num::NonZeroUsize::new(steps).ok_or_else(|| {
+                    engine_err(CODE_INVALID_ARGUMENT, "max_episode_steps must be positive")
+                })
+            })
+            .transpose()?;
         if seeds.is_empty() {
             return Err(engine_err(CODE_INVALID_ARGUMENT, "seeds must be non-empty"));
         }
@@ -588,10 +597,11 @@ impl PyVecTradingEnv {
                 Ok(CoreEnv::new(data, lane_window, costs, execution_seed))
             })
             .collect::<PyResult<Vec<_>>>()?;
-        Ok(PyVecTradingEnv {
-            inner: CoreVecEnv::from_envs(envs, seeds).with_autoreset_mode(reset_mode),
-            effective,
-        })
+        let mut inner = CoreVecEnv::from_envs(envs, seeds).with_autoreset_mode(reset_mode);
+        if let Some(limit) = limit {
+            inner = inner.with_episode_limit(limit);
+        }
+        Ok(PyVecTradingEnv { inner, effective })
     }
 
     /// Build a batch over one frozen long-format CSV. Every lane sees identical

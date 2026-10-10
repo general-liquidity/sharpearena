@@ -68,6 +68,11 @@ env = gymnasium.make("SharpeArena/Hard-v1")
 vector_env = gymnasium.make_vec("SharpeArena/Hard-v1", num_envs=8)
 ```
 
+Vector `reset(seed=k)` rebuilds lanes on consecutive seeds; a list selects each
+lane directly. A positive `max_episode_steps` cap truncates executed steps using
+the selected autoreset mode. See the [Gymnasium guide](docs/gymnasium.md) for
+literal eval seeds, reset semantics and reproducible run configuration.
+
 ### Rust
 
 ```bash
