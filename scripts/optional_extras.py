@@ -48,10 +48,9 @@ ACCELERATOR_IMPORTS: Tuple[str, ...] = ("torch", "jax")
 # `EXERCISES` but never neither, and removing an entry without adding the other fails CI
 # the same way an unlisted extra always has.
 #
-# Two remaining exclusions, neither of them an executed installed adapter check:
+# One remaining exclusion, not an executed installed adapter check:
 #
-# - torchrl pulls torch and remains outside the installed-extra matrix.
-#   SB3 now has a CPU-only Torch cell, independently of the source-suite requirements.
+# SB3 and TorchRL have CPU-only Torch cells, independently of source requirements.
 # - ray[rllib]==2.58.0 pins gymnasium==1.2.2 exactly, which conflicts with the CI pin
 #   of gymnasium==1.3.0 in a single `pip install --requirement` invocation
 #   (`docs/integrations/inventory.md`'s version matrix). `ray` is excluded from
@@ -59,19 +58,16 @@ ACCELERATOR_IMPORTS: Tuple[str, ...] = ("torch", "jax")
 #   skip in the source-tree suite, for that pin conflict rather than for size, though
 #   `ray[rllib]` is also a large multi-package install in its own right.
 #
-# A `wheel-extras` cell for either remaining exclusion would add a heavy install or
-# require a separately exercised dependency set in a matrix deliberately
-# sized to stay near fifteen minutes. What is NOT skipped: `GUARDS["sb3"]`,
+# A Ray cell still needs a separately exercised dependency set. What is NOT
+# skipped: `GUARDS["sb3"]`,
 # `GUARDS["torchrl"]` and `GUARDS["ray"]` still run in `wheel-no-extras`, for free, since
 # that job never installs any extra either way, and they are what prove
 # `SharpeArenaSB3VecEnv(...)`, `SharpeArenaTorchRLEnv(...)`, `run_episodes(...,
 # num_workers=1)` and `sharpearena_env_creator()` all refuse by name with the dependency
 # absent. What IS unexercised against an installed wheel: the actual
-# TorchRL `EnvBase` / Ray task / RLlib route with the extra present. Revisit if a
-# CPU-only torch wheel becomes cheap enough to pin, if the gymnasium pin conflict is
-# resolved upstream, or if the added CI minutes are explicitly accepted.
+# Ray task / RLlib route with the extra present. The source-suite pin conflict
+# does not prevent a separately resolved installed consumer environment.
 INSTALL_MATRIX_EXCLUDED: Dict[str, str] = {
-    "torchrl": "pulls torch; excluded from ci-requirements.txt for the same reason",
     "ray": (
         "installed Ray/RLlib execution check remains unimplemented; the source-suite "
         "Gymnasium pin conflict does not prevent a separate consumer venv"
@@ -288,6 +284,59 @@ def _exercise_verifiers() -> str:
     return f"loaded the multi-turn environment over {rows} scenario rows"
 
 
+def _exercise_torchrl() -> str:
+    from importlib.metadata import version
+    import torch
+    from torchrl.envs import EnvBase
+    from sharpearena import SharpeArenaEnv
+    from sharpearena.torchrl_env import OBSERVATION_KEYS, SharpeArenaTorchRLEnv
+
+    kwargs = dict(seed=1, n_symbols=2, n_days=8)
+    env = SharpeArenaTorchRLEnv(**kwargs)
+    reference = SharpeArenaEnv(**kwargs)
+    try:
+        assert isinstance(env, EnvBase)
+        observed = env.reset()
+        expected, _ = reference.reset()
+
+        def compare_observations(tensors, arrays):
+            for key in OBSERVATION_KEYS:
+                assert tensors[key].dtype == torch.float64
+                assert torch.equal(tensors[key], torch.as_tensor(arrays[key]))
+
+        compare_observations(observed, expected)
+        action = torch.full((2,), 0.5, dtype=torch.float32)
+        finished = False
+        for _ in range(16):
+            observed.set("action", action.clone())
+            following = env.step(observed)["next"]
+            expected, reward, terminated, truncated, _ = reference.step(action.numpy())
+            compare_observations(following, expected)
+            assert following["reward"].dtype == torch.float64
+            assert following["reward"].item() == reward
+            for key, value in (
+                ("terminated", terminated),
+                ("truncated", truncated),
+                ("done", terminated or truncated),
+            ):
+                assert following[key].dtype == torch.bool
+                assert following[key].shape == (1,)
+                assert following[key].item() == bool(value)
+            if terminated or truncated:
+                finished = True
+                break
+            observed = following
+        assert finished, "TorchRL installed check never reached episode completion"
+    finally:
+        env.close()
+        reference.close()
+    return (
+        f"TorchRL {version('torchrl')}, Torch {version('torch')}: "
+        "installed TensorDict observations, rewards and end flags "
+        "match native Gymnasium"
+    )
+
+
 def _exercise_sb3() -> str:
     from importlib.metadata import version
     import numpy as np
@@ -464,6 +513,7 @@ def _guard_ray() -> List[str]:
 
 
 EXERCISES: Dict[str, Callable[[], str]] = {
+    "torchrl": _exercise_torchrl,
     "sb3": _exercise_sb3,
     "pettingzoo": _exercise_pettingzoo,
     "minari": _exercise_minari,

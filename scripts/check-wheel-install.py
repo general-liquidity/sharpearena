@@ -148,7 +148,7 @@ def main() -> int:
     parser.add_argument(
         "--cpu-torch",
         action="store_true",
-        help="install and constrain Torch 2.9.0+cpu for the SB3 wheel cell",
+        help="install and constrain Torch 2.9.0+cpu for an SB3 or TorchRL wheel cell",
     )
     parser.add_argument(
         "--github-env",
@@ -176,8 +176,8 @@ def main() -> int:
     checks = list(arguments.checks)
     if not checks:
         raise SystemExit("--wheel needs at least one --run check to be worth anything")
-    if arguments.cpu_torch and arguments.extras != ["sb3"]:
-        raise SystemExit("--cpu-torch currently supports exactly --extra sb3")
+    if arguments.cpu_torch and arguments.extras not in (["sb3"], ["torchrl"]):
+        raise SystemExit("--cpu-torch supports exactly --extra sb3 or --extra torchrl")
     verify(wheel, arguments.extras, checks, arguments.cpu_torch)
     print(f"verified {wheel.name} with extras {arguments.extras or 'none'}")
     return 0

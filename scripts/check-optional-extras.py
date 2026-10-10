@@ -9,14 +9,14 @@ validated against `crates/sharpearena-py/pyproject.toml` on every run:
     and the import names any declared extra brings, as JSON, and write them to
     ``$GITHUB_OUTPUT`` when CI set it. The extras leg of the compatibility matrix is
     generated from this, so a newly declared extra gets a cell without anyone editing
-    the workflow, unless explicitly recorded as excluded (TorchRL and Ray
-    currently). SB3 has a constrained CPU-only Torch cell.
+    the workflow, unless explicitly recorded as excluded (Ray currently).
+    SB3 and TorchRL have constrained CPU-only Torch cells.
 
 ``--extra NAME``
     Assert the extra's dependencies are importable, then run the real adapter behind it
     against the installed package: a PettingZoo tournament, a Minari export, the MCP
     tool list, the verifiers environment build. No model call, no network, no window.
-    Refuses with the recorded reason for a declared-but-excluded extra (torchrl, ray)
+    Refuses with the recorded reason for a declared-but-excluded extra (ray)
     rather than silently doing nothing.
 
 ``--none``
@@ -24,7 +24,7 @@ validated against `crates/sharpearena-py/pyproject.toml` on every run:
     imports and steps, that every guarded adapter module still imports, and that each
     guard refuses by name rather than dying on an ``ImportError``. This is the check
     that makes "every adapter is guarded" a tested claim, for every declared extra,
-    including torchrl and ray: no ``wheel-extras`` cell installs either, but the guard
+    including torchrl and ray: the guard
     that refuses without them costs nothing to run here since neither is installed in
     this environment regardless.
 

@@ -4,6 +4,8 @@ import importlib.util
 from pathlib import Path
 import sys
 
+import pytest
+
 
 SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
@@ -22,7 +24,16 @@ def test_sb3_is_an_exercised_declared_extra_not_an_exclusion():
     assert "sb3" not in optional_extras.INSTALL_MATRIX_EXCLUDED
 
 
-def test_cpu_torch_is_constrained_and_source_import_paths_are_removed(monkeypatch):
+def test_torchrl_is_an_exercised_declared_extra_not_an_exclusion():
+    assert "torchrl" in optional_extras.validate_coverage()
+    assert "torchrl" in optional_extras.installable_extras()
+    assert "torchrl" not in optional_extras.INSTALL_MATRIX_EXCLUDED
+
+
+@pytest.mark.parametrize("extra", ["sb3", "torchrl"])
+def test_cpu_torch_is_constrained_and_source_import_paths_are_removed(
+    monkeypatch, extra
+):
     calls = []
     monkeypatch.setenv("PYTHONPATH", "source-tree-must-not-leak")
     monkeypatch.setenv("PYTHONHOME", "foreign-interpreter")
@@ -40,13 +51,13 @@ def test_cpu_torch_is_constrained_and_source_import_paths_are_removed(monkeypatc
     monkeypatch.setattr(wheel_check, "run", capture)
     wheel_check.verify(
         Path("sharpearena-0.31.0-cp312-test.whl"),
-        ["sb3"],
-        ["scripts/check-optional-extras.py --extra sb3"],
+        [extra],
+        [f"scripts/check-optional-extras.py --extra {extra}"],
         True,
     )
     assert any("torch==2.9.0+cpu" in call and "--index-url" in call for call in calls)
     assert any(
-        "--constraint" in call and call[-1].endswith(".whl[sb3]") for call in calls
+        "--constraint" in call and call[-1].endswith(f".whl[{extra}]") for call in calls
     )
     assert any(
         "import torch; assert torch.version.cuda is None" in call for call in calls
