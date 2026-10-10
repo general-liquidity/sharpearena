@@ -212,7 +212,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "4c32299722389547bcf745bad1a08aaa3a4aad20",
+  "generated_at_head": "c5a609307fe8aeeeb072659c5da92bf79695b401",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -234,7 +234,7 @@
     },
     {
       "path": ".github/workflows/ci.yml",
-      "sha256": "a090e9928d8f56d72fd8bf5e37fe57eef2f1c3dc93159cc019fdc81a35cfeae3"
+      "sha256": "fc426c7818e75fcf7ff5413145e4bdbf5ba53125f713d18c49813c405e0cb73e"
     },
     {
       "path": ".github/workflows/release.yml",
@@ -922,7 +922,7 @@
     },
     {
       "path": "scripts/check-optional-extras.py",
-      "sha256": "2e1165b149b7dbea617ea47c2af8f2493611a37d2e30467262062fece06b3679"
+      "sha256": "e2e945c2ca947c824c8c3f81d9feeabcd5a33ca957c676a3fefe667c6061f3a4"
     },
     {
       "path": "scripts/check-packaged-adapter.py",
@@ -938,11 +938,11 @@
     },
     {
       "path": "scripts/check-wheel-install.py",
-      "sha256": "3bb5ed10a9d269752b8761772c94fcfecacac6849d2a1a7e94ce411340b21dac"
+      "sha256": "2d24f5be51ba49cbb591a4c1e6dc5e654718735f8a8773577b682b28a52dafa1"
     },
     {
       "path": "scripts/optional_extras.py",
-      "sha256": "5bd7e49560cda34c76a5103e4ba443d08ba72ded861433c68a768c41399f013a"
+      "sha256": "6d3db94be063093db9ac450320ceafaac68287c716497d04d2b856f5334e018e"
     },
     {
       "path": "scripts/release.py",
@@ -951,6 +951,10 @@
     {
       "path": "scripts/test-sb3-wheel-check.py",
       "sha256": "3c83d1f1c24137a4547899aad5be43f49e987a93faeab2a7a8dce43cd50d555a"
+    },
+    {
+      "path": "scripts/test-torchrl-wheel-check.py",
+      "sha256": "065fd46da8d75b51b39d643738f4a3b4881e9a7c5917d122167d91b6e4c0bec4"
     },
     {
       "path": "scripts/test_harbor_grader.py",
@@ -982,6 +986,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "ab4e933370a8c34f0c47e8cc6c38e4386770b20673ccf14c694001d992250bea",
+  "source_snapshot_sha256": "f159dff5e420a7e6bae910715c9fc1820d44637c0db27d9e2307c5c709f45218",
   "validator": "paper/src/check-provenance.py"
 }
