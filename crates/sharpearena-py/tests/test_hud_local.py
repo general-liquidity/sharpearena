@@ -56,7 +56,9 @@ def _task(scenario="calm-a", horizon=HORIZON):
     )
 
 
-def _run(agent, *, scenario="calm-a", horizon=HORIZON, rollout_timeout=None, runtime=None):
+def _run(
+    agent, *, scenario="calm-a", horizon=HORIZON, rollout_timeout=None, runtime=None
+):
     """One rollout through the SDK, returning the single `Run`."""
     job = asyncio.run(
         _task(scenario, horizon).run(
@@ -178,7 +180,9 @@ def test_two_scenarios_run_as_one_taskset_without_crossing_state():
 def test_repeated_rollouts_of_one_scenario_are_identical():
     """The engine is deterministic, so two rollouts of one row must agree."""
     job = asyncio.run(
-        _task().run(CompletingAgent(), runtime=LocalRuntime(FIXTURE / "env.py"), group=2)
+        _task().run(
+            CompletingAgent(), runtime=LocalRuntime(FIXTURE / "env.py"), group=2
+        )
     )
 
     first, second = (_info(run)["returns"] for run in job.runs)
@@ -203,14 +207,21 @@ def test_interrupted_export_leaves_the_previous_run_intact(tmp_path, monkeypatch
     target = tmp_path / "evidence.json"
     export_evidence(_completed_grade(3), target)
     good = target.read_text(encoding="utf-8")
+    # Build the grade before replacing the serializer: episode construction
+    # itself uses JSON and must not satisfy the export interruption assertion.
+    replacement = _completed_grade(4)
+    calls = []
 
     def die(*args, **kwargs):
+        assert args[0] is replacement
+        calls.append(args[0])
         raise KeyboardInterrupt("export interrupted")
 
     monkeypatch.setattr(json, "dumps", die)
     with pytest.raises(KeyboardInterrupt):
-        export_evidence(_completed_grade(4), target)
+        export_evidence(replacement, target)
 
+    assert calls == [replacement]
     assert target.read_text(encoding="utf-8") == good
     assert json.loads(good)["info"]["bars_advanced"] == 3
 
