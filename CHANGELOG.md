@@ -12,6 +12,12 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ### Fixed
 
+- Manipulation probes disclose terminal shares, cleared closes, cash and marked
+  position value in both arms. Zero terminal target is no longer described as
+  guaranteed quantity liquidation. P&L calculations and frozen F6 evidence are unchanged.
+- Attribution and seat-shuffle coverage now includes finite currency scales and
+  exhaustive one-to-five-seat construction checks. These are bounded synthetic
+  tests, not new empirical results or an unrestricted arithmetic/RNG guarantee.
 - Market-making parameters declare finite/sign and integer domains before
   rollout. Legitimate zero-intensity, zero-capacity and zero-penalty limits remain
   valid, as does signed initial cash. Quote depths remain continuous; positive
