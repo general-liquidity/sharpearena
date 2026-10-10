@@ -212,7 +212,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "c5a609307fe8aeeeb072659c5da92bf79695b401",
+  "generated_at_head": "1391486e233ba67de47f550cda8af1d2ec3b984c",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -234,7 +234,7 @@
     },
     {
       "path": ".github/workflows/ci.yml",
-      "sha256": "fc426c7818e75fcf7ff5413145e4bdbf5ba53125f713d18c49813c405e0cb73e"
+      "sha256": "40571f60b7b9cef99a733cf78647fb31b0a03fb7aaef36a8a4645058da65195f"
     },
     {
       "path": ".github/workflows/release.yml",
@@ -922,7 +922,7 @@
     },
     {
       "path": "scripts/check-optional-extras.py",
-      "sha256": "e2e945c2ca947c824c8c3f81d9feeabcd5a33ca957c676a3fefe667c6061f3a4"
+      "sha256": "5e696cc5b2f658cbf997edb1824e684f1d78b9ff20aa9418a359636a0ccd6bde"
     },
     {
       "path": "scripts/check-packaged-adapter.py",
@@ -942,11 +942,15 @@
     },
     {
       "path": "scripts/optional_extras.py",
-      "sha256": "6d3db94be063093db9ac450320ceafaac68287c716497d04d2b856f5334e018e"
+      "sha256": "4ad9ac56bb470e51cd7bde064d0e9560ab612be954c69a60554026924c8aaf34"
     },
     {
       "path": "scripts/release.py",
       "sha256": "6c0e98c4ab74418d10e16be0a685a2627611f0f8bd5a2e5b89ae30013c75af73"
+    },
+    {
+      "path": "scripts/test-ray-wheel-check.py",
+      "sha256": "f6bb6745472b5b67c0a7c5cfaf54b54ed9ae25744e35ce127bbcc5a276789f66"
     },
     {
       "path": "scripts/test-sb3-wheel-check.py",
@@ -986,6 +990,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "f159dff5e420a7e6bae910715c9fc1820d44637c0db27d9e2307c5c709f45218",
+  "source_snapshot_sha256": "458c5580622c24339bdded866874af59c39a0b4ccda602518db86ecbfda73d1c",
   "validator": "paper/src/check-provenance.py"
 }
