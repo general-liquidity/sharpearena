@@ -37,6 +37,13 @@ run is scored twice, once in the live market and once in a reference market with
 schedule. The difference, ``impact_pnl``, is the part attributable to having moved the
 price. That is the number the boundary is drawn on.
 
+These schedules return to zero target weight, not necessarily zero share quantity:
+the market converts each target-weight change at that bar's cleared price. The
+reported P&L is terminal marked NAV less initial capital, not guaranteed realized
+flat-to-flat profit. Terminal positions, cash and cleared closes for the live and
+reference runs expose any residual holdings. Their marked value contributes to
+terminal NAV; it is not a separately identified incremental profit or cost basis.
+
 **What the push did to the other seats.** ``impact_pnl`` reads only the manipulator. Each
 result also carries a seat-removal externality per follower (the solo-conversion control of
 EconEvals, arXiv 2503.18825v4 p.61): the follower's P&L in the live market with the
@@ -54,9 +61,9 @@ and the bar index, and there is no clock and no I/O, so a sweep reproduces byte 
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
 import math
-from typing import Callable, Optional, Sequence
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, replace
 
 import numpy as np
 
@@ -85,9 +92,9 @@ def _traded_bars(n_days: int) -> int:
 class ManipulationParams:
     """Market configuration plus the crude push-and-unwind schedule under test.
 
-    The schedule is a round trip and nothing more: the manipulator ramps its target weight
+    The schedule is a target-weight round trip: the manipulator ramps its target weight
     from flat to ``push_weight`` over ``push_bars``, holds for ``hold_bars``, then unwinds
-    to flat over ``dump_bars``. Because
+    to zero target over ``dump_bars``. This does not guarantee quantity liquidation. Because
     :class:`~sharpearena.market_env.EndogenousMarketEnv` derives order size from the
     *change* in target weight, a rising weight is sustained buying and a falling weight is
     sustained selling, which is what makes the ramp a push.
@@ -142,7 +149,9 @@ class ManipulationParams:
             ("push_weight", self.push_weight, 0.0, True),
             ("follower_gain", self.follower_gain, 0.0, True),
         ):
-            if not math.isfinite(value) or (value < lower if inclusive else value <= lower):
+            if not math.isfinite(value) or (
+                value < lower if inclusive else value <= lower
+            ):
                 relation = "non-negative" if inclusive else "positive"
                 raise ValueError(f"{name} must be a finite {relation} number")
         if self.push_weight > self.max_weight:
@@ -170,6 +179,12 @@ class ManipulationResult:
     same on the same seed with the manipulator held flat, ``follower_externality[i]`` is
     the first minus the second, and ``follower_externality_total`` is their sum. They are
     empty (total ``0.0``) when ``n_followers == 0``. Rank-neutral.
+
+    The terminal fields describe the manipulator at its final returned step, before
+    it leaves the active roster. Positions are shares; cleared closes mark them.
+    Marked position value plus cash reconciles to terminal NAV, not to cash-only
+    realized profit. ``None`` means unavailable, as in a manually constructed
+    historical result, not zero inventory or cash.
     """
 
     seed: int
@@ -187,6 +202,14 @@ class ManipulationResult:
     follower_pnl_without_manipulator: tuple[float, ...] = ()
     follower_externality: tuple[float, ...] = ()
     follower_externality_total: float = 0.0
+    terminal_positions_live: tuple[float, ...] | None = None
+    terminal_positions_reference: tuple[float, ...] | None = None
+    terminal_closes_live: tuple[float, ...] | None = None
+    terminal_closes_reference: tuple[float, ...] | None = None
+    terminal_cash_live: float | None = None
+    terminal_cash_reference: float | None = None
+    terminal_marked_position_value_live: float | None = None
+    terminal_marked_position_value_reference: float | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -202,9 +225,20 @@ class ManipulationResult:
             "follower_gain": self.follower_gain,
             "impact_exponent": self.impact_exponent,
             "follower_pnl_live": list(self.follower_pnl_live),
-            "follower_pnl_without_manipulator": list(self.follower_pnl_without_manipulator),
+            "follower_pnl_without_manipulator": list(
+                self.follower_pnl_without_manipulator
+            ),
             "follower_externality": list(self.follower_externality),
             "follower_externality_total": self.follower_externality_total,
+            "pnl_basis": "terminal_marked_nav_minus_initial_capital",
+            **{
+                f"terminal_{field}_{side}": (
+                    list(value) if isinstance(value, tuple) else value
+                )
+                for side in ("live", "reference")
+                for field in ("positions", "closes", "cash", "marked_position_value")
+                for value in (getattr(self, f"terminal_{field}_{side}"),)
+            },
             "disclaimer": DISCLAIMER,
         }
 
@@ -217,6 +251,15 @@ def _follower_fields(live: Sequence[float], flat: Sequence[float]) -> dict:
         "follower_pnl_without_manipulator": tuple(flat),
         "follower_externality": diff,
         "follower_externality_total": math.fsum(diff),
+    }
+
+
+def _terminal_fields(live: dict, reference: dict) -> dict:
+    """Expose observed terminal accounting; missing diagnostics remain unknown."""
+    return {
+        f"terminal_{field}_{side}": record.get(field)
+        for side, record in (("live", live), ("reference", reference))
+        for field in ("positions", "closes", "cash", "marked_position_value")
     }
 
 
@@ -241,7 +284,7 @@ class BoundaryReport:
     values: tuple[float, ...]
     impact_pnl: tuple[float, ...]
     profitable: tuple[bool, ...]
-    boundary: Optional[float]
+    boundary: float | None
     profitable_everywhere: bool
     unprofitable_everywhere: bool
 
@@ -293,7 +336,9 @@ BarPolicy = Callable[[dict, int], np.ndarray]
 
 
 def pump_and_dump_schedule(p: ManipulationParams) -> Callable[[int], float]:
-    """The round trip as a bar-indexed target weight: ramp up, hold, ramp back to flat.
+    """A target-weight round trip: ramp up, hold, ramp back to zero target.
+
+    Zero terminal target does not imply zero terminal shares at changing prices.
 
     Deliberately crude. A schedule this legible is the point of a red-team probe: if even
     this pays, the impact model is the problem, and if a scoring layer's process gates
@@ -337,8 +382,9 @@ class AsymmetricSchedule:
     9:1 trip has fractions 1/9 and 1, not one shared 1/9 fraction that silently leaves the
     one-bar liquidation incomplete. A one-bar leg is a block regardless of its configured
     split. Everything else about the trip (start bar, hold, peak weight) comes from the
-    :class:`ManipulationParams` it is paired with, and the trip is still flat-to-flat, which
-    is what keeps ``impact_pnl`` an attribution rather than a directional bet.
+    :class:`ManipulationParams` it is paired with. The targets are zero before and after,
+    but the share quantity need not be. Attribution compares paired marked NAVs;
+    it is not a guarantee of realized flat-to-flat profit.
     """
 
     up_bars: int
@@ -367,7 +413,7 @@ class AsymmetricSchedule:
         return 1.0 if self.down_bars == 1 else (self.down_size_split or self.size_split)
 
     @classmethod
-    def uniform(cls, up_bars: int, down_bars: int) -> "AsymmetricSchedule":
+    def uniform(cls, up_bars: int, down_bars: int) -> AsymmetricSchedule:
         """Linear ramps of asymmetric duration (no block concentration on either leg)."""
         return cls(
             up_bars=up_bars,
@@ -397,14 +443,14 @@ class AsymmetricSchedule:
 def asymmetric_round_trip_schedule(
     p: ManipulationParams, schedule: AsymmetricSchedule, side: int = 1
 ) -> Callable[[int], float]:
-    """The asymmetric round trip as a bar-indexed target weight, flat before and after.
+    """The asymmetric round trip in target weights, zero target before and after.
 
     ``p.push_bars`` and ``p.dump_bars`` are ignored; the leg lengths come from
     ``schedule``. ``p.start_bar``, ``p.hold_bars`` and ``p.push_weight`` are honoured.
 
     ``side`` is ``+1`` for the long round trip (accumulate long, liquidate) and ``-1`` for
-    its mirror (accumulate short, buy back). The mirror is the same path with the sign
-    flipped bar for bar, so it is still flat-to-flat and the attribution still measures
+    its mirror (accumulate short, buy back). The mirror is the same target path with the sign
+    flipped bar for bar, not a guarantee of quantity liquidation. Attribution measures
     what moving the price was worth. Whether the two sides pay the same is an empirical
     question about the engine's multiplicative price compounding, not a property of the
     schedule.
@@ -427,12 +473,16 @@ def asymmetric_round_trip_schedule(
         if n == 1:
             return (1.0,)
         remainder = (1.0 - split) / (n - 1)
-        out = (split,) + (remainder,) * (n - 1) if block_first else (remainder,) * (n - 1) + (split,)
+        out = (
+            (split,) + (remainder,) * (n - 1)
+            if block_first
+            else (remainder,) * (n - 1) + (split,)
+        )
         assert math.isclose(sum(out), 1.0, rel_tol=0.0, abs_tol=1e-15)
         return out
 
-    # Each leg executes exactly one peak position in opposite directions. This invariant
-    # prevents duration sweeps from accidentally changing total liquidation notional.
+    # Each leg traverses one peak target weight in opposite directions. This does
+    # not guarantee equal executed quantities when the clearing prices differ.
     up_increments = _leg_increments(n_up, schedule.up_split, block_first=False)
     down_increments = _leg_increments(n_down, schedule.down_split, block_first=True)
     up_targets = np.cumsum(up_increments)
@@ -485,7 +535,9 @@ def momentum_follower_policy(gain: float, max_weight: float) -> BarPolicy:
 def _rollout(
     p: ManipulationParams,
     seed: int,
-    weight_at: Optional[Callable[[int], float]] = None,
+    weight_at: Callable[[int], float] | None = None,
+    *,
+    terminal: dict | None = None,
 ) -> tuple[float, float, tuple[float, ...]]:
     """Run one episode and return ``(manipulator_pnl, peak_move, follower_pnls)``.
 
@@ -494,6 +546,9 @@ def _rollout(
     excursion of the first symbol's cleared mid away from its opening level, which is the
     diagnostic's read on how far the push actually got. ``weight_at`` defaults to the
     symmetric :func:`pump_and_dump_schedule`.
+    An optional ``terminal`` collector receives the manipulator's last returned
+    positions, cleared closes, cash and marked position value without changing
+    the legacy three-value return tuple or any trading decision.
     """
     env = EndogenousMarketEnv(
         n_agents=1 + p.n_followers,
@@ -518,11 +573,13 @@ def _rollout(
         if a != _MANIPULATOR
     }
 
-    open_mid: Optional[float] = None
+    open_mid: float | None = None
     peak_move = 0.0
     nav = p.capital
     follower_navs = {agent: p.capital for agent in followers}
     bar = 0
+    if terminal is not None:
+        terminal.clear()
     while env.agents:
         actions: dict[str, np.ndarray] = {}
         for agent in env.agents:
@@ -536,7 +593,25 @@ def _rollout(
         info = infos.get(_MANIPULATOR)
         if info is not None:
             nav = float(info["nav"])
-            mid = float(np.asarray(info["cleared_mids"], dtype=np.float64).reshape(-1)[0])
+            if terminal is not None and _MANIPULATOR in obs:
+                current = obs[_MANIPULATOR]
+                shares = tuple(float(value) for value in current["positions"])
+                closes = tuple(float(value) for value in info["cleared_mids"])
+                if len(shares) != len(closes):
+                    raise ValueError(
+                        "terminal positions and cleared closes must share a symbol axis"
+                    )
+                terminal.update(
+                    positions=shares,
+                    closes=closes,
+                    cash=float(current["cash"][0]),
+                    marked_position_value=math.fsum(
+                        q * price for q, price in zip(shares, closes)
+                    ),
+                )
+            mid = float(
+                np.asarray(info["cleared_mids"], dtype=np.float64).reshape(-1)[0]
+            )
             if open_mid is None:
                 open_mid = mid
             elif open_mid > 0.0:
@@ -556,7 +631,7 @@ def _rollout(
 
 
 def run_manipulation_probe(
-    *, params: Optional[ManipulationParams] = None, seed: int = 0
+    *, params: ManipulationParams | None = None, seed: int = 0
 ) -> ManipulationResult:
     """Score one push-and-unwind round trip against its own zero-impact reference.
 
@@ -568,8 +643,12 @@ def run_manipulation_probe(
     docstring: this is a diagnostic, not a strategy.
     """
     p = params or ManipulationParams()
-    live_pnl, peak_move, follower_live = _rollout(p, seed)
-    reference_pnl, _, _ = _rollout(replace(p, kyle_lambda=0.0, eta=0.0), seed)
+    live_terminal: dict = {}
+    reference_terminal: dict = {}
+    live_pnl, peak_move, follower_live = _rollout(p, seed, terminal=live_terminal)
+    reference_pnl, _, _ = _rollout(
+        replace(p, kyle_lambda=0.0, eta=0.0), seed, terminal=reference_terminal
+    )
     _, _, follower_flat = _rollout(p, seed, _flat)
     impact_pnl = live_pnl - reference_pnl
     return ManipulationResult(
@@ -585,6 +664,7 @@ def run_manipulation_probe(
         follower_gain=p.follower_gain,
         impact_exponent=p.impact_exponent,
         **_follower_fields(follower_live, follower_flat),
+        **_terminal_fields(live_terminal, reference_terminal),
     )
 
 
@@ -611,7 +691,7 @@ class AsymmetricResult(ManipulationResult):
 
 def run_asymmetric_probe(
     *,
-    params: Optional[ManipulationParams] = None,
+    params: ManipulationParams | None = None,
     schedule: AsymmetricSchedule,
     seed: int = 0,
     side: int = 1,
@@ -629,8 +709,17 @@ def run_asymmetric_probe(
     """
     p = params or ManipulationParams()
     weight_at = asymmetric_round_trip_schedule(p, schedule, side)
-    live_pnl, peak_move, follower_live = _rollout(p, seed, weight_at)
-    reference_pnl, _, _ = _rollout(replace(p, kyle_lambda=0.0, eta=0.0), seed, weight_at)
+    live_terminal: dict = {}
+    reference_terminal: dict = {}
+    live_pnl, peak_move, follower_live = _rollout(
+        p, seed, weight_at, terminal=live_terminal
+    )
+    reference_pnl, _, _ = _rollout(
+        replace(p, kyle_lambda=0.0, eta=0.0),
+        seed,
+        weight_at,
+        terminal=reference_terminal,
+    )
     _, _, follower_flat = _rollout(p, seed, _flat)
     impact_pnl = live_pnl - reference_pnl
     return AsymmetricResult(
@@ -646,6 +735,7 @@ def run_asymmetric_probe(
         follower_gain=p.follower_gain,
         impact_exponent=p.impact_exponent,
         **_follower_fields(follower_live, follower_flat),
+        **_terminal_fields(live_terminal, reference_terminal),
         up_bars=schedule.up_bars,
         down_bars=schedule.down_bars,
         size_split=schedule.size_split,
@@ -658,16 +748,16 @@ def _mean_impact_pnl(p: ManipulationParams, seeds: Sequence[int]) -> float:
     exogenous path; the boundary should not be drawn on one."""
     if not seeds:
         raise ValueError("at least one seed is required")
-    return sum(run_manipulation_probe(params=p, seed=s).impact_pnl for s in seeds) / len(
-        seeds
-    )
+    return sum(
+        run_manipulation_probe(params=p, seed=s).impact_pnl for s in seeds
+    ) / len(seeds)
 
 
 def impact_boundary_sweep(
     *,
-    params: Optional[ManipulationParams] = None,
+    params: ManipulationParams | None = None,
     axis: str = "kyle_lambda",
-    values: Optional[Sequence[float]] = None,
+    values: Sequence[float] | None = None,
     seeds: Sequence[int] = (0, 1, 2),
 ) -> BoundaryReport:
     """Sweep one impact parameter and report where the pump stops paying.
@@ -692,7 +782,7 @@ def impact_boundary_sweep(
     pnls = tuple(_mean_impact_pnl(replace(p, **{axis: v}), seeds) for v in grid)
     profitable = tuple(v > 0.0 for v in pnls)
 
-    boundary: Optional[float] = None
+    boundary: float | None = None
     for i in range(len(grid) - 1):
         if profitable[i] and not profitable[i + 1]:
             lo, hi = pnls[i], pnls[i + 1]
@@ -714,8 +804,8 @@ def impact_boundary_sweep(
 
 def size_response(
     *,
-    params: Optional[ManipulationParams] = None,
-    push_weights: Optional[Sequence[float]] = None,
+    params: ManipulationParams | None = None,
+    push_weights: Sequence[float] | None = None,
     seeds: Sequence[int] = (0, 1, 2),
 ) -> SizeResponse:
     """Sweep the size of the push and report whether the payoff is bounded.
@@ -729,9 +819,7 @@ def size_response(
     grid = tuple(
         float(w)
         for w in (
-            push_weights
-            if push_weights is not None
-            else (0.1, 0.25, 0.5, 0.75, 1.0)
+            push_weights if push_weights is not None else (0.1, 0.25, 0.5, 0.75, 1.0)
         )
     )
     pnls = tuple(_mean_impact_pnl(replace(p, push_weight=w), seeds) for w in grid)
