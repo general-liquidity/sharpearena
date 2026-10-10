@@ -48,7 +48,9 @@ action, reward, terminated, truncated, info}``.
 
 from __future__ import annotations
 
+import math
 import re
+from numbers import Integral, Real
 from typing import Any, Optional, Sequence, Union
 
 import numpy as np
@@ -88,6 +90,7 @@ def _require_minari() -> None:
 # ---------------------------------------------------------------------------
 # Trace ingestion
 # ---------------------------------------------------------------------------
+
 
 def _resolve_trace(trace: Any) -> tuple[list[dict], dict]:
     """Normalize the ``trace`` argument into ``(step_records, meta)``.
@@ -137,9 +140,33 @@ def _split_episodes(records: Sequence[dict]) -> list[list[dict]]:
     return episodes
 
 
+def _scenario_seed(rec: dict, *, required: bool = False) -> Optional[int]:
+    """Read a seed without truncating floats or treating booleans as identities."""
+    raw = (rec.get("info") or {}).get("scenario_seed")
+    if raw is None and not required:
+        return None
+    if isinstance(raw, bool) or not isinstance(raw, Integral) or not 0 <= raw < 2**64:
+        raise ValueError("scenario_seed must be a recorded unsigned 64-bit integer")
+    return int(raw)
+
+
+def _episode_terminated(ep: Sequence[dict], override: Optional[bool]) -> bool:
+    if override is not None:
+        if not isinstance(override, bool):
+            raise ValueError("terminated override must be a boolean")
+        return override
+    raw = (ep[-1].get("info") or {}).get("nav")
+    if isinstance(raw, bool) or not isinstance(raw, Real) or not math.isfinite(raw):
+        raise ValueError(
+            "terminal classification requires a recorded finite numeric nav"
+        )
+    return raw <= 0.0
+
+
 # ---------------------------------------------------------------------------
 # Field mapping
 # ---------------------------------------------------------------------------
+
 
 def _reject_leaky_record(rec: dict) -> None:
     """Refuse to export a record carrying a raw dataset/env handle (full-series leak)."""
@@ -249,6 +276,7 @@ def _flatten_scores(scores: Any, prefix: str = "sharpebench") -> dict:
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def to_minari(
     trace: Union[str, "os.PathLike[str]", tuple, Sequence[dict]],  # noqa: F821
     dataset_id: str,
@@ -277,7 +305,9 @@ def to_minari(
         ``.action_space``.
     terminated:
         Override the run-level outcome. ``None`` (default) infers it per episode from the
-        final step's ``info['nav']`` (``<= 0`` ⇒ terminated, else truncated).
+        final step's required finite numeric ``info['nav']`` (``<= 0`` means terminated,
+        else truncated). Missing or non-finite NAV is an error, not an assumed solvent
+        outcome. An explicit boolean override permits traces without NAV.
     terminal_observation:
         The synthesized ``observations[T]`` (post-final). ``None`` repeats the last recorded
         observation.
@@ -301,6 +331,10 @@ def to_minari(
     minari.MinariDataset
         The created dataset. The flattened SharpeBench scores from the run ``meta`` are
         written to dataset-level metadata (and per-episode metadata) as flat scalars.
+        Metadata write failures raise ``RuntimeError``; a partially created dataset may
+        remain in Minari's store and is not reported as a successful export. Missing seed
+        identity is allowed for a standalone export, but supplied seeds must be exact
+        unsigned 64-bit integers. Train/test export requires identities on every step.
     """
     _require_minari()
 
@@ -316,28 +350,29 @@ def to_minari(
         for rec in ep:
             _reject_leaky_record(rec)
 
-        actions = [_coerce_action(r.get("decision"), action_space, action_fn) for r in ep]
+        actions = [
+            _coerce_action(r.get("decision"), action_space, action_fn) for r in ep
+        ]
         rewards = [float(r.get("reward", 0.0)) for r in ep]
 
         obs_samples = [r.get("observation") for r in ep]
-        last_info = ep[-1].get("info") or {}
-        term = (
-            terminated
-            if terminated is not None
-            else float(last_info.get("nav", 1.0)) <= 0.0
-        )
+        term = _episode_terminated(ep, terminated)
         terminations = [False] * len(ep)
         truncations = [False] * len(ep)
         terminations[-1] = bool(term)
         truncations[-1] = not bool(term)
 
-        terminal = terminal_observation if terminal_observation is not None else obs_samples[-1]
-        observations = _assemble_observations([*obs_samples, terminal], observation_space)
+        terminal = (
+            terminal_observation
+            if terminal_observation is not None
+            else obs_samples[-1]
+        )
+        observations = _assemble_observations(
+            [*obs_samples, terminal], observation_space
+        )
 
-        seed = None
-        raw_seed = last_info.get("scenario_seed")
-        if isinstance(raw_seed, (int, float)) and not isinstance(raw_seed, bool):
-            seed = int(raw_seed)
+        seeds = [_scenario_seed(rec) for rec in ep]
+        seed = seeds[-1]
 
         buffers.append(
             EpisodeBuffer(
@@ -369,8 +404,10 @@ def to_minari(
                 dataset.storage.update_episode_metadata(
                     [score_attrs], episode_indices=[ep_id]
                 )
-        except Exception:  # noqa: BLE001 - metadata is best-effort; the dataset is the artifact
-            pass
+        except Exception as exc:
+            raise RuntimeError(
+                f"Minari dataset {dataset_id!r} was created but score metadata could not be written"
+            ) from exc
 
     return dataset
 
@@ -399,9 +436,9 @@ def _trace_scenario_seeds(records: Sequence[dict]) -> set:
     """Distinct ``info['scenario_seed']`` values across a trace's step records."""
     seeds: set = set()
     for rec in _step_records(records):
-        raw = (rec.get("info") or {}).get("scenario_seed")
-        if isinstance(raw, (int, float)) and not isinstance(raw, bool):
-            seeds.add(int(raw))
+        seeds.add(_scenario_seed(rec, required=True))
+    if not seeds:
+        raise ValueError("split trace contains no step records with scenario seeds")
     return seeds
 
 
@@ -443,8 +480,10 @@ def _stamp_split(dataset: Any, split: str, seeds: set) -> None:
     attrs = seed_band_metadata(split, seed_start, len(seeds) or None, seed_end=seed_end)
     try:
         dataset.storage.update_metadata(attrs)
-    except Exception:  # noqa: BLE001 - metadata is best-effort; the dataset is the artifact
-        pass
+    except Exception as exc:
+        raise RuntimeError(
+            f"Minari {split!r} dataset was created but seed-band provenance could not be written"
+        ) from exc
 
 
 def to_minari_train_test(
@@ -456,8 +495,7 @@ def to_minari_train_test(
     action_space: Any,
     **kwargs: Any,
 ) -> tuple:
-    """Export two leak-safe Minari datasets — a ``train`` and a ``test`` split of
-    ``base_dataset_id`` — over **provably disjoint seed bands**.
+    """Export a ``train`` and a ``test`` Minari dataset over validated disjoint seed bands.
 
     The split label is inserted before the version so the ids stay valid Minari ids
     (``ns/name-v0`` → ``ns/name-train-v0`` / ``ns/name-test-v0``; see
@@ -470,7 +508,12 @@ def to_minari_train_test(
     :data:`~sharpearena.dataset.EVAL_SEED_BASE`, test at/above it) and stamps each dataset's
     metadata with the seed-band provenance.
 
-    The two traces are asserted to share no scenario seed; each side is built via
+    Every step must carry an exact unsigned 64-bit scenario seed. Train seeds must be
+    below ``EVAL_SEED_BASE`` and test seeds at/above it; distinct but misplaced seeds are
+    rejected before either dataset is created. Public seed separation does not establish
+    secrecy or absence of prior exposure to evaluation data.
+
+    The two traces are checked to share no scenario seed; each side is built via
     :func:`to_minari` (so SharpeBench scores, leak rejection, and the n+1 convention all
     carry over). ``**kwargs`` are forwarded to both :func:`to_minari` calls.
 
@@ -493,6 +536,15 @@ def to_minari_train_test(
             "bands (train below EVAL_SEED_BASE, test at/above it), not overlapping — that "
             "is the whole point of a seed-interval split over minari.split_dataset."
         )
+
+    if any(seed >= EVAL_SEED_BASE for seed in train_seeds):
+        raise ValueError("train scenario seeds must be below EVAL_SEED_BASE")
+    if any(seed < EVAL_SEED_BASE for seed in test_seeds):
+        raise ValueError("test scenario seeds must be at/above EVAL_SEED_BASE")
+    # Validate both outcomes before creating either persistent dataset.
+    for records in (train_records, test_records):
+        for episode in _split_episodes(_step_records(records)):
+            _episode_terminated(episode, kwargs.get("terminated"))
 
     train_dataset = to_minari(
         (train_records, train_meta),

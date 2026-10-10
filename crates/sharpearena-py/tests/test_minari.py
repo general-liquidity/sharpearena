@@ -40,7 +40,9 @@ except Exception:  # noqa: BLE001 - binding not built; fall back to standalone m
         spec.loader.exec_module(mod)
         return mod
 
-    _trace = _load("trace")  # so oo_standalone.trace exists for minari_export's relative import
+    _trace = _load(
+        "trace"
+    )  # so oo_standalone.trace exists for minari_export's relative import
     RolloutTraceWriter = _trace.RolloutTraceWriter
     me = _load("minari_export")
 
@@ -58,10 +60,131 @@ def test_to_minari_raises_when_minari_missing(monkeypatch):
     monkeypatch.setattr(me, "_HAS_MINARI", False)
     with pytest.raises(RuntimeError, match="minari is not installed"):
         me.to_minari(
-            [{"kind": "step", "step": 0, "observation": [0.0], "decision": [0.0], "reward": 0.0}],
+            [
+                {
+                    "kind": "step",
+                    "step": 0,
+                    "observation": [0.0],
+                    "decision": [0.0],
+                    "reward": 0.0,
+                }
+            ],
             "sharpearena/guard-v0",
             observation_space=None,
             action_space=None,
+        )
+
+
+@pytest.fixture
+def export_boundary(monkeypatch):
+    """Exercise exporter validation without an optional storage dependency."""
+    import numpy as np
+
+    created = []
+
+    def create(dataset_id, **kwargs):
+        storage = types.SimpleNamespace(
+            update_metadata=lambda attrs: None,
+            update_episode_metadata=lambda *args, **kwargs: None,
+        )
+        dataset = types.SimpleNamespace(storage=storage)
+        created.append(dataset)
+        return dataset
+
+    monkeypatch.setattr(me, "_HAS_MINARI", True)
+    monkeypatch.setattr(
+        me, "EpisodeBuffer", lambda **kwargs: types.SimpleNamespace(**kwargs)
+    )
+    monkeypatch.setattr(me, "create_dataset_from_buffers", create)
+    space = types.SimpleNamespace(shape=(1,), dtype=np.dtype("float32"))
+    return created, {"observation_space": space, "action_space": space}
+
+
+def _record(seed=1, nav=1.0):
+    return {
+        "step": 0,
+        "observation": [0.0],
+        "decision": [0.0],
+        "reward": 0.0,
+        "info": {"scenario_seed": seed, "nav": nav},
+    }
+
+
+@pytest.mark.parametrize("seed", [None, True, 1.5, "1", -1, 2**64, float("nan")])
+def test_split_requires_exact_seed_identity(seed, export_boundary):
+    created, spaces = export_boundary
+    with pytest.raises(ValueError, match="scenario_seed"):
+        me.to_minari_train_test(
+            [_record(seed)], [_record(me.EVAL_SEED_BASE)], "ns/id-v0", **spaces
+        )
+    assert not created
+
+
+@pytest.mark.parametrize(
+    "train,test,side", [(1_000_001, 1_000_002, "train"), (1, 2, "test")]
+)
+def test_split_requires_band_membership_not_just_nonoverlap(
+    train, test, side, export_boundary
+):
+    created, spaces = export_boundary
+    with pytest.raises(ValueError, match=side + " scenario seeds"):
+        me.to_minari_train_test([_record(train)], [_record(test)], "ns/id-v0", **spaces)
+    assert not created
+
+
+@pytest.mark.parametrize(
+    "nav", [None, True, "1", float("nan"), float("inf"), float("-inf")]
+)
+def test_terminal_classification_requires_finite_nav(nav, export_boundary):
+    created, spaces = export_boundary
+    with pytest.raises(ValueError, match="nav"):
+        me.to_minari([_record(nav=nav)], "ns/id-v0", **spaces)
+    assert not created
+
+
+def test_explicit_terminal_override_allows_missing_nav(export_boundary):
+    created, spaces = export_boundary
+    me.to_minari([_record(nav=None)], "ns/id-v0", terminated=False, **spaces)
+    assert len(created) == 1
+
+
+def test_score_metadata_failure_is_not_silently_successful(
+    export_boundary, monkeypatch
+):
+    _, spaces = export_boundary
+
+    def fail(*args, **kwargs):
+        raise OSError("metadata storage unavailable")
+
+    monkeypatch.setattr(
+        me,
+        "create_dataset_from_buffers",
+        lambda *args, **kwargs: types.SimpleNamespace(
+            storage=types.SimpleNamespace(update_metadata=fail)
+        ),
+    )
+    with pytest.raises(RuntimeError, match="score metadata"):
+        me.to_minari(([_record()], {"scores": {"dsr": 0.5}}), "ns/id-v0", **spaces)
+
+
+def test_split_metadata_failure_is_not_silently_successful(
+    export_boundary, monkeypatch
+):
+    _, spaces = export_boundary
+
+    def fail(*args, **kwargs):
+        raise OSError("metadata storage unavailable")
+
+    monkeypatch.setattr(
+        me,
+        "create_dataset_from_buffers",
+        lambda *args, **kwargs: types.SimpleNamespace(
+            storage=types.SimpleNamespace(update_metadata=fail)
+        ),
+    )
+    with pytest.raises(RuntimeError, match="seed-band provenance"):
+        me.to_minari_train_test(
+            [_record()], [_record(me.EVAL_SEED_BASE)], "ns/id-v0", **spaces
         )
 
 
@@ -90,7 +213,9 @@ def test_rollout_exports_to_minari_and_round_trips(tmp_path, monkeypatch):
     n_steps = 0
     for t in range(8):
         nobs, reward, terminated, truncated, info = env.step(weights)
-        writer.record_step(step=t, observation=obs, decision=weights, reward=reward, info=info)
+        writer.record_step(
+            step=t, observation=obs, decision=weights, reward=reward, info=info
+        )
         obs = nobs
         n_steps += 1
         if terminated or truncated:
@@ -141,7 +266,9 @@ def test_terminated_flag_is_synthesized_per_run(tmp_path, monkeypatch):
     with RolloutTraceWriter(str(tmp_path / "r.jsonl")) as writer:
         for t in range(4):
             nobs, reward, _, _, info = env.step(weights)
-            writer.record_step(step=t, observation=obs, decision=weights, reward=reward, info=info)
+            writer.record_step(
+                step=t, observation=obs, decision=weights, reward=reward, info=info
+            )
             obs = nobs
         writer.finalize()
 
@@ -276,6 +403,8 @@ def test_data_collector_works_on_live_env(tmp_path, monkeypatch):
         _, _, terminated, truncated, _ = env.step(weights)
         if terminated or truncated:
             break
-    dataset = env.create_dataset("sharpearena/test-collect-v0", author="sharpearena-tests")
+    dataset = env.create_dataset(
+        "sharpearena/test-collect-v0", author="sharpearena-tests"
+    )
     assert dataset.total_episodes >= 1
     assert dataset.total_steps >= 1

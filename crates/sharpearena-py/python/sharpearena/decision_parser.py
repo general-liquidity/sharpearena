@@ -17,7 +17,8 @@ from __future__ import annotations
 import json
 import math
 import re
-from typing import Any, Optional, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 import numpy as np
 
@@ -53,7 +54,7 @@ def build_parser():
     return _PARSER
 
 
-def _extract_action_json(text: str) -> Optional[dict[str, Any]]:
+def _extract_action_json(text: str) -> dict[str, Any] | None:
     """Return the action object from XML or bare JSON, or ``None`` if undecodable."""
     if not text:
         return None
@@ -69,7 +70,10 @@ def _extract_action_json(text: str) -> Optional[dict[str, Any]]:
 def _finite_number(value: Any, field: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise DecisionParseError(f"{field} must be a number")
-    number = float(value)
+    try:
+        number = float(value)
+    except OverflowError as error:
+        raise DecisionParseError(f"{field} must be finite") from error
     if not math.isfinite(number):
         raise DecisionParseError(f"{field} must be finite")
     return number
@@ -119,7 +123,7 @@ def parse_decision_payload(text: str) -> dict[str, Any]:
         action = raw["action"]
         if not isinstance(symbol, str) or not symbol:
             raise DecisionParseError(f"{path}.symbol must be a non-empty string")
-        if action not in _ACTIONS:
+        if not isinstance(action, str) or action not in _ACTIONS:
             raise DecisionParseError(f"{path}.action must be one of {sorted(_ACTIONS)}")
         target = _finite_number(raw["target_weight"], f"{path}.target_weight")
         # The target is the authoritative desired position; ``action`` is an
@@ -281,8 +285,8 @@ __all__ = [
     "DecisionParseError",
     "build_parser",
     "decision_to_weights",
+    "format_reward",
     "parse_decision",
     "parse_decision_payload",
     "portfolio_weights",
-    "format_reward",
 ]

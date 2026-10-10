@@ -12,6 +12,13 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ### Fixed
 
+- Minari split exports require exact recorded scenario seeds in their declared
+  train/test bands. Terminal classification requires finite recorded NAV unless
+  explicitly overridden, and failed metadata writes are not reported as success.
+- MCP parses against configured weight limits and returns typed input refusals
+  without advancing the episode. It serializes calls to one shared episode and
+  requires reset after completion; unrelated runtime failures remain failures.
+  Decision parsing rejects non-string actions and unrepresentable numeric values.
 - Integration parity: require an actual successful engine transition, the
   adapter's native engine, finite NAV and complete configuration readbacks,
   including the execution seed. Unexpected adapter failures no longer masquerade

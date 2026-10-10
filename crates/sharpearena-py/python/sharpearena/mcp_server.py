@@ -9,20 +9,24 @@ HTTP — can drive an :class:`~sharpearena.gym.SharpeArenaEnv` episode with zero
 / :func:`main` raise a clear error if called without it. The rest of the package is
 unaffected.
 
-env/invalid-decision are encoded as **structured content**, never raised — ``rlm`` turns
-a tool exception into a ``RuntimeError`` that aborts the rollout, so ``step`` returns an
-``{"error": ...}`` object on a malformed decision instead of throwing.
+Malformed decisions and typed input refusals are returned as JSON error objects
+in the tool's string result. This is not the MCP ``structuredContent`` field.
+Internal runtime/serialization failures still raise; callers must not treat them
+as a valid agent refusal or a scored transition.
 """
 
 from __future__ import annotations
 
 import json
-from typing import Any, Optional
+from threading import RLock
+from typing import Any
 
 import numpy as np
 
+from ._action_validation import ActionValidationError
 from .decision_parser import DecisionParseError, parse_decision, portfolio_weights
 from .gym import SharpeArenaEnv
+from .sharpearena_py import InvalidArgument, InvalidJson
 
 try:  # pragma: no cover - exercised only when mcp is installed
     from mcp.server.fastmcp import FastMCP
@@ -44,7 +48,11 @@ def _obs_payload(obs: dict, symbols: list[str]) -> dict:
 
 
 def _decision_to_weights(
-    decision_json: str, symbols: list[str], observation: dict
+    decision_json: str,
+    symbols: list[str],
+    observation: dict,
+    *,
+    max_abs_weight: float = 1.0,
 ) -> np.ndarray:
     """Strictly parse one canonical Decision over the episode's symbol axis."""
 
@@ -54,16 +62,22 @@ def _decision_to_weights(
         current_weights=portfolio_weights(
             observation["positions"], observation["closes"], observation["cash"][0]
         ),
+        max_abs_weight=max_abs_weight,
     )
 
 
-def build_server(env_kwargs: Optional[dict] = None) -> "FastMCP":
+def build_server(env_kwargs: dict | None = None) -> FastMCP:
     """Build a ``FastMCP('sharpearena')`` exposing ``reset`` / ``step`` / ``spec``.
 
     ``env_kwargs`` is forwarded to :class:`~sharpearena.gym.SharpeArenaEnv` (e.g.
     ``n_symbols``, ``n_days``, ``seed``, ``allow_short``). The episode env is created
     lazily and held for the lifetime of the server. Raises ``RuntimeError`` if ``mcp`` is
     not installed.
+
+    One server owns one episode shared by all callers, not one episode per transport
+    session. Tool calls are serialized; reset discards that shared episode's progress.
+    Use a separate server per independent rollout. Transport access control is the
+    deployment's responsibility and is not configured by this builder.
     """
     if not _HAS_MCP:
         raise RuntimeError(
@@ -72,10 +86,12 @@ def build_server(env_kwargs: Optional[dict] = None) -> "FastMCP":
         )
 
     server = FastMCP("sharpearena")
+    lock = RLock()
     state: dict[str, Any] = {
         "env": None,
         "last_observation": None,
         "kwargs": dict(env_kwargs or {}),
+        "done": False,
     }
 
     def _env() -> SharpeArenaEnv:
@@ -86,18 +102,24 @@ def build_server(env_kwargs: Optional[dict] = None) -> "FastMCP":
     @server.tool()
     def reset() -> str:
         """(Re)create and reset the episode; return the initial observation JSON."""
-        env = _env()
-        obs, _info = env.reset()
-        state["last_observation"] = obs
-        return json.dumps(_obs_payload(obs, env.symbols))
+        with lock:
+            env = _env()
+            obs, _info = env.reset()
+            state["last_observation"] = obs
+            state["done"] = False
+            return json.dumps(_obs_payload(obs, env.symbols))
 
     @server.tool()
     def step(decision_json: str) -> str:
         """Advance one bar with a wire-contract ``Decision`` JSON.
 
         Returns ``{observation, reward, terminated, truncated, info}``; a malformed
-        decision returns ``{"error": ...}`` (structured content, not an exception).
+        decision returns ``{"error": ...}`` in a JSON string, not an exception.
         """
+        with lock:
+            return _step(decision_json)
+
+    def _step(decision_json: str) -> str:
         env = _env()
         if state["last_observation"] is None:
             return json.dumps(
@@ -107,9 +129,20 @@ def build_server(env_kwargs: Optional[dict] = None) -> "FastMCP":
                     "environment_advanced": False,
                 }
             )
+        if state["done"]:
+            return json.dumps(
+                {
+                    "error": "episode_done",
+                    "detail": "call reset before another step",
+                    "environment_advanced": False,
+                }
+            )
         try:
             weights = _decision_to_weights(
-                decision_json, env.symbols, state["last_observation"]
+                decision_json,
+                env.symbols,
+                state["last_observation"],
+                max_abs_weight=float(np.max(env.action_space.high)),
             )
         except DecisionParseError as error:
             return json.dumps(
@@ -119,8 +152,21 @@ def build_server(env_kwargs: Optional[dict] = None) -> "FastMCP":
                     "environment_advanced": False,
                 }
             )
-        obs, reward, terminated, truncated, info = env.step(weights)
+        try:
+            obs, reward, terminated, truncated, info = env.step(weights)
+        except (ActionValidationError, InvalidArgument, InvalidJson) as error:
+            # These typed input refusals happen before a kernel transition. Do not
+            # turn an unrelated runtime/serialization failure into an agent refusal.
+            return json.dumps(
+                {
+                    "error": "invalid_decision",
+                    "detail": str(error),
+                    "reason_code": getattr(error, "code", type(error).__name__),
+                    "environment_advanced": False,
+                }
+            )
         state["last_observation"] = obs
+        state["done"] = bool(terminated or truncated)
         return json.dumps(
             {
                 "observation": _obs_payload(obs, env.symbols),
@@ -134,14 +180,22 @@ def build_server(env_kwargs: Optional[dict] = None) -> "FastMCP":
     @server.tool()
     def spec() -> str:
         """The decision/observation wire schema plus the episode's symbol axis."""
-        env = _env()
-        return json.dumps(
-            {
-                "decision_space": env.decision_space(),
-                "observation_space": env.observation_space_schema(),
-                "symbols": env.symbols,
-            }
-        )
+        with lock:
+            env = _env()
+            return json.dumps(
+                {
+                    "decision_space": env.decision_space(),
+                    "observation_space": env.observation_space_schema(),
+                    "symbols": env.symbols,
+                    "session_contract": {
+                        "scope": "single_episode_per_server",
+                        "shared_by_callers": True,
+                        "tool_calls": "serialized",
+                        "reset": "discards_shared_episode_progress",
+                        "after_done": "reset_required",
+                    },
+                }
+            )
 
     return server
 
