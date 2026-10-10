@@ -12,6 +12,10 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ### Fixed
 
+- The Gymnasium guide and Python README expose current vector limitations:
+  construction-fixed lane seeds, ignored reset reseeding, repeated autoreset
+  scenarios and an unenforced `max_episode_steps` argument. The vector example
+  no longer presents a reset seed as effective. No runtime behavior changes.
 - Integration support and inventory prose distinguish the ordinary source suite
   from the separate installed-wheel CI cells. Ray is no longer described as
   absent from all CI; bounded worker and single-agent checks do not imply the

@@ -123,6 +123,13 @@ SharpeBench eligibility certificate or a full benchmark-field score.
 | Benchmark compilation | `sharpearena-compile-bench`; bridge schema 2 adds a validated, rank-neutral p50/p95 operational profile beside score submissions |
 | Strategy search | `sharpearena-strategy-search` |
 
+Vector lane seeds are fixed at construction: `reset(seed=...)` currently does
+not reseed them, and autoreset replays the same scenarios. Use constructor
+`seeds` to select lanes; explicit seeds are not shifted into the evaluation
+band automatically. The vector `max_episode_steps` argument is accepted but
+not enforced; native window and termination rules determine the episode.
+These limitations differ from scalar reset and time-limit behavior.
+
 See the repository's [Gymnasium guide](../../docs/gymnasium.md),
 [training guide](../../docs/training.md), and
 [agent contract](../../docs/agent-contract.md) for the full workflows.
