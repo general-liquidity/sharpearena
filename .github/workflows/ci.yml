@@ -578,7 +578,9 @@ jobs:
           wheels=(dist/*.whl)
           test "${#wheels[@]}" -eq 1
           torch_options=()
-          if [ "$EXTRA" = sb3 ]; then torch_options=(--cpu-torch); fi
+          if [ "$EXTRA" = sb3 ]; then
+            torch_options=(--cpu-torch --run scripts/test-sb3-wheel-check.py)
+          fi
           python scripts/check-wheel-install.py --wheel "${wheels[0]}" \
             --extra "$EXTRA" "${torch_options[@]}" \
             --run "scripts/check-optional-extras.py --extra $EXTRA"
