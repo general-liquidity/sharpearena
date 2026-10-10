@@ -577,5 +577,8 @@ jobs:
           set -euo pipefail
           wheels=(dist/*.whl)
           test "${#wheels[@]}" -eq 1
+          torch_options=()
+          if [ "$EXTRA" = sb3 ]; then torch_options=(--cpu-torch); fi
           python scripts/check-wheel-install.py --wheel "${wheels[0]}" \
-            --extra "$EXTRA" --run "scripts/check-optional-extras.py --extra $EXTRA"
+            --extra "$EXTRA" "${torch_options[@]}" \
+            --run "scripts/check-optional-extras.py --extra $EXTRA"

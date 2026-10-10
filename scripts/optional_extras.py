@@ -48,11 +48,10 @@ ACCELERATOR_IMPORTS: Tuple[str, ...] = ("torch", "jax")
 # `EXERCISES` but never neither, and removing an entry without adding the other fails CI
 # the same way an unlisted extra always has.
 #
-# Three extras, three different reasons, none of them "we didn't get to it":
+# Two remaining exclusions, neither of them an executed installed adapter check:
 #
-# - sb3 and torchrl both pull torch, the heaviest single dependency any extra here
-#   declares. `ci-requirements.txt` already excludes both for that reason, so
-#   `tests/test_sb3.py` and `tests/test_torchrl.py` skip in the source-tree suite too.
+# - torchrl pulls torch and remains outside the installed-extra matrix.
+#   SB3 now has a CPU-only Torch cell, independently of the source-suite requirements.
 # - ray[rllib]==2.58.0 pins gymnasium==1.2.2 exactly, which conflicts with the CI pin
 #   of gymnasium==1.3.0 in a single `pip install --requirement` invocation
 #   (`docs/integrations/inventory.md`'s version matrix). `ray` is excluded from
@@ -60,23 +59,22 @@ ACCELERATOR_IMPORTS: Tuple[str, ...] = ("torch", "jax")
 #   skip in the source-tree suite, for that pin conflict rather than for size, though
 #   `ray[rllib]` is also a large multi-package install in its own right.
 #
-# A `wheel-extras` cell for any of the three would either add a heavy torch install or
-# force the wheel-extras job onto an incompatible gymnasium, to a matrix deliberately
+# A `wheel-extras` cell for either remaining exclusion would add a heavy install or
+# require a separately exercised dependency set in a matrix deliberately
 # sized to stay near fifteen minutes. What is NOT skipped: `GUARDS["sb3"]`,
 # `GUARDS["torchrl"]` and `GUARDS["ray"]` still run in `wheel-no-extras`, for free, since
 # that job never installs any extra either way, and they are what prove
 # `SharpeArenaSB3VecEnv(...)`, `SharpeArenaTorchRLEnv(...)`, `run_episodes(...,
 # num_workers=1)` and `sharpearena_env_creator()` all refuse by name with the dependency
-# absent. What IS unexercised against an installed wheel: the actual SB3 `VecEnv` /
+# absent. What IS unexercised against an installed wheel: the actual
 # TorchRL `EnvBase` / Ray task / RLlib route with the extra present. Revisit if a
 # CPU-only torch wheel becomes cheap enough to pin, if the gymnasium pin conflict is
 # resolved upstream, or if the added CI minutes are explicitly accepted.
 INSTALL_MATRIX_EXCLUDED: Dict[str, str] = {
-    "sb3": "pulls torch; excluded from ci-requirements.txt for the same reason",
     "torchrl": "pulls torch; excluded from ci-requirements.txt for the same reason",
     "ray": (
-        "ray[rllib]==2.58.0 pins gymnasium==1.2.2, conflicting with the CI gymnasium "
-        "pin (1.3.0); excluded from ci-requirements.txt for the same reason"
+        "installed Ray/RLlib execution check remains unimplemented; the source-suite "
+        "Gymnasium pin conflict does not prevent a separate consumer venv"
     ),
 }
 
@@ -290,6 +288,54 @@ def _exercise_verifiers() -> str:
     return f"loaded the multi-turn environment over {rows} scenario rows"
 
 
+def _exercise_sb3() -> str:
+    from importlib.metadata import version
+    import numpy as np
+    from stable_baselines3.common.vec_env import VecEnv
+    from sharpearena.sb3_env import SharpeArenaSB3VecEnv
+    from sharpearena.vector import SharpeArenaVectorEnv
+
+    kwargs = dict(seeds=[1, 2], n_symbols=2, n_days=8)
+    env = SharpeArenaSB3VecEnv(**kwargs)
+    reference = SharpeArenaVectorEnv(autoreset_mode="same_step", **kwargs)
+    try:
+        if not isinstance(env, VecEnv):
+            raise SystemExit("the installed SB3 adapter is not a VecEnv")
+        observed = env.reset()
+        expected, _ = reference.reset()
+        for key in expected:
+            np.testing.assert_array_equal(observed[key], expected[key])
+        actions = np.zeros((2, 2), dtype=np.float32)
+        finished = False
+        for _ in range(16):
+            observed, rewards, done, infos = env.step(actions)
+            expected, expected_rewards, terminated, truncated, expected_infos = (
+                reference.step(actions)
+            )
+            np.testing.assert_array_equal(rewards, expected_rewards)
+            np.testing.assert_array_equal(done, terminated | truncated)
+            for key in expected:
+                np.testing.assert_array_equal(observed[key], expected[key])
+            for lane in range(2):
+                if done[lane]:
+                    finished = True
+                    if "terminal_observation" not in infos[lane]:
+                        raise SystemExit("SB3 terminal observation was not delivered")
+                    for key, value in expected_infos["final_obs"][lane].items():
+                        np.testing.assert_array_equal(
+                            infos[lane]["terminal_observation"][key], value
+                        )
+        if not finished:
+            raise SystemExit("the SB3 wheel check never exercised episode completion")
+    finally:
+        env.close()
+        reference.close()
+    return (
+        f"SB3 {version('stable-baselines3')}, Torch {version('torch')}: "
+        "stepped two installed lanes through completion with native vector parity"
+    )
+
+
 # ---------------------------------------------------------------------------
 # What the base package does when the extra is absent
 # ---------------------------------------------------------------------------
@@ -418,6 +464,7 @@ def _guard_ray() -> List[str]:
 
 
 EXERCISES: Dict[str, Callable[[], str]] = {
+    "sb3": _exercise_sb3,
     "pettingzoo": _exercise_pettingzoo,
     "minari": _exercise_minari,
     "mcp": _exercise_mcp,
