@@ -24,7 +24,11 @@ implementation.
 
 - `classify_eligible_iff`: eligibility is exactly the frozen submission window.
 - `applyRevision_late`: a late revision cannot replace the effective revision.
+- `effectiveClaim_append_other` and the late/eligible append theorems: a per-claim
+  fold selects by append order without cross-claim interference.
 - `rebind_accepted_preserves_digest`: an accepted claim binding keeps its contract digest.
+- `rebind_accepted_matches_candidate`: acceptance requires the submitted digest
+  to match, not merely a return value carrying the old digest.
 - `brierNumerator_decomposition`: expected Brier loss is baseline plus squared regret.
 - `brierNumerator_minimized`: truthful fixed-point probability minimizes expected loss.
 - `brierNumerator_unique`: the minimizer is unique for a positive scale.
@@ -34,7 +38,7 @@ implementation.
 Covers: the protocol decisions in
 `crates/sharpearena-py/python/sharpearena/forecast_evidence.py`: the submission status
 classification inside `submit` (`classify`), effective-revision selection in
-`effective_claims` (`applyRevision`), the claim-to-contract binding refusal in `submit`
+`effective_claims` (`applyRevision`, `applyClaimRevision`, `effectiveClaim`), the claim-to-contract binding refusal in `submit`
 (`rebind`), and the fixed-point binary Brier loss SharpeBench recomputes from the sealed
 evidence (`brierNumerator`; Arena's descriptive counterpart is the `brier` entry in
 `crates/sharpearena-py/python/sharpearena/deferred.py`).
@@ -43,6 +47,10 @@ Assumes: `Nat` timestamps, an integer fixed-point probability `scale > 0`, and n
 floating-point semantics. Nothing mechanically links the model to the Python implementation:
 this module is not an extraction of it and carries no refinement proof. Separate executable tests
 cover several of the same rules independently of the model.
+
+The list supplied to `effectiveClaim` is append order. Ordinals label records;
+this model does not prove their monotonic allocation, hash collision resistance,
+deserialization validation, or timestamp ordering.
 
 Not modelled: the environment kernel in `crates/sharpearena/src/market.rs`,
 `crates/sharpearena/src/lob_market.rs` and `crates/sharpearena/src/vec_env.rs`. Its reset,
@@ -118,6 +126,47 @@ theorem applyRevision_eligible (current : Option Nat) (ordinal : Nat) :
     applyRevision current { ordinal, status := .eligible } = some ordinal := by
   simp [applyRevision]
 
+/-- A recorded revision carries the claim whose state it may replace. -/
+structure ClaimRevision where
+  claimId : String
+  revision : Revision
+  deriving DecidableEq, Repr
+
+/-- Apply an append-order record to one claim, ignoring other claims. -/
+def applyClaimRevision (claimId : String) (current : Option Nat)
+    (record : ClaimRevision) : Option Nat :=
+  if record.claimId = claimId then applyRevision current record.revision else current
+
+/-- Effective state is the per-claim left fold over append order, not timestamp order. -/
+def effectiveClaim (claimId : String) (history : List ClaimRevision) : Option Nat :=
+  history.foldl (applyClaimRevision claimId) none
+
+/-- Any ineligible append, late or rejected, leaves the per-claim state unchanged. -/
+theorem effectiveClaim_append_ineligible (claimId : String) (history : List ClaimRevision)
+    (record : ClaimRevision) (h : record.revision.status ≠ .eligible) :
+    effectiveClaim claimId (history ++ [record]) = effectiveClaim claimId history := by
+  simp [effectiveClaim, List.foldl_append, applyClaimRevision, applyRevision, h]
+
+/-- Appending another claim's revision does not change this claim's result. -/
+theorem effectiveClaim_append_other (claimId : String) (history : List ClaimRevision)
+    (record : ClaimRevision) (h : record.claimId ≠ claimId) :
+    effectiveClaim claimId (history ++ [record]) = effectiveClaim claimId history := by
+  simp [effectiveClaim, List.foldl_append, applyClaimRevision, h]
+
+/-- A late append cannot overwrite the effective result even after an arbitrary history. -/
+theorem effectiveClaim_append_late (claimId : String) (history : List ClaimRevision)
+    (ordinal : Nat) :
+    effectiveClaim claimId (history ++ [{ claimId, revision := { ordinal, status := .late } }]) =
+      effectiveClaim claimId history := by
+  simp [effectiveClaim, List.foldl_append, applyClaimRevision, applyRevision]
+
+/-- The latest appended eligible revision wins, irrespective of its timestamp or ordinal size. -/
+theorem effectiveClaim_append_eligible (claimId : String) (history : List ClaimRevision)
+    (ordinal : Nat) :
+    effectiveClaim claimId (history ++ [{ claimId, revision := { ordinal, status := .eligible } }]) =
+      some ordinal := by
+  simp [effectiveClaim, List.foldl_append, applyClaimRevision, applyRevision]
+
 /-- The immutable contract digest bound to a claim. -/
 structure ClaimBinding where
   claimId : String
@@ -136,6 +185,24 @@ theorem rebind_accepted_preserves_digest {prior result : ClaimBinding}
   split at h
   · simpa using (congrArg ClaimBinding.contractDigest (Option.some.inj h)).symm
   · contradiction
+
+/-- Acceptance also requires the candidate digest, not only the returned digest, to match. -/
+theorem rebind_accepted_matches_candidate {prior result : ClaimBinding}
+    {candidateDigest : String} (h : rebind prior candidateDigest = some result) :
+    candidateDigest = result.contractDigest := by
+  grind [rebind]
+
+/-- An accepted binding preserves the claim identity as well as its contract. -/
+theorem rebind_accepted_preserves_claim {prior result : ClaimBinding}
+    {candidateDigest : String} (h : rebind prior candidateDigest = some result) :
+    result.claimId = prior.claimId := by
+  grind [rebind]
+
+/-- A changed digest is refused rather than accepted with the prior value. -/
+theorem rebind_changed_digest_refused (prior : ClaimBinding) (candidateDigest : String)
+    (h : candidateDigest ≠ prior.contractDigest) :
+    rebind prior candidateDigest = none := by
+  simp [rebind, h]
 
 /-- An integer square used by the fixed-point Brier model. -/
 def intSquare (value : Int) : Int :=
