@@ -12,6 +12,10 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ### Fixed
 
+- Integration support and inventory prose distinguish the ordinary source suite
+  from the separate installed-wheel CI cells. Ray is no longer described as
+  absent from all CI; bounded worker and single-agent checks do not imply the
+  historical full suites, multi-agent route or training run there.
 - The installed-extra matrix includes finite Ray worker and single-agent RLlib
   execution without a learning framework. Distributed reports match local
   execution; Tune-registered observations/rewards/end flags match native
@@ -20,11 +24,11 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 - The installed-extra matrix includes TorchRL TensorDict execution through
   completion with constrained CPU-only Torch. Observations, rewards and all
   three end flags are compared against native Gymnasium; deliberate reward
-  and truncation corruption must fail. Ray installed execution remains open.
+  and truncation corruption must fail. Ray has a separate finite execution cell.
 - The installed-extra wheel matrix now includes an SB3 execution cell, with
   constrained CPU-only Torch, two-lane native vector parity through completion
   and terminal-observation delivery. Consumer checks remove inherited Python
-  source/import paths. TorchRL and Ray remain explicitly unexercised there.
+  source/import paths. TorchRL and Ray have their own separate execution cells.
 - The Lean forecast model includes candidate-digest acceptance/refusal and
   claim-identity preservation, plus per-claim history-fold append rules. These
   strengthen the model's binding and revision-order assurance without changing

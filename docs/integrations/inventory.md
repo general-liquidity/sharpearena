@@ -41,7 +41,8 @@ The declared optional extras are seven: `verifiers`, `minari`, `pettingzoo`, `mc
 `sb3`, `torchrl`, and `ray` (`crates/sharpearena-py/pyproject.toml`). `sb3`,
 `torchrl` and `ray` are each left out of `ci-requirements.txt`, and
 `tests/test_sb3.py` / `tests/test_torchrl.py` / `tests/test_ray_executor.py` /
-`tests/test_rllib.py` skip their extra-gated cases on CI, each for its own
+`tests/test_rllib.py` can skip their extra-gated cases in the ordinary source-suite
+job, not in all CI jobs, each for its own
 reason: `sb3` and `torchrl` both pull in torch, the largest single dependency
 any extra here declares; `ray[rllib]==2.58.0` pins `gymnasium==1.2.2` exactly,
 which conflicts with this tree's CI pin of `gymnasium==1.3.0` in a single `pip
@@ -57,9 +58,10 @@ against TorchRL's 0.14 `EnvBase` contract. The installed-wheel matrix now has
 SB3 and TorchRL cells with constrained CPU-only Torch, plus finite Ray worker
 and single-agent RLlib execution. See the "Installed-wheel compatibility
 matrix" section below for what is and is not exercised against a built wheel
-for `sb3`, `torchrl` and `ray`. The plan's warning holds: generic Gymnasium and
-Farama compatibility is real and already tested, and the gap is the seven
-named consumer routes, not the interfaces they consume.
+for `sb3`, `torchrl` and `ray`. Generic Gymnasium and Farama compatibility does
+not establish every downstream consumer contract. The named routes now have
+their own bounded checks; training, extra combinations and every permitted
+dependency version are separate verification questions.
 
 ### Wrapper and space coverage
 
@@ -128,16 +130,18 @@ suite passed under it (1893 passed, 2 skipped).
 | mcp | extra, unpinned | 1.30.0 | not installed |
 | pytest | not shipped | 9.1.1 | 8.4.2 |
 | ray / ray[rllib] | extra, `>=2.58.0,<3` | not installed | 2.58.0 |
-| torch (RLlib training only) | not declared by any extra | not installed | 2.14.0+cpu |
+| torch (historical RLlib training environment) | not required by the `ray` extra | not in source-suite requirements | 2.14.0+cpu |
 | OS / architecture | not constrained | Linux runners | Windows 11 26220, x86-64 (AMD64) |
 
 `ray[rllib]==2.58.0` pins `gymnasium==1.2.2` exactly, which conflicts with this
 tree's CI pin of `gymnasium==1.3.0` in a single `pip install --requirement`
 invocation; the base package's own `gymnasium>=1.0` floor admits 1.2.2 and the
 full 1893-test suite passed under it (recorded above as this row's evidence run),
-but that pin conflict is why `ray` is not installed in CI and why
+but that pin conflict is why `ray` is not installed in the source-suite job and why
 `tests/test_ray_executor.py` and `tests/test_rllib.py` are exercised locally
-rather than in the pinned matrix. `torch` is needed only to actually build and
+rather than in that pinned source matrix. The separate `wheel-extras` Ray cell
+installs a separately resolved consumer graph and exercises workers and the
+single-agent adapter, not those full suites or learning. `torch` is needed only to actually build and
 train an RLlib `AlgorithmConfig` (`AlgorithmConfig.build_algo()`); it is not part
 of the `ray` extra, and `sharpearena_env_creator`, registration, and config
 construction were all checked without it. See
