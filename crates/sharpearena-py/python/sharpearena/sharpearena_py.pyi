@@ -101,6 +101,7 @@ class VecTradingEnv:
         jump_burst_probability: float = 0.0,
         jump_burst_persistence: float = 0.0,
         jump_burst_size: float = 0.0,
+        max_episode_steps: int | None = None,
     ) -> None: ...
     @classmethod
     def from_csv(

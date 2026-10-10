@@ -6,7 +6,7 @@
 terminated, truncated, infos)``, with numpy arrays of leading dim ``B``.
 
 **Autoreset mode — selectable.** ``autoreset_mode`` chooses how a finished lane
-(``terminated`` on a blow-up, ``truncated`` on running out of bars) is recycled:
+(``terminated`` on a blow-up, ``truncated`` on a horizon or episode cap) is recycled:
 
 - ``"next_step"`` (default, Gymnasium 1.x): the terminal step is returned verbatim and
   the reset surfaces on the *following* step (reward 0, flags ``False``, ``first`` ``True``).
@@ -24,6 +24,7 @@ The action is a per-lane **target-weight vector** over the environment's symbols
 from __future__ import annotations
 
 import json
+import operator
 from typing import Any, Optional, Sequence
 
 import numpy as np
@@ -90,10 +91,15 @@ class SharpeArenaVectorEnv(VectorEnv):
         max_episode_steps: Optional[int] = None,
         env_kwargs: Optional[dict] = None,
     ) -> None:
-        # `max_episode_steps` is accepted for `gymnasium.make_vec` compatibility (it
-        # forwards the spec value to the vector entry point); the engine already
-        # truncates at the window end, so it is an advisory cap, not enforced here.
-        del max_episode_steps
+        if max_episode_steps is not None:
+            if isinstance(max_episode_steps, (bool, np.bool_)):
+                raise ValueError("max_episode_steps must be a positive integer")
+            try:
+                max_episode_steps = operator.index(max_episode_steps)
+            except TypeError as exc:
+                raise ValueError("max_episode_steps must be a positive integer") from exc
+            if max_episode_steps <= 0:
+                raise ValueError("max_episode_steps must be a positive integer")
         validate_weight_limit(max_weight, allow_short)
         if mode not in ("train", "eval"):
             raise ValueError("mode must be 'train' or 'eval'")
@@ -119,8 +125,7 @@ class SharpeArenaVectorEnv(VectorEnv):
         }
 
         kwargs: dict[str, Any] = dict(env_kwargs or {})
-        self._env = VecTradingEnv(
-            seeds=self._seeds,
+        self._native_kwargs = dict(
             n_symbols=n_symbols,
             n_days=n_days,
             window_start=window_start,
@@ -131,8 +136,10 @@ class SharpeArenaVectorEnv(VectorEnv):
             jump_burst_persistence=float(jump_burst_persistence),
             jump_burst_size=float(jump_burst_size),
             autoreset_mode=autoreset_mode,
+            max_episode_steps=max_episode_steps,
             **kwargs,
         )
+        self._env = VecTradingEnv(seeds=self._seeds, **self._native_kwargs)
 
         # Discover the symbol axis from the first lane's first observation (every lane
         # shares the same panel shape), so the spaces match the dataset exactly.
@@ -214,8 +221,42 @@ class SharpeArenaVectorEnv(VectorEnv):
     # -- gymnasium vector API ----------------------------------------------
 
     def reset(
-        self, *, seed: Optional[int] = None, options: Optional[dict] = None
+        self, *, seed: Optional[int | Sequence[int]] = None, options: Optional[dict] = None
     ) -> tuple[dict[str, np.ndarray], dict]:
+        """Rebuild native lanes for an integer base seed or an exact per-lane list.
+
+        Seeds are nonnegative signed-64-bit integers, used literally even in eval
+        mode. None keeps current scenarios. Automatic resets never draw new seeds.
+        A failed seed validation leaves the active batch and queued action intact.
+        """
+        if seed is not None:
+            def checked(value):
+                if isinstance(value, (bool, np.bool_)):
+                    raise ValueError("reset seeds must be nonnegative integers")
+                try:
+                    value = operator.index(value)
+                except TypeError as exc:
+                    raise ValueError("reset seeds must be nonnegative integers") from exc
+                if not 0 <= value <= np.iinfo(np.int64).max:
+                    raise ValueError("reset seeds must fit nonnegative int64")
+                return value
+
+            if isinstance(seed, (int, np.integer)) and not isinstance(seed, (bool, np.bool_)):
+                base = checked(seed)
+                seeds = [checked(base + i) for i in range(self.num_envs)]
+                rng_seed = base
+            else:
+                try:
+                    seeds = [checked(value) for value in seed]
+                except TypeError as exc:
+                    raise ValueError("seed must be an integer or one integer per lane") from exc
+                if len(seeds) != self.num_envs:
+                    raise ValueError("seed list must match num_envs")
+                rng_seed = seeds[0]
+            replacement = VecTradingEnv(seeds=seeds, **self._native_kwargs)
+            super().reset(seed=rng_seed, options=options)
+            self._env = replacement
+            self._seeds = seeds
         self._pending_actions = None
         out = json.loads(self._env.reset_batch())
         obs = self._stack_obs(out["observations"])
