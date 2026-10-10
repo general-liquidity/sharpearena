@@ -12,6 +12,10 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ### Fixed
 
+- The Lean forecast model includes candidate-digest acceptance/refusal and
+  claim-identity preservation, plus per-claim history-fold append rules. These
+  strengthen the model's binding and revision-order assurance without changing
+  runtime scores or claiming a Python/Rust refinement proof.
 - External workflow actions use resolved full commit SHAs. An offline CI policy
   gate checks those literal references and rejects Cargo build fallbacks, with
   planted tag/branch/short-hash and fallback regressions. This does not certify
