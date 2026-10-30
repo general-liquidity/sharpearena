@@ -469,7 +469,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          # ubuntu-latest no longer serves 3.9, and the declared floor stays tested.
+          - os: ubuntu-24.04
             python: "3.9"
           - os: ubuntu-latest
             python: "3.12"
