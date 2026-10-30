@@ -15,7 +15,7 @@ import math
 import numpy as np
 import pytest
 
-from sharpearena.sharpearena_py import TradingEnv, VecTradingEnv
+from sharpearena.sharpearena_py import InvalidArgument, TradingEnv, VecTradingEnv
 from sharpearena.vector import SharpeArenaVectorEnv
 
 
@@ -255,5 +255,5 @@ def test_disabled_never_resets():
 
 
 def test_unknown_autoreset_mode_rejected():
-    with pytest.raises(Exception):
+    with pytest.raises(InvalidArgument, match='unknown autoreset_mode "bogus"'):
         SharpeArenaVectorEnv(seeds=[1], n_symbols=2, n_days=20, autoreset_mode="bogus")
