@@ -18,12 +18,26 @@ adapter against these clauses rather than asserting them in prose.
 | Bind the data and generator identity | `scenario_fingerprint` (FNV-1a/64 over the generated panel) and the `dataset_fnv1a64` readback |
 | Bind the native package and spec identity | `_spec_hash.EXPECTED_SPEC_HASH`, `check_spec_hash`, checked at package import |
 | Bind the scorer version | `kernel_score` and the SharpeBench pin it carries |
+| Bind the wrapper order | `effective_config.wrapper_stack`, carried as `wrapper_stack` in the readback and compared by `check_env_effective_config(wrappers=...)` |
 | Fold per-seed readbacks into one arm | `merge_effective_configs`, which refuses when the seeds did not run one configuration |
 | Reject rather than fall back | Every path above raises; none warns and continues |
 
-Not owned: the upstream library revision and the wrapper order. An adapter records
-both in its own evidence block. INT-03 onward should put them beside the effective
-config rather than in a separate file.
+Not owned: the upstream library revision. An adapter records it in its own evidence
+block. INT-03 onward should put it beside the effective config rather than in a separate
+file.
+
+Decision on wrapper order: it belongs in the readback, so one check and one merge rule
+cover it. `wrapper_stack` lists qualified class names, innermost first, read off the
+object the caller passes in. `check_env_effective_config` compares it against the
+`wrappers` argument, whose default is none, so a wrapped environment has to be declared.
+`merge_effective_configs` refuses seeds that ran different stacks, and refuses a block
+with no `wrapper_stack` because absent is not empty. The merged block carries the key only
+when the stack is non-empty, so a bare arm keeps the shape of the frozen evidence, whose
+arms all ran the bare environment.
+
+The stack binds classes and their order. It does not bind constructor arguments, such as
+the `TimeLimit` cap or the `FrameStack` depth, or a normalizer's `training` flag and
+statistics. `describe_preprocessing` discloses the arguments for the canonical pipeline.
 
 ## C02: observation and action mapping
 
@@ -35,12 +49,47 @@ config rather than in a separate file.
 | Intended versus validated actions | `_action_validation.validated_action` |
 | No silent transformation | `validated_action` refuses shape, kind, finiteness and bound violations; it does not reshape, clip or coerce |
 | Causal preprocessing, fitted on training data only | `preprocessing.CANONICAL_PREPROCESSING`, `wrappers.CausalNormalizeObservation` |
+| Normalizer persistence and evaluation freeze | `state_dict`, `load_state_dict` and `training` on `CausalNormalizeObservation`, `CausalNormalizeReward` and `VectorCausalNormalizeObservation` |
+| The action dtype rule | `contracts.ACTION_SPACE_DTYPE`, `contracts.ENGINE_ACTION_DTYPE`, `contracts.is_float32_exact` |
 
-Two dtype facts an adapter must carry rather than rediscover. The action space is
-`float32` and the engine consumes `float64`, so any fixed action sequence used on both
-sides must be `float32` representable or the two paths receive different numbers. And
-`Box.contains` casts safely, so a `float64` array is not a member of a `float32` space;
-the decision belongs in the contract, not in each adapter.
+The dtype rule, stated once so no adapter decides it again:
+
+1. The action space stays `float32`. A learner sends `float32`.
+2. `step` takes any real numeric array that passes `validated_action`, and the value
+   reaches the engine as `float64` without being rounded to the advertised dtype. Widening
+   a `float32` value is exact, so a `float32` action and its widening are one engine input.
+3. A `float64` action that is not `float32` representable is still accepted. The checkpoint
+   layer depends on this to replay the bytes it recorded. Such an action is not a member of
+   the space, because `Box.contains` casts safely, so an adapter must not gate actions on
+   `contains`. Use `validated_action`, which is what `step` applies.
+4. Two paths are comparable only when the fixed action sequence is `float32` representable.
+   `is_float32_exact` checks that, and the parity fixtures quantise to it.
+
+Advertising a `float64` space was rejected because it changes the dtype every learner
+samples from. Requiring `float32` at `step` was rejected because it breaks checkpoint
+replay. Neither change was needed, so default behaviour stays as it was. The bounds check
+compares the `float64` value against the `float32` bound, which for a limit that `float32`
+cannot represent admits values within that bound's rounding error.
+
+Normalizer statistics stay in Arena's wrappers rather than a learner's own normalizer,
+because those wrappers carry the causal guarantee. The contract:
+
+- `state_dict()` returns JSON-serialisable data that shares no memory with the wrapper, so
+  a checkpoint needs no pickle. `load_state_dict` validates everything before changing
+  anything, and raises `NormalizerStateError` for a wrong wrapper, format, key, shape, lane
+  count or a non-finite value.
+- `training=False` stops every update. An emitted value is then a pure function of that bar
+  and the frozen statistics, including on the first bar, which `training=True` emits as
+  zeros. A freeze with fewer than two samples raises `NormalizerNotFittedError` before the
+  engine advances, rather than emitting zeros or passing rewards through.
+- Loading never changes the flag. An evaluator sets `training=False`, on every normalizer in
+  its stack. `get_wrapper_attr` finds only the outermost one, so walk `.env` to reach both.
+- The reward wrapper and the vector wrapper clear their accumulators at each episode
+  boundary, which would leave a checkpoint taken there with nothing to freeze. They keep
+  the last cleared accumulator with at least two samples as `retired`, which never affects
+  a training-mode value. Frozen scale is `retired` where it exists, otherwise the live
+  accumulator. So the frozen reward scale comes from one episode, not from all of training.
+- Vector state is per lane and refuses a different `num_envs`.
 
 C02's substantive requirement is the one about probability: a wrapper that squashes,
 projects or discretises changes the decision problem, and the learner's log probability
@@ -168,15 +217,10 @@ them. `TRUSTED_LOCAL` is the only class that answers yes to
 
 These need an owner decision and block only the routes named:
 
-1. **Wrapper order as part of identity.** C01 requires the wrapper order to be bound,
-   and nothing records it today. Whether it belongs in the effective-config readback or
-   in a separate adapter block changes what `merge_effective_configs` has to accept.
-   Blocks nothing until INT-03 records its first wrapper stack.
-2. **The dtype boundary.** The action space is `float32` and the engine is `float64`.
-   Parity fixtures quantise, which is correct for a fixture, but whether the adapter
-   should advertise a `float64` action space, or whether learners should be required to
-   send `float32`, is a contract decision, not a fixture detail. Affects INT-03, INT-05
-   and INT-07.
+1. ~~**Wrapper order as part of identity.**~~ Settled: it is in the effective-config
+   readback. See the decision under C01.
+2. ~~**The dtype boundary.**~~ Settled: the action space stays `float32` and `step` keeps
+   taking an exact `float64`. See the rule under C02.
 3. **What L2 completion means per route**, which the plan itself lists as unresolved.
    `AttemptCounts` gives the shape of the evidence but not the threshold.
 4. ~~**The `verifiers` version.**~~ Settled by INT-10: the module now states 0.3.1,
