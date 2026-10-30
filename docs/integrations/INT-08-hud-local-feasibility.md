@@ -9,8 +9,8 @@ flight. No account was created, nothing was deployed, no paid provider was
 called, and no trace was uploaded anywhere in this work.
 
 All findings below are from an actual local run on this machine, not from
-reading the vendor docs. Where a claim in
-`SHARPE-HANDOFF-SUPPORT/product-planning/integration-refs/HUD-HARBOR-REFERENCE.md`
+reading the vendor docs. Where a claim in the maintainers' HUD and Harbor
+reference note, which is not published in this repository,
 is confirmed, contradicted, or extended by that run, this says so
 explicitly.
 
