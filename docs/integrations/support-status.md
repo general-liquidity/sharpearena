@@ -25,12 +25,14 @@ design implies:
 | <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/gymnasium-dark.svg"><img src="../assets/logos/gymnasium.svg" alt="" height="16"></picture> Gymnasium, scalar and vector | Operationally exercised | `check_env.py` and `check_determinism_across_constructors` enforce the Gymnasium contract; `tests/test_gym.py`, `tests/test_vector.py`, `tests/test_integration_parity.py` cover it in CI. The built wheel was additionally installed and stepped in a clean virtual environment outside the checkout (`inventory.md`, version matrix section). |
 | <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/pettingzoo-dark.svg"><img src="../assets/logos/pettingzoo.svg" alt="" height="16"></picture> PettingZoo (`pettingzoo_env.py`, `lob_env.py`, `market_env.py`) | Contract-tested | `tests/test_pettingzoo.py`. The import is guarded; the class only exists when `pettingzoo` is installed. |
 | <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/minari-dark.svg"><img src="../assets/logos/minari.svg" alt="" height="16"></picture> Minari (`minari_export.py`) | Contract-tested | `tests/test_minari.py` exercises `to_minari`, `to_minari_train_test`, and `seed_band_metadata`. |
-| <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/prime-intellect-dark.png"><img src="../assets/logos/prime-intellect.png" alt="" height="11"></picture> `verifiers` / Prime-RL | Workflow-tested | `tests/test_verifiers.py` and `tests/test_verifiers_episode_outcomes.py`, plus the runnable `examples/prime-rl/rl.toml` recipe. `verifiers_env.py` states it was verified against `verifiers` 0.3.1, matching the CI pin (INT-10, `inventory.md`, closed). A structural capability probe (`UnsupportedVerifiersAPIError`) and a test pinning the claimed version to the CI pin guard against the two drifting again. |
+| <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/prime-intellect-dark.png"><img src="../assets/logos/prime-intellect.png" alt="" height="11"></picture> `verifiers` | Contract-tested | `tests/test_verifiers.py` and `tests/test_verifiers_episode_outcomes.py`. `verifiers_env.py` states it was verified against `verifiers` 0.3.1, matching the CI pin (INT-10, `inventory.md`, closed). A structural capability probe (`UnsupportedVerifiersAPIError`) and a test pinning the claimed version to the CI pin guard against the two drifting again. |
+| Prime-RL trainer recipe (`examples/prime-rl/rl.toml`) | Specified | An illustrative config written against the Prime-RL schema. Its own header says it has not been run by a live trainer, so it is not workflow evidence for this route, and no test executes it. |
 | <a href="https://modelcontextprotocol.io"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/mcp-dark.svg"><img src="../assets/logos/mcp.svg" alt="" height="11"></picture></a> MCP (`mcp_server.py`) | Contract-tested | `tests/test_mcp_server.py`. The import is guarded behind `FastMCP is None`. |
 | Functional view (`functional.py`, `SharpeArenaFuncEnv`) | Contract-tested | `tests/test_functional.py`. |
 | SharpeBench bridge (`bench_bridge.py`) | Contract-tested | Imported and exercised by `tests/test_confidence_pairing.py`, `tests/test_finish_reasons.py`, and `tests/test_local_agents.py`. |
 | Integration contracts and parity checker (`integrations.contracts`, `integrations.parity`) | Contract-tested | `tests/test_integration_parity.py` covers broken mappings, unexpected adapter failures, fixture outcome declarations, required finite NAV, native engine identity and complete configuration readbacks including execution seed. A comparison requires at least one successful engine transition on both paths; matching first-action refusals alone do not establish parity. `test_vector.py` checks native lane readbacks against scalar construction for all five distribution modes and CSV execution seeds. |
 | <img src="../assets/logos/stable-baselines3.png" alt="" height="16"> Stable-Baselines3 (`sb3_env.py`, `SharpeArenaSB3VecEnv`) | Workflow-tested | `tests/test_sb3.py` covers the autoreset and terminal-observation mapping (`test_autoreset_is_same_step_and_not_next_step`, which fails if the mapping is inverted), the `TimeLimit.truncated` encoding, engine parity through `integrations.parity`, and a PPO learn-then-evaluate pass on a tiny CPU budget. `test_reference_semantics_still_match_installed_sb3` pins the module against the installed `DummyVecEnv.step_wait` source so an upstream change to the mapping fails a test rather than silently changing what the route computes. Targeted against `stable-baselines3` 2.9.0, the version installed and tested here; the import is guarded and construction raises `SB3Unavailable` without it. `examples/sb3/train_ppo.py` is the runnable recipe. |
+| CleanRL-style PPO example (`examples/cleanrl-style/ppo_vector.py`), not CleanRL itself | Workflow-tested | A single-file PPO written fresh against the Gymnasium 1.x vector env, in CleanRL's layout, with attribution and no CleanRL code. `tests/test_cleanrl_style_example.py` checks termination and truncation bootstrapping by hand values and runs a seeded training pass at a tiny CPU budget, then a held-out evaluation. It skips without torch, so CI executes `scripts/check-cleanrl-style-example.py` against the installed wheel in the SB3 cell. See [the CleanRL section](#cleanrl-dependency-ranges-dont-intersect) for what this does not establish. |
 | <a href="https://pytorch.org/rl"><img src="../assets/logos/torchrl.png" alt="" height="12"></a> TorchRL (`torchrl_env.py`, `SharpeArenaTorchRLEnv`) | Contract-tested | `tests/test_torchrl.py`: `torchrl.envs.utils.check_env_specs` passes; the adapter reproduces the engine under `integrations.parity` (`CORE_FIXTURES`); a `torchrl.collectors.Collector` batch survives `torch.save`/`torch.load` and replays its recorded actions against a fresh engine bit-for-bit. The import is guarded behind `_require_torchrl()`; construction raises `TorchRLUnavailable` when `torchrl` is absent. No runnable training recipe exists yet, which is why this stops short of workflow-tested. |
 | <a href="https://www.ray.io"><img src="../assets/logos/ray.svg" alt="" height="14"></a> Ray executor (`ray_executor.py`, INT-06) | Operationally exercised (selected installed-wheel paths) | `tests/test_ray_executor.py`: `run_episodes_local` is checked step-for-step against `integrations.parity.engine_rollout` on `CORE_FIXTURES`; `report_digest` is checked identical across 0, 2 and 3 Ray workers on one seeded batch; `reduce_results`'s double-counting guard (an identical retry result is dropped, a conflicting one is refused) is exercised directly. Historical local run against `ray` 2.58.0: 13 passed, 1 skipped (the no-Ray guard test, which only runs when Ray is absent). Current `wheel-extras` CI installs the Ray extra separately and compares a two-worker episode batch with local execution, including installed-worker identity. This is finite executor coverage, not training. |
 | <a href="https://www.ray.io"><img src="../assets/logos/ray.svg" alt="" height="14"></a> RLlib single- and multi-agent routes (`rllib_env.py`, INT-07) | Operationally exercised (selected installed-wheel paths) | `tests/test_rllib.py`: registration through `ray.tune.registry`, the `TimeLimit`-not-termination horizon wrapper, and the flatten/unflatten round trip checked bit-for-bit against the native engine via `integrations.parity.check_adapter_parity` on `CORE_FIXTURES`, for both the single-agent creator and (guarded on `pettingzoo` too) the multi-agent env against the `MultiAgentSharpeArenaEnv` it wraps. Historical local run against `ray[rllib]` 2.58.0 and `pettingzoo` 1.26.1: 14 passed, 1 skipped. Building and training one PPO iteration (single-agent, and multi-agent with `num_envs_per_env_runner=2`, confirming the upstream "not vectorizable" restriction is stale at 2.58.0) was additionally verified by hand with `torch==2.14.0+cpu`; that step needs `torch`, which is not part of the `ray` extra or this test file, so it is local evidence rather than an automated test. Current `wheel-extras` CI also steps the Tune-registered single-agent route through completion against native observations, rewards and end flags. The multi-agent route and PPO training remain historical local evidence, not coverage of that CI cell. |
@@ -60,13 +62,16 @@ adapters. The paper's evidence uses the Rust engine and the SharpeBench bridge
 directly, not a Gymnasium, PettingZoo, `verifiers`, Stable-Baselines3, TorchRL, or
 Ray rollout.
 
-## Not present in this tree
+## Unsupported and ruled-out routes
+
+No package adapter exists for any route in this table. The HUD and Harbor rows point
+at fixtures that are in this tree; a fixture is not adapter support.
 
 | Ecosystem | Status | Where recorded |
 |---|---|---|
-| CleanRL | Not supported | [CleanRL: dependency ranges don't intersect](#cleanrl-dependency-ranges-dont-intersect), below. |
+| CleanRL | Not supported. The tree holds a CleanRL-style example, listed above, not CleanRL. | [CleanRL: dependency ranges don't intersect](#cleanrl-dependency-ranges-dont-intersect), below. |
 | <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/hud-dark.svg"><img src="../assets/logos/hud.svg" alt="" height="14"></picture> HUD | Local feasibility only, not a supported integration | [HUD: a local feasibility check, now in the tree](#hud-a-local-feasibility-check-now-in-the-tree), below. |
-| <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/harbor-dark.png"><img src="../assets/logos/harbor.png" alt="" height="13"></picture> Harbor | Local feasibility only, not a supported integration | `integrations/harbor/`, recorded in [INT-09](INT-09-harbor-local-feasibility.md). A local job ran end to end under Harbor 0.23.0 on Docker Desktop over WSL2 with a separate-container verifier. Of the seven tampering fixtures run (an eighth, honest, trial is the control), none was caught by a tamper-specific reason code - the grader's two dedicated checks never fired; two were refused on a generic submission/schema code; four were accepted with the attack scoring no better than an honest run; one crashed the trial before grading. The evidence covers that one host: it is not evidence against kernel-level container escape, and network egress is untested because `no-network` is unavailable there. Harbor's built-in job aggregation counts a missing or crashed reward as 0, so a custom metric is required before any job-level number means what it appears to. |
+| <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/harbor-dark.png"><img src="../assets/logos/harbor.png" alt="" height="13"></picture> Harbor | Local feasibility only, not a supported integration | `integrations/harbor/`, recorded in [INT-09](INT-09-harbor-local-feasibility.md). A local job ran end to end under Harbor 0.23.0 on Docker Desktop over WSL2 with a separate-container verifier. Of the seven tampering fixtures run (an eighth, honest, trial is the control), none was caught by a tamper-specific reason code - the grader's two dedicated checks never fired; two were refused on a generic submission/schema code; four were accepted with the attack scoring no better than an honest run; one crashed the trial before grading. The evidence covers that one host: it is not evidence against kernel-level container escape, and network egress is untested because `no-network` is unavailable there. Harbor's built-in job aggregation counts a missing or crashed reward as 0; `integrations/harbor/metric.py` now separates accepted, refused and crashed trials, and that tally predates it. |
 | PufferLib | Ruled out | [Ruled out: PufferLib and EnvPool](#ruled-out-pufferlib-and-envpool), below. |
 | <img src="../assets/logos/envpool.svg" alt="" height="12"> EnvPool | Ruled out | [Ruled out: PufferLib and EnvPool](#ruled-out-pufferlib-and-envpool), below. |
 
@@ -116,7 +121,14 @@ checked directly against each project's published package metadata on 2026-09-23
 were not restated from memory. `0.29.1` and `>=1.0` do not overlap, so no single
 Python environment can install CleanRL and this package's Gymnasium-facing surface
 together today. This is a fact about the current dependency sets, not a statement that
-either project is unwilling to move; no fix is planned here.
+either project is unwilling to move. Arena's floor stays where it is.
+
+`examples/cleanrl-style/ppo_vector.py` is the route offered instead. It is CleanRL-style
+rather than CleanRL: one readable file in the same layout, written fresh for Gymnasium
+1.x, with no vendored code and no CleanRL dependency. It uses `same_step` autoreset and
+keeps termination apart from truncation when bootstrapping. Its tests establish that
+this file runs, not that CleanRL runs here, and no training result or learning claim
+comes from it.
 
 ## HUD: a local feasibility check, now in the tree
 
@@ -135,6 +147,12 @@ fixture's own tool surface between them. `SubprocessRuntime` adds a process boun
 over loopback TCP but shares the host filesystem and network namespace.
 `DockerRuntime`, `ModalRuntime` and `HUDRuntime` were not exercised, because each
 needs Docker execution, an account or a deployment.
+
+The `hud-local-feasibility` CI job installs `hud` 0.6.18 beside the built wheel and runs
+those eleven tests, failing if any of them skipped, with telemetry, analytics and file
+tracking off, no API key and no upload. The job is non-blocking and exercises the same
+two runtimes, so it adds repeat evidence for the fixture, not adapter or isolation
+evidence.
 
 What it does not cover: container or cloud isolation, the control channel's
 authentication surface at the wire level, training-client export, and replay through
@@ -171,6 +189,22 @@ planning reference recorded.
 
 The standalone fixture is present in this tree, but remains a local feasibility
 check rather than a supported package integration. The recorded container run
-does not validate later grader changes. The invalid-UTF-8 and malformed-schema
-repairs have a standalone regression suite (`python scripts/test_harbor_grader.py`);
-Harbor's pre-grader artifact-transfer crash remains a separate upstream boundary.
+does not validate later grader changes, and no Harbor job or container has run since
+any of the following, so the tally above stands as recorded.
+
+- `integrations/harbor/metric.py` reports accepted, refused and crashed trials
+  separately and averages accepted trials only. `--job-dir` reads each trial's
+  `report.json`. Harbor gives a job metric only reward dicts, so the `uv-script` path
+  in `jobs/tampering.yaml` reads the `accepted` field the grader now writes to
+  `reward.json`.
+- A `[[verifier.collect]]` hook in `task.toml` removes and counts symlinks and special
+  files before Harbor collects artifacts, and the grader refuses them as
+  `artifact_tree_unsafe`. This is as far as the task package reaches. The upstream
+  re-upload is unchanged, the hook is best effort, and it runs in the agent's container,
+  so a hook failure or a surviving agent process can still produce the crash, which the
+  metric counts as crashed.
+- The `writable_grader_path` fixture now probes before it writes.
+
+`python scripts/test_harbor_grader.py` covers the grader, the metric, the hook and every
+fixture script on separate local roots. The installed Harbor 0.23.0 parser accepts the
+task and job files. That is logic evidence with no container boundary in it.

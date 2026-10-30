@@ -258,6 +258,19 @@ explicit, per the reference doc's instruction to aggregate on
   HUD task natively is the lower-risk path than generating one from the
   other, and this pass did not need to touch it.
 
+## 9. Later CI coverage, 2026-10-30
+
+The `hud-local-feasibility` CI job runs the eleven tests against the built wheel and
+`hud` 0.6.18 so they no longer skip for want of the SDK, and fails if the count is not
+eleven run and none skipped. It is non-blocking, sets the three disables above and holds
+no key. Before the job was added, the same tests passed on this Windows host against a
+locally built 0.31.0 wheel, with wall times from about 50 to 247 seconds on a loaded
+machine and one process that outlived its passing summary until a timeout killed it.
+That resembles the unresolved slow run in section 4; the cause was not established
+either time. They also passed once in 14 seconds
+on Ubuntu under WSL2 against the published 0.31.0 wheel. The job's first run on GitHub's
+runner is the first evidence from that host. This changes nothing in section 8.
+
 ## Summary
 
 | Question | Answer |
