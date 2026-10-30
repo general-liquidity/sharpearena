@@ -1,0 +1,52 @@
+{
+  "protocol_id": "sharpearena-realism-control",
+  "version": 1,
+  "geometry": {"n_returns": 120, "n_symbols": 4, "abs_acf_lags": 10},
+  "gate": "sharpearena.realism.certify_realism, default thresholds, kind=return",
+  "thresholds": {
+    "tau_market_like": 0.75,
+    "tau_not_market_like_upper": 0.10,
+    "confidence_one_sided": 0.95,
+    "tier_family_size": 3,
+    "exchangeability_margin": 0.0025,
+    "mark_walk_relative_tolerance": 0.05,
+    "impact_exponent_band": [0.4, 0.6],
+    "relaxation_ratio_max": 0.9
+  },
+  "bands": {
+    "diagnostic": {"start": 20000, "count": 256},
+    "confirmation": {"start": 21000, "count": 256},
+    "smoke": {"start": 29000, "count": 8}
+  },
+  "generator": {
+    "tiers": ["calm", "hard", "extreme"],
+    "primary": {"vol_clustering": 0.0},
+    "descriptive": {"vol_clustering": 0.5}
+  },
+  "synthetic_controls": {
+    "pos_garch": {"alpha": 0.08, "beta": 0.90, "nu": 5, "burn": 500, "scale": 0.01},
+    "neg_gauss": {"scale": 0.01},
+    "neg_iid_t": {"nu": 4, "scale": 0.01}
+  },
+  "real_controls": {
+    "stride_returns": 120,
+    "symbols_rule": "first four symbols in sorted order",
+    "datasets": {
+      "crypto-majors-1d.csv": {
+        "sha256": "1854e76e9811387dd1ff3db64308eceb613ad05c9eee0011762eddc48f538a26",
+        "expected_windows": 8
+      },
+      "fx-majors-1d.csv": {
+        "sha256": "eb7267ce8135662ab48407c8c33c8bfd901546063e4acd8c5f1c18163cb09e99",
+        "expected_windows": 34
+      }
+    }
+  },
+  "execution": {
+    "lob": {"n_steps": 120, "mark": "ex_own_mid", "negative_mark": "book_mid",
+            "priority": "seeded_shuffle", "negative_priority": "agent_index",
+            "n_agents": 2, "quote": [3, 3]},
+    "mark_walk": {"walk_quote": [1, 20], "walk_steps": 60, "tight_quote": [1, 1]},
+    "impact_shape": {"impact_exponents": [1.0, 0.5], "seeds_from_band_prefix": 16}
+  }
+}
