@@ -92,11 +92,12 @@ separately rather than reporting a clean zero.
 | Private evaluation seeds | `eval_seeds.sealed_eval_seeds`, salt keyed |
 | Disjoint train and eval bands | `generalization.train_test_seeds`, `dataset.seed_ranges_disjoint` |
 | Explicit curriculum schedule | `curriculum.CurriculumEnv`, `regime_curriculum`, `AdaptiveScheduler` |
-| Worker and lane identity | `vector.SharpeArenaVectorEnv(seeds=...)`, one scenario seed per lane, fixed at construction |
+| Worker and lane identity | `vector.SharpeArenaVectorEnv(seeds=...)`, one scenario seed per lane, set at construction or by an explicit `reset(seed=...)` |
 
-One behaviour an adapter must not assume away: `SharpeArenaVectorEnv.reset(seed=...)`
-ignores the seed. Lane scenarios are chosen at construction. Repeated `reset(seed=None)`
-is therefore not a training-diversity schedule here either, which is what C05 says.
+One behaviour an adapter must not assume away: `SharpeArenaVectorEnv.reset(seed=None)`
+and automatic resets replay the current lane scenarios, and only an explicit
+`reset(seed=...)` rebuilds the lanes. Repeated `reset(seed=None)` is therefore not a
+training-diversity schedule here either, which is what C05 says.
 
 Not owned: worker allocation independent of completion order, and resource accounting
 for a distributed executor. INT-06 owns both. Note for that ticket: Ray tasks are
