@@ -12,3 +12,10 @@ agents:
   - import_path: sa_harbor_fixtures.agents:StaleOutputsAgent
   - import_path: sa_harbor_fixtures.agents:CrossTaskStateAgent
   - import_path: sa_harbor_fixtures.agents:PrivateEvaluatorReadAgent
+
+# Replaces Harbor's default Mean, which counts a crashed trial as reward 0. Needs
+# `uv` on PATH; the path is relative to integrations/harbor, like the rest of this file.
+metrics:
+  - type: uv-script
+    kwargs:
+      script_path: metric.py
