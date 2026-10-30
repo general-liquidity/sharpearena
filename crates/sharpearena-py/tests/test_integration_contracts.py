@@ -7,15 +7,20 @@ Run from the crate dir after ``python -m maturin develop``::
 
 import numpy as np
 import pytest
+from sharpearena import SharpeArenaEnv
 from sharpearena.integrations.contracts import (
+    ACTION_SPACE_DTYPE,
     AUTORESET_MODES_WITH_FINAL_OBS,
+    ENGINE_ACTION_DTYPE,
     ENGINE_EXACTNESS,
     SUPPORTED_AUTORESET_MODES,
     AttemptCounts,
     ContractViolation,
     ExactnessDomain,
     TrustClass,
+    is_float32_exact,
 )
+from sharpearena.vector import SharpeArenaVectorEnv
 
 
 def _counts(**overrides) -> dict:
@@ -135,22 +140,90 @@ def test_a_digest_match_does_not_make_foreign_bytes_safe_to_load():
 def test_every_listed_autoreset_mode_is_one_the_vector_env_accepts(mode):
     # The list is a claim about this package, so it is checked against the constructor
     # rather than against the upstream enum.
-    from sharpearena.vector import SharpeArenaVectorEnv
-
     env = SharpeArenaVectorEnv(num_envs=2, n_symbols=2, n_days=20, autoreset_mode=mode)
     obs, _info = env.reset()
     assert obs["closes"].shape == (2, 2)
 
 
-def test_final_observations_are_surfaced_only_under_the_listed_modes():
-    from sharpearena.vector import SharpeArenaVectorEnv
+@pytest.mark.parametrize("mode", SUPPORTED_AUTORESET_MODES)
+def test_final_observations_are_surfaced_only_under_the_listed_modes(mode):
+    """Runs through the episode end, because that is the only step on which a mode could
+    deliver a terminal payload. A lane is present in ``final_obs`` on that step alone."""
+    n_days = 6
+    env = SharpeArenaVectorEnv(
+        num_envs=1, n_symbols=2, n_days=n_days, autoreset_mode=mode
+    )
+    obs, _info = env.reset()
+    action = np.zeros((1, 2), dtype=np.float32)
 
-    for mode in SUPPORTED_AUTORESET_MODES:
-        env = SharpeArenaVectorEnv(
-            num_envs=1, n_symbols=2, n_days=20, autoreset_mode=mode
-        )
-        env.reset()
-        _obs, _reward, _term, _trunc, infos = env.step(
-            np.zeros((1, 2), dtype=np.float32)
-        )
-        assert ("final_obs" in infos) == (mode in AUTORESET_MODES_WITH_FINAL_OBS)
+    for bar in range(1, n_days + 1):
+        previous = obs["closes"][0].copy()
+        obs, _reward, _term, truncated, infos = env.step(action)
+        ended = bar == n_days
+        assert bool(truncated[0]) == ended
+        if mode not in AUTORESET_MODES_WITH_FINAL_OBS:
+            assert "final_obs" not in infos
+        elif ended:
+            # The terminal observation repeats the last in-window bar, while the
+            # returned batch has already moved on to the new episode.
+            assert np.array_equal(infos["final_obs"][0]["closes"], previous)
+            assert infos["first"][0]
+        else:
+            assert infos["final_obs"][0] is None
+
+
+# -- C02 action dtype boundary, stated in docs/integrations/contracts.md ---------
+
+
+EXACT = np.array([0.123456789123, 0.234567891234], dtype=np.float64)
+
+
+def _scalar_outcome(action) -> tuple[float, float]:
+    env = SharpeArenaEnv(n_symbols=2, n_days=20, seed=1)
+    env.reset()
+    _obs, reward, _term, _trunc, info = env.step(action)
+    return reward, info["nav"]
+
+
+def _vector_outcome(action) -> tuple[float, float]:
+    env = SharpeArenaVectorEnv(seeds=[1], n_symbols=2, n_days=20, autoreset_mode="disabled")
+    env.reset()
+    _obs, rewards, _term, _trunc, infos = env.step(action[None, :])
+    return float(rewards[0]), float(infos["nav"][0])
+
+
+def test_the_stated_dtypes_are_the_ones_the_environments_advertise():
+    scalar = SharpeArenaEnv(n_symbols=2, n_days=20, seed=1)
+    vector = SharpeArenaVectorEnv(num_envs=1, n_symbols=2, n_days=20)
+
+    assert scalar.action_space.dtype == np.dtype(ACTION_SPACE_DTYPE)
+    assert vector.single_action_space.dtype == np.dtype(ACTION_SPACE_DTYPE)
+    assert ENGINE_ACTION_DTYPE == "float64"
+
+
+@pytest.mark.parametrize("outcome", [_scalar_outcome, _vector_outcome])
+def test_a_float32_action_and_its_widening_are_the_same_engine_input(outcome):
+    narrow = EXACT.astype(np.float32)
+    assert outcome(narrow) == outcome(narrow.astype(np.float64))
+
+
+@pytest.mark.parametrize("outcome", [_scalar_outcome, _vector_outcome])
+def test_a_float64_action_reaches_the_engine_unquantised(outcome):
+    """The rule keeps checkpoint replay exact: `step` must not round to the advertised
+    dtype. A cast anywhere on the way in would make these two outcomes equal."""
+    assert not is_float32_exact(EXACT)
+    assert outcome(EXACT) != outcome(EXACT.astype(np.float32))
+
+
+@pytest.mark.parametrize(
+    "action,exact",
+    [
+        pytest.param(np.array([0.1], dtype=np.float32), True, id="float32 value"),
+        pytest.param([0.25, -0.5], True, id="dyadic float64"),
+        pytest.param([0.1], False, id="decimal float64"),
+        pytest.param([1e300], False, id="beyond the float32 range"),
+        pytest.param([float("nan")], False, id="not a number"),
+    ],
+)
+def test_float32_exactness_is_a_bit_for_bit_round_trip(action, exact):
+    assert is_float32_exact(action) is exact

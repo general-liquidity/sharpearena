@@ -147,6 +147,7 @@ from .effective_config import (
     merge_effective_configs,
     resolved_scenario_seed,
     scenario_fingerprint,
+    wrapper_stack,
 )
 from .edge_manifest import (
     DeclaredCandidateLineage,
@@ -388,6 +389,8 @@ from .wrappers import (
     CausalNormalizeObservation,
     CausalNormalizeReward,
     FrameStack,
+    NormalizerNotFittedError,
+    NormalizerStateError,
     RecordEpisodeStatistics,
     TimeLimit,
 )
@@ -508,6 +511,8 @@ __all__ = [
     "TimeLimit",
     "CausalNormalizeObservation",
     "CausalNormalizeReward",
+    "NormalizerNotFittedError",
+    "NormalizerStateError",
     "FrameStack",
     "RecordEpisodeStatistics",
     "train_test_seeds",
@@ -566,6 +571,7 @@ __all__ = [
     "check_env_effective_config",
     "env_effective_config",
     "merge_effective_configs",
+    "wrapper_stack",
     "resolved_scenario_seed",
     "scenario_fingerprint",
     "EVAL_SEEDS",
