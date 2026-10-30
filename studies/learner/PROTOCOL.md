@@ -1,6 +1,6 @@
 # Learner generalization protocol (acceptance rows P18-E and P18-S)
 
-Status: frozen before any pilot. Constants live in `protocol.json`, whose SHA-256 every
+Status: frozen at version 2 before any pilot. Constants live in `protocol.json`, whose SHA-256 every
 artifact records. A change to either file is a new protocol version.
 
 ## Question
@@ -35,8 +35,10 @@ C run only if cell A passes its capacity check.
 
 `SharpeArenaEnv` at 4 symbols and 120 days, tier `hard`, default cost model read back with
 `check_env_effective_config`. A single-agent task with no co-adapting opponents. Each lane is
-one seen seed, and a reset replays that tape, so memorising is possible. The seen band is the
-training lane list; dev, pilot-unseen and held-out bands never enter training. `calm` and
+assigned seen seeds and a reset replays the next of them, so memorising is possible. Training
+uses 16 lanes in every cell. In cells A and B each lane holds one seed; in cell C seeds are dealt
+to lanes and cycle at each reset, so rollout size and optimiser updates match across cells. The
+seen band is the training seed list; dev, pilot-unseen and held-out bands never enter training. `calm` and
 `extreme` are evaluated zero-shot on the held-out seed numbers as a secondary transfer read.
 
 Observation: the normalised `closes`, `positions` and `cash`. Holdings are observed, which
@@ -131,6 +133,12 @@ recorded. Exclusions are not allowed.
 
 Beating a control is a separate question, read on held-out excess against each control with
 Holm correction over the controls. It never changes the gap verdict.
+
+## Amendments
+
+Version 2, before any run: a fixed 16 lanes, with seeds cycling in cell C. Version 1 tied the lane
+count to the seed count, which would have changed rollout size and updates per environment step
+between cells and broken the equal budget.
 
 ## Publication
 

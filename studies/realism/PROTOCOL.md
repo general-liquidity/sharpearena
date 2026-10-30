@@ -1,6 +1,6 @@
 # Realism control protocol (acceptance rows P13-R and P14-R)
 
-Status: frozen before any graded run. Constants live in `protocol.json`, whose SHA-256
+Status: frozen at version 2 before any graded run. Constants live in `protocol.json`, whose SHA-256
 every artifact records. A change to either file is a new protocol version, and results
 under the old version keep their label.
 
@@ -93,7 +93,7 @@ distributions unless stated.
 | Check | Known good | Known bad | Rule |
 |---|---|---|---|
 | E1 seat exchangeability | two identical quoters, `seeded_shuffle` | `agent_index` | the 90 percent CI of mean fill share minus 0.5 lies inside plus or minus 0.0025; the bad arm's lies entirely above it |
-| E2 mark walk | `mark="ex_own_mid"` | `mark="book_mid"` | absolute mean of reward minus final value is at most 5 percent of mean final value; the bad arm exceeds it |
+| E2 mark walk | `mark="ex_own_mid"` | `mark="book_mid"` | P&L on steps where the agent has no fill is at most 5 percent of total absolute P&L; the bad arm exceeds it. Reward minus final value is reported as a descriptive line |
 | E3 impact shape | none shipped | none shipped | descriptive: `meta_order_impact_shape` at exponents 1 and 0.5, compared with an exponent in [0.4, 0.6] and relaxation ratio at most 0.9 |
 
 E3 is expected to fail. The kernel is reported as linear and non-relaxing at both settings,
@@ -106,6 +106,13 @@ into the gate, never touches the diagnostic or confirmation seeds, and its numbe
 threshold. `diagnostic` runs next. `confirmation` refuses to start until a diagnostic summary
 exists. Both refuse a dirty tree or an unknown dataset hash. Final runs happen on the merged
 engine.
+
+## Amendments
+
+Version 2, before any diagnostic or confirmation seed ran. The version 1 E2 rule compared
+reward with final value, but under `book_mid` the two agree by construction, so its bad arm
+could never be detected. The smoke run exposed this. E2 now measures what `book_mid` gets
+wrong: P&L booked on steps where the agent traded with nobody. No threshold moved.
 
 ## Reporting
 

@@ -1,6 +1,6 @@
 {
   "protocol_id": "sharpearena-realism-control",
-  "version": 1,
+  "version": 2,
   "geometry": {"n_returns": 120, "n_symbols": 4, "abs_acf_lags": 10},
   "gate": "sharpearena.realism.certify_realism, default thresholds, kind=return",
   "thresholds": {
@@ -9,7 +9,7 @@
     "confidence_one_sided": 0.95,
     "tier_family_size": 3,
     "exchangeability_margin": 0.0025,
-    "mark_walk_relative_tolerance": 0.05,
+    "no_fill_pnl_share_max": 0.05,
     "impact_exponent_band": [0.4, 0.6],
     "relaxation_ratio_max": 0.9
   },
