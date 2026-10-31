@@ -13,9 +13,13 @@ public import Init.Grind
 This module formalizes the deadline classifier, append-only effective-revision rule,
 contract binding, and fixed-point Brier identity used by SharpeArena's forecast evidence.
 
-The model is not mechanically linked to the Python implementation. No Rust, Python or TOML file
-references a declaration in this module, and there is no extraction or refinement proof relating
-the two. Separate executable tests cover rules this model states, independently of it:
+The model is linked to the Python implementation by one mechanism only: the shared case table
+`formal/cases/forecast.json`, which `formal/SharpeArenaFormal/Cases.lean` evaluates against
+`classify`, `effectiveClaim`, `rebind` and `brierNumerator` while the library builds, and which
+`crates/sharpearena-py/tests/test_formal_cases.py` evaluates against `submit`, `effective_claims`
+and `score_claim`. There is no extraction or refinement proof relating the two, and agreement on a
+finite table is not one. Separate executable tests cover rules this model states, independently of
+it:
 `crates/sharpearena-py/tests/test_forecast_evidence.py` exercises the eligibility window, late and
 pre-open attempts, contract-byte reuse and the fixed-point Brier identity against the Python
 implementation.
@@ -44,9 +48,8 @@ evidence (`brierNumerator`; Arena's descriptive counterpart is the `brier` entry
 `crates/sharpearena-py/python/sharpearena/deferred.py`).
 
 Assumes: `Nat` timestamps, an integer fixed-point probability `scale > 0`, and no
-floating-point semantics. Nothing mechanically links the model to the Python implementation:
-this module is not an extraction of it and carries no refinement proof. Separate executable tests
-cover several of the same rules independently of the model.
+floating-point semantics. This module is not an extraction of the Python implementation and
+carries no refinement proof; the shared case table is the only mechanical link, on its cases.
 
 The list supplied to `effectiveClaim` is append order. Ordinals label records;
 this model does not prove their monotonic allocation, hash collision resistance,
@@ -58,12 +61,12 @@ step, terminal, fill and accounting transitions are covered by executable proper
 against the shipped functions in `crates/sharpearena/tests/kernel_properties.rs`, not by
 this model.
 
-Check: the CI scope check (scripts/check-lean-scope.py) proves only that every repository path
-named in backticks in this block exists. It does not prove that the rules described here still
-correspond to the code at that path.
+Check: the CI scope check (scripts/check-lean-scope.py) proves that every repository path named in
+backticks in this block exists and that every production symbol named in backticks occurs in a file
+the block names. It does not prove that the rules described here still correspond to that code.
 -/
 
-public section
+@[expose] public section
 
 namespace SharpeArenaFormal
 

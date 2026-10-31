@@ -1,0 +1,87 @@
+inductive SharpeArenaFormal.ClaimBinding : Type
+def SharpeArenaFormal.ClaimBinding.claimId : SharpeArenaFormal.ClaimBinding → String
+def SharpeArenaFormal.ClaimBinding.contractDigest : SharpeArenaFormal.ClaimBinding → String
+constructor SharpeArenaFormal.ClaimBinding.mk : String → String → SharpeArenaFormal.ClaimBinding
+inductive SharpeArenaFormal.ClaimRevision : Type
+def SharpeArenaFormal.ClaimRevision.claimId : SharpeArenaFormal.ClaimRevision → String
+constructor SharpeArenaFormal.ClaimRevision.mk : String → SharpeArenaFormal.Revision → SharpeArenaFormal.ClaimRevision
+def SharpeArenaFormal.ClaimRevision.revision : SharpeArenaFormal.ClaimRevision → SharpeArenaFormal.Revision
+inductive SharpeArenaFormal.Revision : Type
+constructor SharpeArenaFormal.Revision.mk : Nat → SharpeArenaFormal.RevisionStatus → SharpeArenaFormal.Revision
+def SharpeArenaFormal.Revision.ordinal : SharpeArenaFormal.Revision → Nat
+def SharpeArenaFormal.Revision.status : SharpeArenaFormal.Revision → SharpeArenaFormal.RevisionStatus
+inductive SharpeArenaFormal.RevisionStatus : Type
+constructor SharpeArenaFormal.RevisionStatus.eligible : SharpeArenaFormal.RevisionStatus
+constructor SharpeArenaFormal.RevisionStatus.late : SharpeArenaFormal.RevisionStatus
+def SharpeArenaFormal.RevisionStatus.ofNat : Nat → SharpeArenaFormal.RevisionStatus
+  value: fun n => bif n.ble 0 then SharpeArenaFormal.RevisionStatus.rejected else bif n.ble 1 then SharpeArenaFormal.RevisionStatus.eligible else SharpeArenaFormal.RevisionStatus.late
+theorem SharpeArenaFormal.RevisionStatus.ofNat_ctorIdx : ∀ (x : SharpeArenaFormal.RevisionStatus), SharpeArenaFormal.RevisionStatus.ofNat x.ctorIdx = x
+  axioms: []
+constructor SharpeArenaFormal.RevisionStatus.rejected : SharpeArenaFormal.RevisionStatus
+def SharpeArenaFormal.RevisionStatus.toCtorIdx : SharpeArenaFormal.RevisionStatus → Nat
+  value: SharpeArenaFormal.RevisionStatus.ctorIdx
+def SharpeArenaFormal.applyClaimRevision : String → Option Nat → SharpeArenaFormal.ClaimRevision → Option Nat
+  value: fun claimId current record => if record.claimId = claimId then SharpeArenaFormal.applyRevision current record.revision else current
+def SharpeArenaFormal.applyRevision : Option Nat → SharpeArenaFormal.Revision → Option Nat
+  value: fun current revision => if revision.status = SharpeArenaFormal.RevisionStatus.eligible then Option.some revision.ordinal else current
+theorem SharpeArenaFormal.applyRevision_eligible : ∀ (current : Option Nat) (ordinal : Nat), SharpeArenaFormal.applyRevision current { ordinal := ordinal, status := SharpeArenaFormal.RevisionStatus.eligible } = Option.some ordinal
+  axioms: [propext]
+theorem SharpeArenaFormal.applyRevision_late : ∀ (current : Option Nat) (ordinal : Nat), SharpeArenaFormal.applyRevision current { ordinal := ordinal, status := SharpeArenaFormal.RevisionStatus.late } = current
+  axioms: [propext]
+theorem SharpeArenaFormal.applyRevision_rejected : ∀ (current : Option Nat) (ordinal : Nat), SharpeArenaFormal.applyRevision current { ordinal := ordinal, status := SharpeArenaFormal.RevisionStatus.rejected } = current
+  axioms: [propext]
+def SharpeArenaFormal.brierNumerator : Int → Int → Int → Int
+  value: fun probability truth scale => truth * SharpeArenaFormal.intSquare (scale - probability) + (scale - truth) * SharpeArenaFormal.intSquare probability
+theorem SharpeArenaFormal.brierNumerator_decomposition : ∀ (probability truth scale : Int), SharpeArenaFormal.brierNumerator probability truth scale = truth * (scale - truth) * scale + scale * SharpeArenaFormal.intSquare (probability - truth)
+  axioms: [Classical.choice, Quot.sound, propext]
+theorem SharpeArenaFormal.brierNumerator_minimized : ∀ (probability truth scale : Int), 0 ≤ scale → SharpeArenaFormal.brierNumerator truth truth scale ≤ SharpeArenaFormal.brierNumerator probability truth scale
+  axioms: [Classical.choice, Quot.sound, propext]
+theorem SharpeArenaFormal.brierNumerator_unique : ∀ {probability truth scale : Int}, 0 < scale → SharpeArenaFormal.brierNumerator probability truth scale = SharpeArenaFormal.brierNumerator truth truth scale → probability = truth
+  axioms: [Classical.choice, Quot.sound, propext]
+def SharpeArenaFormal.classify : Nat → Nat → Nat → SharpeArenaFormal.RevisionStatus
+  value: fun opensAt deadline submittedAt => if submittedAt < opensAt then SharpeArenaFormal.RevisionStatus.rejected else if deadline < submittedAt then SharpeArenaFormal.RevisionStatus.late else SharpeArenaFormal.RevisionStatus.eligible
+theorem SharpeArenaFormal.classify_eligible_iff : ∀ (opensAt deadline submittedAt : Nat), SharpeArenaFormal.classify opensAt deadline submittedAt = SharpeArenaFormal.RevisionStatus.eligible ↔ opensAt ≤ submittedAt ∧ submittedAt ≤ deadline
+  axioms: [Classical.choice, Quot.sound, propext]
+theorem SharpeArenaFormal.classify_late : ∀ {opensAt deadline submittedAt : Nat}, opensAt ≤ deadline → deadline < submittedAt → SharpeArenaFormal.classify opensAt deadline submittedAt = SharpeArenaFormal.RevisionStatus.late
+  axioms: [Classical.choice, Quot.sound, propext]
+theorem SharpeArenaFormal.classify_rejected : ∀ {opensAt deadline submittedAt : Nat}, submittedAt < opensAt → SharpeArenaFormal.classify opensAt deadline submittedAt = SharpeArenaFormal.RevisionStatus.rejected
+  axioms: [Classical.choice, Quot.sound, propext]
+def SharpeArenaFormal.effectiveClaim : String → List SharpeArenaFormal.ClaimRevision → Option Nat
+  value: fun claimId history => List.foldl (SharpeArenaFormal.applyClaimRevision claimId) Option.none history
+theorem SharpeArenaFormal.effectiveClaim_append_eligible : ∀ (claimId : String) (history : List SharpeArenaFormal.ClaimRevision) (ordinal : Nat), SharpeArenaFormal.effectiveClaim claimId (history ++ [{ claimId := claimId, revision := { ordinal := ordinal, status := SharpeArenaFormal.RevisionStatus.eligible } }]) = Option.some ordinal
+  axioms: [Quot.sound, propext]
+theorem SharpeArenaFormal.effectiveClaim_append_ineligible : ∀ (claimId : String) (history : List SharpeArenaFormal.ClaimRevision) (record : SharpeArenaFormal.ClaimRevision), record.revision.status ≠ SharpeArenaFormal.RevisionStatus.eligible → SharpeArenaFormal.effectiveClaim claimId (history ++ [record]) = SharpeArenaFormal.effectiveClaim claimId history
+  axioms: [Quot.sound, propext]
+theorem SharpeArenaFormal.effectiveClaim_append_late : ∀ (claimId : String) (history : List SharpeArenaFormal.ClaimRevision) (ordinal : Nat), SharpeArenaFormal.effectiveClaim claimId (history ++ [{ claimId := claimId, revision := { ordinal := ordinal, status := SharpeArenaFormal.RevisionStatus.late } }]) = SharpeArenaFormal.effectiveClaim claimId history
+  axioms: [Quot.sound, propext]
+theorem SharpeArenaFormal.effectiveClaim_append_other : ∀ (claimId : String) (history : List SharpeArenaFormal.ClaimRevision) (record : SharpeArenaFormal.ClaimRevision), record.claimId ≠ claimId → SharpeArenaFormal.effectiveClaim claimId (history ++ [record]) = SharpeArenaFormal.effectiveClaim claimId history
+  axioms: [Quot.sound, propext]
+def SharpeArenaFormal.instDecidableEqClaimBinding : DecidableEq SharpeArenaFormal.ClaimBinding
+def SharpeArenaFormal.instDecidableEqClaimBinding.decEq : (x x_1 : SharpeArenaFormal.ClaimBinding) → Decidable (x = x_1)
+def SharpeArenaFormal.instDecidableEqClaimRevision : DecidableEq SharpeArenaFormal.ClaimRevision
+def SharpeArenaFormal.instDecidableEqClaimRevision.decEq : (x x_1 : SharpeArenaFormal.ClaimRevision) → Decidable (x = x_1)
+def SharpeArenaFormal.instDecidableEqRevision : DecidableEq SharpeArenaFormal.Revision
+def SharpeArenaFormal.instDecidableEqRevision.decEq : (x x_1 : SharpeArenaFormal.Revision) → Decidable (x = x_1)
+def SharpeArenaFormal.instDecidableEqRevisionStatus : DecidableEq SharpeArenaFormal.RevisionStatus
+def SharpeArenaFormal.instReprClaimBinding : Repr SharpeArenaFormal.ClaimBinding
+def SharpeArenaFormal.instReprClaimBinding.repr : SharpeArenaFormal.ClaimBinding → Nat → Std.Format
+def SharpeArenaFormal.instReprClaimRevision : Repr SharpeArenaFormal.ClaimRevision
+def SharpeArenaFormal.instReprClaimRevision.repr : SharpeArenaFormal.ClaimRevision → Nat → Std.Format
+def SharpeArenaFormal.instReprRevision : Repr SharpeArenaFormal.Revision
+def SharpeArenaFormal.instReprRevision.repr : SharpeArenaFormal.Revision → Nat → Std.Format
+def SharpeArenaFormal.instReprRevisionStatus : Repr SharpeArenaFormal.RevisionStatus
+def SharpeArenaFormal.instReprRevisionStatus.repr : SharpeArenaFormal.RevisionStatus → Nat → Std.Format
+def SharpeArenaFormal.intSquare : Int → Int
+  value: fun value => value * value
+theorem SharpeArenaFormal.intSquare_nonneg : ∀ (value : Int), 0 ≤ SharpeArenaFormal.intSquare value
+  axioms: [propext]
+def SharpeArenaFormal.rebind : SharpeArenaFormal.ClaimBinding → String → Option SharpeArenaFormal.ClaimBinding
+  value: fun prior candidateDigest => if candidateDigest = prior.contractDigest then Option.some prior else Option.none
+theorem SharpeArenaFormal.rebind_accepted_matches_candidate : ∀ {prior result : SharpeArenaFormal.ClaimBinding} {candidateDigest : String}, SharpeArenaFormal.rebind prior candidateDigest = Option.some result → candidateDigest = result.contractDigest
+  axioms: [Classical.choice, Quot.sound, propext]
+theorem SharpeArenaFormal.rebind_accepted_preserves_claim : ∀ {prior result : SharpeArenaFormal.ClaimBinding} {candidateDigest : String}, SharpeArenaFormal.rebind prior candidateDigest = Option.some result → result.claimId = prior.claimId
+  axioms: [Classical.choice, Quot.sound, propext]
+theorem SharpeArenaFormal.rebind_accepted_preserves_digest : ∀ {prior result : SharpeArenaFormal.ClaimBinding} {candidateDigest : String}, SharpeArenaFormal.rebind prior candidateDigest = Option.some result → result.contractDigest = prior.contractDigest
+  axioms: []
+theorem SharpeArenaFormal.rebind_changed_digest_refused : ∀ (prior : SharpeArenaFormal.ClaimBinding) (candidateDigest : String), candidateDigest ≠ prior.contractDigest → SharpeArenaFormal.rebind prior candidateDigest = Option.none
+  axioms: [propext]
