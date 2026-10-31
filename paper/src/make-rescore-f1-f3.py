@@ -46,6 +46,7 @@ from sharpearena.kernel_score import (
     kernel_deflated_sharpe,
     kernel_score_difference,
     kernel_score_or_unavailable,
+    seed_pass_tally,
 )
 
 from provenance_common import sha256
@@ -119,25 +120,14 @@ def rescore_policy(
     ``run_baselines`` writes for the same series, so the two cannot part silently.
     """
     pooled = [value for series in per_seed for value in series]
-    passed: list[float | str] = []
-    for series in per_seed:
-        composite = _composite(series, trials) if len(series) >= 2 else {}
-        score = kernel_score_or_unavailable(composite)
-        passed.append(
-            score
-            if is_kernel_score_unavailable(score)
-            else float(bool(composite.get("passed_k", False)))
-        )
+    # Every seed is scored, as run_baselines does, so an unscorable seed stays in the
+    # pass-rate denominator as not passed.
+    tally = seed_pass_tally([_composite(series, trials) for series in per_seed])
     composite = _composite(pooled, trials) if len(pooled) >= 2 else {}
-    passed_error = next((value for value in passed if is_kernel_score_unavailable(value)), None)
     row: dict = {
         "policy": policy,
         "deflated_sharpe": kernel_score_or_unavailable(composite),
-        "passed_k_rate": (
-            passed_error
-            if passed_error is not None
-            else (float(np.mean(passed)) if passed else "unavailable: no seed observations")
-        ),
+        **tally,
         "mean_return": float(np.mean(pooled)) if pooled else 0.0,
     }
     try:
@@ -234,15 +224,10 @@ def _pooled_dsr(series: list[list[float]]) -> float:
 def evaluate_band(per_seed: list[list[float]], trials: int) -> dict:
     """``evaluate_seeds`` over recorded series. A test holds the two together."""
     pooled = _pooled(per_seed)
-    passed = [
-        1.0 if _composite(series, trials).get("passed_k", False) else 0.0
-        for series in per_seed
-        if len(series) >= 2
-    ]
     return {
         "n_seeds": len(per_seed),
         "deflated_sharpe": kernel_score_or_unavailable(_composite(pooled, trials)),
-        "passed_k_rate": float(np.mean(passed)) if passed else 0.0,
+        **seed_pass_tally([_composite(series, trials) for series in per_seed]),
         "mean_return": float(np.mean(pooled)) if pooled else 0.0,
     }
 
