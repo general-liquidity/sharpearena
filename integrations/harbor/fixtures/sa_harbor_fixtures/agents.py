@@ -121,3 +121,48 @@ class PrivateEvaluatorReadAgent(TamperAgent):
     @override
     def name() -> str:
         return "sa-private-evaluator-read"
+
+
+class FifoArtifactAgent(TamperAgent):
+    case = "fifo_artifact"
+
+    @staticmethod
+    @override
+    def name() -> str:
+        return "sa-fifo-artifact"
+
+
+class SparseArtifactAgent(TamperAgent):
+    case = "sparse_artifact"
+
+    @staticmethod
+    @override
+    def name() -> str:
+        return "sa-sparse-artifact"
+
+
+class LingeringSwapAgent(TamperAgent):
+    case = "lingering_swap"
+
+    @staticmethod
+    @override
+    def name() -> str:
+        return "sa-lingering-swap"
+
+
+class PlantedInterpreterAgent(TamperAgent):
+    case = "planted_interpreter"
+
+    @staticmethod
+    @override
+    def name() -> str:
+        return "sa-planted-interpreter"
+
+
+class NetworkEgressAgent(TamperAgent):
+    case = "network_egress"
+
+    @staticmethod
+    @override
+    def name() -> str:
+        return "sa-network-egress"
