@@ -55,8 +55,8 @@ actual behaviour rather than a floor (the Tune-registry requirement, the
 Dict-observation RLModule failure, and whether multi-agent env runners
 vectorise have each changed across recent Ray releases), and INT-12 similarly
 against TorchRL's 0.14 `EnvBase` contract. The installed-wheel matrix now has
-SB3 and TorchRL cells with constrained CPU-only Torch, plus finite Ray worker
-and single-agent RLlib execution. See the "Installed-wheel compatibility
+SB3, TorchRL and Ray cells with constrained CPU-only Torch, each running its
+learner test file, plus finite Ray worker execution. See the "Installed-wheel compatibility
 matrix" section below for what is and is not exercised against a built wheel
 for `sb3`, `torchrl` and `ray`. Generic Gymnasium and Farama compatibility does
 not establish every downstream consumer contract. The named routes now have
@@ -140,10 +140,11 @@ full 1893-test suite passed under it (recorded above as this row's evidence run)
 but that pin conflict is why `ray` is not installed in the source-suite job and why
 `tests/test_ray_executor.py` and `tests/test_rllib.py` are exercised locally
 rather than in that pinned source matrix. The separate `wheel-extras` Ray cell
-installs a separately resolved consumer graph and exercises workers and the
-single-agent adapter, not those full suites or learning. `torch` is needed only to actually build and
-train an RLlib `AlgorithmConfig` (`AlgorithmConfig.build_algo()`); it is not part
-of the `ray` extra, and `sharpearena_env_creator`, registration, and config
+installs a separately resolved consumer graph and exercises workers, the
+single-agent adapter and `tests/test_rllib_learner.py`, not those two full suites.
+`torch` is needed only to actually build and train an RLlib `AlgorithmConfig`
+(`AlgorithmConfig.build_algo()`); it is not part of the `ray` extra, so that cell
+installs it alongside, and `sharpearena_env_creator`, registration, and config
 construction were all checked without it. See
 [`docs/interfaces.md`](../interfaces.md#ray-and-rllib) for the runnable examples
 and their captured output.
@@ -195,7 +196,7 @@ a newly declared extra gets a cell automatically, close that gap:
 |---|---|
 | `wheel-install-import` | Builds the wheel with `maturin build --locked` and installs it into a clean venv outside the checkout, on the declared floor (3.9), the version the rest of CI uses (3.12), and the newest released interpreter (3.14), all on Linux; then 3.12 on macOS and Windows. Drives the native binding and the packaged Gymnasium adapter. |
 | `wheel-no-extras` | Installs the bare wheel with none of the seven optional extras present. Steps the base environment and checks every guarded module, including Ray/RLlib, imports and refuses by name when called. This covers absence guards, not execution with dependencies installed. |
-| `wheel-extras` | A cell per exercised extra (`verifiers`, `minari`, `pettingzoo`, `mcp`, `sb3`, `torchrl`, `ray`). Installs the built wheel with its extra and drives the adapter. SB3 and TorchRL constrain Torch 2.9.0+cpu. SB3 compares two lanes against the native vector route through completion and checks terminal-observation delivery. TorchRL compares TensorDict observations, rewards and all three end flags against native Gymnasium through completion. Both cells reject deliberate reward corruption; TorchRL also rejects corrupted truncation flags. Ray compares distributed episode reports with local execution and steps a Tune-registered single-agent environment through completion against native observations/rewards/end flags; forced-local execution and corrupted RLlib rewards must fail. |
+| `wheel-extras` | A cell per exercised extra (`verifiers`, `minari`, `pettingzoo`, `mcp`, `sb3`, `torchrl`, `ray`). Installs the built wheel with its extra and drives the adapter. SB3 and TorchRL constrain Torch 2.9.0+cpu. SB3 compares two lanes against the native vector route through completion and checks terminal-observation delivery. TorchRL compares TensorDict observations, rewards and all three end flags against native Gymnasium through completion. Both cells reject deliberate reward corruption; TorchRL also rejects corrupted truncation flags. Ray compares distributed episode reports with local execution and steps a Tune-registered single-agent environment through completion against native observations/rewards/end flags; forced-local execution and corrupted RLlib rewards must fail. The SB3, TorchRL, Minari and Ray cells also run their learner test file through `scripts/run-learner-tests.py`, which fails on any skip. The Ray cell adds PettingZoo and constrains Torch 2.9.0+cpu for it, in its own resolution. |
 
 Representative rather than combinatorial: the interpreters between 3.9 and 3.14 differ
 from each other in nothing this package touches, so the OS axis and the version axis
@@ -212,11 +213,11 @@ CPU-only cells are separate from the source suite, where torch-dependent tests
 can still skip. `INSTALL_MATRIX_EXCLUDED` and `EXERCISES` are checked as an
 exhaustive partition; a recorded exclusion is not a passing installed route.
 
-The local Ray consumer resolved 2.59.0, with no learning framework installed.
-This verifies finite worker and single-agent environment execution, not PPO
-training or the Ray/PettingZoo multi-agent combination. Historical 2.58.0
-training evidence is not replaced or extended by these checks. Neither these
-cells nor their dependency guards establish every permitted dependency version.
+The local Ray consumer resolved 2.59.0 with `torch` 2.9.0+cpu and PettingZoo
+1.27.0, and ran one PPO iteration, a checkpoint and a restore on both RLlib routes,
+including multi-agent vectorisation. That covers the route working, not a policy
+learning anything. Neither these cells nor their dependency guards establish every
+permitted dependency version.
 
 The INT-02 tests were additionally run against an installed wheel
 (`sharpearena-0.31.0-cp312-cp312-win_amd64.whl`, built from this tree) in a clean
