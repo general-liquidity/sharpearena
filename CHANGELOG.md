@@ -51,6 +51,12 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
   0.23.0's Docker provider has no pids or storage limit, documented as an open
   limit. Docker was down, so these ran through the shell harness only; no
   container job was run.
+- paper: the F1/F3 rescore producer tallies pass rates with `seed_pass_tally`, as
+  `run_baselines` and `evaluate_seeds` now do. The committed rescore-v1 files are
+  not rewritten.
+- local-agents: scaffold labels resolve through `SCAFFOLD_RENDERERS`; unknown
+  labels are refused, and records name the renderer class and a render-probe
+  digest.
 - Vector reset now rebuilds native lanes for an integer base or per-lane seed
   list, preserving construction options and updating seed/data readbacks.
   Positive `max_episode_steps` caps are enforced in the native batch with
@@ -144,6 +150,16 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ### Added
 
+- Lean model: CI pins every theorem's elaborated statement in
+  `formal/statements.txt`, refuses extra axioms and `sorryAx` with a repo-owned
+  check, and runs negative controls that plant a sorry, an axiom, an undeclared
+  variable, a weakened statement and a wrong case row. `autoImplicit false` and
+  warnings as errors apply; every theorem has a decided non-vacuity witness and a
+  refuted wrong definition.
+- Lean model: shared conformance cases in `formal/cases/forecast.json` are checked
+  by Lean and by the production tests (classification, effective revision,
+  binding and Brier). `scripts/check-lean-scope.py` checks that named production
+  symbols, Main results and non-vacuity entries exist, and has its own tests.
 - bench: `bench-int13 --condition` records the run's machine condition.
 - `autoreset_scenarios="fresh_v1"` on the vector env: a frozen, deterministic
   per-lane scenario stream confined to the training band, with drawn seeds in
@@ -253,6 +269,10 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ### Changed
 
+- local-agents: field cells run in a seeded, round-permuted interleaved order
+  across models (`order_seed`, recorded in `plan_sha256`); shard membership and
+  scored outcomes are unchanged. Because `plan_sha256` changes, field journals
+  written before this change do not resume.
 - `check_env_effective_config` now refuses a wrapped environment unless its stack
   is declared.
 - `SPEC_HASH` moves from `0b426f58a65094c9` to `c5cdeccb4e3c9cfe`
