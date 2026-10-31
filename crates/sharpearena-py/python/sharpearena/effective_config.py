@@ -24,14 +24,22 @@ code path independent of environment construction, and the two fingerprints must
 a change in the published split rule itself is not something either side can detect.
 Nor does the fingerprint speak for anything downstream of the tape: costs, execution
 noise and policy wiring are outside its reach.
+
+**Wrapper order.** The same tape behind a different wrapper stack is a different
+observation problem, so :func:`wrapper_stack` is read off the environment and carried
+in the readback. It binds the classes and their order, innermost first. It does not bind
+a wrapper's constructor arguments or a normalizer's ``training`` flag or statistics.
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from typing import Any, Optional
 
+import gymnasium as gym
 import numpy as np
+from gymnasium.vector import VectorWrapper
 
 from .sharpearena_py import generate_scenario_json
 
@@ -104,20 +112,42 @@ def scenario_fingerprint(
     )
 
 
+def wrapper_stack(env: Any) -> list[str]:
+    """The Gymnasium wrappers around ``env`` as qualified class names, innermost first.
+
+    Scalar and vector wrappers are both walked. A bare environment yields an empty list.
+    """
+    layers = []
+    current = env
+    while isinstance(current, (gym.Wrapper, VectorWrapper)):
+        cls = type(current)
+        layers.append(f"{cls.__module__}.{cls.__qualname__}")
+        current = current.env
+    layers.reverse()
+    return layers
+
+
 def env_effective_config(env: Any) -> dict:
     """Read one environment's effective configuration out of the native binding.
 
-    Accepts a :class:`~sharpearena.gym.SharpeArenaEnv` or the native ``TradingEnv``
-    underneath it.
+    Accepts a :class:`~sharpearena.gym.SharpeArenaEnv`, any stack of wrappers around
+    one, or the native ``TradingEnv`` underneath it. The block's ``wrapper_stack`` is
+    read from the object passed in; the rest comes from the native binding.
     """
-    native = getattr(env, "_env", env)
+    stack = wrapper_stack(env)
+    base = env
+    while isinstance(base, (gym.Wrapper, VectorWrapper)):
+        base = base.env
+    native = getattr(base, "_env", base)
     raw = getattr(native, "effective_config", None)
     if raw is None:
         raise EffectiveConfigError(
             "environment exposes no effective_config readback; the installed native "
             "binding predates it, so the arm cannot be verified"
         )
-    return json.loads(raw)
+    effective = json.loads(raw)
+    effective["wrapper_stack"] = stack
+    return effective
 
 
 def check_env_effective_config(
@@ -133,12 +163,15 @@ def check_env_effective_config(
     jump_burst_size: float = 0.0,
     mode: str = "train",
     scenario_seed: Optional[int] = None,
+    wrappers: Sequence[str] = (),
 ) -> dict:
     """Verify one environment against the configuration the caller requested.
 
     Returns the effective block (with the verified fingerprint) on success; raises
     :class:`EffectiveConfigError` naming every disagreement otherwise. ``scenario_seed``
     overrides the derived split for callers that hand the native binding a seed directly.
+    ``wrappers`` is the requested :func:`wrapper_stack`; the default requests none, so a
+    wrapped environment has to be declared.
     """
     effective = env_effective_config(env)
     consumed_seed = (
@@ -156,6 +189,11 @@ def check_env_effective_config(
     )
 
     problems = []
+    if effective["wrapper_stack"] != list(wrappers):
+        problems.append(
+            f"wrapper stack requested {list(wrappers)}, environment ran "
+            f"{effective['wrapper_stack']}"
+        )
     if effective["n_symbols"] != int(n_symbols):
         problems.append(
             f"n_symbols requested {n_symbols}, environment built {effective['n_symbols']}"
@@ -190,11 +228,21 @@ def merge_effective_configs(blocks: dict[Any, dict]) -> dict:
     The shape-invariant fields must agree across every seed in the arm (they disagreeing
     means the arm is not one arm); the per-seed tape fingerprints are kept, since they
     are what a later reader can recheck without rerunning anything.
+
+    ``wrapper_stack`` is one of those invariants, and a block without it is refused
+    because absent is not empty. The merged block carries the key only when the stack
+    is non-empty, so an unwrapped arm keeps the exact shape of the frozen evidence, in
+    which every arm ran the bare environment.
     """
     if not blocks:
         raise EffectiveConfigError("no effective-config readbacks to merge")
-    shared_keys = ("n_symbols", "n_bars", "window_start", "window_end")
+    shared_keys = ("n_symbols", "n_bars", "window_start", "window_end", "wrapper_stack")
     items = list(blocks.items())
+    for seed, block in items:
+        if "wrapper_stack" not in block:
+            raise EffectiveConfigError(
+                f"seed {seed} has no wrapper_stack readback, so its wrapper order is unknown"
+            )
     first_seed, first = items[0]
     for seed, block in items[1:]:
         for key in shared_keys:
@@ -209,8 +257,10 @@ def merge_effective_configs(blocks: dict[Any, dict]) -> dict:
             f"the arm's seeds ran different step counts {sorted(steps)}: this is not one arm"
         )
     merged_steps = {"steps_observed": steps.pop()} if steps else {}
+    merged_stack = {"wrapper_stack": first["wrapper_stack"]} if first["wrapper_stack"] else {}
     return {
         **merged_steps,
+        **merged_stack,
         "n_symbols": first["n_symbols"],
         "n_bars": first["n_bars"],
         "window_start": first["window_start"],

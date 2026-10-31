@@ -414,17 +414,21 @@ Run against `ray[rllib]` 2.58.0. Output:
 sharpearena-single-agent 0
 ```
 
-Both `single_agent_config` and `multi_agent_config` (the latter with every seat on
-one shared policy, since the seats are symmetric by construction) were built and
-trained for one PPO iteration by hand against this Ray build with
-`torch==2.14.0+cpu` installed, including the multi-agent route with
-`num_envs_per_env_runner=2`: both upstream `rllib-env` and `multi-agent-envs`
-pages still state multi-agent setups are not vectorizable, and that restriction is
-stale at 2.58.0 (`MultiAgentEnvRunner.make_env` calls `gymnasium.make_vec` and
-asserts a `VectorMultiAgentEnv` result). `torch` is not part of this package's
-`ray` extra or its CI dependency set, so that training step is local evidence, not
-CI-verified; `docs/integrations/support-status.md` records the distinction. The
-config-construction and flatten-parity tests above run with `ray[rllib]` alone.
+`tests/test_rllib_learner.py` builds both `single_agent_config` and
+`multi_agent_config` (the latter with every seat on one shared policy, since the
+seats are symmetric by construction), trains one PPO iteration, checkpoints and
+restores with bit-for-bit weights. It also trains the multi-agent route with
+`num_envs_per_env_runner=2`: both upstream `rllib-env` and `multi-agent-envs` pages
+still state multi-agent setups are not vectorizable, and that restriction does not
+hold on the Ray this ran against (`MultiAgentEnvRunner.make_env` calls
+`gymnasium.make_vec` and asserts a `VectorMultiAgentEnv` result). `torch` is not part
+of this package's `ray` extra, so the `wheel-extras` Ray cell installs it alongside.
+The config-construction and flatten-parity tests above run with `ray[rllib]` alone.
+
+An `EnvRunner`'s first reset applies the run seed to the scenario, so these configs
+run RLlib on `env_config["seed"]`. Each lane trades that seed plus its lane index; a
+contradicting `seed=` argument and `seed_per_worker=False` are refused, because
+neither could be honoured.
 
 `pip install "sharpearena[ray]"` installs `ray[rllib]>=2.58.0,<3`, bounded rather
 than open like the four extras above: the registry route, the Dict-observation
@@ -434,8 +438,9 @@ against 2.58.0 specifically, not assumed from an older Ray release. `ray[rllib]`
 own CI pin of `gymnasium==1.3.0`
 (`crates/sharpearena-py/ci-requirements.txt`); the base package's
 `gymnasium>=1.0` floor admits 1.2.2 and the full suite passes under it (verified
-here), but that conflict is why `ray`/`rllib` is not installed in CI today and
-these two test files run locally rather than as part of the pinned CI matrix.
+here), but that conflict is why `ray`/`rllib` is not installed in the source
+suite and these two test files run locally rather than as part of that pinned matrix.
+The `wheel-extras` Ray cell resolves separately and runs the RLlib learner tests.
 
 ## HUD and Harbor
 

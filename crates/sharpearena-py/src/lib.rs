@@ -1,14 +1,18 @@
 //! pyo3 bindings for SharpeArena — the leak-free, point-in-time trading-agent
 //! environment. The binding exchanges the wire-contract JSON at the boundary
 //! (observations and decisions are JSON strings), which keeps the surface robust
-//! and identical to the language-agnostic protocol any external agent speaks.
+//! and identical to the language-agnostic protocol any external agent speaks. The JSON
+//! contract stays the canonical wire format; `step_array` and `step_batch_array` are a
+//! numeric fast path over caller-owned buffers for trainers that only need numbers.
 
+use pyo3::buffer::{Element, PyBuffer};
 use pyo3::create_exception;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyType;
 use pyo3::wrap_pyfunction;
 use sharpearena::exec_noise::{perturb as core_perturb_action, ExecNoise};
+use std::collections::VecDeque;
 
 // --- Typed errors across the FFI boundary --------------------------------------------------
 
@@ -100,12 +104,15 @@ use sharpearena::leaderboard_ci::{
     KERNEL_BASE_TRIALS, TRIALS_SR_STD_DEFAULT,
 };
 use sharpearena::lob_market::{OrderBook, OrderKind, Side};
-use sharpearena::market::{EllipticUncertaintySet, MarketClearing, MarketParams};
+use sharpearena::market::{
+    EllipticUncertaintySet, ExecutionSettings, FixedDecisionDelay, MarketClearing,
+    MarketExecutionIdentity, MarketParams,
+};
 use sharpearena::vec_env::AutoresetMode;
 use sharpearena::{
-    generate_scenario, score_returns, CostModel, Dataset, Decision, DistributionMode, Mandate,
-    MandateStyle, RichnessTier, ScenarioSpec, TradingEnv as CoreEnv, VecTradingEnv as CoreVecEnv,
-    Window,
+    generate_scenario, score_returns, Action, AutoresetScenarios, CostModel, Dataset, Decision,
+    DistributionMode, LaneConfig, Mandate, MandateStyle, MarketObservation, Order, RichnessTier,
+    ScenarioSpec, TradingEnv as CoreEnv, VecTradingEnv as CoreVecEnv, Window, FRESH_SEED_BAND,
 };
 use sharpebench_core::process::process_score;
 use sharpebench_core::{LifecycleStep, Phase, ProcessEvent, Subject, Trace};
@@ -118,11 +125,12 @@ fn parse_distribution_mode(mode: &str) -> PyResult<DistributionMode> {
         "extreme" => Ok(DistributionMode::Extreme),
         "cointegrated_pairs" => Ok(DistributionMode::CointegratedPairs),
         "regime_shift" => Ok(DistributionMode::RegimeShift),
+        "martingale_v1" => Ok(DistributionMode::MartingaleV1),
         other => Err(engine_err(
             CODE_INVALID_ARGUMENT,
             format!(
                 "unknown distribution_mode {other:?} (expected calm | hard | extreme | \
-             cointegrated_pairs | regime_shift)"
+             cointegrated_pairs | regime_shift | martingale_v1)"
             ),
         )),
     }
@@ -221,6 +229,80 @@ fn effective_config_json(data: &Dataset, window: &Window, exec_seed: u64) -> PyR
     .to_string())
 }
 
+/// The FIFO of decisions waiting for eligibility under `fixed_delay_bars`.
+///
+/// This carries SharpeBench's `sharpebench.fixed-decision-delay.v1` semantics around the
+/// pinned engine, which predates the setting: a decision made on bar `t` reaches the engine
+/// on bar `t + bars`, is priced and sized there, is not replaced by a later decision, and
+/// never fills past the window. The engine holds on bars with nothing eligible. One
+/// difference from Bench's in-engine queue is stated, not hidden: a decision the engine
+/// would flag as a violation is flagged at eligibility rather than submission, so a
+/// window-tail decision is never validated.
+struct DecisionQueue {
+    bars: usize,
+    waiting: VecDeque<Decision>,
+}
+
+impl DecisionQueue {
+    fn new(bars: Option<usize>) -> PyResult<Option<Self>> {
+        match bars {
+            None => Ok(None),
+            Some(0) => Err(engine_err(
+                CODE_INVALID_ARGUMENT,
+                "fixed_delay_bars must be >= 1; omit it for same-close execution",
+            )),
+            Some(bars) => Ok(Some(Self {
+                bars,
+                waiting: VecDeque::with_capacity(bars + 1),
+            })),
+        }
+    }
+
+    /// Submit `decision` and return what reaches the engine this bar, with whether it was
+    /// a submitted decision. inv: after this call `waiting` holds
+    /// `min(submitted, bars)` decisions, oldest first.
+    fn submit(&mut self, decision: Decision) -> (Decision, bool) {
+        self.waiting.push_back(decision);
+        if self.waiting.len() > self.bars {
+            let eligible = self.waiting.pop_front();
+            (eligible.expect("the queue exceeds bars >= 1"), true)
+        } else {
+            let hold = Decision {
+                orders: Vec::new(),
+                reasoning: String::new(),
+                cost: None,
+            };
+            (hold, false)
+        }
+    }
+
+    fn wire(&self) -> FixedDecisionDelay {
+        FixedDecisionDelay::Fifo { bars: self.bars }
+    }
+}
+
+/// Bind a fixed delay into an environment's effective configuration: the versioned setting
+/// and a fingerprint of the costs and timing together. Absent a delay the block is returned
+/// untouched, so the default readback keeps its bytes.
+fn bind_fixed_delay(
+    effective: String,
+    delay: Option<&DecisionQueue>,
+    costs: &CostModel,
+) -> PyResult<String> {
+    let Some(delay) = delay else {
+        return Ok(effective);
+    };
+    let mut block: serde_json::Value =
+        serde_json::from_str(&effective).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))?;
+    let timing =
+        serde_json::to_value(delay.wire()).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))?;
+    let identity = serde_json::json!({ "costs": costs, "fixed_delay": timing });
+    block["fixed_delay"] = timing;
+    block["execution_fnv1a64"] =
+        serde_json::json!(format!("{:016x}", fnv1a64(identity.to_string().as_bytes())));
+    Ok(block.to_string())
+}
+
 /// Parse the wire `autoreset_mode` label, rejecting unknown modes with a `ValueError`.
 fn parse_autoreset_mode(mode: &str) -> PyResult<AutoresetMode> {
     AutoresetMode::from_label(mode).ok_or_else(|| {
@@ -229,6 +311,118 @@ fn parse_autoreset_mode(mode: &str) -> PyResult<AutoresetMode> {
             format!("unknown autoreset_mode {mode:?} (expected next_step | same_step | disabled)"),
         )
     })
+}
+
+/// Parse the wire `autoreset_scenarios` label, rejecting unknown policies.
+fn parse_autoreset_scenarios(policy: &str) -> PyResult<AutoresetScenarios> {
+    AutoresetScenarios::from_label(policy).ok_or_else(|| {
+        engine_err(
+            CODE_INVALID_ARGUMENT,
+            format!("unknown autoreset_scenarios {policy:?} (expected replay | fresh_v1)"),
+        )
+    })
+}
+
+/// The confidence the Gymnasium adapters state on every order they build. The array path
+/// states the same value, so it records the same decision as the JSON path.
+const ADAPTER_CONFIDENCE: f64 = 0.5;
+
+/// Borrow a caller array as a typed buffer of exactly `shape`.
+///
+/// Every buffer is checked before the engine advances: a refusal after a step would lose
+/// that step, and the caller could not tell.
+fn array_buffer<T: Element>(
+    array: &Bound<'_, PyAny>,
+    name: &str,
+    shape: &[usize],
+    writable: bool,
+) -> PyResult<PyBuffer<T>> {
+    let buffer = PyBuffer::<T>::get(array).map_err(|e| {
+        engine_err(
+            CODE_INVALID_ARGUMENT,
+            format!("{name} is not a compatible array buffer: {e}"),
+        )
+    })?;
+    if buffer.shape() != shape {
+        return Err(engine_err(
+            CODE_INVALID_ARGUMENT,
+            format!("{name} must have shape {shape:?}, got {:?}", buffer.shape()),
+        ));
+    }
+    if writable && buffer.readonly() {
+        return Err(engine_err(
+            CODE_INVALID_ARGUMENT,
+            format!("{name} must be writable"),
+        ));
+    }
+    Ok(buffer)
+}
+
+/// The decision the adapters' JSON path would send for one row of target weights.
+/// JSON cannot carry a non-finite weight, so the array path refuses one too.
+fn array_decision(symbols: &[String], weights: &[f64], reasoning: &str) -> PyResult<Decision> {
+    if weights.iter().any(|weight| !weight.is_finite()) {
+        return Err(engine_err(
+            CODE_INVALID_ARGUMENT,
+            "target weights must be finite",
+        ));
+    }
+    let orders = symbols
+        .iter()
+        .zip(weights)
+        .map(|(symbol, &target_weight)| Order {
+            symbol: symbol.clone(),
+            action: if target_weight > 0.0 {
+                Action::Buy
+            } else if target_weight < 0.0 {
+                Action::Sell
+            } else {
+                Action::Hold
+            },
+            target_weight,
+            confidence: Some(ADAPTER_CONFIDENCE),
+            rationale: String::new(),
+        })
+        .collect();
+    Ok(Decision {
+        orders,
+        reasoning: reasoning.to_owned(),
+        cost: None,
+    })
+}
+
+/// Decode the numeric view of an observation in `symbols` order: the last close and the
+/// held shares per symbol, flat when a symbol is not in the portfolio.
+fn write_observation(
+    observation: &MarketObservation,
+    symbols: &[String],
+    closes: &mut [f64],
+    positions: &mut [f64],
+) -> PyResult<()> {
+    for (index, symbol) in symbols.iter().enumerate() {
+        let snapshot = observation
+            .symbols
+            .iter()
+            .find(|snapshot| &snapshot.symbol == symbol)
+            .ok_or_else(|| {
+                engine_err(
+                    CODE_ENGINE_FAILURE,
+                    format!("observation is missing symbol {symbol}"),
+                )
+            })?;
+        closes[index] = *snapshot.close_history.last().ok_or_else(|| {
+            engine_err(
+                CODE_ENGINE_FAILURE,
+                format!("observation has no close for symbol {symbol}"),
+            )
+        })?;
+        positions[index] = observation
+            .portfolio
+            .iter()
+            .rfind(|position| &position.symbol == symbol)
+            .map_or(0.0, |position| position.shares);
+    }
+    Ok(())
 }
 
 /// A Gym-style, steppable, leak-free trading environment.
@@ -242,6 +436,9 @@ pub struct PyTradingEnv {
     inner: CoreEnv,
     seed: u64,
     effective: String,
+    symbols: Vec<String>,
+    /// `None` is same-close execution, the default.
+    delay: Option<DecisionQueue>,
 }
 
 fn build_window(start: Option<usize>, end: Option<usize>, len: usize) -> Window {
@@ -292,6 +489,7 @@ impl PyTradingEnv {
         jump_burst_probability = 0.0,
         jump_burst_persistence = 0.0,
         jump_burst_size = 0.0,
+        fixed_delay_bars = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -311,7 +509,9 @@ impl PyTradingEnv {
         jump_burst_probability: f64,
         jump_burst_persistence: f64,
         jump_burst_size: f64,
+        fixed_delay_bars: Option<usize>,
     ) -> PyResult<Self> {
+        let delay = DecisionQueue::new(fixed_delay_bars)?;
         let mode = parse_distribution_mode(distribution_mode)?;
         let data = build_dataset(
             n_symbols,
@@ -343,11 +543,18 @@ impl PyTradingEnv {
             max_participation,
         );
         let resolved_exec_seed = exec_seed.unwrap_or(seed);
-        let effective = effective_config_json(&data, &window, resolved_exec_seed)?;
+        let effective = bind_fixed_delay(
+            effective_config_json(&data, &window, resolved_exec_seed)?,
+            delay.as_ref(),
+            &costs,
+        )?;
+        let symbols = data.symbols();
         Ok(PyTradingEnv {
             inner: CoreEnv::new(data, window, costs, resolved_exec_seed),
             seed,
             effective,
+            symbols,
+            delay,
         })
     }
 
@@ -364,6 +571,7 @@ impl PyTradingEnv {
         financing_bps = None,
         max_participation = None,
         exec_seed = None,
+        fixed_delay_bars = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn from_csv(
@@ -378,7 +586,9 @@ impl PyTradingEnv {
         financing_bps: Option<f64>,
         max_participation: Option<f64>,
         exec_seed: Option<u64>,
+        fixed_delay_bars: Option<usize>,
     ) -> PyResult<Self> {
+        let delay = DecisionQueue::new(fixed_delay_bars)?;
         let data = Dataset::from_csv(csv_text).map_err(|e| engine_err(CODE_DATA_UNAVAILABLE, e))?;
         let window = build_window(window_start, window_end, data.len());
         if window.start >= window.end || window.end > data.len() {
@@ -400,11 +610,18 @@ impl PyTradingEnv {
             max_participation,
         );
         let resolved_exec_seed = exec_seed.unwrap_or(seed);
-        let effective = effective_config_json(&data, &window, resolved_exec_seed)?;
+        let effective = bind_fixed_delay(
+            effective_config_json(&data, &window, resolved_exec_seed)?,
+            delay.as_ref(),
+            &costs,
+        )?;
+        let symbols = data.symbols();
         Ok(PyTradingEnv {
             inner: CoreEnv::new(data, window, costs, resolved_exec_seed),
             seed,
             effective,
+            symbols,
+            delay,
         })
     }
 
@@ -427,6 +644,9 @@ impl PyTradingEnv {
     /// Reset to the start of the window; return the first point-in-time
     /// observation as a wire-format JSON string.
     fn reset(&mut self) -> PyResult<String> {
+        if let Some(delay) = &mut self.delay {
+            delay.waiting.clear();
+        }
         let obs = self.inner.reset();
         serde_json::to_string(&obs).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))
     }
@@ -434,32 +654,124 @@ impl PyTradingEnv {
     /// Apply `decision_json` (a wire-format `Decision`) at the current bar and
     /// advance one step. Returns `(observation_json, reward, done, info_json)`,
     /// where `info_json` carries the post-step NAV and this step's process events.
+    /// Under `fixed_delay_bars` the decision joins the FIFO, the eligible decision (or a
+    /// hold) reaches the engine, and `info_json` also carries `decision_eligible`.
     fn step(&mut self, decision_json: &str) -> PyResult<(String, f64, bool, String)> {
         let decision: Decision = serde_json::from_str(decision_json)
             .map_err(|e| engine_err(CODE_INVALID_JSON, format!("invalid decision JSON: {e}")))?;
+        let (decision, eligible) = match &mut self.delay {
+            Some(delay) => {
+                let (decision, eligible) = delay.submit(decision);
+                (decision, Some(eligible))
+            }
+            None => (decision, None),
+        };
         let res = self.inner.step(decision);
         let observation = serde_json::to_string(&res.observation)
             .map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))?;
-        let info = serde_json::json!({
+        let mut info = serde_json::json!({
             "nav": res.info.nav,
             "events": res.info.events,
         });
+        if let Some(eligible) = eligible {
+            info["decision_eligible"] = serde_json::json!(eligible);
+        }
         Ok((observation, res.reward, res.done, info.to_string()))
+    }
+
+    /// Advance one step from a float64 target-weight array and write the numeric
+    /// observation into caller-owned float64 arrays, with no JSON at the boundary.
+    /// `weights`, `closes` and `positions` hold one value per symbol, `cash` holds one.
+    /// Returns `(reward, done, nav)`. The engine sees the decision the adapters' JSON path
+    /// would send, so the trajectory and the engine state are byte-identical; the step's
+    /// process events stay in the engine's trace and are not returned. `step` remains the
+    /// canonical wire format. Every array is checked before the engine advances.
+    #[pyo3(signature = (weights, closes, positions, cash, reasoning = ""))]
+    fn step_array(
+        &mut self,
+        py: Python<'_>,
+        weights: &Bound<'_, PyAny>,
+        closes: &Bound<'_, PyAny>,
+        positions: &Bound<'_, PyAny>,
+        cash: &Bound<'_, PyAny>,
+        reasoning: &str,
+    ) -> PyResult<(f64, bool, f64)> {
+        let n = self.symbols.len();
+        let weights = array_buffer::<f64>(weights, "weights", &[n], false)?.to_vec(py)?;
+        let closes = array_buffer::<f64>(closes, "closes", &[n], true)?;
+        let positions = array_buffer::<f64>(positions, "positions", &[n], true)?;
+        let cash = array_buffer::<f64>(cash, "cash", &[1], true)?;
+        let decision = array_decision(&self.symbols, &weights, reasoning)?;
+        // Same FIFO as `step`, so a declared `fixed_delay_bars` holds on this path too.
+        let decision = match &mut self.delay {
+            Some(delay) => delay.submit(decision).0,
+            None => decision,
+        };
+
+        let res = self.inner.step(decision);
+        let mut closes_out = vec![0.0; n];
+        let mut positions_out = vec![0.0; n];
+        write_observation(
+            &res.observation,
+            &self.symbols,
+            &mut closes_out,
+            &mut positions_out,
+        )?;
+        closes.copy_from_slice(py, &closes_out)?;
+        positions.copy_from_slice(py, &positions_out)?;
+        cash.copy_from_slice(py, &[res.observation.cash])?;
+        Ok((res.reward, res.done, res.info.nav))
     }
 
     /// A snapshot of the mutable sim state (cursor + book) as JSON — the native
     /// checkpoint that replaces replay-from-decisions. Pair with [`restore_state`].
+    ///
+    /// Under `fixed_delay_bars` the snapshot is `{env, delayed_decisions}`, because the
+    /// waiting decisions are state a resumed run must not lose.
     fn clone_state(&self) -> PyResult<String> {
         let state = self.inner.clone_state();
-        serde_json::to_string(&state).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))
+        match &self.delay {
+            Some(delay) => serde_json::to_string(&serde_json::json!({
+                "env": state,
+                "delayed_decisions": delay.waiting,
+            })),
+            None => serde_json::to_string(&state),
+        }
+        .map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))
     }
 
     /// Restore a trusted snapshot produced by [`clone_state`] without replay.
     /// Copying and JSON parsing scale with state size, including accumulated trace data.
     fn restore_state(&mut self, state_json: &str) -> PyResult<()> {
-        let state: sharpearena::EnvState = serde_json::from_str(state_json)
-            .map_err(|e| engine_err(CODE_INVALID_JSON, format!("invalid env state: {e}")))?;
-        self.inner.restore_state(state);
+        let invalid =
+            |e: serde_json::Error| engine_err(CODE_INVALID_JSON, format!("invalid env state: {e}"));
+        match &mut self.delay {
+            Some(delay) => {
+                let mut state: serde_json::Value =
+                    serde_json::from_str(state_json).map_err(invalid)?;
+                let env: sharpearena::EnvState =
+                    serde_json::from_value(state["env"].take()).map_err(invalid)?;
+                let waiting: VecDeque<Decision> =
+                    serde_json::from_value(state["delayed_decisions"].take()).map_err(invalid)?;
+                if waiting.len() > delay.bars {
+                    return Err(engine_err(
+                        CODE_INVALID_ARGUMENT,
+                        format!(
+                            "snapshot holds {} delayed decisions, this environment delays {} bars",
+                            waiting.len(),
+                            delay.bars
+                        ),
+                    ));
+                }
+                delay.waiting = waiting;
+                self.inner.restore_state(env);
+            }
+            None => {
+                let state: sharpearena::EnvState =
+                    serde_json::from_str(state_json).map_err(invalid)?;
+                self.inner.restore_state(state);
+            }
+        }
         Ok(())
     }
 }
@@ -474,6 +786,7 @@ impl PyTradingEnv {
 pub struct PyVecTradingEnv {
     inner: CoreVecEnv,
     effective: Vec<String>,
+    symbols: Vec<String>,
 }
 
 fn observations_to_json(
@@ -510,6 +823,7 @@ impl PyVecTradingEnv {
         jump_burst_persistence = 0.0,
         jump_burst_size = 0.0,
         max_episode_steps = None,
+        autoreset_scenarios = "replay",
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -531,7 +845,9 @@ impl PyVecTradingEnv {
         jump_burst_persistence: f64,
         jump_burst_size: f64,
         max_episode_steps: Option<usize>,
+        autoreset_scenarios: &str,
     ) -> PyResult<Self> {
+        let scenarios = parse_autoreset_scenarios(autoreset_scenarios)?;
         let limit = max_episode_steps
             .map(|steps| {
                 std::num::NonZeroUsize::new(steps).ok_or_else(|| {
@@ -570,7 +886,24 @@ impl PyVecTradingEnv {
             financing_bps,
             max_participation,
         );
+        let templates: Vec<LaneConfig> = seeds
+            .iter()
+            .map(|&seed| LaneConfig {
+                n_symbols,
+                n_days,
+                seed,
+                exec_seed,
+                distribution_mode: mode,
+                vol_clustering,
+                jump_burst_probability,
+                jump_burst_persistence,
+                jump_burst_size,
+                window,
+                costs,
+            })
+            .collect();
         let mut effective = Vec::with_capacity(seeds.len());
+        let mut symbols = Vec::new();
         let envs = seeds
             .iter()
             .map(|&seed| {
@@ -592,6 +925,9 @@ impl PyVecTradingEnv {
                 // Fingerprint the very dataset moved into this lane, not a
                 // regenerated shadow of the environment being attested.
                 effective.push(effective_config_json(&data, &lane_window, execution_seed)?);
+                if symbols.is_empty() {
+                    symbols = data.symbols();
+                }
                 Ok(CoreEnv::new(data, lane_window, costs, execution_seed))
             })
             .collect::<PyResult<Vec<_>>>()?;
@@ -599,7 +935,16 @@ impl PyVecTradingEnv {
         if let Some(limit) = limit {
             inner = inner.with_episode_limit(limit);
         }
-        Ok(PyVecTradingEnv { inner, effective })
+        if scenarios == AutoresetScenarios::FreshV1 {
+            inner = inner
+                .with_fresh_scenarios(templates)
+                .map_err(|e| engine_err(CODE_INVALID_ARGUMENT, e))?;
+        }
+        Ok(PyVecTradingEnv {
+            inner,
+            effective,
+            symbols,
+        })
     }
 
     /// Build a batch over one frozen long-format CSV. Every lane sees identical
@@ -667,6 +1012,7 @@ impl PyVecTradingEnv {
         Ok(PyVecTradingEnv {
             inner: CoreVecEnv::from_envs(envs, seeds).with_autoreset_mode(reset_mode),
             effective,
+            symbols: data.symbols(),
         })
     }
 
@@ -676,16 +1022,55 @@ impl PyVecTradingEnv {
         self.inner.len()
     }
 
-    /// The per-lane generating seeds (out-of-band provenance, never a feature).
+    /// The seed of the scenario each lane is running now (out-of-band provenance, never
+    /// a feature). Under `fresh_v1` this moves as lanes recycle.
     #[getter]
     fn scenario_seeds(&self) -> Vec<u64> {
         self.inner.seeds().to_vec()
     }
 
-    /// Per-lane readbacks of the actual constructed datasets, in lane order.
+    /// Per-lane readbacks of the actual constructed datasets, in lane order. The base
+    /// fields describe the lane as constructed. Under `fresh_v1` each readback also names
+    /// the seed stream, every seed drawn so far, and the live scenario: its seed and the
+    /// fingerprint of the dataset the lane holds now. Replay readbacks are unchanged.
     #[getter]
-    fn effective_configs(&self) -> Vec<String> {
-        self.effective.clone()
+    fn effective_configs(&self) -> PyResult<Vec<String>> {
+        let Some(fresh) = self.inner.fresh_scenarios() else {
+            return Ok(self.effective.clone());
+        };
+        let current_seeds = self.inner.seeds();
+        self.effective
+            .iter()
+            .enumerate()
+            .map(|(lane, base)| {
+                let mut readback: serde_json::Value =
+                    serde_json::from_str(base).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))?;
+                let tape = serde_json::to_string(fresh.current_dataset(lane))
+                    .map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))?;
+                readback["autoreset_scenarios"] =
+                    serde_json::json!(AutoresetScenarios::FreshV1.label());
+                readback["seed_stream"] = serde_json::json!({
+                    "root_seed": fresh.root_seed(lane),
+                    "lane": lane,
+                    "band_start": FRESH_SEED_BAND.0,
+                    "band_end": FRESH_SEED_BAND.1,
+                });
+                readback["drawn_seeds"] = serde_json::json!(fresh.drawn_seeds(lane));
+                readback["current_scenario_seed"] = serde_json::json!(current_seeds[lane]);
+                readback["current_dataset_fnv1a64"] =
+                    serde_json::json!(format!("{:016x}", fnv1a64(tape.as_bytes())));
+                Ok(readback.to_string())
+            })
+            .collect()
+    }
+
+    /// Where a recycled lane's next scenario comes from (`replay | fresh_v1`).
+    #[getter]
+    fn autoreset_scenarios(&self) -> &'static str {
+        match self.inner.fresh_scenarios() {
+            Some(_) => AutoresetScenarios::FreshV1.label(),
+            None => AutoresetScenarios::Replay.label(),
+        }
     }
 
     /// The auto-reset mode applied to finished lanes (`next_step | same_step | disabled`).
@@ -709,7 +1094,9 @@ impl PyVecTradingEnv {
     /// a finished lane's `observations[i]` is the reset t0 (`first[i]` true) and its terminal
     /// obs/info ride in `final_obs[i]`/`final_info[i]`; under `next_step` the terminal step is
     /// returned verbatim and the reset surfaces on the following step (`final_obs`/`final_info`
-    /// are `null`).
+    /// are `null`). Under `fresh_v1` the batch also carries `scenario_seeds` (each lane's
+    /// live scenario) and `drawn_seeds` (the seed a recycled lane drew this step, else
+    /// `null`), and a `final_info` entry names the finished episode's `scenario_seed`.
     fn step_batch(&mut self, decisions_json: &str) -> PyResult<String> {
         let decisions: Vec<Decision> = serde_json::from_str(decisions_json)
             .map_err(|e| engine_err(CODE_INVALID_JSON, format!("invalid decisions JSON: {e}")))?;
@@ -723,6 +1110,10 @@ impl PyVecTradingEnv {
                 ),
             ));
         }
+        let seeds_before = self
+            .inner
+            .fresh_scenarios()
+            .map(|_| self.inner.seeds().to_vec());
         let step = self.inner.step_batch(&decisions);
         let observations = observations_to_json(&step.observations)?;
         let infos: Vec<serde_json::Value> = step
@@ -742,12 +1133,19 @@ impl PyVecTradingEnv {
         let final_info: Vec<serde_json::Value> = step
             .final_info
             .iter()
-            .map(|i| match i {
-                Some(info) => serde_json::json!({ "nav": info.nav, "events": info.events }),
+            .enumerate()
+            .map(|(lane, i)| match i {
+                Some(info) => {
+                    let mut entry = serde_json::json!({ "nav": info.nav, "events": info.events });
+                    if let Some(seeds) = &seeds_before {
+                        entry["scenario_seed"] = serde_json::json!(seeds[lane]);
+                    }
+                    entry
+                }
                 None => serde_json::Value::Null,
             })
             .collect();
-        let out = serde_json::json!({
+        let mut out = serde_json::json!({
             "n": self.inner.len(),
             "observations": observations,
             "rewards": step.rewards,
@@ -758,7 +1156,153 @@ impl PyVecTradingEnv {
             "final_obs": final_obs,
             "final_info": final_info,
         });
+        if seeds_before.is_some() {
+            out["scenario_seeds"] = serde_json::json!(self.inner.seeds());
+            out["drawn_seeds"] = serde_json::json!(step.drawn_seeds);
+        }
         Ok(out.to_string())
+    }
+
+    /// Step every lane from a float64 target-weight array of shape `(B, n)` and write the
+    /// batch into caller-owned arrays, with no JSON at the boundary. `closes` and
+    /// `positions` are float64 `(B, n)`; `cash` is float64 `(B, 1)`; `rewards` and `navs`
+    /// are float64 `(B,)`; `terminated`, `truncated` and `first` are uint8 `(B,)` holding
+    /// 0 or 1. Under `same_step` the four `final_*` arrays, shaped like their primaries,
+    /// are required: a lane with `first` set holds its terminal values there and every
+    /// other row holds NaN, so an unset row cannot read as a price or a flat book. Every
+    /// array is checked before any lane advances. Recycling, `fresh_v1` draws and the
+    /// recorded state match `step_batch` byte-for-byte; process events stay in the trace
+    /// and are not returned. `step_batch` remains the canonical wire format.
+    #[pyo3(signature = (
+        weights,
+        closes,
+        positions,
+        cash,
+        rewards,
+        terminated,
+        truncated,
+        first,
+        navs,
+        final_closes = None,
+        final_positions = None,
+        final_cash = None,
+        final_navs = None,
+        reasoning = "",
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn step_batch_array(
+        &mut self,
+        py: Python<'_>,
+        weights: &Bound<'_, PyAny>,
+        closes: &Bound<'_, PyAny>,
+        positions: &Bound<'_, PyAny>,
+        cash: &Bound<'_, PyAny>,
+        rewards: &Bound<'_, PyAny>,
+        terminated: &Bound<'_, PyAny>,
+        truncated: &Bound<'_, PyAny>,
+        first: &Bound<'_, PyAny>,
+        navs: &Bound<'_, PyAny>,
+        final_closes: Option<&Bound<'_, PyAny>>,
+        final_positions: Option<&Bound<'_, PyAny>>,
+        final_cash: Option<&Bound<'_, PyAny>>,
+        final_navs: Option<&Bound<'_, PyAny>>,
+        reasoning: &str,
+    ) -> PyResult<()> {
+        let b = self.inner.len();
+        let n = self.symbols.len();
+        let weights = array_buffer::<f64>(weights, "weights", &[b, n], false)?.to_vec(py)?;
+        let closes = array_buffer::<f64>(closes, "closes", &[b, n], true)?;
+        let positions = array_buffer::<f64>(positions, "positions", &[b, n], true)?;
+        let cash = array_buffer::<f64>(cash, "cash", &[b, 1], true)?;
+        let rewards = array_buffer::<f64>(rewards, "rewards", &[b], true)?;
+        let terminated = array_buffer::<u8>(terminated, "terminated", &[b], true)?;
+        let truncated = array_buffer::<u8>(truncated, "truncated", &[b], true)?;
+        let first = array_buffer::<u8>(first, "first", &[b], true)?;
+        let navs = array_buffer::<f64>(navs, "navs", &[b], true)?;
+
+        let finals = match (final_closes, final_positions, final_cash, final_navs) {
+            (Some(closes), Some(positions), Some(cash), Some(navs)) => Some((
+                array_buffer::<f64>(closes, "final_closes", &[b, n], true)?,
+                array_buffer::<f64>(positions, "final_positions", &[b, n], true)?,
+                array_buffer::<f64>(cash, "final_cash", &[b, 1], true)?,
+                array_buffer::<f64>(navs, "final_navs", &[b], true)?,
+            )),
+            (None, None, None, None) => None,
+            _ => {
+                return Err(engine_err(
+                    CODE_INVALID_ARGUMENT,
+                    "pass all four final_* arrays or none of them",
+                ))
+            }
+        };
+        if finals.is_none() && self.inner.autoreset_mode() == AutoresetMode::SameStep {
+            return Err(engine_err(
+                CODE_INVALID_ARGUMENT,
+                "same_step needs the final_* arrays: the terminal observation has nowhere else to go",
+            ));
+        }
+        let decisions = if n == 0 {
+            vec![array_decision(&self.symbols, &[], reasoning)?; b]
+        } else {
+            weights
+                .chunks_exact(n)
+                .map(|row| array_decision(&self.symbols, row, reasoning))
+                .collect::<PyResult<Vec<_>>>()?
+        };
+
+        let step = self.inner.step_batch(&decisions);
+
+        let mut closes_out = vec![0.0; b * n];
+        let mut positions_out = vec![0.0; b * n];
+        let mut cash_out = Vec::with_capacity(b);
+        for (lane, observation) in step.observations.iter().enumerate() {
+            let range = lane * n..(lane + 1) * n;
+            write_observation(
+                observation,
+                &self.symbols,
+                &mut closes_out[range.clone()],
+                &mut positions_out[range],
+            )?;
+            cash_out.push(observation.cash);
+        }
+        let flags = |values: &[bool]| values.iter().map(|&v| u8::from(v)).collect::<Vec<u8>>();
+        let navs_out: Vec<f64> = step.infos.iter().map(|info| info.nav).collect();
+
+        closes.copy_from_slice(py, &closes_out)?;
+        positions.copy_from_slice(py, &positions_out)?;
+        cash.copy_from_slice(py, &cash_out)?;
+        rewards.copy_from_slice(py, &step.rewards)?;
+        terminated.copy_from_slice(py, &flags(&step.terminated))?;
+        truncated.copy_from_slice(py, &flags(&step.truncated))?;
+        first.copy_from_slice(py, &flags(&step.first))?;
+        navs.copy_from_slice(py, &navs_out)?;
+
+        if let Some((closes, positions, cash, navs)) = finals {
+            let mut closes_out = vec![f64::NAN; b * n];
+            let mut positions_out = vec![f64::NAN; b * n];
+            let mut cash_out = vec![f64::NAN; b];
+            let mut navs_out = vec![f64::NAN; b];
+            for lane in 0..b {
+                if let (Some(observation), Some(info)) =
+                    (&step.final_obs[lane], &step.final_info[lane])
+                {
+                    let range = lane * n..(lane + 1) * n;
+                    write_observation(
+                        observation,
+                        &self.symbols,
+                        &mut closes_out[range.clone()],
+                        &mut positions_out[range],
+                    )?;
+                    cash_out[lane] = observation.cash;
+                    navs_out[lane] = info.nav;
+                }
+            }
+            closes.copy_from_slice(py, &closes_out)?;
+            positions.copy_from_slice(py, &positions_out)?;
+            cash.copy_from_slice(py, &cash_out)?;
+            navs.copy_from_slice(py, &navs_out)?;
+        }
+        Ok(())
     }
 }
 
@@ -1028,6 +1572,27 @@ fn _raise_coded(code: &str, message: &str) -> PyResult<()> {
     Err(relay_err(code, message))
 }
 
+/// Test hook for the array path: the decision it builds and the decision `decision_json`
+/// parses to, each in the engine's own serialization. It exists because the fills read
+/// only symbol and target weight, so a wrong action label or confidence on the array path
+/// would leave every trajectory and snapshot unchanged while corrupting what a consumer of
+/// the decision reads. Underscored and excluded from the package re-exports: not public API.
+#[pyfunction]
+fn _array_decision_pair(
+    symbols: Vec<String>,
+    weights: Vec<f64>,
+    reasoning: &str,
+    decision_json: &str,
+) -> PyResult<(String, String)> {
+    let built = array_decision(&symbols, &weights, reasoning)?;
+    let parsed: Decision = serde_json::from_str(decision_json)
+        .map_err(|e| engine_err(CODE_INVALID_JSON, format!("invalid decision JSON: {e}")))?;
+    let encode = |decision: &Decision| {
+        serde_json::to_string(decision).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))
+    };
+    Ok((encode(&built)?, encode(&parsed)?))
+}
+
 /// The engine's tape-semantics fingerprint (`sharpearena::SPEC_HASH_HEX`, compiled in
 /// by the core crate's `build.rs` over the tape-defining sources). The pure-Python
 /// package pins the hash it was generated against and compares it to this value at
@@ -1152,6 +1717,19 @@ pub struct PyMarketClearing {
     /// concave, the Huberman-Stanzl manipulation-admitting regime). Gated exactly like the
     /// uncertainty set: at `1.0` the native call runs byte-identical linear arithmetic.
     impact_exponent: f64,
+    /// Fingerprint of the exogenous tape this market was built on.
+    dataset_fnv1a64: String,
+}
+
+/// Parse the opt-in execution settings. The wire form is the versioned
+/// [`ExecutionSettings`] record, so an unknown version or field is refused here.
+fn parse_execution(execution: Option<&str>) -> PyResult<Option<ExecutionSettings>> {
+    execution
+        .map(|json| {
+            serde_json::from_str(json)
+                .map_err(|e| engine_err(CODE_INVALID_JSON, format!("invalid execution: {e}")))
+        })
+        .transpose()
 }
 
 /// Validate the permanent-impact exponent, surfacing a bad input as a Python `ValueError`
@@ -1220,6 +1798,7 @@ impl PyMarketClearing {
         eta_radius = None,
         uncertainty_correlation = 0.0,
         impact_exponent = 1.0,
+        execution = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -1238,6 +1817,7 @@ impl PyMarketClearing {
         eta_radius: Option<f64>,
         uncertainty_correlation: f64,
         impact_exponent: f64,
+        execution: Option<&str>,
     ) -> PyResult<Self> {
         if n_agents < 1 {
             return Err(engine_err(CODE_INVALID_ARGUMENT, "n_agents must be >= 1"));
@@ -1245,8 +1825,16 @@ impl PyMarketClearing {
         let mode = parse_distribution_mode(distribution_mode)?;
         let tier = parse_richness_tier(richness)?;
         let data = build_dataset(n_symbols, n_days, seed, mode, 0.0, 0.0, 0.0, 0.0);
-        let inner =
+        let dataset_bytes =
+            serde_json::to_string(&data).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))?;
+        let dataset_fnv1a64 = format!("{:016x}", fnv1a64(dataset_bytes.as_bytes()));
+        let mut inner =
             MarketClearing::from_dataset_with_richness(&data, n_agents, capital, tier.richness());
+        if let Some(settings) = parse_execution(execution)? {
+            inner = inner
+                .with_execution(settings)
+                .map_err(|e| relay_err(CODE_INVALID_ARGUMENT, e))?;
+        }
         let params = MarketParams {
             lambda: kyle_lambda,
             eta,
@@ -1261,12 +1849,41 @@ impl PyMarketClearing {
             seed,
             uncertainty,
             impact_exponent,
+            dataset_fnv1a64,
         })
     }
 
     #[getter]
     fn scenario_seed(&self) -> u64 {
         self.seed
+    }
+
+    /// The configuration this market is actually clearing with, read from its live state.
+    /// `identity` is every input that decides a fill (coefficients, exponent, uncertainty
+    /// set, execution settings) and `execution_fnv1a64` fingerprints it, so a setter call
+    /// or a different setting moves the number. `dataset_fnv1a64` fingerprints the tape.
+    #[getter]
+    fn effective_config(&self) -> PyResult<String> {
+        let identity = MarketExecutionIdentity::new(
+            &self.params,
+            self.impact_exponent,
+            self.uncertainty.as_ref(),
+            self.inner.execution(),
+        );
+        let canonical =
+            serde_json::to_string(&identity).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))?;
+        Ok(serde_json::json!({
+            "n_symbols": self.inner.symbols().len(),
+            "n_bars": self.inner.n_bars(),
+            "n_agents": self.inner.n_agents(),
+            "start_bar": self.inner.start_bar(),
+            "capital": self.inner.capital(),
+            "scenario_seed": self.seed,
+            "dataset_fnv1a64": self.dataset_fnv1a64,
+            "identity": identity,
+            "execution_fnv1a64": format!("{:016x}", fnv1a64(canonical.as_bytes())),
+        })
+        .to_string())
     }
 
     /// The active elliptic uncertainty set as JSON
@@ -1532,6 +2149,7 @@ fn sharpearena_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(sealed_seed, m)?)?;
     m.add_function(wrap_pyfunction!(spec_hash, m)?)?;
     m.add_function(wrap_pyfunction!(_raise_coded, m)?)?;
+    m.add_function(wrap_pyfunction!(_array_decision_pair, m)?)?;
     m.add_function(wrap_pyfunction!(generate_scenario_json, m)?)?;
     m.add_function(wrap_pyfunction!(
         calm_calibration_candidate_scenario_json,

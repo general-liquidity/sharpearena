@@ -33,7 +33,7 @@ and EnvPool held up on either background. Only TypeScript does, comfortably.
 | `pettingzoo.svg`, `pettingzoo-dark.svg` | PettingZoo (Farama Foundation) | `Farama-Foundation/PettingZoo`, `main`, `docs/_static/img/PettingZoo.svg` and `PettingZoo_White.svg` | Repository LICENSE is the MIT License. |
 | `minari.svg`, `minari-dark.svg` | Minari (Farama Foundation) | `Farama-Foundation/Minari`, `main`, `docs/_static/img/Minari.svg` and `Minari_White.svg` | Repository LICENSE states that all assets in that repository are the copyright of the Farama Foundation and that the Foundation "releases the elements of this repository they copyright to under the MIT license". It is the only one of the three that names assets rather than code. |
 | `webassembly.svg`, `webassembly-dark.svg` | WebAssembly | `carlosbaraza/web-assembly-logo`, `master`, `dist/icon/web-assembly-icon.svg` and `web-assembly-icon-white.svg` | CC0 1.0 Universal, per that repository's LICENSE file. This is the logo the WebAssembly design process selected. |
-| `typescript.svg` | TypeScript | `ts-logo-128.svg`, from the official design-assets pack linked at <https://www.typescriptlang.org/branding/> | The branding page permits use of the logo to refer to TypeScript, and asks that the shape not be modified, that the logo not be used as a product's own logo or folded into one, and that nothing imply TypeScript's endorsement. This use satisfies all four. |
+| `typescript.svg` | TypeScript | `ts-logo-128.svg`, from the official design-assets pack linked at <https://www.typescriptlang.org/branding/> | The branding page permits use of the logo to refer to TypeScript, and asks that the shape not be modified, that the logo not be used as a product's own logo or folded into one, and that nothing imply TypeScript's endorsement. This use satisfies each of those conditions. |
 | `mcp.svg`, `mcp-dark.svg` | Model Context Protocol | `modelcontextprotocol/docs`, `main`, `logo/light.svg` and `logo/dark.svg` | Repository LICENSE is the MIT License (Copyright 2024-2025 Anthropic, PBC and contributors). The mark itself is held by LF Projects, LLC; see the note below on why this one is wrapped in a link. |
 | `hud.svg`, `hud-dark.svg` | HUD | `hud-evals/hud-python`, `main`, `docs/logo/hud_logo.svg` and `docs/logo/hud_logo_dark.svg` | Repository LICENSE is the MIT License. |
 | `harbor.png`, `harbor-dark.png` | Harbor | `harbor-framework/harbor`, `main`, `docs-mintlify/harbor-wordmark-light.png` and `harbor-wordmark-dark.png`, the pair its own `docs.json` selects between | Repository LICENSE is Apache 2.0. |
@@ -248,7 +248,8 @@ The first version of this page, and the pull request that added it, said Harbor
 published no logo and that MCP published none outside a content-hashed
 documentation CDN. Both were wrong, and both came from searching too narrowly:
 Harbor's README and landing page carry only badges, but the logo is at
-`docs-mintlify/harbor-logo.png` in the same repository, and the MCP
+`docs-mintlify/harbor-logo.png` in the same repository, beside the
+`harbor-wordmark-light.png` and `harbor-wordmark-dark.png` pair committed here, and the MCP
 specification repository indeed has no logo while `modelcontextprotocol/docs`
 publishes `logo/light.svg`, `logo/dark.svg` and `favicon.svg` under the MIT
 licence. The LF Projects policy was also read as more restrictive than it is:

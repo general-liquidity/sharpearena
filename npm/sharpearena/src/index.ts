@@ -49,10 +49,48 @@ function parse<T>(json: string): T {
   return value as T;
 }
 
+/**
+ * A lone UTF-16 surrogate: a high surrogate not followed by a low one, or a low
+ * surrogate not preceded by a high one. Such a string has no UTF-8 encoding.
+ */
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+/** The refusal for text that cannot cross into the engine as UTF-8. */
+export class InvalidUtf8Error extends Error {
+  constructor(where: string) {
+    super(
+      `InvalidUtf8: ${where} contains a lone UTF-16 surrogate, which has no UTF-8 ` +
+        `encoding. Refusing it rather than letting it reach the engine as U+FFFD.`,
+    );
+    this.name = "InvalidUtf8Error";
+  }
+}
+
+function checkText(text: string, where: string): void {
+  if (LONE_SURROGATE.test(text)) throw new InvalidUtf8Error(where);
+}
+
+/**
+ * Serialize a kernel argument, refusing any key or string value the engine could only
+ * receive as replacement characters. Without this the refusal would depend on which
+ * path the text took: `JSON.stringify` escapes a lone surrogate as `\ud800`, which
+ * serde_json rejects with an unrelated parse message, while a string handed to the
+ * glue directly is encoded by `TextEncoder`, which substitutes U+FFFD and succeeds.
+ * Each export returns a Rust `String`, valid UTF-8 by construction, so the other
+ * direction cannot carry an invalid sequence.
+ */
+function toJson(value: unknown, what: string): string {
+  return JSON.stringify(value, function (key: string, v: unknown) {
+    checkText(key, `${what} key`);
+    if (typeof v === "string") checkText(v, key === "" ? what : `${what}.${key}`);
+    return v;
+  });
+}
+
 /** Empty/absent config → `""`, which the kernel reads as "use defaults". */
-function optJson(value: object | undefined): string {
+function optJson(value: object | undefined, what: string): string {
   if (!value || Object.keys(value).length === 0) return "";
-  return JSON.stringify(value);
+  return toJson(value, what);
 }
 
 /**
@@ -61,7 +99,7 @@ function optJson(value: object | undefined): string {
  * per-period returns, decision trace, and per-step confidences/outcomes.
  */
 export function runBaseline(config: BaselineConfig): Run {
-  return parse(kernel.run_baseline(JSON.stringify(config)));
+  return parse(kernel.run_baseline(toJson(config, "config")));
 }
 
 /**
@@ -77,16 +115,16 @@ export function replayRun(
 ): Run {
   return parse(
     kernel.replay_run(
-      JSON.stringify(dataset),
-      JSON.stringify(trajectory),
-      optJson(costs),
+      toJson(dataset, "dataset"),
+      toJson(trajectory, "trajectory"),
+      optJson(costs, "costs"),
     ),
   );
 }
 
 /** Build a deterministic synthetic {@link Dataset} from `{n_symbols, n_days, seed}`. */
 export function datasetSynthetic(params?: SyntheticParams): Dataset {
-  return parse(kernel.dataset_synthetic(optJson(params)));
+  return parse(kernel.dataset_synthetic(optJson(params, "params")));
 }
 
 /**
@@ -101,12 +139,12 @@ export function datasetSynthetic(params?: SyntheticParams): Dataset {
  * this module's load. See finding A3 in the 2026-09-09 Arena review.
  */
 export function generateScenario(input?: ScenarioInput): Dataset {
-  return parse(kernel.generate_scenario(optJson(input)));
+  return parse(kernel.generate_scenario(optJson(input, "input")));
 }
 
 /** The named adversarial stress suite (flash-crash, whipsaw, …) for a seed. */
 export function stressSuite(seed = 0): StressScenario[] {
-  return parse(kernel.stress_suite(JSON.stringify({ seed })));
+  return parse(kernel.stress_suite(toJson({ seed }, "params")));
 }
 
 /**
@@ -114,13 +152,13 @@ export function stressSuite(seed = 0): StressScenario[] {
  * when `step >= test`; with `step < test` consecutive windows share `test - step` bars.
  */
 export function walkForward(params: WalkForwardParams): Window[] {
-  return parse(kernel.walk_forward(JSON.stringify(params)));
+  return parse(kernel.walk_forward(toJson(params, "params")));
 }
 
 /** Tag a window's coarse market regime (bull / bear / chop). */
 export function tagRegime(dataset: Dataset, window: Window): Regime {
   const out = parse<{ regime: Regime }>(
-    kernel.tag_regime(JSON.stringify({ dataset, window })),
+    kernel.tag_regime(toJson({ dataset, window }, "input")),
   );
   return out.regime;
 }

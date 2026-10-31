@@ -11,6 +11,9 @@ The causal property is identical to the single-env wrappers: the value emitted f
 *after* emission, so no future bar reaches back. Per-lane statistics are **reset on the
 autoreset boundary** (``first[i]``) so one episode's distribution never leaks into the
 next on a recycled lane.
+
+:class:`VectorCausalNormalizeObservation` follows the persistence and freeze contract in
+:mod:`sharpearena.wrappers`, with statistics held per lane.
 """
 
 from __future__ import annotations
@@ -22,6 +25,17 @@ import numpy as np
 from gymnasium import spaces
 from gymnasium.vector import VectorWrapper, VectorEnv
 from gymnasium.vector.utils import batch_space
+
+from .wrappers import (
+    _STATE_FORMAT,
+    NormalizerNotFittedError,
+    NormalizerStateError,
+    _state_array,
+    _state_body,
+    _state_mapping,
+    _state_variation,
+    _TrainingFlag,
+)
 
 _EPS = 1e-8
 
@@ -51,6 +65,44 @@ class _LaneWelford:
         self.mean[mask] = 0.0
         self.m2[mask] = 0.0
 
+    def fitted(self) -> np.ndarray:
+        return self.count >= 2
+
+    def copy_lanes(self, source: "_LaneWelford", mask: np.ndarray) -> None:
+        self.count[mask] = source.count[mask]
+        self.mean[mask] = source.mean[mask]
+        self.m2[mask] = source.m2[mask]
+
+    def to_state(self) -> dict:
+        return {
+            "count": self.count.tolist(),
+            "mean": self.mean.tolist(),
+            "m2": self.m2.tolist(),
+        }
+
+    @classmethod
+    def from_state(
+        cls, state: Any, num_envs: int, shape: tuple[int, ...], where: str
+    ) -> "_LaneWelford":
+        state = _state_mapping(state, ("count", "mean", "m2"), where)
+        try:
+            count = np.asarray(state["count"])
+        except (TypeError, ValueError) as exc:
+            raise NormalizerStateError(f"{where}.count is not a rectangular array") from exc
+        if count.dtype.kind not in "iu":
+            raise NormalizerStateError(f"{where}.count must hold integers")
+        if count.shape != (num_envs,):
+            raise NormalizerStateError(
+                f"{where}.count shape must be {(num_envs,)}, got {count.shape}"
+            )
+        if (count < 0).any():
+            raise NormalizerStateError(f"{where}.count must not be negative")
+        out = cls(num_envs, shape)
+        out.count = count.astype(np.int64, copy=True)
+        out.mean = _state_array(state["mean"], (num_envs, *shape), f"{where}.mean")
+        out.m2 = _state_variation(state["m2"], (num_envs, *shape), f"{where}.m2")
+        return out
+
     def update(self, x: np.ndarray, mask: np.ndarray) -> None:
         idx = np.nonzero(mask)[0]
         if idx.size == 0:
@@ -64,7 +116,7 @@ class _LaneWelford:
         self.m2[idx] += delta * delta2
 
 
-class VectorCausalNormalizeObservation(VectorWrapper):
+class VectorCausalNormalizeObservation(_TrainingFlag, VectorWrapper):
     """Per-lane causal z-scoring of the batched Dict observation.
 
     Each lane keeps its own running mean/std per observation key, updated with **strictly
@@ -72,15 +124,26 @@ class VectorCausalNormalizeObservation(VectorWrapper):
     has its statistics cleared *before* emission, so its new t0 is emitted as zeros and no
     prior-episode statistics leak across the boundary. Lanes with fewer than two bars of
     history emit zeros.
+
+    The accumulator a lane clears at that boundary is kept as ``retired`` if it held at
+    least two bars, and never affects a training-mode emission. With ``training=False``
+    nothing updates or clears, and each lane is scored against one fixed scale: its
+    ``retired`` statistics if it has them, otherwise its live ones. A lane with neither
+    refuses. State is per lane, so it only loads into the same ``num_envs``.
     """
 
-    def __init__(self, env: VectorEnv) -> None:
+    def __init__(self, env: VectorEnv, *, training: bool = True) -> None:
         super().__init__(env)
+        self.training = training
         base = env.single_observation_space
         assert isinstance(base, spaces.Dict), (
             "VectorCausalNormalizeObservation expects a Dict single_observation_space"
         )
         self._stats: dict[str, _LaneWelford] = {
+            k: _LaneWelford(self.num_envs, tuple(s.shape))
+            for k, s in base.spaces.items()
+        }
+        self._retired: dict[str, _LaneWelford] = {
             k: _LaneWelford(self.num_envs, tuple(s.shape))
             for k, s in base.spaces.items()
         }
@@ -94,12 +157,37 @@ class VectorCausalNormalizeObservation(VectorWrapper):
             self.single_observation_space, self.num_envs
         )
 
+    def _require_fitted_when_frozen(self) -> None:
+        if self._training:
+            return
+        for k, st in self._stats.items():
+            unfitted = ~(st.fitted() | self._retired[k].fitted())
+            if unfitted.any():
+                raise NormalizerNotFittedError(
+                    f"frozen VectorCausalNormalizeObservation has fewer than 2 samples "
+                    f"of {k!r} in lanes {np.nonzero(unfitted)[0].tolist()}"
+                )
+
+    def _apply_frozen(self, obs: dict) -> dict:
+        out: dict[str, np.ndarray] = {}
+        for k, v in obs.items():
+            x = np.asarray(v, dtype=np.float64)
+            st, retired = self._stats[k], self._retired[k]
+            use_retired = retired.fitted().reshape((self.num_envs, *([1] * (x.ndim - 1))))
+            mean = np.where(use_retired, retired.mean, st.mean)
+            std = np.where(use_retired, retired.std(), st.std())
+            out[k] = (x - mean) / (std + _EPS)
+        return out
+
     def _apply(self, obs: dict, first: np.ndarray) -> dict:
+        if not self._training:
+            return self._apply_frozen(obs)
         out: dict[str, np.ndarray] = {}
         for k, v in obs.items():
             x = np.asarray(v, dtype=np.float64)
             st = self._stats[k]
             if first.any():
+                self._retired[k].copy_lanes(st, first & st.fitted())
                 st.reset_lanes(first)
             res = np.zeros_like(x)
             valid = st.count >= 2
@@ -111,12 +199,51 @@ class VectorCausalNormalizeObservation(VectorWrapper):
             out[k] = res
         return out
 
+    def state_dict(self) -> dict:
+        """The per-lane statistics as JSON-serialisable data, sharing no memory."""
+        return {
+            "format": _STATE_FORMAT,
+            "wrapper": "VectorCausalNormalizeObservation",
+            "num_envs": self.num_envs,
+            "features": {
+                k: {"live": st.to_state(), "retired": self._retired[k].to_state()}
+                for k, st in self._stats.items()
+            },
+        }
+
+    def load_state_dict(self, state: Any) -> None:
+        """Replace the statistics, or raise and leave them all untouched."""
+        body = _state_body(
+            state, "VectorCausalNormalizeObservation", ("num_envs", "features")
+        )
+        if body["num_envs"] != self.num_envs:
+            raise NormalizerStateError(
+                f"state holds {body['num_envs']} lanes, this wrapper has {self.num_envs}"
+            )
+        features = _state_mapping(body["features"], self._stats, "features")
+        spaces_by_key = self.single_observation_space.spaces
+        live: dict[str, _LaneWelford] = {}
+        retired: dict[str, _LaneWelford] = {}
+        for k in self._stats:
+            where = f"features[{k!r}]"
+            feature = _state_mapping(features[k], ("live", "retired"), where)
+            shape = tuple(spaces_by_key[k].shape)
+            live[k] = _LaneWelford.from_state(
+                feature["live"], self.num_envs, shape, f"{where}.live"
+            )
+            retired[k] = _LaneWelford.from_state(
+                feature["retired"], self.num_envs, shape, f"{where}.retired"
+            )
+        self._stats, self._retired = live, retired
+
     def reset(self, *, seed: Any = None, options: Any = None):
+        self._require_fitted_when_frozen()
         obs, infos = self.env.reset(seed=seed, options=options)
         first = np.ones(self.num_envs, dtype=bool)
         return self._apply(obs, first), infos
 
     def step(self, actions):
+        self._require_fitted_when_frozen()
         obs, rewards, terminated, truncated, infos = self.env.step(actions)
         first = np.asarray(
             infos.get("first", np.zeros(self.num_envs, dtype=bool)), dtype=bool

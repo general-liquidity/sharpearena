@@ -33,6 +33,16 @@ from enum import Enum
 from types import MappingProxyType
 from typing import Any
 
+import numpy as np
+
+#: The dtype ``SharpeArenaEnv`` and ``SharpeArenaVectorEnv`` advertise on ``action_space``,
+#: and the dtype the engine consumes. ``docs/integrations/contracts.md`` (C02) states the
+#: rule between them: ``float32`` is what a learner sends, every numeric action crosses
+#: into the engine as ``float64`` unquantised, and the widening of a ``float32`` value is
+#: exact.
+ACTION_SPACE_DTYPE = "float32"
+ENGINE_ACTION_DTYPE = "float64"
+
 #: The autoreset modes ``SharpeArenaVectorEnv`` accepts, in the package's own spelling.
 #: Gymnasium's ``AutoresetMode`` enum names the same three (``NEXT_STEP``, ``SAME_STEP``,
 #: ``DISABLED``); ``vector.py`` maps these strings onto it when the enum is importable.
@@ -47,6 +57,17 @@ AUTORESET_MODES_WITH_FINAL_OBS = ("same_step",)
 
 class ContractViolation(ValueError):
     """A value that cannot be reconciled with the C01-C07 contract it claims to satisfy."""
+
+
+def is_float32_exact(action: Any) -> bool:
+    """Whether a numeric ``action`` survives a ``float32`` round trip bit for bit.
+
+    A fixed action sequence compared across a path that casts to ``float32`` and one
+    that does not reaches the engine as the same numbers only when this holds.
+    """
+    values = np.asarray(action, dtype=np.float64)
+    with np.errstate(over="ignore"):
+        return bool(np.array_equal(values, values.astype(np.float32).astype(np.float64)))
 
 
 _COUNT_FIELDS = ("expected", "attempted", "completed", "refused", "failed", "retried")
@@ -278,11 +299,14 @@ class TrustClass(str, Enum):
 
 
 __all__ = [
+    "ACTION_SPACE_DTYPE",
     "AUTORESET_MODES_WITH_FINAL_OBS",
+    "ENGINE_ACTION_DTYPE",
     "ENGINE_EXACTNESS",
     "SUPPORTED_AUTORESET_MODES",
     "AttemptCounts",
     "ContractViolation",
     "ExactnessDomain",
     "TrustClass",
+    "is_float32_exact",
 ]

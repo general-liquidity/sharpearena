@@ -58,6 +58,7 @@ fn distribution_modes() -> Vec<String> {
         DistributionMode::Extreme,
         DistributionMode::CointegratedPairs,
         DistributionMode::RegimeShift,
+        DistributionMode::MartingaleV1,
     ]
     .into_iter()
     .map(|mode| match mode {
@@ -65,7 +66,8 @@ fn distribution_modes() -> Vec<String> {
         | DistributionMode::Hard
         | DistributionMode::Extreme
         | DistributionMode::CointegratedPairs
-        | DistributionMode::RegimeShift) => serde_json::to_value(carried)
+        | DistributionMode::RegimeShift
+        | DistributionMode::MartingaleV1) => serde_json::to_value(carried)
             .expect("a distribution mode serializes")
             .as_str()
             .expect("its wire form is a string")
@@ -163,7 +165,7 @@ fn the_contract_is_not_vacuous() {
             .as_array()
             .unwrap()
             .len(),
-        5
+        6
     );
     assert_eq!(contract["enums"]["Regime"].as_array().unwrap().len(), 3);
     assert_eq!(

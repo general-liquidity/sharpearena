@@ -40,6 +40,7 @@ import pytest
 
 from sharpearena import SharpeArenaEnv
 from sharpearena.metrics import RunMetrics
+from sharpearena.sharpearena_py import InvalidArgument
 from sharpearena.vector import SharpeArenaVectorEnv
 
 # One symbol held fully short under persistent large jumps. NAV crosses zero at bar 165
@@ -108,7 +109,9 @@ def test_observation_dtypes_match_the_declared_space_across_the_binding():
     """`Box.contains` casts safely, so an observation that crossed the native boundary as
     float32 would stop being contained in the float64 space it is declared against. The
     action space is float32 while `step` accepts an exact float64 action, which the
-    checkpoint layer relies on to replay the bytes it recorded."""
+    checkpoint layer relies on to replay the bytes it recorded. That asymmetry is the
+    stated C02 rule in docs/integrations/contracts.md, and test_integration_contracts.py
+    proves the value reaches the engine unquantised."""
     env = SharpeArenaEnv(n_symbols=2, n_days=20, seed=1)
     observation, _info = env.reset()
 
@@ -253,7 +256,7 @@ def test_only_the_three_upstream_modes_are_accepted():
     for label in ("next_step", "same_step", "disabled"):
         SharpeArenaVectorEnv(seeds=[1], n_symbols=2, n_days=20, autoreset_mode=label)
     for label in ("NEXT_STEP", "same-step", "next", ""):
-        with pytest.raises(Exception):
+        with pytest.raises(InvalidArgument, match="unknown autoreset_mode"):
             SharpeArenaVectorEnv(seeds=[1], n_symbols=2, n_days=20, autoreset_mode=label)
 
 

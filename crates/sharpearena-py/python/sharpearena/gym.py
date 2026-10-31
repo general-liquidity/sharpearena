@@ -261,6 +261,29 @@ class SharpeArenaEnv(gym.Env):
         terminated = float(info.get("nav", 1.0)) <= 0.0
         return obs, float(reward), terminated, truncated, info
 
+    def step_array(
+        self, action: np.ndarray
+    ) -> tuple[dict[str, np.ndarray], float, bool, bool, dict]:
+        """Advance one bar through the binary path, with no JSON at the boundary.
+
+        Takes the same action and returns the same observation, reward and flags as
+        :meth:`step`, byte for byte, and leaves the engine in the same state. ``info``
+        carries ``nav`` and ``scenario_seed`` but no ``events``: the step's process events
+        stay in the engine's trace, so use :meth:`step` to read them per step. :meth:`step`
+        stays the canonical wire format.
+        """
+        weights = validated_action(action, self.action_space)
+        n = len(self._symbols)
+        closes = np.empty(n, dtype=np.float64)
+        positions = np.empty(n, dtype=np.float64)
+        cash = np.empty(1, dtype=np.float64)
+        reward, done, nav = self._env.step_array(
+            weights, closes, positions, cash, reasoning="SharpeArenaEnv.step"
+        )
+        obs = {"closes": closes, "positions": positions, "cash": cash}
+        info = {"nav": nav, "scenario_seed": self._seed}
+        return obs, reward, nav <= 0.0, done, info
+
     def clone_state(self) -> str:
         """A private native snapshot of the sim state (cursor + book) as a JSON string.
         Pair with :meth:`restore_state` for what-if branching without replaying decisions

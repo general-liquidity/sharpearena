@@ -3,7 +3,7 @@
 Status: **feasibility investigation closed with a no-go under the current authority.** No
 adapter was built and none is claimed. This report is the "precise, evidenced
 incompatibility report" branch of the acceptance criterion in
-[the integration plan, section 14](../../SHARPE-HANDOFF-SUPPORT/product-planning/SHARPEARENA-INTEGRATION-PLAN-2026-09-22.md).
+section 14 of the maintainers' integration plan, which is not published in this repository.
 
 Feasibility, working integration and performance improvement are reported separately and
 none stands in for another.

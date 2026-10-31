@@ -8,7 +8,7 @@ the root README can stay task-oriented.
 | Capability | Public surface |
 |---|---|
 | Point-in-time lifecycle | `TradingEnv.reset/step`, `run_backtest`, capture and replay over one shared step body |
-| Procedural scenarios | `ScenarioSpec`, Calm/Hard/Extreme, cointegrated pairs, regime shifts, disjoint train/eval seed bands, sealed evaluation seeds |
+| Procedural scenarios | `ScenarioSpec`, Calm/Hard/Extreme, cointegrated pairs, regime shifts, the signal-free `martingale_v1` control, disjoint train/eval seed bands, sealed evaluation seeds |
 | Batched rollouts | Native `VecTradingEnv` and Gymnasium `SharpeArenaVectorEnv` with explicit autoreset modes |
 | Execution model | Fees, slippage, impact, financing, seeded execution noise, mandates, drawdown/stop/cascade failure taxonomy |
 | Observations | Causal indicators, multi-timescale momentum, covariance, Kalman spread/trend, synthetic news, horizon, flatten/unflatten helpers |

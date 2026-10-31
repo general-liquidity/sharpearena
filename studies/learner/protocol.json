@@ -1,0 +1,166 @@
+{
+  "protocol_id": "sharpearena-learner-generalization",
+  "version": 4,
+  "env": {
+    "n_symbols": 4,
+    "n_days": 120
+  },
+  "lanes": 16,
+  "algorithm": {
+    "library": "stable_baselines3",
+    "version": "2.9.0",
+    "name": "PPO",
+    "policy": "MultiInputPolicy",
+    "device": "cpu",
+    "torch_threads": 1
+  },
+  "ppo": {
+    "n_steps": 256,
+    "batch_size": 256,
+    "n_epochs": 10,
+    "gamma": 0.99,
+    "gae_lambda": 0.95,
+    "clip_range": 0.2,
+    "log_std_init": -1.0,
+    "reward_scale": 100.0,
+    "reward_normalizer": "none"
+  },
+  "configs": {
+    "c0": {
+      "learning_rate": 0.0003,
+      "ent_coef": 0.0
+    },
+    "c1": {
+      "learning_rate": 0.001,
+      "ent_coef": 0.0
+    },
+    "c2": {
+      "learning_rate": 0.0001,
+      "ent_coef": 0.0
+    },
+    "c3": {
+      "learning_rate": 0.0003,
+      "ent_coef": 0.01
+    }
+  },
+  "cells": {
+    "A": {
+      "role": "primary",
+      "tier": "martingale_v1",
+      "net_arch": [
+        256,
+        256
+      ],
+      "n_seen": 16,
+      "transfer_tiers": [],
+      "expected_signal": "no_heldout_edge"
+    },
+    "B": {
+      "role": "capacity_contrast",
+      "tier": "martingale_v1",
+      "net_arch": [],
+      "n_seen": 16,
+      "transfer_tiers": [],
+      "expected_signal": "no_heldout_edge"
+    },
+    "C": {
+      "role": "level_count_contrast",
+      "tier": "martingale_v1",
+      "net_arch": [
+        256,
+        256
+      ],
+      "n_seen": 256,
+      "transfer_tiers": [],
+      "expected_signal": "no_heldout_edge"
+    },
+    "D": {
+      "role": "declared_signal_cell",
+      "tier": "calm",
+      "net_arch": [
+        256,
+        256
+      ],
+      "n_seen": 16,
+      "transfer_tiers": [
+        "hard",
+        "extreme"
+      ],
+      "expected_signal": "heldout_edge"
+    }
+  },
+  "budget": {
+    "env_steps": 2000000,
+    "checkpoints": 10,
+    "escalated_env_steps": 8000000,
+    "max_escalations": 1
+  },
+  "bands": {
+    "pilot_seen": {
+      "start": 40000,
+      "width_per_band": 16
+    },
+    "main_seen_16": {
+      "start": 50000,
+      "width_per_band": 16
+    },
+    "main_seen_256": {
+      "start": 60000,
+      "width_per_band": 256
+    },
+    "dev": {
+      "start": 70000,
+      "count": 64
+    },
+    "pilot_unseen": {
+      "start": 71000,
+      "count": 256
+    },
+    "heldout": {
+      "start": 1020000,
+      "count": 256
+    },
+    "smoke_seen": {
+      "start": 79000,
+      "width_per_band": 4
+    },
+    "smoke_unseen": {
+      "start": 79500,
+      "count": 8
+    },
+    "cost_probe": {
+      "start": 79900,
+      "count": 1
+    }
+  },
+  "pilot": {
+    "bands": 6,
+    "runs_per_band": 2,
+    "config_search_bands": 2,
+    "config_search_runs_per_band": 1
+  },
+  "design": {
+    "target_half_width_bp": 0.5,
+    "sesoi_bp": 1.0,
+    "alpha": 0.05,
+    "pilot_sd_upper_confidence": 0.8,
+    "max_bands": 32,
+    "runs_per_band": 2
+  },
+  "controls": {
+    "random_floor_draws": 64,
+    "floor_quantile": 0.95,
+    "timing_null_draws": 200,
+    "timing_null_episodes": 32,
+    "invested_gross_floor": 1e-09
+  },
+  "inactivity": {
+    "min_mean_gross": 0.05,
+    "min_mean_turnover": 0.001,
+    "min_action_std": 0.001
+  },
+  "evaluation": {
+    "primary_metric": "mean bar return excess over equal weight, basis points",
+    "required_secondary": "gap_deflated_sharpe"
+  }
+}
