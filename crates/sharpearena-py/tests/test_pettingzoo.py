@@ -7,6 +7,7 @@ asserts the import is clean (the module imports, construction raises a clear
 """
 
 import importlib.util
+import json
 
 import numpy as np
 import pytest
@@ -16,7 +17,9 @@ import pytest
 # of whether pettingzoo is importable.
 import sharpearena  # noqa: F401  (ensures the package imports without pettingzoo)
 import sharpearena.pettingzoo_env as pz_env
+from sharpearena.kernel_score import kernel_score_or_unavailable
 from sharpearena.pettingzoo_env import MultiAgentSharpeArenaEnv, make_aec_env
+from sharpearena.sharpearena_py import score_run
 
 _HAS_PETTINGZOO = importlib.util.find_spec("pettingzoo") is not None
 needs_pz = pytest.mark.skipif(not _HAS_PETTINGZOO, reason="pettingzoo not installed")
@@ -110,25 +113,38 @@ def test_requested_difficulty_reaches_each_native_consumer_and_reset(difficulty)
 @needs_pz
 def test_episode_end_attaches_cross_agent_ranking():
     """At episode end the per-agent info carries the cross-agent deflated-Sharpe
-    leaderboard, ranked and reproducible."""
-    env = _make(n_agents=3, n_symbols=2, n_days=16, seed=1)
+    leaderboard. The expected order comes from scoring the rewards each agent received,
+    not from the leaderboard's own numbers, so a wrong score or a wrong key fails."""
+    env = _make(n_agents=3, n_symbols=2, n_days=60, seed=1)
     env.reset(seed=1)
+    weights = dict(zip(env.possible_agents, ([0.45, 0.1], [-0.3, 0.2], [0.05, -0.4])))
+    received = {agent: [] for agent in env.possible_agents}
     last_infos = {}
     for _ in range(64):
-        if not env.agents:
-            break
-        actions = {a: env.action_space(a).sample() for a in env.agents}
-        _, _, terms, truncs, last_infos = env.step(actions)
+        actions = {a: np.asarray(weights[a], dtype=np.float32) for a in env.agents}
+        _, rewards, terms, truncs, last_infos = env.step(actions)
+        for agent, reward in rewards.items():
+            received[agent].append(reward)
         if all(terms[a] or truncs[a] for a in terms):
             break
 
-    assert last_infos
-    any_agent = next(iter(last_infos))
-    ranking = last_infos[any_agent]["ranking"]
-    # the leaderboard is sorted by deflated_sharpe desc, ties broken on agent id
-    expected = sorted(ranking, key=lambda r: (-r["deflated_sharpe"], r["agent"]))
-    assert ranking == expected
-    assert [r["rank"] for r in ranking] == list(range(len(ranking)))
+    n_trials = env._n_trials
+    scores = {
+        agent: kernel_score_or_unavailable(json.loads(score_run(series, n_trials)))
+        for agent, series in received.items()
+    }
+    assert all(isinstance(score, float) for score in scores.values()), scores
+    assert len(set(scores.values())) == len(scores), "tied scores would not test the order"
+
+    expected_order = sorted(scores, key=lambda agent: -scores[agent])
+    for agent, info in last_infos.items():
+        ranking = info["ranking"]
+        assert [row["agent"] for row in ranking] == expected_order
+        assert [row["rank"] for row in ranking] == [0, 1, 2]
+        assert [row["deflated_sharpe"] for row in ranking] == [
+            scores[name] for name in expected_order
+        ]
+        assert info["rank"] == expected_order.index(agent)
     env.close()
 
 

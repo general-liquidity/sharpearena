@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import io
 import json
 import os
 import re
@@ -106,8 +107,37 @@ def _digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+BENCH_VERSION = "0.7.0"
+BENCH_CHECKSUM = "ab" * 32
+CRATES_IO = "registry+https://github.com/rust-lang/crates.io-index"
+
+
+def _bench_lock(version: str = BENCH_VERSION, checksum: str = BENCH_CHECKSUM) -> str:
+    return (
+        'version = 4\n\n[[package]]\nname = "sharpebench-core"\n'
+        f'version = "{version}"\nsource = "{CRATES_IO}"\nchecksum = "{checksum}"\n'
+    )
+
+
+def _write_bench_index(
+    directory: Path,
+    *,
+    version: str = BENCH_VERSION,
+    checksum: str = BENCH_CHECKSUM,
+    yanked: bool = False,
+) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    record = {"name": "sharpebench-core", "vers": version, "cksum": checksum, "yanked": yanked}
+    (directory / "sharpebench-core").write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+
 def _write_versions(root: Path, version: str) -> None:
+    _write_bench_index(root.parent / "bench-index")
+    pin = f'\n[dependencies]\nsharpebench-core = "={BENCH_VERSION}"\n'
     files = {
+        "crates/sharpearena/Cargo.toml": '[package]\nname = "sharpearena"\n' + pin,
+        "Cargo.lock": _bench_lock(),
+        "crates/sharpearena-py/Cargo.lock": _bench_lock(),
         "Cargo.toml": f'[workspace]\n[workspace.package]\nversion = "{version}"\n',
         "crates/sharpearena-wasm/Cargo.toml": (
             '[package]\nname = "sharpearena-wasm"\nversion.workspace = true\n'
@@ -116,7 +146,7 @@ def _write_versions(root: Path, version: str) -> None:
         "crates/sharpearena-py/Cargo.toml": (
             '[package]\nname = "sharpearena-py"\n'
             f'version = "{version}"\n'
-            f'sharpearena = {{ path = "../sharpearena", version = "{version}" }}\n'
+            f'sharpearena = {{ path = "../sharpearena", version = "{version}" }}\n' + pin
         ),
         "crates/sharpearena-py/pyproject.toml": (
             f'[project]\nname = "sharpearena"\nversion = "{version}"\n'
@@ -164,7 +194,6 @@ def _write_remaining_source_scope(root: Path) -> None:
     files = {
         ".gitattributes": "* text=auto eol=lf\n",
         ".github/workflows/ci.yml": "name: ci\n",
-        "Cargo.lock": "version = 3\n",
         "release.toml": "sign-tag = true\n",
         "scripts/release.py": "print(1)\n",
         "paper/src/make-demo.py": "print(2)\n",
@@ -251,9 +280,10 @@ def _write_manifest(root: Path, generation: str, *, dirty: bool = False) -> None
 
 
 @pytest.fixture()
-def release_tree(tmp_path: Path) -> Path:
+def release_tree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     root = tmp_path / "repo"
     root.mkdir()
+    monkeypatch.setenv("SHARPEARENA_BENCH_INDEX", str(tmp_path / "bench-index"))
     _write_versions(root, "0.19.0")
     _write_remaining_source_scope(root)
     source = root / "crates/demo/src/lib.rs"
@@ -897,6 +927,236 @@ def _release_module(name: str):
     assert spec.loader is not None
     spec.loader.exec_module(module)
     return module
+
+
+def _pin_problems(root: Path) -> list[str]:
+    module = _release_module("release_driver_bench_pin")
+    _git(root, "add", "-A")
+    _git(root, "commit", "--quiet", "--allow-empty", "-m", "pin state")
+    return module.bench_pin_problems(
+        root, "HEAD", module.fixture_bench_index(root.parent / "bench-index")
+    )
+
+
+def _repin(root: Path, path: str, old: str, new: str) -> None:
+    target = root / path
+    text = target.read_text(encoding="utf-8")
+    assert old in text
+    target.write_text(text.replace(old, new), encoding="utf-8")
+
+
+def test_a_pin_to_a_published_release_passes(release_tree: Path) -> None:
+    assert _pin_problems(release_tree) == []
+
+
+def test_the_real_tree_pins_one_exact_version_in_every_manifest() -> None:
+    module = _release_module("release_driver_bench_real_tree")
+    versions = set()
+    for path in module.BENCH_PIN_MANIFESTS:
+        specs = module.bench_dependency_specs(
+            tomllib.loads((REPO / path).read_text(encoding="utf-8"))
+        )
+        assert specs, path
+        versions |= {spec for _, spec in specs}
+    assert len(versions) == 1
+    assert module.BENCH_PIN_RE.fullmatch(versions.pop())
+
+
+def test_a_pin_to_an_unpublished_version_is_refused(release_tree: Path) -> None:
+    for path in ("crates/sharpearena/Cargo.toml", "crates/sharpearena-py/Cargo.toml"):
+        _repin(release_tree, path, "=0.7.0", "=0.8.0")
+    for path in ("Cargo.lock", "crates/sharpearena-py/Cargo.lock"):
+        _repin(release_tree, path, 'version = "0.7.0"', 'version = "0.8.0"')
+
+    assert _pin_problems(release_tree) == [
+        "sharpebench-core 0.8.0 is not a published SharpeBench release"
+    ]
+
+
+def test_a_crate_the_index_has_never_heard_of_is_refused(release_tree: Path) -> None:
+    (release_tree.parent / "bench-index" / "sharpebench-core").unlink()
+
+    assert _pin_problems(release_tree) == [
+        "sharpebench-core 0.7.0 is not a published SharpeBench release"
+    ]
+
+
+def test_a_yanked_release_is_refused(release_tree: Path) -> None:
+    _write_bench_index(release_tree.parent / "bench-index", yanked=True)
+
+    assert _pin_problems(release_tree) == ["sharpebench-core 0.7.0 is yanked"]
+
+
+def test_a_checksum_the_registry_does_not_serve_is_refused(release_tree: Path) -> None:
+    _write_bench_index(release_tree.parent / "bench-index", checksum="cd" * 32)
+
+    problems = _pin_problems(release_tree)
+
+    assert len(problems) == 1
+    assert "the lockfile recorded" in problems[0]
+
+
+def test_manifests_that_disagree_are_refused(release_tree: Path) -> None:
+    _repin(release_tree, "crates/sharpearena-py/Cargo.toml", "=0.7.0", "=0.6.0")
+
+    assert _pin_problems(release_tree) == [
+        "the SharpeBench pins must name one release, found ['0.6.0', '0.7.0']"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("path", "old", "new", "expected"),
+    [
+        pytest.param(
+            "crates/sharpearena/Cargo.toml",
+            '"=0.7.0"',
+            '"0.7.0"',
+            "must pin sharpebench-core as =X.Y.Z",
+            id="range",
+        ),
+        pytest.param(
+            "crates/sharpearena/Cargo.toml",
+            'sharpebench-core = "=0.7.0"\n',
+            'sharpebench-core = "0.7.0"\n[dev-dependencies]\nsharpebench-core = "=0.7.0"\n',
+            "must pin sharpebench-core as =X.Y.Z",
+            id="range-behind-an-exact-dev-dependency",
+        ),
+        pytest.param(
+            "crates/sharpearena/Cargo.toml",
+            'sharpebench-core = "=0.7.0"',
+            'sharpebench-core = { path = "../b", version = "=0.7.0" }',
+            "from outside crates.io",
+            id="path-override",
+        ),
+        pytest.param(
+            "Cargo.lock",
+            'version = "0.7.0"',
+            'version = "0.6.0"',
+            "Cargo.lock locks sharpebench-core 0.6.0",
+            id="lockfile-behind-the-pin",
+        ),
+        pytest.param(
+            "Cargo.lock",
+            CRATES_IO,
+            "git+https://example.test/bench",
+            "does not resolve sharpebench-core",
+            id="git-sourced-lock-entry",
+        ),
+    ],
+)
+def test_a_pin_the_build_would_accept_is_refused(
+    release_tree: Path, path: str, old: str, new: str, expected: str
+) -> None:
+    _repin(release_tree, path, old, new)
+
+    assert any(expected in p for p in _pin_problems(release_tree))
+
+
+def test_finding_no_pins_is_a_refusal_not_a_pass(release_tree: Path) -> None:
+    _repin(release_tree, "crates/sharpearena/Cargo.toml", 'sharpebench-core = "=0.7.0"\n', "")
+    _repin(release_tree, "crates/sharpearena-py/Cargo.toml", 'sharpebench-core = "=0.7.0"\n', "")
+
+    problems = _pin_problems(release_tree)
+
+    assert "crates/sharpearena/Cargo.toml has no SharpeBench dependency to check" in problems
+    assert "the SharpeBench pins must name one release, found []" in problems
+
+
+def test_an_unreachable_index_refuses_the_release(
+    release_tree: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _release_module("release_driver_bench_outage")
+
+    def outage(*_args, **_kwargs):
+        raise module.urllib.error.URLError("no route to host")
+
+    monkeypatch.setattr(module.urllib.request, "urlopen", outage)
+    monkeypatch.delenv(module.BENCH_INDEX_ENV, raising=False)
+
+    with pytest.raises(module.ReleaseError, match="cannot read the crates.io index"):
+        module.bench_pin_problems(release_tree, "HEAD", module.default_bench_index())
+
+
+def _serve_index(
+    monkeypatch: pytest.MonkeyPatch, module, url: str, body: bytes
+) -> None:
+    def urlopen(request, **_kwargs):
+        if request.full_url != url:
+            raise module.urllib.error.HTTPError(request.full_url, 404, "gone", None, None)
+        return io.BytesIO(body)
+
+    monkeypatch.setattr(module.urllib.request, "urlopen", urlopen)
+
+
+def test_the_live_lookup_reads_the_sparse_index_path_and_treats_404_as_unpublished(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _release_module("release_driver_bench_sparse")
+    _serve_index(
+        monkeypatch, module, "https://index.crates.io/sh/ar/sharpebench-core", b"{}\n"
+    )
+
+    assert module.fetch_bench_index("sharpebench-core") == "{}\n"
+    assert module.fetch_bench_index("sharpebench-sim") is None
+
+
+def test_an_index_error_is_not_read_as_an_unpublished_crate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _release_module("release_driver_bench_503")
+
+    def unavailable(request, **_kwargs):
+        raise module.urllib.error.HTTPError(request.full_url, 503, "busy", None, None)
+
+    monkeypatch.setattr(module.urllib.request, "urlopen", unavailable)
+
+    with pytest.raises(module.ReleaseError, match="answered 503"):
+        module.fetch_bench_index("sharpebench-core")
+
+
+def test_verify_tag_refuses_a_wrong_bench_pin(release_tree: Path) -> None:
+    release_commit = _release_commit(release_tree)
+    _bind_and_tag(release_tree, release_commit)
+    _git(release_tree, "update-ref", "refs/remotes/origin/main", "HEAD")
+    (release_tree.parent / "bench-index" / "sharpebench-core").unlink()
+
+    checked = _run(release_tree, "verify-tag", "v0.20.0")
+
+    assert checked.returncode == 1
+    assert "sharpebench-core 0.7.0 is not a published SharpeBench release" in checked.stdout
+
+
+def test_execute_refuses_a_wrong_pin_before_any_worktree(release_tree: Path) -> None:
+    (release_tree.parent / "bench-index" / "sharpebench-core").unlink()
+    module = _release_module("release_driver_bench_execute")
+    module.cut_release = lambda *args, **kwargs: pytest.fail("the cut must not start")
+
+    with pytest.raises(module.ReleaseError, match="SharpeBench pin refused"):
+        module.execute_release(release_tree, "patch", push=False, fetch=False)
+
+
+def test_rehearsal_refuses_a_wrong_pin(release_tree: Path) -> None:
+    _git(release_tree, "update-ref", "refs/remotes/origin/main", "HEAD")
+    (release_tree.parent / "bench-index" / "sharpebench-core").unlink()
+    module = _release_module("release_driver_bench_rehearsal")
+    real_run = module.run
+
+    def real_driver(root, *args, **kwargs):
+        # The fixture's scripts/release.py is a stub, so the clone runs this one.
+        if args[:2] == (sys.executable, "scripts/release.py"):
+            args = (sys.executable, str(RELEASE), *args[2:])
+        return real_run(root, *args, **kwargs)
+
+    module.run = real_driver
+
+    with pytest.raises(module.ReleaseError, match="is not a published SharpeBench release"):
+        module.rehearse(release_tree, "patch")
+
+
+def test_the_release_workflow_cannot_swap_in_a_fixture_index() -> None:
+    for name in ("release.yml", "ci.yml"):
+        text = (REPO / ".github/workflows" / name).read_text(encoding="utf-8")
+        assert "SHARPEARENA_BENCH_INDEX" not in text
 
 
 def test_execute_cuts_the_release_in_a_worktree_off_the_base_commit(

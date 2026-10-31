@@ -11,12 +11,20 @@
       "sha256": "ec61a9a1f4340d58d497545ce401c159bd1e61201cb7c001773dd66b9e381f67"
     },
     {
+      "path": "paper/evidence/f1-baselines.rescore-v1-sb0.28.0.json",
+      "sha256": "33c9a3cfacba0a8deaed94c32569e98859ad3907775d18b66afb7ed68d07882c"
+    },
+    {
       "path": "paper/evidence/f2-regret.json",
       "sha256": "7dcf2e656b4f73e8af7e4dba90721bab63f79b8de4a01c682b299b9f693c80ee"
     },
     {
       "path": "paper/evidence/f3-generalization.json",
       "sha256": "3bff445e13dd4d094a45ebe20e713ec0bc63b06e017c30a399d3aa41a8cf50e1"
+    },
+    {
+      "path": "paper/evidence/f3-generalization.rescore-v1-sb0.28.0.json",
+      "sha256": "4cc288d900713ec81fec904793716d54c04672d974ae286da9d097ac23ce41ef"
     },
     {
       "path": "paper/evidence/f4-realism.json",
@@ -212,7 +220,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "a5a7411f82b3273bda2c5fee3b2b714f3da29145",
+  "generated_at_head": "23a5dcd537045a590a64b4c4e4cedb47594d8e1e",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -234,11 +242,11 @@
     },
     {
       "path": ".github/workflows/bench-main.yml",
-      "sha256": "f6a2dfd33f2e48b14bf0fe592d43652fac90de7bfc76fe599815cd22ffba678c"
+      "sha256": "46c69c226e24a6bc69931efd795a1ac855375a86b62c46c1305a34d4c85f5496"
     },
     {
       "path": ".github/workflows/ci.yml",
-      "sha256": "deace4bfdba0f5d042a98445e176fb10463ccf19ff4d129bee881654bd4afd8d"
+      "sha256": "fe36eae6cddf515c646d4e11319752a7f2b21b034c7f1343fabb715a3681a52e"
     },
     {
       "path": ".github/workflows/release.yml",
@@ -262,7 +270,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/__init__.py",
-      "sha256": "89277946ac5e8b0cff74e2091e57b904e3e4cf30f307bf4da04958f3824ebf72"
+      "sha256": "eca5b8fc9a13e39206c5e5e5c431e9a1cb783398bd5ea8597269f3b9efe019e4"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/_action_validation.py",
@@ -274,7 +282,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/_spec_hash.py",
-      "sha256": "79dd66353944a74a78bd8f6656a06b8cb26808e22f79df1392578e0b9fb14b04"
+      "sha256": "408ba9b89c30b07b139d2af89a193f6231882d508bcccb0bfffe21874dfa06b5"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/adverse_selection.py",
@@ -350,7 +358,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/effective_config.py",
-      "sha256": "7d3794ad5d55c1c3fd989804ba88626a1893078e63b36e4a9857fb2c139e81f6"
+      "sha256": "9554a90cc42e059f4c6cfe82d397659ec89c40b17fe1f28eb0021e7c18ab638d"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/episode_outcomes.py",
@@ -398,11 +406,11 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/gym.py",
-      "sha256": "c0b4720fa18cda5d35df3a536072dc09f622b4193883a2077d7d773b3ba764b4"
+      "sha256": "2be3291a408e75906bf9631f61842f3b4da987a10d92a5f60a9677078040543e"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/impact_diagnostics.py",
-      "sha256": "5bab48f8e31eab47f87b199ed988b75871e2e5381dc50209477286460b86d4ed"
+      "sha256": "3dd259eb41d42f36f3628f3f67c9fb116693e88f243bc74c7cb375ca93a56070"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/indicators.py",
@@ -410,11 +418,11 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/integrations/__init__.py",
-      "sha256": "fb2ef3d9764b19f6b49df74a3416f90a367d1dfdb6e65deef89d226d551a8567"
+      "sha256": "186ac823ec92df60ac30a1cdd2bae520a55ba1d6775b3bda36da99d26915fed5"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/integrations/contracts.py",
-      "sha256": "3ef50f9aaa48d2a66cf669d8d661fc5a8028ff02593e36b56409292d9adf07e9"
+      "sha256": "00b43953d1dbbac600d652b962b859eeebcc3fc5d022fb1c54ca1f80b005fb2b"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/integrations/parity.py",
@@ -446,11 +454,11 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/manipulation.py",
-      "sha256": "08ef6a196015857bc09e0f18f45ce7bec2fd86b290c51c0b98d3ed352ee5fe64"
+      "sha256": "369066df991c32122cd8108372f10821abe854a57a43405c6fc58e9749422ad2"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/market_env.py",
-      "sha256": "37dfb260e62745bb433231943e3c7bf36cad04e09c5e895f4f1cebc1c5a136e5"
+      "sha256": "3edb9cb3c94c91afe0a0937906aa1bbc0822beaeed562e0e7a4a7485051fe4bc"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/market_making.py",
@@ -546,7 +554,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/rllib_env.py",
-      "sha256": "9ad7d8a7992f38979c22288b706d3350cac4d329186f5533d416a656739c9764"
+      "sha256": "6e46e027e20a60723491f82c8e310e34d4dced3196c98f0cab45930f84921a48"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/sb3_env.py",
@@ -582,7 +590,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/vector.py",
-      "sha256": "b0425c4fa64d4de64fb44b98453f99b55166b9bb596d99d372c8da04afae0a6a"
+      "sha256": "d2ceb2d3da19c1803453f0849e3cd167a11ab653da911d833ca9b4c0f5eefeeb"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/verifiers_env.py",
@@ -590,15 +598,15 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/wrappers.py",
-      "sha256": "829085cd93c263dd31d395779d10fbeaaf050267b897e890962fd62761799e26"
+      "sha256": "daf0376528a482639999e2f289520e1c693ac9e6a0d84314ac56e3fd382898e8"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/wrappers_vector.py",
-      "sha256": "d69496e2721274747b0b55ee54bfa158512ca0d45ba71b6ce2574430c8de1355"
+      "sha256": "317a3111621530f80b71fc99a2345f179050b531afa4caa7bb1db5c68689dc38"
     },
     {
       "path": "crates/sharpearena-py/src/lib.rs",
-      "sha256": "a6385e41eb981db89bc1ec7a510b03fa1bc0376989998dcab3f0d31c26b342e6"
+      "sha256": "df7b61f259f93a9b8d5e520f696273b02d9998629f0710646f4cb1857f96b396"
     },
     {
       "path": "crates/sharpearena-wasm/Cargo.toml",
@@ -606,7 +614,7 @@
     },
     {
       "path": "crates/sharpearena-wasm/src/lib.rs",
-      "sha256": "a20b1051f6cc31db25dec9cf2ae2c49a0ba3377a86c7c7c8608bb661af05b9ac"
+      "sha256": "d6e11cfbcbdb7cd4b27d6f832bfa240a34e6d6107bdde56875c7e479532fc02e"
     },
     {
       "path": "crates/sharpearena/Cargo.toml",
@@ -629,6 +637,10 @@
       "sha256": "9aa9902336d7cd263a58555289ad04164204a332d4ec25b99b7679c9774029f1"
     },
     {
+      "path": "crates/sharpearena/examples/dump-scenario-panels.rs",
+      "sha256": "ecde3a2308661c26922a54263d7dae558b9fa326648270b93919d0485e4a1277"
+    },
+    {
       "path": "crates/sharpearena/examples/score-a-trajectory.rs",
       "sha256": "d5cca9bbdf9a95aea762c34c10bf7d475ce46e9b213a29c10bfd748f4c59be51"
     },
@@ -649,6 +661,10 @@
       "sha256": "f908ee8f4940feda37af7e9b0c9aef07cb801097ecbf19a2f3364dd8a4bc83d9"
     },
     {
+      "path": "crates/sharpearena/src/fresh_scenarios.rs",
+      "sha256": "0a85acc1f981017fde7ece5563d53dfb501b61313bc54bc207f48101caf0c5ab"
+    },
+    {
       "path": "crates/sharpearena/src/kernel_score.rs",
       "sha256": "3886088c56b6560e12174588629c4bf5503c6c4a1421442ea42be1459eb51239"
     },
@@ -658,7 +674,7 @@
     },
     {
       "path": "crates/sharpearena/src/lib.rs",
-      "sha256": "e4c669a7c6177f5127d6bde3d1545b7f484602284dff6825b84a1a350aef58b4"
+      "sha256": "83f3079672125d0127455d002d00ded79a3917f891077d6adcf5a7436148ea5f"
     },
     {
       "path": "crates/sharpearena/src/lob_market.rs",
@@ -670,7 +686,7 @@
     },
     {
       "path": "crates/sharpearena/src/market.rs",
-      "sha256": "a6a6455934650d637d1c2256b1b19b4ef2dad5658364a0977c407f960abdf9f3"
+      "sha256": "432a430639efe2df702791be9a680b2e204c72987b7663cde813462e57cf3ced"
     },
     {
       "path": "crates/sharpearena/src/richness.rs",
@@ -678,7 +694,7 @@
     },
     {
       "path": "crates/sharpearena/src/scenario_gen.rs",
-      "sha256": "f41678f81536ec925d5a48b48463de1ebd63c383935eb1fbcff8eb22c9779dab"
+      "sha256": "bf6d8e3bd500ba30b15041dd19148c57eee7f5ec0f712dcdcee3661a7c23196c"
     },
     {
       "path": "crates/sharpearena/src/spec_hash.rs",
@@ -690,7 +706,7 @@
     },
     {
       "path": "crates/sharpearena/src/vec_env.rs",
-      "sha256": "642a404fb06c29c1eb9b08fed80221d5b20ae3071880bbe8b78ecf684e9cba17"
+      "sha256": "c9a5e8c5bd49be054268ce1e8cf000e8c8529e61e155c90f6d8a29ab05b713fa"
     },
     {
       "path": "crates/sharpearena/src/vocabulary.rs",
@@ -706,7 +722,7 @@
     },
     {
       "path": "crates/sharpearena/tests/engine_enum_contract.rs",
-      "sha256": "b17ed3123e5dbfe9b74633af4f2a3f46306bcb25bd522da4fabca98fdadf9096"
+      "sha256": "680703b97642ef18207be9482061d8706a2e24ceb91e2457a9f7fd986daf4711"
     },
     {
       "path": "crates/sharpearena/tests/error_style.rs",
@@ -869,6 +885,10 @@
       "sha256": "df8172295b05eee56492ada281136e2e27e80e6f0c77fcf5c57e9670cff4d105"
     },
     {
+      "path": "paper/src/make-rescore-f1-f3.py",
+      "sha256": "06a8df757c5b4bd4a31386a30ce38d43b2091dc880b8b83f144034828cd1838e"
+    },
+    {
       "path": "paper/src/make-sealed-seeds.py",
       "sha256": "bd997c514970cc79ff090f81c7b4c44e6c8e0acf1bd97d48b82acf366a91ab3c"
     },
@@ -897,6 +917,10 @@
       "sha256": "d96524483221d67e7bb4a687df4a121cbaa64a35fbd295938275ff86b17ae89d"
     },
     {
+      "path": "paper/src/test_rescore_f1_f3.py",
+      "sha256": "37bcaa6dae39c2ac354dc4730f3669c7ce0047c93ef4b2b21a96f631bb65801e"
+    },
+    {
       "path": "release.toml",
       "sha256": "d3dbfeaad16745ce33bc518d7f22f32ace3ec3a6d83a407ae91a2bd9f9bdcf8a"
     },
@@ -910,7 +934,15 @@
     },
     {
       "path": "scripts/check-ci-policy.py",
-      "sha256": "b2d3c0e743039d6392caec214a9afc3a86aedf3e5e31585dae076513bdfb5474"
+      "sha256": "9ea53feb3bf338ce896905ae1f874482193aa3bfd39577ded218a1afd202f01e"
+    },
+    {
+      "path": "scripts/check-cleanrl-style-example.py",
+      "sha256": "26ec7110b4dfe0e22db0d01bafe3fad49f6faa5025e38d436d230dea5ac04f98"
+    },
+    {
+      "path": "scripts/check-evidence-register.py",
+      "sha256": "038a6d7da89038048ba28f7f17ada135b1564f5b615cc69aa3c53c6faad046e3"
     },
     {
       "path": "scripts/check-installed-wheel.py",
@@ -934,7 +966,7 @@
     },
     {
       "path": "scripts/check-packaged-adapter.py",
-      "sha256": "af307f8a390f3547fe34f01aa082c5413af803d3568d3c4aa9fb76e7b216ab01"
+      "sha256": "6a4333a6ee353664fb1cda0cd6f5cd4781235a722f3c35b4d567101d194ffefc"
     },
     {
       "path": "scripts/check-packaged-consumer.py",
@@ -946,15 +978,23 @@
     },
     {
       "path": "scripts/check-wheel-install.py",
-      "sha256": "2d24f5be51ba49cbb591a4c1e6dc5e654718735f8a8773577b682b28a52dafa1"
+      "sha256": "230aa53f3d1aaa4443791266a6488bbf9078aaffc8ca8ebdf706d59d7cf5f885"
+    },
+    {
+      "path": "scripts/make-evidence-register.py",
+      "sha256": "9c7e99a6aaa809a81fa8341b7d57c8244804d2af019986cedc5bd44d065d6fc2"
     },
     {
       "path": "scripts/optional_extras.py",
-      "sha256": "4ad9ac56bb470e51cd7bde064d0e9560ab612be954c69a60554026924c8aaf34"
+      "sha256": "29982922b99073ded83bfa213e4afb237e6fd51c30f1c7811742a8d0eee251b7"
     },
     {
       "path": "scripts/release.py",
-      "sha256": "6c0e98c4ab74418d10e16be0a685a2627611f0f8bd5a2e5b89ae30013c75af73"
+      "sha256": "064841c90df7f86a26791862947fb5bc4d457978a9c1b4cbbccaae4cd94be4e4"
+    },
+    {
+      "path": "scripts/run-learner-tests.py",
+      "sha256": "036ce3ef3271f5598a3ff8a54030f33ddfbe9bfc99afa21db02b5449e397745c"
     },
     {
       "path": "scripts/test-ray-wheel-check.py",
@@ -969,8 +1009,12 @@
       "sha256": "065fd46da8d75b51b39d643738f4a3b4881e9a7c5917d122167d91b6e4c0bec4"
     },
     {
+      "path": "scripts/test_check_evidence_register.py",
+      "sha256": "f99d5d7f533f8d6e2c25081f6c5c81a37dceb0618dde4e06fff4acfa65548341"
+    },
+    {
       "path": "scripts/test_harbor_grader.py",
-      "sha256": "6b28ffc7637ca89b6f005175ae3bfdc3d99af4e63fb1dfd5c6e9293041a9a368"
+      "sha256": "2526ee3584e83537d8efddf3d7506ea0037b982ef8822f4966f3d98e8e496b6a"
     }
   ],
   "source_snapshot_excludes": [
@@ -998,6 +1042,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "eaaa542fecd892ca160a9a18fc4fe98d2f0780392e02bc0289a16c5d90c4ed96",
+  "source_snapshot_sha256": "c7fe32f67b2400638b718fb6e89a3c55014e081d872ebe2d3ba5f8f5dbdb0842",
   "validator": "paper/src/check-provenance.py"
 }

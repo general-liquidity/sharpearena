@@ -12,6 +12,10 @@
 //! `ln`/`exp`, which differ across libm implementations), so a generated panel is
 //! byte-identical across Rust, WASM, and Python, and `n_symbols` / `n_days` are
 //! honored by every tier.
+//!
+//! `Calm`, `Hard` and `Extreme` carry drift and return autocorrelation an agent can
+//! trade. `MartingaleV1` carries neither by construction; `EVALUATION.md` states what
+//! can be learned from each tier.
 
 use serde::{Deserialize, Serialize};
 
@@ -41,6 +45,13 @@ pub enum DistributionMode {
     /// changepoint location drawn from the seed.
     #[serde(rename = "regime_shift")]
     RegimeShift,
+    /// A versioned tier with no drift and no return autocorrelation, and with clustered
+    /// volatility and fat tails: each symbol is an independent martingale whose scale
+    /// follows an absolute-value GARCH recursion. Its constants are frozen under this
+    /// name, so a retune is a new variant and never a change here. See `martingale_v1`
+    /// and `studies/generator-calibration/PROTOCOL.md`.
+    #[serde(rename = "martingale_v1")]
+    MartingaleV1,
 }
 
 /// A reproducible scenario family: a seed interval `[start_level, start_level +
@@ -385,10 +396,82 @@ fn regime_shift(mut base: Dataset, seed: u64) -> Dataset {
     base
 }
 
+/// Stream salt of [`martingale_v1`], distinct from every other tier's.
+const MARTINGALE_V1_SALT: u64 = 0x4D61_7274_696E_6731;
+/// Bars run and discarded per symbol, so the first recorded scale is near stationary.
+const MARTINGALE_V1_BURN_IN: usize = 64;
+/// Probability that a bar's innovation is drawn from the wide component.
+const MARTINGALE_V1_TAIL_P: f64 = 0.08;
+/// Scale of the wide component of the innovation mixture.
+const MARTINGALE_V1_TAIL_K: f64 = 2.5;
+/// Mean of the scale recursion, and the state every symbol starts from.
+const MARTINGALE_V1_SCALE_MEAN: f64 = 0.02239;
+/// Constant term of the scale recursion: `sbar * (1 - a * E|z| - b)`.
+const MARTINGALE_V1_W: f64 = 0.001343400000000001;
+/// Weight on the last absolute return.
+const MARTINGALE_V1_A: f64 = 0.1530612244897959;
+/// Weight on the last scale.
+const MARTINGALE_V1_B: f64 = 0.86;
+/// Ceiling on the scale, five times its mean. With innovations bounded by
+/// `2 * MARTINGALE_V1_TAIL_K`, the largest move is 0.55975, so the `-0.95` return floor
+/// can never bind and cannot add a conditional mean.
+const MARTINGALE_V1_SCALE_CAP: f64 = 0.11195;
+// A build whose largest possible move could reach the return floor must not exist: the
+// floor would add a positive conditional mean to a tier that promises none.
+const _: () = assert!(MARTINGALE_V1_SCALE_CAP * 2.0 * MARTINGALE_V1_TAIL_K < 0.95);
+
+/// One step of the [`martingale_v1`] scale recursion, capped so that the largest possible
+/// move stays clear of the return floor.
+fn martingale_v1_next_scale(scale: f64, r: f64) -> f64 {
+    (MARTINGALE_V1_W + MARTINGALE_V1_A * r.max(-r) + MARTINGALE_V1_B * scale)
+        .min(MARTINGALE_V1_SCALE_CAP)
+}
+
+/// Overwrite each symbol with the [`DistributionMode::MartingaleV1`] path, starting at 100:
+/// `r_t = s_t * z_t`, then `s_(t+1) = min(w + a * |r_t| + b * s_t, cap)`.
+///
+/// `z_t` is the sum of four uniform draws less 2, multiplied by `k` when a fifth draw falls
+/// below `p`. It is symmetric and independent of the past, and `s_t` is known at `t - 1`, so
+/// `E[r_t | past] = 0`: no drift and no autocorrelation hold for the recursion itself rather
+/// than for one fitted value, and any adapted weights earn zero expected per-bar return
+/// before costs. What survives is the risk: `|r_t|` clusters and the tails are fat, so
+/// volatility can be forecast and direction cannot. Symbols are independent, with no common
+/// factor.
+///
+/// Mul/add/`max` only, and exactly five draws per bar, so the stream position never depends
+/// on a value and the panel is byte-identical across runtimes. The constants were fitted on
+/// seeds `[0, 128)` and judged on `[128, 256)`, under a protocol frozen first.
+fn martingale_v1(mut base: Dataset, seed: u64) -> Dataset {
+    let mut rng = SplitMix64::new(seed ^ MARTINGALE_V1_SALT);
+    for series in base.closes.values_mut() {
+        let Some(bars) = series.len().checked_sub(1) else {
+            continue;
+        };
+        let mut scale = MARTINGALE_V1_SCALE_MEAN;
+        let mut price = 100.0_f64;
+        series[0] = price;
+        for bar in 0..MARTINGALE_V1_BURN_IN + bars {
+            let z = rng.next_unit() + rng.next_unit() + rng.next_unit() + rng.next_unit() - 2.0;
+            let z = if rng.next_unit() < MARTINGALE_V1_TAIL_P {
+                MARTINGALE_V1_TAIL_K * z
+            } else {
+                z
+            };
+            let r = scale * z;
+            if bar >= MARTINGALE_V1_BURN_IN {
+                price *= 1.0 + r.max(-0.95);
+                series[bar - MARTINGALE_V1_BURN_IN + 1] = price;
+            }
+            scale = martingale_v1_next_scale(scale, r);
+        }
+    }
+    base
+}
+
 /// Generate the [`Dataset`] for `spec` under `seed`. Deterministic: identical
 /// `(spec, seed)` ⇒ identical `Dataset`. `n_symbols` / `n_days` are honored by every
 /// tier; `Hard` / `Extreme` amplify the same seeded panel (see `amplify`), while
-/// `CointegratedPairs` / `RegimeShift` overwrite it with a bespoke structured panel.
+/// `CointegratedPairs` / `RegimeShift` / `MartingaleV1` overwrite it with a bespoke panel.
 pub fn generate_scenario(spec: &ScenarioSpec, seed: u64) -> Dataset {
     let base = Dataset::synthetic(spec.n_symbols, spec.n_days, seed);
     let tiered = match spec.distribution_mode {
@@ -415,6 +498,7 @@ pub fn generate_scenario(spec: &ScenarioSpec, seed: u64) -> Dataset {
         ),
         DistributionMode::CointegratedPairs => cointegrated_pairs(base, seed),
         DistributionMode::RegimeShift => regime_shift(base, seed),
+        DistributionMode::MartingaleV1 => martingale_v1(base, seed),
     };
     let clustered = if spec.vol_clustering > 0.0 {
         vol_cluster(tiered, spec.vol_clustering)
@@ -742,6 +826,140 @@ mod tests {
     /// Golden fingerprint of [`ScenarioSpec::calm_calibration_candidate`] at seed 7. Pins the
     /// candidate's knob values and generated bytes, not a certification claim.
     const GOLDEN_CALM_CALIBRATION_CANDIDATE_4X120_SEED7_FNV1A: u64 = 0x32a6_3f8e_5743_ec93;
+    /// Golden fingerprint of `martingale_v1` 4×120 at seed 7. The name promises frozen
+    /// constants, so this moving means the tier was changed under its own version.
+    const GOLDEN_MARTINGALE_V1_4X120_SEED7_FNV1A: u64 = 0xf7d7_fd4e_a890_9352;
+
+    fn martingale_spec(n_symbols: usize, n_days: usize) -> ScenarioSpec {
+        ScenarioSpec {
+            n_symbols,
+            n_days,
+            distribution_mode: DistributionMode::MartingaleV1,
+            ..ScenarioSpec::default()
+        }
+    }
+
+    fn simple_returns(series: &[f64]) -> Vec<f64> {
+        series.windows(2).map(|w| w[1] / w[0] - 1.0).collect()
+    }
+
+    fn autocorrelation(x: &[f64]) -> f64 {
+        let mean = x.iter().sum::<f64>() / x.len() as f64;
+        let d: Vec<f64> = x.iter().map(|v| v - mean).collect();
+        let denom: f64 = d.iter().map(|v| v * v).sum();
+        d.windows(2).map(|w| w[0] * w[1]).sum::<f64>() / denom
+    }
+
+    #[test]
+    fn martingale_v1_golden_and_serde_label() {
+        let json = serde_json::to_string(&generate_scenario(&martingale_spec(4, 120), 7)).unwrap();
+        assert_eq!(
+            json,
+            pre_hash_fixture(GOLDEN_MARTINGALE_V1_4X120_SEED7_FNV1A)
+        );
+        assert_eq!(
+            fnv1a(json.as_bytes()),
+            GOLDEN_MARTINGALE_V1_4X120_SEED7_FNV1A
+        );
+        assert_eq!(
+            serde_json::to_string(&DistributionMode::MartingaleV1).unwrap(),
+            "\"martingale_v1\""
+        );
+    }
+
+    /// The source constants must be the ones the recursion's derivation states. `w` carries
+    /// the mean of the scale, so a typed-in change to any one of them shows up here.
+    #[test]
+    fn martingale_v1_constants_are_mutually_consistent() {
+        let mean_abs_z = 7.0 / 15.0
+            * ((1.0 - MARTINGALE_V1_TAIL_P) + MARTINGALE_V1_TAIL_P * MARTINGALE_V1_TAIL_K);
+        let persistence = MARTINGALE_V1_A * mean_abs_z + MARTINGALE_V1_B;
+        assert!(persistence < 1.0);
+        let stationary = MARTINGALE_V1_W / (1.0 - persistence);
+        assert!((stationary / MARTINGALE_V1_SCALE_MEAN - 1.0).abs() < 1e-12);
+        assert!((MARTINGALE_V1_SCALE_CAP / MARTINGALE_V1_SCALE_MEAN - 5.0).abs() < 1e-12);
+    }
+
+    /// The floor is what could put a conditional mean into a martingale, so it must be out
+    /// of reach, and the path must honor every geometry the other tiers honor.
+    #[test]
+    fn martingale_v1_never_reaches_the_floor_and_honors_geometry() {
+        for (n_symbols, n_days) in [(1, 1), (1, 2), (3, 7), (5, 300)] {
+            let d = generate_scenario(&martingale_spec(n_symbols, n_days), 3);
+            assert_eq!(d.closes.len(), n_symbols);
+            for series in d.closes.values() {
+                assert_eq!(series.len(), n_days);
+                assert_eq!(series[0], 100.0);
+                assert!(series.iter().all(|p| p.is_finite() && *p > 0.0));
+                for r in simple_returns(series) {
+                    assert!(r.abs() <= 0.55975 + 1e-12, "move {r} exceeds the bound");
+                }
+            }
+        }
+    }
+
+    /// The cap never binds on a short path, so a panel cannot show it missing. It is what
+    /// keeps the floor out of reach, so the step is tested directly at the largest state
+    /// and move the recursion can produce, and symmetrically in the sign of the move.
+    #[test]
+    fn martingale_v1_scale_step_is_capped_and_symmetric() {
+        let largest_move = MARTINGALE_V1_SCALE_CAP * 2.0 * MARTINGALE_V1_TAIL_K;
+        assert_eq!(
+            martingale_v1_next_scale(MARTINGALE_V1_SCALE_CAP, largest_move),
+            MARTINGALE_V1_SCALE_CAP
+        );
+        assert_eq!(
+            martingale_v1_next_scale(MARTINGALE_V1_SCALE_MEAN, 0.01),
+            martingale_v1_next_scale(MARTINGALE_V1_SCALE_MEAN, -0.01)
+        );
+        assert!(martingale_v1_next_scale(MARTINGALE_V1_SCALE_MEAN, 0.0) < MARTINGALE_V1_SCALE_MEAN);
+    }
+
+    /// A longer episode must not rewrite bars an agent has already seen. The first symbol
+    /// shares its stream start with every episode length, so only a burn-in or scale that
+    /// read `n_days` would move this prefix. The later symbols' stream positions are
+    /// pinned by the golden and, bit for bit, by the study's port.
+    #[test]
+    fn martingale_v1_first_symbol_extends_by_prefix() {
+        let short = generate_scenario(&martingale_spec(1, 40), 11);
+        let long = generate_scenario(&martingale_spec(1, 80), 11);
+        let (s, l) = (&short.closes["SYM00"], &long.closes["SYM00"]);
+        assert_eq!(s.as_slice(), &l[..40]);
+    }
+
+    /// The design claim on long paths, where estimator noise is small: no drift, no lag-1
+    /// autocorrelation, and positive autocorrelation of `|r|`, which the same statistic on
+    /// Calm does not show. Calm is the control that keeps this test able to fail.
+    #[test]
+    fn martingale_v1_has_clustered_risk_and_no_directional_signal() {
+        let n_days = 20_000;
+        let tier = |mode: DistributionMode| {
+            let spec = ScenarioSpec {
+                distribution_mode: mode,
+                ..martingale_spec(4, n_days)
+            };
+            let (mut signed, mut abs, mut mean) = (0.0, 0.0, 0.0);
+            let seeds = 8;
+            for seed in 0..seeds {
+                for series in generate_scenario(&spec, seed).closes.values() {
+                    let r = simple_returns(series);
+                    signed += autocorrelation(&r);
+                    abs += autocorrelation(&r.iter().map(|v| v.abs()).collect::<Vec<_>>());
+                    mean += r.iter().sum::<f64>() / r.len() as f64;
+                }
+            }
+            let n = (seeds * 4) as f64;
+            (signed / n, abs / n, mean / n)
+        };
+        let (signed, abs, mean) = tier(DistributionMode::MartingaleV1);
+        assert!(signed.abs() < 0.01, "lag-1 autocorrelation {signed}");
+        assert!(mean.abs() < 3e-4, "mean daily return {mean}");
+        assert!(abs > 0.05, "|r| autocorrelation {abs}");
+        let (calm_signed, calm_abs, calm_mean) = tier(DistributionMode::Calm);
+        assert!(calm_signed > 0.2, "control lost its signal: {calm_signed}");
+        assert!(calm_mean > 3e-4, "control lost its drift: {calm_mean}");
+        assert!(calm_abs < 0.05, "control gained clustering: {calm_abs}");
+    }
 
     /// Mean per-symbol stdev of simple returns — a realized-volatility proxy.
     fn realized_vol(d: &Dataset) -> f64 {
@@ -891,7 +1109,7 @@ mod tests {
     /// canonicalization regression fails with a readable diff instead of two hex numbers.
     /// A companion test pins each fixture's own bytes to the committed fingerprint, so
     /// the two representations cannot drift apart.
-    const PRE_HASH_FIXTURES: [(&str, u64); 7] = [
+    const PRE_HASH_FIXTURES: [(&str, u64); 8] = [
         (
             include_str!("../contract/attestation/pre-hash/scenario-calm-4x120-seed7.json"),
             GOLDEN_CALM_4X120_SEED7_FNV1A,
@@ -925,6 +1143,10 @@ mod tests {
                 "../contract/attestation/pre-hash/scenario-calm-calibration-candidate-4x120-seed7.json"
             ),
             GOLDEN_CALM_CALIBRATION_CANDIDATE_4X120_SEED7_FNV1A,
+        ),
+        (
+            include_str!("../contract/attestation/pre-hash/scenario-martingale-v1-4x120-seed7.json"),
+            GOLDEN_MARTINGALE_V1_4X120_SEED7_FNV1A,
         ),
     ];
 

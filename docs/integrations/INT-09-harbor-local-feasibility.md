@@ -9,8 +9,8 @@ public Hub submission, no external storage, no credentials, no paid
 provider call were made anywhere in this work.
 
 All findings below are from an actual local run on this machine, not from
-reading the vendor docs. Where a claim in
-`SHARPE-HANDOFF-SUPPORT/product-planning/integration-refs/HUD-HARBOR-REFERENCE.md`
+reading the vendor docs. Where a claim in the maintainers' HUD and Harbor
+reference note, which is not published in this repository,
 is confirmed or contradicted by that run, this says so explicitly.
 
 ## 1. Runtime boundary this evidence covers
@@ -41,9 +41,12 @@ HARBOR_TELEMETRY=off harbor run -p tasks/sa-replay-feasibility -a oracle
 ```
 
 produced a completed trial, `verifier/reward.txt` = `1.0`, in ~1m23s. The
-task package is four files plus a dedicated verifier image, exactly the
-minimum shape the reference doc describes:
-`integrations/harbor/tasks/sa-replay-feasibility/{instruction.md,task.toml,environment/Dockerfile,tests/{Dockerfile,test.sh,grade.py}}`.
+task package at `integrations/harbor/tasks/sa-replay-feasibility/` starts from the
+four minimum files the reference note names: `instruction.md`, `task.toml`,
+`environment/Dockerfile` and `tests/test.sh`. It adds `tests/grade.py`,
+`tests/Dockerfile` for the dedicated verifier image,
+`tests/private/future_prices.json` for the private evaluator data and
+`solution/solve.sh` for the oracle agent.
 
 **`network_mode = "no-network"` does not work on this host.** Setting it and
 rerunning raised, at validation time, before any container started:
@@ -106,7 +109,7 @@ That fixture's own script runs `mkdir -p /tests/private && cat >
 just wrote inside its own container. The verifier still scored 0.87 (the
 real honest-action result), because the separate verifier never sees that
 container at all; it is built fresh from `tests/Dockerfile` in its own
-image. All six other fixtures show `tests_dir_exists: false` from a stock
+image. All seven other fixtures show `tests_dir_exists: false` from a stock
 container, which is the actual answer to "can the agent read `/tests` or
 the private evaluator file": **no** - the private future-return file used
 for scoring was never mounted, copied, or otherwise reachable from the
@@ -252,6 +255,33 @@ rather than in Harbor's artifact-collection pipeline. No fixture in
 defect found by reading the code, not a result from any of the eight
 recorded trials.
 
+**Task-package changes, 2026-10-30, not rerun in a container.** Docker was not
+running, so every result above stands as recorded, and each statement here is a
+prediction until a job runs.
+
+- Probe order. `writable_grader_path` now probes before it writes, so its
+  `tests_dir_exists: true` in section 3 is a measurement error of the old fixture and
+  the note below that table describes the old ordering.
+- Pre-collection check. Harbor offers `[[verifier.collect]]`, which runs after the agent
+  phase and before collection. The inline hook in `task.toml` counts and removes
+  everything under `/logs/artifacts` that is neither a regular file nor a directory, and
+  writes the count to `.sa-transfer-check.json`. `[[artifacts]]` could not do this,
+  because Harbor always collects the convention directory. The grader refuses a nonzero
+  count as `artifact_tree_unsafe`, walks the uploaded tree for the same entries, and
+  refuses a missing or malformed result as `transfer_check_unavailable`. Run against a
+  local root, `path_traversal` reaches `artifact_tree_unsafe`.
+- Limits. Harbor treats the hook as best effort and the hook runs in the container the
+  agent controlled. If it fails, or an agent process recreates an entry after it, the
+  section 5 crash can recur. The marker is agent-writable until the hook replaces it, so
+  it is a report, not proof, and neither the agent's filesystem nor the upstream
+  re-upload changed.
+- Metric. `integrations/harbor/metric.py` replaces the default mean in
+  `jobs/tampering.yaml`. Section 4's limit still applies to any job that does not name it.
+  Harbor passes a job metric the reward dicts only, so the job path reads `accepted` from
+  the new `reward.json`, and the `--job-dir` path reads each `report.json`. Harbor 0.23.0's
+  real `UvScript` ran the file on sample rewards with no job behind them. The script
+  needs `uv`.
+
 ## 6. Reference-doc drift confirmed against the installed package
 
 - **`schema_version`**: the reference doc's "follow the reference, not the
@@ -289,7 +319,7 @@ Within the boundary in §1:
 
 - The separate verifier's grading code and its one private input
   (`tests/private/future_prices.json`) were never present in, copied to,
-  or readable from the agent's own container in any of the eight
+  or readable from the agent's own container in any of the seven
   fixtures that didn't fabricate the paths themselves. Confirmed by
   direct probe, not by trusting `environment_mode = "separate"`.
 - Tampering that only touches the agent's own container (forged reward

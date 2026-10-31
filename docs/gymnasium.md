@@ -98,7 +98,8 @@ explicit execution seed are preserved; without an execution override, each
 lane's execution seed follows its scenario seed. `scenario_seeds`, native
 dataset readbacks and `info["scenario_seed"]` describe the rebuilt lanes.
 `reset()` keeps the current scenarios and clears pending actions and counters.
-Autoreset also replays those scenarios, not fresh independent draws.
+By default autoreset also replays those scenarios, not fresh independent draws;
+see [Fresh scenarios on recycle](#fresh-scenarios-on-recycle) for the opt-in.
 
 Without constructor seeds, training lanes begin at zero and evaluation lanes
 begin at `EVAL_SEED_BASE`. Constructor and explicit reset seeds are literal,
@@ -116,12 +117,71 @@ consume the cap. `None` preserves the native horizon. Record the cap alongside
 the environment ID and window; a custom cap changes the task length, not the
 frozen scenario/fill rules behind `-v1`.
 
+## Fresh scenarios on recycle
+
+With the default `autoreset_scenarios="replay"`, a recycled lane restarts its own
+scenario, so a run sees only as many scenarios as lanes. Training over more scenarios
+than lanes needs the opt-in:
+
+```python
+from sharpearena import SharpeArenaVectorEnv
+
+envs = SharpeArenaVectorEnv(num_envs=8, autoreset_scenarios="fresh_v1")
+```
+
+Under `fresh_v1` each recycled episode draws a new scenario seed. The seed is a pure
+function of the lane's construction seed, its lane index and its episode count, so two
+runs with the same arguments draw the same seeds. An explicit execution seed in
+`env_kwargs` is kept; otherwise the lane's execution seed follows the drawn seed, as it
+does at construction.
+
+- Every draw lands in the training band `[0, EVAL_SEED_BASE)`. Evaluation mode and any
+  lane or `reset(seed=...)` outside that band are refused, so a run cannot mix held-out
+  scenarios into training.
+- `info["scenario_seed"]` names the scenario each returned observation belongs to, and
+  `info["drawn_scenario_seed"]` holds the seed a lane drew on that step, or `None`. Under
+  `same_step`, `final_info[i]["scenario_seed"]` names the episode that just finished.
+- `effective_configs` adds the stream's root seed, lane and band, every drawn seed in
+  order, the live scenario seed and a fingerprint of the dataset the lane holds now. The
+  base fields keep describing the lane as constructed.
+- `reset()` keeps the current scenarios and the stream position. `reset(seed=...)`
+  reopens the stream from the new seeds. `disabled` lanes never recycle, so they never
+  draw. CSV lanes share one frozen path and have no fresh mode.
+- Draws are with replacement, so a seed can repeat within or across lanes. The label is
+  versioned: `fresh_v1` always yields the same stream, and a different derivation would
+  ship under a new label.
+
+## Binary step path
+
+`step` crosses the native boundary as JSON, which stays the canonical wire format.
+`step_array` is a second method on `SharpeArenaEnv` and `SharpeArenaVectorEnv` for
+trainers that only need numbers. It moves float64 arrays through the buffer protocol
+with no JSON per step:
+
+```python
+observation, reward, terminated, truncated, info = env.step_array(action)
+```
+
+It accepts the same actions as `step` and returns the same observations, rewards and
+flags byte for byte, with the same recycling and `fresh_v1` draws. It builds the same
+decision the adapter would send as JSON, including action labels and confidence, and the
+engine's state snapshot matches too. The one difference is what comes back:
+`info` and `final_info` carry `nav` but no `events`. The events stay in the engine's
+trace, and `step` is the way to read them per step. Each call returns newly allocated
+arrays, so a stored observation is never overwritten. The two paths can be mixed within
+one episode.
+
+The native `TradingEnv.step_array` and `VecTradingEnv.step_batch_array` write into
+caller-owned arrays, which lets a tight loop reuse its buffers. They refuse a wrong dtype,
+a wrong shape, a read-only output or a non-finite weight before the engine advances.
+
 ## Reproducible evaluation
 
 Keep scenario and evaluation identity with the results:
 
 - environment ID or complete constructor arguments;
 - user seed plus resolved scenario and execution seeds from `info`;
+- the `autoreset_scenarios` label and, under `fresh_v1`, the drawn seeds;
 - window and data identity;
 - cost, mandate, wrapper, and reward configuration;
 - package version, `CONTRACT_VERSION`, and `SPEC_HASH`;

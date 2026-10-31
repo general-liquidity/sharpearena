@@ -48,12 +48,13 @@ ACCELERATOR_IMPORTS: Tuple[str, ...] = ("torch", "jax")
 # `EXERCISES` but never neither, and removing an entry without adding the other fails CI
 # the same way an unlisted extra always has.
 #
-# All seven extras currently have execution cells. SB3 and TorchRL constrain
+# All seven extras currently have execution cells. SB3, TorchRL and Ray constrain
 # CPU-only Torch. Ray resolves its own Gymnasium dependency independently of
-# source-suite pins, runs workers and single-agent RLlib parity without training.
-# This does not establish the multi-agent Ray/PettingZoo combination, learner
-# construction or every version permitted by the dependency ranges. Absence
-# guards run separately in wheel-no-extras.
+# source-suite pins, and its cell adds PettingZoo for the multi-agent RLlib route.
+# The SB3, TorchRL, Minari and Ray cells also run their learner test file with skips
+# refused (`scripts/run-learner-tests.py`). This does not establish that any policy
+# learned, or every version permitted by the dependency ranges. Absence guards run
+# separately in wheel-no-extras.
 INSTALL_MATRIX_EXCLUDED: Dict[str, str] = {}
 
 _REQUIREMENT_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*")

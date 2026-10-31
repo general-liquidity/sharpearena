@@ -23,6 +23,27 @@ environment_mode = "separate"
 # Built from tests/Dockerfile, not from the agent's environment/ context.
 [verifier.environment]
 
+# Runs in the agent container after the agent phase and before Harbor collects
+# /logs/artifacts. A dangling symlink otherwise crashes Harbor's host-to-verifier
+# re-upload before grade.py runs (INT-09 section 5), so non-regular entries are
+# counted, removed and reported for the grader to refuse by reason code. Inline on
+# purpose: a script file would live in the image the agent can write to. The hook
+# is best effort in Harbor, and an agent process that outlives the agent phase can
+# recreate an entry after it runs; both cases leave the crash, which metric.py
+# counts as crashed, never as a score.
+[[verifier.collect]]
+timeout_sec = 30.0
+command = '''
+root=/logs/artifacts
+marker="$root/.sa-transfer-check.json"
+rm -rf -- "$marker"
+unsafe=$(find -P "$root" ! -type f ! -type d -print | wc -l)
+find -P "$root" ! -type f ! -type d -delete
+mkdir -p "$root"
+printf '{"version": 1, "removed": %s}
+' "$unsafe" > "$marker"
+'''
+
 # No explicit [[artifacts]] entry: Harbor always collects the agent convention
 # directory /logs/artifacts, and a redundant entry is recorded as "skipped",
 # which then fails regrade artifact-coverage validation. The grader reads one

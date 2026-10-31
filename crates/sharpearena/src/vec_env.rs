@@ -18,6 +18,7 @@
 #[cfg(not(target_arch = "wasm32"))]
 use rayon::prelude::*;
 
+use crate::fresh_scenarios::{FreshScenarioError, FreshScenarios};
 use crate::{
     generate_scenario, CostModel, Dataset, Decision, DistributionMode, MarketObservation,
     ScenarioSpec, StepInfo, TradingEnv, Window,
@@ -68,8 +69,10 @@ impl LaneConfig {
         }
     }
 
-    fn build(&self) -> TradingEnv {
-        let data = match self.distribution_mode {
+    /// The panel this lane runs, built on its own so a caller can keep the very dataset
+    /// a lane was given.
+    pub(crate) fn dataset(&self) -> Dataset {
+        match self.distribution_mode {
             // The unclustered Calm fast path stays byte-identical to the historical build.
             DistributionMode::Calm
                 if self.vol_clustering == 0.0
@@ -92,7 +95,10 @@ impl LaneConfig {
                 },
                 self.seed,
             ),
-        };
+        }
+    }
+
+    fn env_over(&self, data: Dataset) -> TradingEnv {
         let window = self.window.unwrap_or(Window {
             start: 0,
             end: data.len(),
@@ -103,6 +109,10 @@ impl LaneConfig {
             self.costs,
             self.exec_seed.unwrap_or(self.seed),
         )
+    }
+
+    fn build(&self) -> TradingEnv {
+        self.env_over(self.dataset())
     }
 }
 
@@ -148,7 +158,8 @@ impl AutoresetMode {
 /// auto-reset, so `observations[i]` is the new episode's t0). `rewards`/`infos` always
 /// describe the step that just executed. Under [`AutoresetMode::SameStep`], a lane that
 /// finished this step carries its terminal obs/info in `final_obs[i]`/`final_info[i]`
-/// (both `None` otherwise).
+/// (both `None` otherwise). `drawn_seeds[i]` is the scenario seed a recycled lane drew this
+/// step under `fresh_v1`, and `None` for every lane otherwise.
 pub struct BatchStep {
     pub observations: Vec<MarketObservation>,
     pub rewards: Vec<f64>,
@@ -158,6 +169,7 @@ pub struct BatchStep {
     pub infos: Vec<StepInfo>,
     pub final_obs: Vec<Option<MarketObservation>>,
     pub final_info: Vec<Option<StepInfo>>,
+    pub drawn_seeds: Vec<Option<u64>>,
 }
 
 /// One lane's per-step output before it is transposed into [`BatchStep`]'s SoA layout.
@@ -284,6 +296,7 @@ impl BatchStep {
             infos: Vec::with_capacity(outcomes.len()),
             final_obs: Vec::with_capacity(outcomes.len()),
             final_info: Vec::with_capacity(outcomes.len()),
+            drawn_seeds: vec![None; outcomes.len()],
         };
         for o in outcomes {
             step.observations.push(o.observation);
@@ -308,6 +321,7 @@ pub struct VecTradingEnv {
     elapsed_steps: Vec<usize>,
     capped_final: Vec<Option<(MarketObservation, f64, bool)>>,
     episode_limit: Option<NonZeroUsize>,
+    fresh: Option<FreshScenarios>,
 }
 
 impl VecTradingEnv {
@@ -326,6 +340,7 @@ impl VecTradingEnv {
             elapsed_steps,
             capped_final,
             episode_limit: None,
+            fresh: None,
         }
     }
 
@@ -348,6 +363,7 @@ impl VecTradingEnv {
             elapsed_steps,
             capped_final,
             episode_limit: None,
+            fresh: None,
         }
     }
 
@@ -364,6 +380,50 @@ impl VecTradingEnv {
     pub fn with_episode_limit(mut self, limit: NonZeroUsize) -> Self {
         self.episode_limit = Some(limit);
         self
+    }
+
+    /// Draw a new scenario per recycled episode from the `fresh_v1` seed stream instead
+    /// of replaying the lane's scenario. `templates[i]` describes lane `i` and must name
+    /// the seed the lane runs. A lane outside the training band is refused. Without this
+    /// call a recycled lane replays its scenario byte-for-byte.
+    pub fn with_fresh_scenarios(
+        mut self,
+        templates: Vec<LaneConfig>,
+    ) -> Result<Self, FreshScenarioError> {
+        self.fresh = Some(FreshScenarios::new(templates, &self.seeds)?);
+        Ok(self)
+    }
+
+    /// The `fresh_v1` redraw state, or `None` when recycled lanes replay.
+    pub fn fresh_scenarios(&self) -> Option<&FreshScenarios> {
+        self.fresh.as_ref()
+    }
+
+    /// Swap each lane recycled this step onto its next drawn scenario. Runs after the
+    /// step so `step_lane` stays one body for both policies; the lane's own reset is what
+    /// armed `first`, and the swapped observation replaces that reset's t0.
+    fn redraw_recycled(&mut self, step: &mut BatchStep) {
+        let Some(fresh) = self.fresh.as_mut() else {
+            return;
+        };
+        for (index, lane) in fresh.lanes.iter_mut().enumerate() {
+            if !step.first[index] {
+                continue;
+            }
+            let seed = lane.next_seed(index);
+            let config = LaneConfig {
+                seed,
+                ..lane.template.clone()
+            };
+            let data = config.dataset();
+            let mut env = config.env_over(data.clone());
+            step.observations[index] = env.reset();
+            step.drawn_seeds[index] = Some(seed);
+            self.envs[index] = env;
+            self.seeds[index] = seed;
+            lane.drawn.push(seed);
+            lane.current = data;
+        }
     }
 
     /// The auto-reset mode this batch applies to finished lanes.
@@ -433,7 +493,9 @@ impl VecTradingEnv {
             })
             .collect();
 
-        BatchStep::from_outcomes(outcomes)
+        let mut step = BatchStep::from_outcomes(outcomes);
+        self.redraw_recycled(&mut step);
+        step
     }
 }
 
@@ -810,6 +872,98 @@ mod tests {
             rewards_a, rewards_b,
             "distinct exec seeds must perturb execution noise"
         );
+    }
+
+    fn run_fresh(
+        cfgs: &[LaneConfig],
+        mode: AutoresetMode,
+        steps: usize,
+    ) -> (Vec<Vec<u64>>, Vec<f64>) {
+        let mut env = VecTradingEnv::from_configs(cfgs)
+            .with_autoreset_mode(mode)
+            .with_fresh_scenarios(cfgs.to_vec())
+            .unwrap();
+        let mut obs = env.reset_batch();
+        let mut rewards = Vec::new();
+        for _ in 0..steps {
+            let step = env.step_batch(&decisions_for(&obs, 0.25));
+            rewards.extend_from_slice(&step.rewards);
+            obs = step.observations;
+        }
+        let fresh = env.fresh_scenarios().unwrap();
+        let drawn = (0..cfgs.len())
+            .map(|lane| fresh.drawn_seeds(lane).to_vec())
+            .collect();
+        (drawn, rewards)
+    }
+
+    #[test]
+    fn fresh_draws_are_deterministic_per_lane_and_inside_the_train_band() {
+        let cfgs = vec![LaneConfig::new(3, 30, 1), LaneConfig::new(3, 30, 1)];
+        for mode in [AutoresetMode::NextStep, AutoresetMode::SameStep] {
+            let (drawn, rewards) = run_fresh(&cfgs, mode, 200);
+            let (again, rewards_again) = run_fresh(&cfgs, mode, 200);
+            assert_eq!(drawn, again);
+            assert_eq!(rewards, rewards_again);
+            assert!(drawn[0].len() >= 2, "lanes must recycle: {drawn:?}");
+            assert_ne!(drawn[0], drawn[1], "equal root seeds keep per-lane streams");
+            for (lane, seeds) in drawn.iter().enumerate() {
+                for (episode, &seed) in seeds.iter().enumerate() {
+                    assert_eq!(
+                        seed,
+                        crate::fresh_scenario_seed(1, lane as u64, episode as u64)
+                    );
+                    assert!(seed < crate::EVAL_SEED_BASE);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn fresh_disabled_mode_never_draws() {
+        let cfgs = vec![LaneConfig::new(3, 22, 7)];
+        let (drawn, _) = run_fresh(&cfgs, AutoresetMode::Disabled, 80);
+        assert!(drawn[0].is_empty());
+    }
+
+    #[test]
+    fn fresh_recycled_lane_matches_a_lane_built_on_the_drawn_seed() {
+        for mode in [AutoresetMode::NextStep, AutoresetMode::SameStep] {
+            let cfgs = vec![LaneConfig::new(3, 22, 7)];
+            let mut env = VecTradingEnv::from_configs(&cfgs)
+                .with_autoreset_mode(mode)
+                .with_fresh_scenarios(cfgs.clone())
+                .unwrap();
+            let mut obs = env.reset_batch();
+            let step = loop {
+                let step = env.step_batch(&decisions_for(&obs, 0.0));
+                if step.first[0] {
+                    break step;
+                }
+                obs = step.observations;
+            };
+            let seed = step.drawn_seeds[0].expect("a recycled lane records its draw");
+            assert_eq!(env.seeds(), [seed]);
+            assert_eq!(
+                serde_json::to_string(&step.observations[0]).unwrap(),
+                fresh_t0(seed, 3, 22),
+                "the recycled t0 is the drawn scenario's t0"
+            );
+            assert_ne!(
+                serde_json::to_string(&step.observations[0]).unwrap(),
+                fresh_t0(7, 3, 22)
+            );
+        }
+    }
+
+    #[test]
+    fn fresh_refuses_a_lane_outside_the_training_band() {
+        let cfgs = vec![LaneConfig::new(3, 22, crate::EVAL_SEED_BASE)];
+        let refused = VecTradingEnv::from_configs(&cfgs).with_fresh_scenarios(cfgs.clone());
+        assert!(matches!(
+            refused.err(),
+            Some(FreshScenarioError::SeedOutsideTrainBand { lane: 0, .. })
+        ));
     }
 
     #[test]
