@@ -46,9 +46,10 @@ That matrix is distinct from the source-suite requirement set:
 repository's `gymnasium==1.3.0` CI pin (`crates/sharpearena-py/ci-requirements.txt`)
 in one `pip install --requirement` invocation. The full Ray test files therefore
 remain outside that source-suite job; the separately resolved Ray wheel cell
-executes its own bounded checks. `docs/integrations/inventory.md`'s version matrix
-records the full local suite (1837 passed, 15 skipped) run under `gymnasium==1.2.2`
-to confirm nothing else in the tree regresses on that version. `sb3` is left out of
+executes its own bounded checks. A full local suite run under `gymnasium==1.2.2` was
+recorded here as 1837 passed and 15 skipped. That count is unverified: no run log is
+committed and `docs/integrations/inventory.md` records a different one, so do not cite
+either until a rerun settles it. `sb3` is left out of
 the source-suite requirement set for a different reason, its torch dependency
 being the largest any extra here declares; `tests/test_sb3.py`'s pure-mapping
 tests still run everywhere, only its
@@ -77,9 +78,9 @@ at fixtures that are in this tree; a fixture is not adapter support.
 
 ## Ruled out: PufferLib and EnvPool
 
-Both were evaluated against the native Rust engine and rejected. The evaluation is
-`SHARPE-HANDOFF-SUPPORT/product-planning/integration-refs/NATIVE-ACCEL-REFERENCE.md`,
-read against the live PufferLib and EnvPool documentation on 2026-09-23.
+Both were evaluated against the native Rust engine and rejected. The evaluation is in
+the maintainers' native-acceleration reference note, which is not published in this
+repository, read against the live PufferLib and EnvPool documentation on 2026-09-23.
 
 **PufferLib 5.0.** PufferLib's own FAQ states that its fast path requires the
 environment's dynamics to be written in C: "Where did all the Python/third-party
