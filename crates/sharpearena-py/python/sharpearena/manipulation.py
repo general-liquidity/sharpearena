@@ -37,6 +37,13 @@ run is scored twice, once in the live market and once in a reference market with
 schedule. The difference, ``impact_pnl``, is the part attributable to having moved the
 price. That is the number the boundary is drawn on.
 
+**Execution settings.** ``ManipulationParams.execution`` runs the probe against opt-in
+:class:`~sharpearena.market_env.MarketExecution` settings. The zero-impact reference keeps
+the same timing and settlement and zeroes the transient coefficient with ``kyle_lambda`` and
+``eta``, so ``impact_pnl`` still isolates moving the price. Under ``cash_liquidation`` the
+P&L of both runs is realized cash, residual shares are exactly zero, and the probe can no
+longer be flattered by marking a residual at a price the schedule pushed.
+
 These schedules return to zero target weight, not necessarily zero share quantity:
 the market converts each target-weight change at that bar's cleared price. The
 reported P&L is terminal marked NAV less initial capital, not guaranteed realized
@@ -67,7 +74,7 @@ from dataclasses import dataclass, replace
 
 import numpy as np
 
-from .market_env import EndogenousMarketEnv
+from .market_env import EndogenousMarketEnv, MarketExecution
 
 # The manipulator is always the first agent in the canonical roster; the rest are followers.
 _MANIPULATOR = "agent_0"
@@ -126,6 +133,7 @@ class ManipulationParams:
     push_weight: float = 0.8
     follower_gain: float = 30.0
     impact_exponent: float = 1.0
+    execution: MarketExecution | None = None
 
     def __post_init__(self) -> None:
         if self.n_followers < 0:
@@ -550,6 +558,7 @@ def _rollout(
     positions, cleared closes, cash and marked position value without changing
     the legacy three-value return tuple or any trading decision.
     """
+    optional: dict = {} if p.execution is None else {"execution": p.execution}
     env = EndogenousMarketEnv(
         n_agents=1 + p.n_followers,
         n_symbols=p.n_symbols,
@@ -562,6 +571,7 @@ def _rollout(
         distribution_mode=p.distribution_mode,
         max_weight=p.max_weight,
         impact_exponent=p.impact_exponent,
+        **optional,
     )
     obs, _ = env.reset(seed=int(seed))
     n_symbols = len(env.symbols)
@@ -612,6 +622,11 @@ def _rollout(
             mid = float(
                 np.asarray(info["cleared_mids"], dtype=np.float64).reshape(-1)[0]
             )
+            if p.execution is not None and not mid > 0.0:
+                raise ValueError(
+                    f"seed {seed} bar {bar}: the cleared mid is {mid!r}: past that point no "
+                    "fill or P&L means anything, so the run is refused, not scored"
+                )
             if open_mid is None:
                 open_mid = mid
             elif open_mid > 0.0:
@@ -630,6 +645,12 @@ def _rollout(
     )
 
 
+def _zero_impact(p: ManipulationParams) -> ManipulationParams:
+    """The paired reference: identical schedule and timing, and flow cannot move price."""
+    execution = None if p.execution is None else p.execution.without_impact()
+    return replace(p, kyle_lambda=0.0, eta=0.0, execution=execution)
+
+
 def run_manipulation_probe(
     *, params: ManipulationParams | None = None, seed: int = 0
 ) -> ManipulationResult:
@@ -646,9 +667,7 @@ def run_manipulation_probe(
     live_terminal: dict = {}
     reference_terminal: dict = {}
     live_pnl, peak_move, follower_live = _rollout(p, seed, terminal=live_terminal)
-    reference_pnl, _, _ = _rollout(
-        replace(p, kyle_lambda=0.0, eta=0.0), seed, terminal=reference_terminal
-    )
+    reference_pnl, _, _ = _rollout(_zero_impact(p), seed, terminal=reference_terminal)
     _, _, follower_flat = _rollout(p, seed, _flat)
     impact_pnl = live_pnl - reference_pnl
     return ManipulationResult(
@@ -715,7 +734,7 @@ def run_asymmetric_probe(
         p, seed, weight_at, terminal=live_terminal
     )
     reference_pnl, _, _ = _rollout(
-        replace(p, kyle_lambda=0.0, eta=0.0),
+        _zero_impact(p),
         seed,
         weight_at,
         terminal=reference_terminal,
