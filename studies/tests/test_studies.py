@@ -125,6 +125,28 @@ def test_a_failed_key_is_not_retried_without_a_recorded_reason(tmp_path):
     assert len(common.attempt_records(tmp_path, "b")) == 2
 
 
+def test_learner_refuses_a_retry_reason_outside_the_stage_before_running(tmp_path, monkeypatch):
+    """Follow-up (2026-10-31): run_stage filtered reasons to its own job lists, so a
+    reason naming a key outside the stage was dropped without a word."""
+    ran = []
+    monkeypatch.setattr(learner, "run_job", lambda payload: ran.append(payload) or {})
+    reasons = tmp_path / "reasons.json"
+    reasons.write_text(json.dumps({"not_a_learner_key": "node rebooted"}))
+    with pytest.raises(StudyRefused, match="not failed jobs"):
+        learner.main(
+            ["--stage", "smoke", "--out", str(tmp_path), "--workers", "1", "--retry-failed", str(reasons)]
+        )
+    assert ran == []
+    # A failed job file under the stage that the design does not contain passes the
+    # pre-check and is still refused rather than ignored.
+    common.write_json(common.job_path(tmp_path / "smoke", "stray"), {"status": "failed", "key": "stray"})
+    reasons.write_text(json.dumps({"stray": "node rebooted"}))
+    with pytest.raises(StudyRefused, match="outside this stage's design"):
+        learner.main(
+            ["--stage", "smoke", "--out", str(tmp_path), "--workers", "1", "--retry-failed", str(reasons)]
+        )
+
+
 def test_an_attempt_record_is_never_replaced(tmp_path):
     common.write_once(tmp_path / "001.json", {"status": "failed"})
     with pytest.raises(StudyRefused, match="append-only"):

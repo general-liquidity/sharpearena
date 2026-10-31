@@ -826,17 +826,26 @@ def required_bands(sd: float, n_pilot: int, protocol: dict) -> dict:
     return {"bands": k, "sd_upper": upper, "half_width": float(reached), "cap_binds": True}
 
 
-def run_stage(protocol: dict, sha: str, stage: str, out: Path, design: dict, workers: int, retry: dict[str, str], n_trial_runs: int, prefix: str = "") -> tuple[dict, dict, list[Job], list[dict], dict]:
+def run_stage(protocol: dict, sha: str, stage: str, out: Path, design: dict, workers: int, retry: dict[str, str], n_trial_runs: int, prefix: str = "", *, consumed: set[str] | None = None) -> tuple[dict, dict, list[Job], list[dict], dict]:
     controls, training = build_jobs(protocol, stage, design, n_trial_runs, prefix)
     keys_c = {j.key for j in controls}
     keys_t = {j.key for j in training}
     retry_c = {k: v for k, v in retry.items() if k in keys_c}
     retry_t = {k: v for k, v in retry.items() if k in keys_t}
+    if consumed is not None:
+        consumed.update(retry_c, retry_t)
     counts_c = common.run_jobs(controls, run_job, out, workers, retry_reasons=retry_c)
     counts_t = common.run_jobs(training, run_job, out, workers, retry_reasons=retry_t)
     control_results, absent_c = common.collect(out, [j.key for j in controls])
     results, absent_t = common.collect(out, [j.key for j in training])
     return control_results, results, training, absent_c + absent_t, {"controls": counts_c, "training": counts_t}
+
+
+def require_reasons_used(reasons: dict[str, str], used: set[str]) -> None:
+    """Refuse a retry reason that no run_jobs call of this stage received."""
+    unused = sorted(set(reasons) - used)
+    if unused:
+        raise StudyRefused(f"retry reasons named failed jobs outside this stage's design: {unused}")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -855,6 +864,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--escalate", action="store_true", help="use the protocol's one budget escalation")
     args = parser.parse_args(argv)
     retry_reasons = common.load_retry_reasons(args.retry_failed)
+    # Every reason must name a failed job of this stage and reach a run_jobs call.
+    used: set[str] = set()
 
     protocol, sha = common.load_protocol(PROTOCOL_PATH)
     root = args.out if args.out is not None else HERE / "runs"
@@ -866,22 +877,27 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.stage == "smoke":
         out = root / "smoke"
+        common.require_failed_keys(out, retry_reasons)
         design = stage_design(protocol, "smoke", None, args.smoke_steps)
         controls, results, training, absent, counts = run_stage(
             protocol, sha, "smoke", out, design, args.workers, retry_reasons,
             len(design["configs"]) * design["n_bands"] * design["runs_per_band"],
+            consumed=used,
         )
+        require_reasons_used(retry_reasons, used)
         summary = {"cells": {}}
         for cell in design["cells"]:
             summary["cells"][cell] = analyze_cell(results, controls, "", cell, "c0", protocol)
             summary["cells"][cell]["verdict"] = "unavailable:not_final_stage"
     elif args.stage == "pilot":
         out = root / "pilot"
+        common.require_failed_keys(out, retry_reasons)
         steps = protocol["budget"]["escalated_env_steps" if args.escalate else "env_steps"]
         search = pilot_design(protocol, "search", None, steps)
         search_trials = len(protocol["configs"]) * search["n_bands"] * search["runs_per_band"]
         controls, results, _, absent, counts = run_stage(
-            protocol, sha, "pilot", out, search, args.workers, retry_reasons, search_trials, "search_"
+            protocol, sha, "pilot", out, search, args.workers, retry_reasons, search_trials, "search_",
+            consumed=used,
         )
         ranked = []
         for name in protocol["configs"]:
@@ -896,8 +912,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         design = pilot_design(protocol, "design", chosen, steps)
         trials = search_trials + design["n_bands"] * design["runs_per_band"]
         controls2, results2, training, absent2, counts2 = run_stage(
-            protocol, sha, "pilot", out, design, args.workers, retry_reasons, trials, "design_"
+            protocol, sha, "pilot", out, design, args.workers, retry_reasons, trials, "design_",
+            consumed=used,
         )
+        require_reasons_used(retry_reasons, used)
         row = analyze_cell(results2, controls2, "design_", "A", chosen, protocol)
         row["verdict"] = verdict(row, protocol)
         summary = {"search": ranked, "chosen": chosen, "env_steps": steps, "escalated": args.escalate, "trial_runs": trials, "cells": {"A": row}}
@@ -905,6 +923,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         counts = {"search": counts, "design": counts2}
         extra["pilot_is_never_evidence"] = True
     elif args.stage == "pilot-decide":
+        if retry_reasons:
+            raise StudyRefused("pilot-decide runs no jobs, so it takes no retry reasons")
         pilot = common.read_json(root / "pilot" / "summary.json")
         row = pilot["cells"]["A"]["gap_final"]
         interval = row["interval"]
@@ -927,6 +947,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     else:
         out = root / "main"
+        common.require_failed_keys(out, retry_reasons)
         decision = common.read_json(decision_path) if decision_path.exists() else None
         if decision is None:
             raise StudyRefused("main needs a committed pilot_decision.json")
@@ -936,8 +957,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         per_cell = design["n_bands"] * design["runs_per_band"]
         trials = decision["pilot_trial_runs"] + per_cell * len(design["cells"])
         controls, results, training, absent, counts = run_stage(
-            protocol, sha, "main", out, design, args.workers, retry_reasons, trials
+            protocol, sha, "main", out, design, args.workers, retry_reasons, trials,
+            consumed=used,
         )
+        require_reasons_used(retry_reasons, used)
         summary = {"cells": {}, "trial_runs": trials}
         for cell in design["cells"]:
             row = analyze_cell(results, controls, "", cell, design["configs"][0], protocol)

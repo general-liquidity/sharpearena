@@ -204,6 +204,23 @@ def load_retry_reasons(path: Optional[Path]) -> dict[str, str]:
     return reasons
 
 
+def require_failed_keys(out: Path, reasons: Mapping[str, str]) -> None:
+    """Refuse a retry reason for any key that is not a failed job in ``out``.
+
+    A producer that splits one stage into several job lists (the learner's controls,
+    training, search and design lists) hands each ``run_jobs`` call only its own keys,
+    so a reason naming a key outside every list would never reach a check. Calling
+    this once per stage, before any job runs, refuses it instead of ignoring it.
+    """
+    bad = []
+    for key in sorted(reasons):
+        path = job_path(out, key)
+        if not path.exists() or read_json(path).get("status") != "failed":
+            bad.append(key)
+    if bad:
+        raise StudyRefused(f"retry reasons given for keys that are not failed jobs in {out}: {bad}")
+
+
 def run_jobs(
     jobs: Sequence[Job],
     func: Callable[[dict], dict],
