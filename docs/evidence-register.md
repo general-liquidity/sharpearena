@@ -988,7 +988,7 @@ The headline claims whose present applicability is not established, worst first.
 **Source.** `paper/sections/03-environment.tex:82`, `paper/sections/04-contract.tex:29`
 
 **Artifacts.**
-- `crates/sharpearena/contract/attestation/scenario-goldens.json`, sha256 `8c60d88dbe0bb20e85cf6393231a68f83c172b6d9e361ba5fba8229927994d99`, digest source: computed from the file on 2026-10-31; a golden that must not move, read by the native suite, wasm-pack and the npm suite
+- `crates/sharpearena/contract/attestation/scenario-goldens.json`, sha256 `39653c335e5d817e1c98ae29867707b8bbab6ae07250eb14efbf0f1cd7b518bd`, digest source: computed from the file on 2026-10-31 after integration; the martingale_v1_4x120_seed7 golden was appended and no existing golden moved, read by the native suite, wasm-pack and the npm suite
 - `crates/sharpearena/contract/attestation/backtest-goldens.json`, sha256 `08734c88d5b360f2d7571ffa84c3dff7b9956b2ec054f40a590502780b6bdb46`, digest source: computed from the file on 2026-10-31; a golden that must not move, read by the native suite, wasm-pack and the npm suite
 - `crates/sharpearena/contract/attestation/kernel-goldens.json`, sha256 `b5aa16776dc73ba2f64dfbcf4d96151dd978df8e1c2cfbb52506d0a6c2b3cb3b`, digest source: computed from the file on 2026-10-31; a golden that must not move, read by the native suite, wasm-pack and the npm suite
 
