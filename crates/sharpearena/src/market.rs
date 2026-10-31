@@ -104,9 +104,11 @@
 //! I_t     = coefficient * h(J_t)   (h = identity, or signed sqrt)
 //! ```
 //!
-//! and the cleared mid becomes `exo_mid * M_t * (1 + I_t)`. Every agent's fill also pays the
-//! whole displacement increment `coefficient * (h(J_t+) - h(J_t))` inside the existing
-//! impact term, the same full-increment convention the permanent crowd term uses. `I` never
+//! and the cleared mid becomes `exo_mid * M_t * (1 + I_t)`. A fill on the side of the net
+//! flow also pays the whole displacement increment `coefficient * (h(J_t+) - h(J_t))` inside
+//! the existing impact term. A fill against the net flow pays none of it and receives none
+//! of it: the increment is never a rebate, because under the square root its slope is
+//! unbounded near `J = 0`, and a rebate there let opposite-side flow mint value. `I` never
 //! enters `M`, and `M` never decays. With the identity `h` the state is the exponential
 //! kernel `I_{t+1} = decay * (I_t + coefficient * x_t)`. `decay_per_bar = 0` leaves only an
 //! extra same-bar cost. Each coefficient and decay is a declared setting: nothing here is
@@ -1377,7 +1379,7 @@ pub fn clear_bar_concave(
     };
 
     // The whole displacement increment this bar's flow causes, one per-share term per
-    // symbol, paid inside the impact term like the permanent crowd term.
+    // symbol. `transient_charge` applies it to flow on the net side only.
     let transient_cost: Option<Vec<f64>> = transient.map(|kernel| {
         (0..n_sym)
             .map(|s| {
@@ -1427,7 +1429,7 @@ pub fn clear_bar_concave(
                     + impact[s].eta * qi / v
             };
             let impact_term = match &transient_cost {
-                Some(cost) => impact_term + cost[s],
+                Some(cost) => impact_term + transient_charge(cost[s], qi),
                 None => impact_term,
             };
             let fill = mid * (1.0 + vol_factor[s] * impact_term);
@@ -1557,6 +1559,17 @@ pub fn clear_bar_concave(
     }
 }
 
+/// The displacement increment one fill pays: all of it on the net side, nothing against it.
+/// The increment carries the sign of net flow, so a same-signed size pays and an
+/// opposite-signed size would otherwise be paid. See the module docs.
+fn transient_charge(increment: f64, size: f64) -> f64 {
+    if increment * size > 0.0 {
+        increment
+    } else {
+        0.0
+    }
+}
+
 /// Everything [`settle_residuals`] reads from the bar being cleared.
 struct SettlementInputs<'a> {
     exo_mid: &'a [f64],
@@ -1639,7 +1652,7 @@ fn settle_residuals(
             let size = -book.shares[s];
             let term = impact_of(resolved[s].lambda, net_flow[s])
                 + resolved[s].eta * size / v
-                + transient_cost[s];
+                + transient_charge(transient_cost[s], size);
             let fill = mids[s] * (1.0 + inputs.vol_factor[s] * term);
             book.cash -= size * fill;
             book.shares[s] = 0.0;
@@ -3315,6 +3328,28 @@ mod tests {
         let terminal = trace.settlement.as_ref().unwrap();
         assert_eq!(terminal.mids[0], expected);
         assert_ne!(terminal.mids[0], last.cleared_mids[0]);
+    }
+
+    /// Two agents, one heavy buyer and one small seller. The seller is against the net flow
+    /// and must fill at the mid: the displacement increment is never a rebate.
+    #[test]
+    fn the_displacement_increment_is_never_a_rebate() {
+        let data = Dataset::synthetic(1, 30, 4);
+        let mut market = MarketClearing::from_dataset(&data, 2, 1.0)
+            .with_execution(settings(
+                None,
+                Some(kernel(0.5, 0.9, TransientShape::SquareRoot)),
+                TerminalSettlement::Marked,
+            ))
+            .unwrap();
+        let cleared = market.step(&[vec![0.8], vec![-0.1]], &no_impact());
+        assert!(cleared.net_flow[0] > 0.0);
+        let mid = cleared.cleared_mids[0];
+        assert_eq!(cleared.fills[1][0].fill_price, mid);
+        assert_eq!(
+            cleared.fills[0][0].fill_price,
+            mid * (1.0 + 0.5 * cleared.net_flow[0].sqrt())
+        );
     }
 
     #[test]

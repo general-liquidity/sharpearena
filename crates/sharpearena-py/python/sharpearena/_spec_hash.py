@@ -22,7 +22,7 @@ from typing import Optional
 
 # The pin. Rebind together with contract/attestation/spec-hash.json (a Rust test and
 # tests/test_spec_hash.py keep the three copies bound).
-EXPECTED_SPEC_HASH = "538e8b0037b7ae30"
+EXPECTED_SPEC_HASH = "776309452aba3685"
 
 
 class SpecHashMismatch(RuntimeError):

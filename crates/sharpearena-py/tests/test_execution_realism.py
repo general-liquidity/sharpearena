@@ -2,6 +2,7 @@
 
 import json
 import math
+from dataclasses import replace
 
 import pytest
 from sharpearena import MarketExecution, manipulation
@@ -323,6 +324,30 @@ def test_no_transient_round_trip_pays_on_the_probe_grid(shape, decay, up, down, 
     schedule = manipulation.AsymmetricSchedule.uniform(up, down)
     for result in probe(execution, schedule, side, kyle_lambda=0.0):
         assert not result.profitable, result.impact_pnl
+
+
+@pytest.mark.parametrize("decay", [0.5, 0.9, 0.99])
+def test_square_root_kernel_does_not_pay_a_pump_into_followers(decay):
+    # The regime that found the rebate: opposite-side flow against momentum followers was
+    # paid the increment and both sides gained. Seed-mean, at the worst cell that found it.
+    execution = transient(decay=decay, coefficient=0.2, settlement="cash_liquidation")
+    for delay in (None, 1):
+        timed = replace(execution, fixed_delay_bars=delay)
+        params = manipulation.ManipulationParams(
+            execution=timed,
+            n_followers=3,
+            follower_gain=30.0,
+            n_days=80,
+            push_weight=0.8,
+            kyle_lambda=0.0,
+            eta=0.0,
+        )
+        schedule = manipulation.AsymmetricSchedule.uniform(10, 1)
+        results = [
+            manipulation.run_asymmetric_probe(params=params, schedule=schedule, seed=seed, side=-1)
+            for seed in range(8)
+        ]
+        assert sum(result.impact_pnl for result in results) < 0.0
 
 
 def test_the_probe_still_fires_on_its_positive_control_under_cash_settlement():
