@@ -1,6 +1,6 @@
 # Learner generalization protocol (acceptance rows P18-E and P18-S)
 
-Status: frozen at version 3 before any pilot. Constants live in `protocol.json`, whose SHA-256 every
+Status: frozen at version 4 before any pilot. Constants live in `protocol.json`, whose SHA-256 every
 artifact records. A change to either file is a new protocol version.
 
 ## Question
@@ -10,7 +10,16 @@ generalization measurement used an equal-weight reference that cannot overfit, s
 zero there says nothing. The anti-claim to rule out is a flat gap caused by a policy that
 learned nothing.
 
-Scope: a within-generator measurement on one tier. Learning the synthetic generator is not
+The primary cell trains and evaluates on `martingale_v1`, a tier with no edge by
+construction: each symbol is an independent martingale, so any weights chosen from past data
+earn zero expected return before costs (`EVALUATION.md`, generator calibration). On that tier
+the expected held-out excess over equal weight is zero or below for every policy, so a positive
+gap can only come from fitting the seen tapes. That makes the gap a clean read of overfitting,
+which the default tiers cannot give: Calm carries tradable momentum (lag-1 autocorrelation 0.23
+on long paths, one-bar momentum gross Sharpe near 5.7) and Hard keeps a diluted copy of it, so a
+learner there can also learn a real edge and the gap mixes the two.
+
+Scope: a within-generator measurement on two tiers. Learning the synthetic generator is not
 learning markets. No claim transfers to real data, and no claim about RL in general follows
 from one algorithm and one small search.
 
@@ -22,24 +31,39 @@ Runs are nested in seen bands: `K` bands of `n_seen` seeds, `m` runs per band di
 in training seed. Bands are the source of market-history dispersion and runs the source of
 training dispersion, and both are reported. `K` is fixed by the pilot rule below, `m` is 2.
 
-| Cell | Role | Network | Seen seeds |
-|---|---|---|---|
-| A | primary | [256, 256] | 16 |
-| B | capacity contrast | linear | 16 |
-| C | level-count contrast | [256, 256] | 256 |
+| Cell | Role | Tier | Network | Seen seeds | Declared expectation |
+|---|---|---|---|---|---|
+| A | primary | `martingale_v1` | [256, 256] | 16 | no held-out edge |
+| B | capacity contrast | `martingale_v1` | linear | 16 | no held-out edge |
+| C | level-count contrast | `martingale_v1` | [256, 256] | 256 | no held-out edge |
+| D | declared signal cell | `calm` | [256, 256] | 16 | held-out edge from momentum |
 
-All cells get the same environment-step budget and report wall time and hardware. Cells B and
-C run only if cell A passes its capacity check.
+All cells get the same environment-step budget and report wall time and hardware. Cell D always
+runs beside A in the main stage, with A's configuration and band count; it is not searched or
+sized on its own. Cells B and C run only if cell A passes its capacity check.
+
+Cell D is the positive case. On Calm a learner is expected to pick up the momentum and keep it
+on held-out seeds, so a held-out edge there is the expected result, not a finding, and Calm's
+gap is not read as overfitting alone. If D shows no held-out edge, the learner failed to learn a
+signal known to exist, and that is reported as a limit on what cell A can show.
 
 ## Environment
 
-`SharpeArenaEnv` at 4 symbols and 120 days, tier `hard`, default cost model read back with
+`SharpeArenaEnv` at 4 symbols and 120 days, with each cell's tier from the table above and
+the default cost model, read back with
 `check_env_effective_config`. A single-agent task with no co-adapting opponents. Each lane is
 assigned seen seeds and a reset replays the next of them, so memorising is possible. Training
 uses 16 lanes in every cell. In cells A and B each lane holds one seed; in cell C seeds are dealt
 to lanes and cycle at each reset, so rollout size and optimiser updates match across cells. The
-seen band is the training seed list; dev, pilot-unseen and held-out bands never enter training. `calm` and
-`extreme` are evaluated zero-shot on the held-out seed numbers as a secondary transfer read.
+seen band is the training seed list; dev, pilot-unseen and held-out bands never enter training. For cell
+D, `hard` and `extreme` are evaluated zero-shot on the held-out seed numbers as a secondary
+transfer read. The martingale cells have no transfer read: their tier carries no direction to
+transfer.
+
+`martingale_v1` daily volatility is about four times Calm's. The fixed reward scale is kept for
+every cell, so the reward magnitude differs by tier; this is stated rather than corrected,
+because a per-tier scale would be one more searched constant. Outcomes are in ledger basis
+points and comparable within a cell, not across tiers.
 
 Observation: the normalised `closes`, `positions` and `cash`. Holdings are observed, which
 matters because costs depend on them. The normaliser is fitted once, before training, on the
@@ -47,7 +71,8 @@ seen band under a seeded random allocator with `training=True`. It is then froze
 `training=False` for all of training and evaluation through `state_dict` and
 `load_state_dict`, so both bands see one transform.
 
-**Merge dependency.** This needs `feat/normalizer-freeze`. The producer refuses to run `pilot`
+**Merge dependencies.** `martingale_v1` exists only on `feat/generator-calibration`, so no
+stage can run on a tree without it. The normaliser interface needs `feat/normalizer-freeze`. The producer refuses to run `pilot`
 or `main` without that interface. `smoke` alone may use the shim in `produce.py`, and the
 artifact records `normalizer_backend`.
 
@@ -114,7 +139,7 @@ Evaluated on the same seen, dev and held-out seeds as the learner:
 | `kelly_vol_target` | causal trailing allocator |
 | zero-skill floor | 64 seeded random fully invested allocators per band, quantile 0.95 of the band mean. A floor, not one draw |
 | exposure-matched timing null | see below |
-| memoriser | instrument check: perfect next-bar sign on seen seeds, flat elsewhere. Must show a gap whose interval excludes zero, or the instrument is broken |
+| memoriser | instrument check: foresight on each seen tape, per symbol the best path over short, flat and long after the engine's own cost, flat elsewhere. Must show a gap whose interval excludes zero, or the instrument is broken |
 
 Timing null: 200 draws over the first 32 held-out seeds, replayed through the engine. It mirrors
 SharpeBench `timing_null`: holding periods at gross above 1e-9 keep their contents and are
@@ -143,6 +168,18 @@ recorded. Exclusions are not allowed.
 Beating a control is a separate question, read on held-out excess against each control with
 Holm correction over the controls. It never changes the gap verdict.
 
+The memoriser's cost is the engine's cost per unit of weight traded, measured once per tier
+on the reserved seed 79900 by alternating a full long and a full short book. It is a
+measurement of the engine, not a fitted constant, and no scored seed is used.
+
+## Declared-signal read
+
+Reported beside the gap verdict for every cell and never replacing it. `heldout_edge` if the
+95 percent interval of held-out excess is above zero, `no_heldout_edge` if it lies inside plus
+or minus 1 bp, otherwise `inconclusive`. Each cell carries its declared expectation from the
+table, and a mismatch is reported as such. On `martingale_v1` a `heldout_edge` result would mean
+luck or an artifact, and is reported with its seed count.
+
 ## Amendments
 
 Version 2, before any run: a fixed 16 lanes, with seeds cycling in cell C. Version 1 tied the lane
@@ -152,6 +189,19 @@ between cells and broken the equal budget.
 Version 3, before any run: records that no reward normaliser is used and why the last-episode
 frozen scale on `feat/normalizer-freeze` would not be acceptable. No outcome, threshold or
 budget moved.
+
+Version 4, before any pilot or graded run: the primary cell moved from `hard` to
+`martingale_v1`, Calm became the declared cell D, and the declared-signal read was added. Branch
+`feat/generator-calibration` (0cd9e50) measured that the default tiers carry tradable momentum,
+which would have let a learner earn a real held-out edge and blurred the gap. Seed bands,
+budget, thresholds and the decision rule did not move. The new tier is opt-in under a frozen
+name, so this protocol depends on that branch merging before any graded run.
+
+Also in version 4: the memoriser became cost-aware. The version 3 smoke run on Calm showed the
+next-bar sign rule earning 31.5 bp gross and losing 4.1 bp net per bar, because engine costs
+exceed Calm's small moves, so cell D's instrument check would have failed for a reason that has
+nothing to do with the gap. This was found on smoke seeds only, and the rule it changes is the
+instrument check, not an outcome.
 
 ## Publication
 

@@ -1,6 +1,6 @@
 # Realism control protocol (acceptance rows P13-R and P14-R)
 
-Status: frozen at version 2 before any graded run. Constants live in `protocol.json`, whose SHA-256
+Status: frozen at version 3 before any graded run. Constants live in `protocol.json`, whose SHA-256
 every artifact records. A change to either file is a new protocol version, and results
 under the old version keep their label.
 
@@ -30,7 +30,8 @@ Each simulated arm is graded on 256 diagnostic seeds and 256 disjoint confirmati
 | `neg_iid_t` | fat tails, no clustering, the hardest negative | IID Student-t, nu 4 |
 | `neg_shuffled_real` | real marginals, time order destroyed | real windows with each symbol permuted independently |
 | `calm`, `hard`, `extreme` | under test | zero-knob generator, flat policy, as F4 |
-| `*_vc05` | descriptive only | same tiers with `vol_clustering=0.5` |
+| `martingale_v1` | under test, candidate generator | opt-in tier from `feat/generator-calibration`, flat policy |
+| `*_vc05` | descriptive only | Calm, Hard and Extreme with `vol_clustering=0.5` |
 
 Tier panels are collected as F4 collects them: flat policy, 121 closes, 120 returns.
 
@@ -51,7 +52,7 @@ decision below.
 
 ## Price decision rule
 
-All bounds are one-sided 95 percent Clopper-Pearson bounds. Tier bounds use alpha 0.05/3.
+All bounds are one-sided 95 percent Clopper-Pearson bounds. Tier bounds use alpha 0.05/4, one share for each of the four tiers.
 
 1. The gate is **valid** only if, on both seed bands, the `pos_garch` lower bound is at least
    0.75 and every negative arm's upper bound is at most 0.10, and each real underlying has an
@@ -82,6 +83,11 @@ was an operational screen on eight seeds, and this one bounds a rate.
   connects the gate to tape.
 - Two underlyings and one history each. A real-tape pass supports non-vacuity, not coverage.
 - A scenario seed band is public. This study does not need secrecy.
+- `martingale_v1` was fitted to the three gated facts on index and commodity tape, on seeds
+  `[0, 128)`, and its development gate pass share (101 of 128 on seeds `[128, 256)`) was
+  published before it was added here. Its verdict is therefore neither blind nor independent of
+  the gate: a pass shows the fit holds on new seeds, not that the gate discovered a market-like
+  tape. Its fit used none of the crypto or FX controls and none of this study's seeds.
 
 ## Execution realism
 
@@ -113,6 +119,11 @@ Version 2, before any diagnostic or confirmation seed ran. The version 1 E2 rule
 reward with final value, but under `book_mid` the two agree by construction, so its bad arm
 could never be detected. The smoke run exposed this. E2 now measures what `book_mid` gets
 wrong: P&L booked on steps where the agent traded with nobody. No threshold moved.
+
+Version 3, before any diagnostic or confirmation seed ran: `martingale_v1` added as a
+candidate generator, and the tier family widened from three to four. No threshold, band or
+control moved. The tier exists only on `feat/generator-calibration`, so the graded stages need
+that branch merged.
 
 ## Reporting
 

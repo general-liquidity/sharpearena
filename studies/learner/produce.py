@@ -147,10 +147,50 @@ def tape_closes(seed: int, env_spec: dict, tier: str) -> np.ndarray:
             return np.stack(rows)
 
 
-def memoriser_actions(closes: np.ndarray) -> np.ndarray:
-    """Perfect next-bar sign on one known tape, spread evenly. An instrument check only."""
-    signs = np.sign(np.diff(closes, axis=0))
-    return (signs / closes.shape[1]).astype(np.float32)
+def memoriser_actions(closes: np.ndarray, cost: float = 0.0) -> np.ndarray:
+    """Foresight on one known tape: per symbol, the best path over short, flat and long.
+
+    Each symbol holds ``-1/n``, ``0`` or ``1/n`` and earns its next-bar return, less ``cost``
+    per unit of weight traded. With ``cost = 0`` this is the next-bar sign. With the
+    environment's cost it stops trading moves too small to pay for, which the plain sign
+    rule cannot: on Calm that rule earns 31.5 bp gross and loses 4.1 bp net. An instrument
+    check only, never a policy.
+    """
+    returns = np.diff(closes, axis=0) / closes[:-1]
+    bars, n = returns.shape
+    levels = np.array([-1.0, 0.0, 1.0]) / n
+    out = np.zeros((bars, n))
+    switch = cost * np.abs(levels[:, None] - levels[None, :])
+    for c in range(n):
+        value = -cost * np.abs(levels) + levels * returns[0, c]
+        back = np.zeros((bars, 3), dtype=np.int64)
+        for t in range(1, bars):
+            total = value[None, :] - switch
+            back[t] = np.argmax(total, axis=1)
+            value = total[np.arange(3), back[t]] + levels * returns[t, c]
+        state = int(np.argmax(value))
+        for t in range(bars - 1, -1, -1):
+            out[t, c] = levels[state]
+            state = int(back[t, state])
+    return out.astype(np.float32)
+
+
+def cost_per_turnover(seed: int, env_spec: dict, tier: str) -> float:
+    """The environment's cost per unit of weight traded, read from one probe episode.
+
+    Alternate a full long and a full short book every bar, then divide what the ledger lost
+    against the frictionless return by the weight traded. A measurement of the engine, run
+    on a reserved seed, never on a seed any arm is scored on.
+    """
+    closes = tape_closes(seed, env_spec, tier)
+    bars, n = closes.shape[0] - 1, closes.shape[1]
+    sign = np.where(np.arange(bars) % 2 == 0, 1.0, -1.0)[:, None]
+    actions = np.repeat(sign, n, axis=1) / n
+    returns = np.diff(closes, axis=0) / closes[:-1]
+    gross = float((actions * returns).sum(axis=1).mean())
+    net = float(np.mean(rollout_fixed(seed, env_spec, tier, actions.astype(np.float32))))
+    traded = np.abs(np.diff(np.vstack([np.zeros(n), actions]), axis=0)).sum(axis=1).mean()
+    return max(0.0, (gross - net) / float(traded))
 
 
 # -- rollouts -----------------------------------------------------------------
@@ -427,15 +467,16 @@ def run_controls(p: dict) -> dict:
             rewards, actions = rollout_policy(seed, env_spec, tier, maker())
             rows[name].append({"seed": seed, **behaviour(rewards, actions)})
     rows["memoriser_if_seen"] = []
+    cost = cost_per_turnover(p["cost_probe_seed"], env_spec, tier)
     for seed in seeds:
-        actions = memoriser_actions(tape_closes(seed, env_spec, tier))
+        actions = memoriser_actions(tape_closes(seed, env_spec, tier), cost)
         rows["memoriser_if_seen"].append({"seed": seed, **behaviour(rollout_fixed(seed, env_spec, tier, actions), list(actions))})
     floor = []
     for draw in range(p["floor_draws"]):
         rng = np.random.default_rng((0xF100, p["band_tag"], draw))
         values = [rollout_policy(s, env_spec, tier, RandomAllocator(rng))[0] for s in seeds]
         floor.append(float(np.mean([np.mean(v) for v in values]) * 1e4))
-    return {"band": p["band"], "tier": tier, "rows": rows, "floor_draws_bp": floor}
+    return {"band": p["band"], "tier": tier, "rows": rows, "floor_draws_bp": floor, "cost_per_turnover": cost}
 
 
 def run_training(p: dict) -> dict:
@@ -446,7 +487,7 @@ def run_training(p: dict) -> dict:
 
     torch.set_num_threads(p["algorithm"]["torch_threads"])
     make, backend = resolve_normalizer(p["stage"])
-    env_spec, tier = p["env"], p["env"]["primary_tier"]
+    env_spec, tier = p["env"], p["tier"]
     ppo, config = p["ppo"], p["config"]
     seed = p["train_seed"]
     set_random_seed(seed)
@@ -514,7 +555,7 @@ def run_training(p: dict) -> dict:
         unseen_final["actions"], p["unseen"][:keep], env_spec, tier, p["timing_draws"], p["invested_floor"], seed
     )
     out["transfer"] = {}
-    for other in env_spec["transfer_tiers"]:
+    for other in p["transfer_tiers"]:
         rows = evaluate_model(model, make, state, p["unseen"], env_spec, other)
         out["transfer"][other] = rows["rows"]
     if best_index == p["checkpoints"] - 1:
@@ -541,7 +582,7 @@ def stage_design(protocol: dict, stage: str, decision: dict | None, smoke_steps:
             "unseen": common.band(bands["smoke_unseen"]["start"], bands["smoke_unseen"]["count"]),
             "dev": common.band(bands["smoke_unseen"]["start"] + 100, 4),
             "n_bands": 2, "first_band": 0, "runs_per_band": 2, "env_steps": smoke_steps, "checkpoints": 2,
-            "floor_draws": 4, "timing_draws": 4, "timing_episodes": 2, "configs": ["c0"], "cells": ["A"],
+            "floor_draws": 4, "timing_draws": 4, "timing_episodes": 2, "configs": ["c0"], "cells": ["A", "D"],
         }
     dev = common.band(bands["dev"]["start"], bands["dev"]["count"])
     common_part = {
@@ -589,16 +630,18 @@ def seen_seeds(design: dict, cell: dict, band_index: int, protocol: dict, stage:
 
 def build_jobs(protocol: dict, stage: str, design: dict, n_trials_runs: int, prefix: str) -> tuple[list[Job], list[Job]]:
     env_spec = protocol["env"]
-    tier = env_spec["primary_tier"]
-    control_bands: dict[str, list[int]] = {"unseen": design["unseen"], "dev": design["dev"]}
+    control_bands: dict[str, tuple[str, list[int]]] = {}
     training: list[Job] = []
     run_tag = 0
     for cell_name in design["cells"]:
         cell = protocol["cells"][cell_name]
+        tier = cell["tier"]
+        control_bands[f"{tier}/unseen"] = (tier, design["unseen"])
+        control_bands[f"{tier}/dev"] = (tier, design["dev"])
         for config_name in design["configs"]:
             for band_index in range(design["first_band"], design["first_band"] + design["n_bands"]):
                 seen = seen_seeds(design, cell, band_index, protocol, stage)
-                control_bands[f"seen_{cell_name}_{band_index}"] = seen
+                control_bands[f"{tier}/seen_{cell_name}_{band_index}"] = (tier, seen)
                 common.require_disjoint({"seen": seen, "dev": design["dev"], "unseen": design["unseen"]})
                 for run_index in range(design["runs_per_band"]):
                     train_seed = int.from_bytes(
@@ -614,6 +657,7 @@ def build_jobs(protocol: dict, stage: str, design: dict, n_trials_runs: int, pre
                             {
                                 "kind": "training", "stage": stage, "cell": cell_name, "band_index": band_index, "run_index": run_index,
                                 "config_name": config_name, "config": protocol["configs"][config_name], "net_arch": cell["net_arch"],
+                                "tier": tier, "transfer_tiers": list(cell["transfer_tiers"]),
                                 "env": env_spec, "algorithm": protocol["algorithm"], "ppo": protocol["ppo"], "lanes": protocol["lanes"],
                                 "seen": seen, "dev": design["dev"], "unseen": design["unseen"], "train_seed": train_seed,
                                 "env_steps": design["env_steps"], "checkpoints": design["checkpoints"],
@@ -627,9 +671,10 @@ def build_jobs(protocol: dict, stage: str, design: dict, n_trials_runs: int, pre
         Job(
             f"{prefix}controls/{name}",
             {"kind": "controls", "band": name, "seeds": seeds, "env": env_spec, "tier": tier,
+             "cost_probe_seed": protocol["bands"]["cost_probe"]["start"],
              "floor_draws": design["floor_draws"], "band_tag": int(hashlib.sha256(name.encode()).hexdigest()[:8], 16)},
         )
-        for name, seeds in control_bands.items()
+        for name, (tier, seeds) in control_bands.items()
     ]
     return controls, training
 
@@ -663,15 +708,16 @@ def nested_summary(values: dict[tuple[int, int], float], confidence: float) -> d
 def analyze_cell(results: dict, controls: dict, prefix: str, cell: str, config: str, protocol: dict) -> dict:
     confidence = 1.0 - protocol["design"]["alpha"]
     inactive = protocol["inactivity"]
-    needed = [f"{prefix}controls/unseen"] + [
-        f"{prefix}controls/seen_{cell}_{run['band']}"
+    tier = protocol["cells"][cell]["tier"]
+    needed = [f"{prefix}controls/{tier}/unseen"] + [
+        f"{prefix}controls/{tier}/seen_{cell}_{run['band']}"
         for run in results.values()
         if run["cell"] == cell and run["config"] == config
     ]
     lost = sorted({key for key in needed if key not in controls})
     if lost:
         return {"cell": cell, "config": config, "unavailable": "controls_missing", "controls_missing": lost}
-    reference_unseen = controls[f"{prefix}controls/unseen"]["rows"]["equal_weight"]
+    reference_unseen = controls[f"{prefix}controls/{tier}/unseen"]["rows"]["equal_weight"]
     gaps: dict[str, dict] = {"final": {}, "best": {}}
     seen_excess, unseen_excess, flags, memoriser = {}, {}, [], {}
     floors = []
@@ -679,7 +725,7 @@ def analyze_cell(results: dict, controls: dict, prefix: str, cell: str, config: 
         if run["cell"] != cell or run["config"] != config:
             continue
         where = (run["band"], run["run"])
-        seen_key = f"{prefix}controls/seen_{cell}_{run['band']}"
+        seen_key = f"{prefix}controls/{tier}/seen_{cell}_{run['band']}"
         reference_seen = controls[seen_key]["rows"]["equal_weight"]
         final = run["final"]
         s = float(np.mean(excess_by_seed(final["seen"], reference_seen)))
@@ -709,6 +755,7 @@ def analyze_cell(results: dict, controls: dict, prefix: str, cell: str, config: 
     memoriser_gaps = [v - memoriser_unseen_excess for v in memoriser.values()]
     return {
         "cell": cell,
+        "tier": tier,
         "config": config,
         "gap_final": nested_summary(gaps["final"], confidence),
         "gap_best": nested_summary(gaps["best"], confidence),
@@ -741,6 +788,25 @@ def verdict(row: dict, protocol: dict) -> str:
         return "overfit_detected"
     if gap["lo"] >= -sesoi and gap["hi"] <= sesoi:
         return "within_margin"
+    return "inconclusive"
+
+
+def signal_verdict(row: dict, protocol: dict) -> str:
+    """The declared-signal read: does the held-out excess show the tier's known edge?
+
+    Reported beside the gap verdict, never instead of it. On a tier built with no edge the
+    expected answer is ``no_heldout_edge``; on Calm it is ``heldout_edge``.
+    """
+    if "unavailable" in row:
+        return f"unavailable:{row['unavailable']}"
+    interval = row["unseen_excess"]["interval"]
+    if "lo" not in interval:
+        return "unavailable:unseen_excess"
+    sesoi = protocol["design"]["sesoi_bp"]
+    if interval["lo"] > 0.0:
+        return "heldout_edge"
+    if interval["lo"] >= -sesoi and interval["hi"] <= sesoi:
+        return "no_heldout_edge"
     return "inconclusive"
 
 
@@ -794,8 +860,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             protocol, sha, "smoke", out, design, args.workers, args.retry_failed,
             len(design["configs"]) * design["n_bands"] * design["runs_per_band"],
         )
-        summary = {"cells": {"A": analyze_cell(results, controls, "", "A", "c0", protocol)}}
-        summary["cells"]["A"]["verdict"] = "unavailable:not_final_stage"
+        summary = {"cells": {}}
+        for cell in design["cells"]:
+            summary["cells"][cell] = analyze_cell(results, controls, "", cell, "c0", protocol)
+            summary["cells"][cell]["verdict"] = "unavailable:not_final_stage"
     elif args.stage == "pilot":
         out = root / "pilot"
         steps = protocol["budget"]["escalated_env_steps" if args.escalate else "env_steps"]
@@ -840,7 +908,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "config": pilot["chosen"],
                 "env_steps": pilot["env_steps"],
                 "pilot_trial_runs": pilot["trial_runs"],
-                "cells": ["A", "B", "C"] if capacity else ["A"],
+                "cells": ["A", "D", "B", "C"] if capacity else ["A", "D"],
                 "protocol_sha256": sha,
             },
         )
@@ -863,6 +931,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         for cell in design["cells"]:
             row = analyze_cell(results, controls, "", cell, design["configs"][0], protocol)
             row["verdict"] = verdict(row, protocol)
+            row["signal_verdict"] = signal_verdict(row, protocol)
+            row["expected_signal"] = protocol["cells"][cell]["expected_signal"]
             summary["cells"][cell] = row
 
     summary["absent_jobs"] = absent

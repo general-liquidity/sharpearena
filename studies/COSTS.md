@@ -40,18 +40,25 @@ One 2,000,000-step run:
 | Kernel scoring | 6 |
 | Total | about 1,655, or 0.46 core-hours |
 
+Protocol version 4 runs four cells in the main stage: A and D always, B and C when A passes
+its capacity check. Counts below assume all four.
+
 | Stage | Runs | Core-hours at 2M steps | Core-hours at 8M steps |
 |---|---|---|---|
-| Pilot | 20 | 9 | 31 |
-| Main, 8 bands, all cells | 48 | 22 | 74 |
-| Main, 16 bands, all cells | 96 | 44 | 147 |
-| Main, 32 bands (cap), all cells | 192 | 88 | 294 |
+| Pilot (cell A only) | 20 | 9 | 31 |
+| Main, 8 bands, four cells | 64 | 29 | 98 |
+| Main, 16 bands, four cells | 128 | 59 | 196 |
+| Main, 32 bands (cap), four cells | 256 | 118 | 392 |
 | Controls and imports, per stage | | under 3 | under 3 |
 
-Expected total: about 34 core-hours at 8 bands, and at most about 100 at the cap without
-escalation. The worst case, the cap with the one permitted escalation, is about 330. Cell B
-trains a smaller network and cell C evaluates more seen seeds; neither is measured separately,
-and the table counts both at cell A's rate. On 32 workers the capped main stage takes about 3
-hours, or about 10 with escalation.
+Expected total: about 41 core-hours at 8 bands, and at most about 130 at the cap without
+escalation. The worst case, the cap with the one permitted escalation, is about 425. If A fails
+its capacity check, only A and D run and the main stage halves. Cell B trains a smaller network,
+cell C evaluates more seen seeds and cell D adds two transfer tiers; none is measured
+separately, and the table counts all at cell A's rate. The rates above were measured on Hard and
+were not remeasured on `martingale_v1` or Calm. On 32
+workers the capped main stage takes about 4 hours, or about 12 with escalation.
+
+The realism study gains one tier, `martingale_v1`, and stays under 1 core-hour.
 
 Disk use is small: job files are JSON summaries, and no model is retained, only its digest.

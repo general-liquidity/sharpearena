@@ -305,10 +305,11 @@ def build_jobs(protocol: dict, stage: str, sources: list[dict]) -> list[Job]:
                 Job(f"price/{name}/{tier}", {**base, "family": "tier", "arm": tier, "tier": tier,
                                              "vol_clustering": protocol["generator"]["primary"]["vol_clustering"]})
             )
-            jobs.append(
-                Job(f"price/{name}/{tier}_vc05", {**base, "family": "tier", "arm": f"{tier}_vc05", "tier": tier,
-                                                  "vol_clustering": protocol["generator"]["descriptive"]["vol_clustering"]})
-            )
+            if tier in protocol["generator"]["descriptive_tiers"]:
+                jobs.append(
+                    Job(f"price/{name}/{tier}_vc05", {**base, "family": "tier", "arm": f"{tier}_vc05", "tier": tier,
+                                                      "vol_clustering": protocol["generator"]["descriptive"]["vol_clustering"]})
+                )
         jobs.append(
             Job(f"price/{name}/neg_shuffled_real", {**base, "family": "shuffled", "arm": "neg_shuffled_real",
                                                     "sources": sources, "stride": stride})

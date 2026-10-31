@@ -1,13 +1,13 @@
 {
   "protocol_id": "sharpearena-realism-control",
-  "version": 2,
+  "version": 3,
   "geometry": {"n_returns": 120, "n_symbols": 4, "abs_acf_lags": 10},
   "gate": "sharpearena.realism.certify_realism, default thresholds, kind=return",
   "thresholds": {
     "tau_market_like": 0.75,
     "tau_not_market_like_upper": 0.10,
     "confidence_one_sided": 0.95,
-    "tier_family_size": 3,
+    "tier_family_size": 4,
     "exchangeability_margin": 0.0025,
     "no_fill_pnl_share_max": 0.05,
     "impact_exponent_band": [0.4, 0.6],
@@ -19,7 +19,8 @@
     "smoke": {"start": 29000, "count": 8}
   },
   "generator": {
-    "tiers": ["calm", "hard", "extreme"],
+    "tiers": ["calm", "hard", "extreme", "martingale_v1"],
+    "descriptive_tiers": ["calm", "hard", "extreme"],
     "primary": {"vol_clustering": 0.0},
     "descriptive": {"vol_clustering": 0.5}
   },

@@ -276,6 +276,31 @@ def test_memoriser_uses_the_next_bar():
     assert learner.memoriser_actions(closes).tolist() == [[0.5, -0.5], [-0.5, 0.5]]
 
 
+def _path_value(path: np.ndarray, returns: np.ndarray, cost: float) -> float:
+    traded = np.abs(np.diff(np.concatenate([[0.0], path])))
+    return float((path * returns).sum() - cost * traded.sum())
+
+
+def test_cost_aware_memoriser_is_the_best_path_by_brute_force():
+    import itertools
+
+    rng = np.random.default_rng(7)
+    closes = np.cumprod(1.0 + rng.normal(0, 0.01, size=(8, 1)), axis=0) * 100.0
+    returns = np.diff(closes, axis=0)[:, 0] / closes[:-1, 0]
+    for cost in (0.0, 0.004, 0.02):
+        chosen = learner.memoriser_actions(closes, cost)[:, 0].astype(np.float64)
+        best = max(
+            _path_value(np.array(p), returns, cost) for p in itertools.product((-1.0, 0.0, 1.0), repeat=7)
+        )
+        assert _path_value(chosen, returns, cost) == pytest.approx(best, abs=1e-6)
+
+
+def test_a_cost_the_moves_cannot_pay_for_leaves_the_memoriser_flat():
+    closes = np.array([[100.0], [100.1], [100.0], [100.1]])
+    assert not learner.memoriser_actions(closes, 0.01).any()
+    assert learner.memoriser_actions(closes, 0.0).any()
+
+
 def test_holding_periods_match_bench_cases():
     gross = [0.0, 0.5, 0.4, 0.0, 0.0, 1e-9, 2e-9, 0.2]
     assert learner.holding_periods(gross, 1e-9) == [(1, 2), (6, 2)]
@@ -410,6 +435,56 @@ def test_training_jobs_keep_heldout_out_of_the_seen_band_and_derive_distinct_see
     assert all(j.payload["n_trials"]["best"] == 10 * LEARNER["budget"]["checkpoints"] for j in training)
 
 
+def test_primary_cell_is_the_no_edge_tier_and_calm_is_declared():
+    cells = LEARNER["cells"]
+    assert cells["A"]["role"] == "primary" and cells["A"]["tier"] == "martingale_v1"
+    assert cells["D"]["tier"] == "calm" and cells["D"]["expected_signal"] == "heldout_edge"
+    assert {cells[c]["tier"] for c in "ABC"} == {"martingale_v1"}
+    assert "primary_tier" not in LEARNER["env"]
+
+
+def test_each_cell_trains_and_is_scored_on_its_own_tier():
+    design = learner.stage_design(LEARNER, "main", {"bands": 2, "env_steps": 100, "config": "c0", "cells": ["A", "D"]}, 0)
+    controls, training = learner.build_jobs(LEARNER, "main", design, 4, "")
+    by_cell = {j.payload["cell"]: j.payload for j in training}
+    assert by_cell["A"]["tier"] == "martingale_v1" and by_cell["A"]["transfer_tiers"] == []
+    assert by_cell["D"]["tier"] == "calm" and by_cell["D"]["transfer_tiers"] == ["hard", "extreme"]
+    control_tiers = {j.key: j.payload["tier"] for j in controls}
+    assert control_tiers["controls/martingale_v1/unseen"] == "martingale_v1"
+    assert control_tiers["controls/calm/seen_D_0"] == "calm"
+    assert not any(k.startswith("controls/martingale_v1/seen_D") for k in control_tiers)
+
+
+def test_a_cell_is_never_scored_against_another_tiers_reference():
+    run = {"cell": "A", "config": "c0", "band": 0, "run": 0}
+    calm_only = {"controls/calm/unseen": {}, "controls/calm/seen_A_0": {}}
+    row = learner.analyze_cell({"k": run}, calm_only, "", "A", "c0", LEARNER)
+    assert row["unavailable"] == "controls_missing"
+    assert row["controls_missing"] == ["controls/martingale_v1/seen_A_0", "controls/martingale_v1/unseen"]
+
+
+@pytest.mark.parametrize(
+    "interval,expected",
+    [
+        ({"lo": 0.2, "hi": 3.0}, "heldout_edge"),
+        ({"lo": -0.5, "hi": 0.6}, "no_heldout_edge"),
+        ({"lo": -2.0, "hi": 0.5}, "inconclusive"),
+        ({"unavailable": "x"}, "unavailable:unseen_excess"),
+    ],
+)
+def test_declared_signal_read(interval, expected):
+    assert learner.signal_verdict({"unseen_excess": {"interval": interval}}, LEARNER) == expected
+    assert learner.signal_verdict({"unavailable": "controls_missing"}, LEARNER) == "unavailable:controls_missing"
+
+
+def test_martingale_is_a_graded_tier_without_a_descriptive_twin():
+    jobs = realism.build_jobs(REALISM, "smoke", [])
+    keys = {j.key for j in jobs}
+    assert "price/smoke/martingale_v1" in keys and "price/smoke/martingale_v1_vc05" not in keys
+    assert {"price/smoke/calm_vc05", "price/smoke/hard_vc05", "price/smoke/extreme_vc05"} <= keys
+    assert REALISM["thresholds"]["tier_family_size"] == len(REALISM["generator"]["tiers"]) == 4
+
+
 def test_pilot_bands_do_not_reuse_search_bands():
     search = learner.pilot_design(LEARNER, "search", None, 100)
     design = learner.pilot_design(LEARNER, "design", "c0", 100)
@@ -418,7 +493,7 @@ def test_pilot_bands_do_not_reuse_search_bands():
 
 def test_position_env_closes_ignore_own_orders():
     spec = LEARNER["env"]
-    assert learner.closes_are_exogenous(5, spec, spec["primary_tier"])
+    assert learner.closes_are_exogenous(5, spec, "hard")
 
 
 def test_a_bad_arm_inside_the_margin_is_not_reported_as_detected():
