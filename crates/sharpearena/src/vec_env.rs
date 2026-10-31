@@ -19,7 +19,7 @@
 //! Scheduling is therefore a pure cost decision. One transition is microseconds of work,
 //! and a Rayon fork-join costs more the larger the pool it wakes, so a batch only goes
 //! parallel when its estimated work pays for a fork on the current pool (see
-//! [`Dispatch`]). The estimate reads lane, symbol and thread counts, never a clock.
+//! `Dispatch`). The estimate reads lane, symbol and thread counts, never a clock.
 
 #[cfg(not(target_arch = "wasm32"))]
 use rayon::prelude::*;
