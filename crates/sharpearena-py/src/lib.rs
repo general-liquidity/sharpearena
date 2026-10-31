@@ -8,6 +8,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyType;
 use pyo3::wrap_pyfunction;
+use std::collections::VecDeque;
 use sharpearena::exec_noise::{perturb as core_perturb_action, ExecNoise};
 
 // --- Typed errors across the FFI boundary --------------------------------------------------
@@ -100,7 +101,10 @@ use sharpearena::leaderboard_ci::{
     KERNEL_BASE_TRIALS, TRIALS_SR_STD_DEFAULT,
 };
 use sharpearena::lob_market::{OrderBook, OrderKind, Side};
-use sharpearena::market::{EllipticUncertaintySet, MarketClearing, MarketParams};
+use sharpearena::market::{
+    EllipticUncertaintySet, ExecutionSettings, FixedDecisionDelay, MarketClearing,
+    MarketExecutionIdentity, MarketParams,
+};
 use sharpearena::vec_env::AutoresetMode;
 use sharpearena::{
     generate_scenario, score_returns, CostModel, Dataset, Decision, DistributionMode, Mandate,
@@ -221,6 +225,81 @@ fn effective_config_json(data: &Dataset, window: &Window, exec_seed: u64) -> PyR
     .to_string())
 }
 
+/// The FIFO of decisions waiting for eligibility under `fixed_delay_bars`.
+///
+/// This carries SharpeBench's `sharpebench.fixed-decision-delay.v1` semantics around the
+/// pinned engine, which predates the setting: a decision made on bar `t` reaches the engine
+/// on bar `t + bars`, is priced and sized there, is not replaced by a later decision, and
+/// never fills past the window. The engine holds on bars with nothing eligible. One
+/// difference from Bench's in-engine queue is stated, not hidden: a decision the engine
+/// would flag as a violation is flagged at eligibility rather than submission, so a
+/// window-tail decision is never validated.
+struct DecisionQueue {
+    bars: usize,
+    waiting: VecDeque<Decision>,
+}
+
+impl DecisionQueue {
+    fn new(bars: Option<usize>) -> PyResult<Option<Self>> {
+        match bars {
+            None => Ok(None),
+            Some(0) => Err(engine_err(
+                CODE_INVALID_ARGUMENT,
+                "fixed_delay_bars must be >= 1; omit it for same-close execution",
+            )),
+            Some(bars) => Ok(Some(Self {
+                bars,
+                waiting: VecDeque::with_capacity(bars + 1),
+            })),
+        }
+    }
+
+    /// Submit `decision` and return what reaches the engine this bar, with whether it was
+    /// a submitted decision. inv: after this call `waiting` holds
+    /// `min(submitted, bars)` decisions, oldest first.
+    fn submit(&mut self, decision: Decision) -> (Decision, bool) {
+        self.waiting.push_back(decision);
+        if self.waiting.len() > self.bars {
+            let eligible = self.waiting.pop_front();
+            (eligible.expect("the queue exceeds bars >= 1"), true)
+        } else {
+            let hold = Decision {
+                orders: Vec::new(),
+                reasoning: String::new(),
+                cost: None,
+            };
+            (hold, false)
+        }
+    }
+
+    fn wire(&self) -> FixedDecisionDelay {
+        FixedDecisionDelay::Fifo { bars: self.bars }
+    }
+}
+
+/// Bind a fixed delay into an environment's effective configuration: the versioned setting
+/// and a fingerprint of the costs and timing together. Absent a delay the block is returned
+/// untouched, so the default readback keeps its bytes.
+fn bind_fixed_delay(
+    effective: String,
+    delay: Option<&DecisionQueue>,
+    costs: &CostModel,
+) -> PyResult<String> {
+    let Some(delay) = delay else {
+        return Ok(effective);
+    };
+    let mut block: serde_json::Value =
+        serde_json::from_str(&effective).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))?;
+    let timing = serde_json::to_value(delay.wire()).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))?;
+    let identity = serde_json::json!({ "costs": costs, "fixed_delay": timing });
+    block["fixed_delay"] = timing;
+    block["execution_fnv1a64"] = serde_json::json!(format!(
+        "{:016x}",
+        fnv1a64(identity.to_string().as_bytes())
+    ));
+    Ok(block.to_string())
+}
+
 /// Parse the wire `autoreset_mode` label, rejecting unknown modes with a `ValueError`.
 fn parse_autoreset_mode(mode: &str) -> PyResult<AutoresetMode> {
     AutoresetMode::from_label(mode).ok_or_else(|| {
@@ -242,6 +321,8 @@ pub struct PyTradingEnv {
     inner: CoreEnv,
     seed: u64,
     effective: String,
+    /// `None` is same-close execution, the default.
+    delay: Option<DecisionQueue>,
 }
 
 fn build_window(start: Option<usize>, end: Option<usize>, len: usize) -> Window {
@@ -292,6 +373,7 @@ impl PyTradingEnv {
         jump_burst_probability = 0.0,
         jump_burst_persistence = 0.0,
         jump_burst_size = 0.0,
+        fixed_delay_bars = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -311,7 +393,9 @@ impl PyTradingEnv {
         jump_burst_probability: f64,
         jump_burst_persistence: f64,
         jump_burst_size: f64,
+        fixed_delay_bars: Option<usize>,
     ) -> PyResult<Self> {
+        let delay = DecisionQueue::new(fixed_delay_bars)?;
         let mode = parse_distribution_mode(distribution_mode)?;
         let data = build_dataset(
             n_symbols,
@@ -343,11 +427,16 @@ impl PyTradingEnv {
             max_participation,
         );
         let resolved_exec_seed = exec_seed.unwrap_or(seed);
-        let effective = effective_config_json(&data, &window, resolved_exec_seed)?;
+        let effective = bind_fixed_delay(
+            effective_config_json(&data, &window, resolved_exec_seed)?,
+            delay.as_ref(),
+            &costs,
+        )?;
         Ok(PyTradingEnv {
             inner: CoreEnv::new(data, window, costs, resolved_exec_seed),
             seed,
             effective,
+            delay,
         })
     }
 
@@ -364,6 +453,7 @@ impl PyTradingEnv {
         financing_bps = None,
         max_participation = None,
         exec_seed = None,
+        fixed_delay_bars = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn from_csv(
@@ -378,7 +468,9 @@ impl PyTradingEnv {
         financing_bps: Option<f64>,
         max_participation: Option<f64>,
         exec_seed: Option<u64>,
+        fixed_delay_bars: Option<usize>,
     ) -> PyResult<Self> {
+        let delay = DecisionQueue::new(fixed_delay_bars)?;
         let data = Dataset::from_csv(csv_text).map_err(|e| engine_err(CODE_DATA_UNAVAILABLE, e))?;
         let window = build_window(window_start, window_end, data.len());
         if window.start >= window.end || window.end > data.len() {
@@ -400,11 +492,16 @@ impl PyTradingEnv {
             max_participation,
         );
         let resolved_exec_seed = exec_seed.unwrap_or(seed);
-        let effective = effective_config_json(&data, &window, resolved_exec_seed)?;
+        let effective = bind_fixed_delay(
+            effective_config_json(&data, &window, resolved_exec_seed)?,
+            delay.as_ref(),
+            &costs,
+        )?;
         Ok(PyTradingEnv {
             inner: CoreEnv::new(data, window, costs, resolved_exec_seed),
             seed,
             effective,
+            delay,
         })
     }
 
@@ -427,6 +524,9 @@ impl PyTradingEnv {
     /// Reset to the start of the window; return the first point-in-time
     /// observation as a wire-format JSON string.
     fn reset(&mut self) -> PyResult<String> {
+        if let Some(delay) = &mut self.delay {
+            delay.waiting.clear();
+        }
         let obs = self.inner.reset();
         serde_json::to_string(&obs).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))
     }
@@ -434,32 +534,81 @@ impl PyTradingEnv {
     /// Apply `decision_json` (a wire-format `Decision`) at the current bar and
     /// advance one step. Returns `(observation_json, reward, done, info_json)`,
     /// where `info_json` carries the post-step NAV and this step's process events.
+    /// Under `fixed_delay_bars` the decision joins the FIFO, the eligible decision (or a
+    /// hold) reaches the engine, and `info_json` also carries `decision_eligible`.
     fn step(&mut self, decision_json: &str) -> PyResult<(String, f64, bool, String)> {
         let decision: Decision = serde_json::from_str(decision_json)
             .map_err(|e| engine_err(CODE_INVALID_JSON, format!("invalid decision JSON: {e}")))?;
+        let (decision, eligible) = match &mut self.delay {
+            Some(delay) => {
+                let (decision, eligible) = delay.submit(decision);
+                (decision, Some(eligible))
+            }
+            None => (decision, None),
+        };
         let res = self.inner.step(decision);
         let observation = serde_json::to_string(&res.observation)
             .map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))?;
-        let info = serde_json::json!({
+        let mut info = serde_json::json!({
             "nav": res.info.nav,
             "events": res.info.events,
         });
+        if let Some(eligible) = eligible {
+            info["decision_eligible"] = serde_json::json!(eligible);
+        }
         Ok((observation, res.reward, res.done, info.to_string()))
     }
 
     /// A snapshot of the mutable sim state (cursor + book) as JSON — the native
     /// checkpoint that replaces replay-from-decisions. Pair with [`restore_state`].
+    ///
+    /// Under `fixed_delay_bars` the snapshot is `{env, delayed_decisions}`, because the
+    /// waiting decisions are state a resumed run must not lose.
     fn clone_state(&self) -> PyResult<String> {
         let state = self.inner.clone_state();
-        serde_json::to_string(&state).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))
+        match &self.delay {
+            Some(delay) => serde_json::to_string(&serde_json::json!({
+                "env": state,
+                "delayed_decisions": delay.waiting,
+            })),
+            None => serde_json::to_string(&state),
+        }
+        .map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))
     }
 
     /// Restore a trusted snapshot produced by [`clone_state`] without replay.
     /// Copying and JSON parsing scale with state size, including accumulated trace data.
     fn restore_state(&mut self, state_json: &str) -> PyResult<()> {
-        let state: sharpearena::EnvState = serde_json::from_str(state_json)
-            .map_err(|e| engine_err(CODE_INVALID_JSON, format!("invalid env state: {e}")))?;
-        self.inner.restore_state(state);
+        let invalid = |e: serde_json::Error| {
+            engine_err(CODE_INVALID_JSON, format!("invalid env state: {e}"))
+        };
+        match &mut self.delay {
+            Some(delay) => {
+                let mut state: serde_json::Value =
+                    serde_json::from_str(state_json).map_err(invalid)?;
+                let env: sharpearena::EnvState =
+                    serde_json::from_value(state["env"].take()).map_err(invalid)?;
+                let waiting: VecDeque<Decision> =
+                    serde_json::from_value(state["delayed_decisions"].take()).map_err(invalid)?;
+                if waiting.len() > delay.bars {
+                    return Err(engine_err(
+                        CODE_INVALID_ARGUMENT,
+                        format!(
+                            "snapshot holds {} delayed decisions, this environment delays {} bars",
+                            waiting.len(),
+                            delay.bars
+                        ),
+                    ));
+                }
+                delay.waiting = waiting;
+                self.inner.restore_state(env);
+            }
+            None => {
+                let state: sharpearena::EnvState =
+                    serde_json::from_str(state_json).map_err(invalid)?;
+                self.inner.restore_state(state);
+            }
+        }
         Ok(())
     }
 }
@@ -1152,6 +1301,19 @@ pub struct PyMarketClearing {
     /// concave, the Huberman-Stanzl manipulation-admitting regime). Gated exactly like the
     /// uncertainty set: at `1.0` the native call runs byte-identical linear arithmetic.
     impact_exponent: f64,
+    /// Fingerprint of the exogenous tape this market was built on.
+    dataset_fnv1a64: String,
+}
+
+/// Parse the opt-in execution settings. The wire form is the versioned
+/// [`ExecutionSettings`] record, so an unknown version or field is refused here.
+fn parse_execution(execution: Option<&str>) -> PyResult<Option<ExecutionSettings>> {
+    execution
+        .map(|json| {
+            serde_json::from_str(json)
+                .map_err(|e| engine_err(CODE_INVALID_JSON, format!("invalid execution: {e}")))
+        })
+        .transpose()
 }
 
 /// Validate the permanent-impact exponent, surfacing a bad input as a Python `ValueError`
@@ -1220,6 +1382,7 @@ impl PyMarketClearing {
         eta_radius = None,
         uncertainty_correlation = 0.0,
         impact_exponent = 1.0,
+        execution = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -1238,6 +1401,7 @@ impl PyMarketClearing {
         eta_radius: Option<f64>,
         uncertainty_correlation: f64,
         impact_exponent: f64,
+        execution: Option<&str>,
     ) -> PyResult<Self> {
         if n_agents < 1 {
             return Err(engine_err(CODE_INVALID_ARGUMENT, "n_agents must be >= 1"));
@@ -1245,8 +1409,16 @@ impl PyMarketClearing {
         let mode = parse_distribution_mode(distribution_mode)?;
         let tier = parse_richness_tier(richness)?;
         let data = build_dataset(n_symbols, n_days, seed, mode, 0.0, 0.0, 0.0, 0.0);
-        let inner =
+        let dataset_bytes =
+            serde_json::to_string(&data).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))?;
+        let dataset_fnv1a64 = format!("{:016x}", fnv1a64(dataset_bytes.as_bytes()));
+        let mut inner =
             MarketClearing::from_dataset_with_richness(&data, n_agents, capital, tier.richness());
+        if let Some(settings) = parse_execution(execution)? {
+            inner = inner
+                .with_execution(settings)
+                .map_err(|e| relay_err(CODE_INVALID_ARGUMENT, e))?;
+        }
         let params = MarketParams {
             lambda: kyle_lambda,
             eta,
@@ -1261,12 +1433,41 @@ impl PyMarketClearing {
             seed,
             uncertainty,
             impact_exponent,
+            dataset_fnv1a64,
         })
     }
 
     #[getter]
     fn scenario_seed(&self) -> u64 {
         self.seed
+    }
+
+    /// The configuration this market is actually clearing with, read from its live state.
+    /// `identity` is every input that decides a fill (coefficients, exponent, uncertainty
+    /// set, execution settings) and `execution_fnv1a64` fingerprints it, so a setter call
+    /// or a different setting moves the number. `dataset_fnv1a64` fingerprints the tape.
+    #[getter]
+    fn effective_config(&self) -> PyResult<String> {
+        let identity = MarketExecutionIdentity::new(
+            &self.params,
+            self.impact_exponent,
+            self.uncertainty.as_ref(),
+            self.inner.execution(),
+        );
+        let canonical =
+            serde_json::to_string(&identity).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))?;
+        Ok(serde_json::json!({
+            "n_symbols": self.inner.symbols().len(),
+            "n_bars": self.inner.n_bars(),
+            "n_agents": self.inner.n_agents(),
+            "start_bar": self.inner.start_bar(),
+            "capital": self.inner.capital(),
+            "scenario_seed": self.seed,
+            "dataset_fnv1a64": self.dataset_fnv1a64,
+            "identity": identity,
+            "execution_fnv1a64": format!("{:016x}", fnv1a64(canonical.as_bytes())),
+        })
+        .to_string())
     }
 
     /// The active elliptic uncertainty set as JSON

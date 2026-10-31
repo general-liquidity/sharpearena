@@ -104,7 +104,15 @@ gives ``D * lambda * (X / (D * V))**beta``, which grows as ``D**(1 - beta)``. On
 execution stops, ``M`` is unchanged bit for bit, so impact never relaxes. The empirical
 square-root law instead has an exponent near ``0.5`` in ``X``, little dependence on ``D``
 and decay after execution, so ``beta < 1`` is not that law. The probe reports all three
-numbers so a caller can check them. A transient-impact kernel is future work.
+numbers so a caller can check them.
+
+**The transient kernel, measured the same way.** ``meta_order_impact_shape`` also takes an
+opt-in :class:`~sharpearena.market_env.MarketExecution`. Its displacement is a function of
+the decayed cumulative flow ``J``, so with the ``square_root`` shape and ``kyle_lambda = 0``
+impact follows ``sqrt(J)``. While execution is short against the decay horizon ``J`` tracks
+``X`` and the execution exponent sits near ``0.5``, the duration exponent near ``0``, and
+impact relaxes after execution stops. The shape is an arithmetic property of a declared
+setting, and it weakens as execution outlasts the decay. It is not a fit to any market.
 
 Determinism: the engine is seeded and has no clock or RNG, and every aggregate here is
 an exactly rounded sum (``math.fsum``). A report reproduces byte for byte from its
@@ -121,7 +129,7 @@ from typing import Any, Callable, Mapping, Optional, Sequence, Union
 
 import numpy as np
 
-from .market_env import _normalize_uncertainty
+from .market_env import MarketExecution, _normalize_uncertainty
 from .sharpearena_py import PyMarketClearing
 
 CONSTANT_TRACK = "constant_track"
@@ -797,7 +805,9 @@ def _impact_path(
     capital: float,
     distribution_mode: str,
     weight_at: Callable[[int], float],
+    execution: Optional[MarketExecution] = None,
 ) -> tuple[list[float], list[float]]:
+    optional: dict[str, Any] = {} if execution is None else {"execution": execution.to_json()}
     market = PyMarketClearing(
         n_symbols=1,
         n_days=n_days,
@@ -809,6 +819,7 @@ def _impact_path(
         volume_scale=volume_scale,
         distribution_mode=distribution_mode,
         impact_exponent=impact_exponent,
+        **optional,
     )
     json.loads(market.reset_market())
     exogenous = []
@@ -857,6 +868,7 @@ def meta_order_impact_shape(
     durations: Sequence[int] = (5, 10, 20, 40),
     total_weight: float = 0.8,
     distribution_mode: str = "calm",
+    execution: Optional[MarketExecution] = None,
 ) -> MetaOrderImpactShape:
     """Measure how the kernel's permanent impact grows with a buy meta-order.
 
@@ -872,9 +884,16 @@ def meta_order_impact_shape(
       length when ``total_weight`` is bought over each of ``durations`` bars.
 
     The square-root law would give about ``0.5``, about ``0`` and ratios below one. See
-    the module docs for what this kernel gives and why.
+    the module docs for what this kernel gives and why. ``execution`` measures opt-in
+    settings instead; with a transient kernel ``kyle_lambda`` may be ``0`` so the
+    displacement is read alone. A fixed delay is refused, because the probe pairs each
+    weight with the bar it clears on.
     """
-    if not (math.isfinite(kyle_lambda) and kyle_lambda > 0.0):
+    transient = execution is not None and execution.transient_coefficient is not None
+    if execution is not None and execution.fixed_delay_bars is not None:
+        raise ImpactDiagnosticError("meta_order_impact_shape does not model a fixed delay")
+    floor_ok = kyle_lambda >= 0.0 if transient else kyle_lambda > 0.0
+    if not (math.isfinite(kyle_lambda) and floor_ok):
         raise ImpactDiagnosticError(f"kyle_lambda must be positive, got {kyle_lambda!r}")
     # The same rule `MarketSettings.validated` applies for the paired report. These reach
     # the engine directly here, so without this they arrived unchecked.
@@ -904,7 +923,7 @@ def meta_order_impact_shape(
     def path(weight_at: Callable[[int], float]) -> tuple[list[float], list[float]]:
         return _impact_path(
             impact_exponent, seed, n_days, kyle_lambda, volume_scale, capital,
-            distribution_mode, weight_at,
+            distribution_mode, weight_at, execution,
         )
 
     executed, impact = path(lambda bar: weight_step * min(bar + 1, execution_bars))

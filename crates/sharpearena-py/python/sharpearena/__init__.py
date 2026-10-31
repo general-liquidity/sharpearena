@@ -242,7 +242,7 @@ from .manipulation import (
     run_manipulation_probe,
     size_response,
 )
-from .market_env import EndogenousMarketEnv
+from .market_env import EndogenousMarketEnv, MarketExecution
 from .impact_diagnostics import (
     ImpactDiagnosticError,
     NonPositiveMidError,
@@ -550,6 +550,7 @@ __all__ = [
     "MultiAgentSharpeArenaEnv",
     "make_aec_env",
     "EndogenousMarketEnv",
+    "MarketExecution",
     "CheckpointableEnv",
     "CheckpointState",
     "SharpeArenaFuncEnv",

@@ -56,6 +56,7 @@ class TradingEnv:
         jump_burst_probability: float = 0.0,
         jump_burst_persistence: float = 0.0,
         jump_burst_size: float = 0.0,
+        fixed_delay_bars: int | None = None,
     ) -> None: ...
     @classmethod
     def from_csv(
@@ -70,6 +71,7 @@ class TradingEnv:
         financing_bps: float | None = None,
         max_participation: float | None = None,
         exec_seed: int | None = None,
+        fixed_delay_bars: int | None = None,
     ) -> TradingEnv: ...
     @property
     def scenario_seed(self) -> int: ...
@@ -147,9 +149,12 @@ class PyMarketClearing:
         eta_radius: float | None = None,
         uncertainty_correlation: float = 0.0,
         impact_exponent: float = 1.0,
+        execution: str | None = None,
     ) -> None: ...
     @property
     def scenario_seed(self) -> int: ...
+    @property
+    def effective_config(self) -> str: ...
     @property
     def uncertainty(self) -> str | None: ...
     def set_uncertainty(
