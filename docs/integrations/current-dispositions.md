@@ -19,6 +19,11 @@ modernized or vendored CleanRL example is separate work, with licensing,
 API-conversion, installed-artifact parity and maintenance obligations. The
 existing SB3 route is a separate alternative, not evidence that CleanRL works.
 
+Update, 2026-10-30: that separate work took the fresh-write form.
+`examples/cleanrl-style/ppo_vector.py` is a CleanRL-style single file with attribution
+and no vendored code. The conflict above still stands, and the floor did not move.
+[The support-status page](support-status.md) records how far the example was checked.
+
 ## PufferLib and EnvPool: native bridge decisions remain separate
 
 PufferLib's [5.0 environment header at 6ffa5b10](https://github.com/PufferAI/PufferLib/blob/6ffa5b10dbbbe4d1e8288367c7d9d3acd3bad4a2/src/pufferenv.h)
@@ -63,3 +68,7 @@ do not constitute a new container-job run.
 A supported adapter or additional isolation evidence would be a new scoped
 deliverable. Fixture tests and logos do not establish it. Keep the
 [support-status table](support-status.md) authoritative about these distinctions.
+
+Update, 2026-10-30: Harbor gained a job metric, a pre-collection hook and a corrected
+fixture, and CI gained a non-blocking job that runs the HUD fixture with `hud`
+installed. None of this builds an adapter, and no container job was rerun.

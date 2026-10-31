@@ -17,6 +17,13 @@ terminated, truncated, infos)``, with numpy arrays of leading dim ``B``.
 
 Either way the batch never stalls; ``rewards``/``infos`` describe the step that executed.
 
+**Scenario on recycle — selectable.** ``autoreset_scenarios`` chooses what a recycled lane
+runs next. ``"replay"`` (default) restarts the lane's scenario, so a run sees only as many
+scenarios as lanes. ``"fresh_v1"`` draws a new scenario per recycled episode from a frozen
+per-lane seed stream confined to the training band ``[0, EVAL_SEED_BASE)``. It is
+training-only: evaluation mode and lanes outside the band are refused. Drawn seeds appear
+in ``infos`` and in the native ``effective_configs`` readback, so a run replays.
+
 The action is a per-lane **target-weight vector** over the environment's symbols (shape
 ``(B, n_symbols)``), converted into the wire-format ``Decision`` JSON the binding expects.
 """
@@ -90,6 +97,7 @@ class SharpeArenaVectorEnv(VectorEnv):
         mode: str = "train",
         max_episode_steps: Optional[int] = None,
         env_kwargs: Optional[dict] = None,
+        autoreset_scenarios: str = "replay",
     ) -> None:
         if max_episode_steps is not None:
             if isinstance(max_episode_steps, (bool, np.bool_)):
@@ -103,6 +111,10 @@ class SharpeArenaVectorEnv(VectorEnv):
         validate_weight_limit(max_weight, allow_short)
         if mode not in ("train", "eval"):
             raise ValueError("mode must be 'train' or 'eval'")
+        if mode == "eval" and autoreset_scenarios != "replay":
+            raise ValueError(
+                "autoreset_scenarios draws from the training band; eval mode must replay"
+            )
         if seeds is None:
             if num_envs is None:
                 raise ValueError("pass either num_envs or seeds")
@@ -118,6 +130,7 @@ class SharpeArenaVectorEnv(VectorEnv):
         self._seeds = list(seeds)
         self.num_envs = len(self._seeds)
         self._autoreset_mode = autoreset_mode
+        self._fresh_scenarios = autoreset_scenarios != "replay"
         self._pending_actions: Optional[np.ndarray] = None
         self.metadata = {
             **self.metadata,
@@ -137,6 +150,7 @@ class SharpeArenaVectorEnv(VectorEnv):
             jump_burst_size=float(jump_burst_size),
             autoreset_mode=autoreset_mode,
             max_episode_steps=max_episode_steps,
+            autoreset_scenarios=autoreset_scenarios,
             **kwargs,
         )
         self._env = VecTradingEnv(seeds=self._seeds, **self._native_kwargs)
@@ -174,6 +188,16 @@ class SharpeArenaVectorEnv(VectorEnv):
     @property
     def scenario_seeds(self) -> list[int]:
         return list(self._seeds)
+
+    @property
+    def autoreset_scenarios(self) -> str:
+        return self._env.autoreset_scenarios
+
+    @property
+    def effective_configs(self) -> list[dict]:
+        """Per-lane readback of what the native batch actually built and, under
+        ``fresh_v1``, every seed it has drawn since this batch was constructed."""
+        return [json.loads(config) for config in self._env.effective_configs]
 
     def _decode_obs(self, obs: dict) -> dict[str, np.ndarray]:
         by_symbol = {s["symbol"]: s for s in obs["symbols"]}
@@ -218,6 +242,20 @@ class SharpeArenaVectorEnv(VectorEnv):
         ]
         return json.dumps(decisions)
 
+    def _record_draws(self, infos: dict, previous: list[int], recycled, seeds: list[int]) -> None:
+        """Fold one step's ``fresh_v1`` draws into ``infos``. ``scenario_seed`` is the
+        scenario each returned observation belongs to, so a recycled lane's finished
+        episode is named by ``previous`` and carried in ``final_info`` when present."""
+        self._seeds = list(seeds)
+        infos["scenario_seed"] = np.array(self._seeds, dtype=np.int64)
+        drawn = np.empty(self.num_envs, dtype=object)
+        drawn[recycled] = np.array(self._seeds, dtype=object)[recycled]
+        infos["drawn_scenario_seed"] = drawn
+        final_info = infos.get("final_info")
+        if final_info is not None:
+            for lane in np.flatnonzero(recycled):
+                final_info[lane]["scenario_seed"] = previous[lane]
+
     # -- gymnasium vector API ----------------------------------------------
 
     def reset(
@@ -226,8 +264,10 @@ class SharpeArenaVectorEnv(VectorEnv):
         """Rebuild native lanes for an integer base seed or an exact per-lane list.
 
         Seeds are nonnegative signed-64-bit integers, used literally even in eval
-        mode. None keeps current scenarios. Automatic resets never draw new seeds.
-        A failed seed validation leaves the active batch and queued action intact.
+        mode. None keeps current scenarios and, under ``fresh_v1``, the stream position.
+        Automatic resets draw new seeds only under ``fresh_v1``. An explicit seed reopens
+        that stream from the new seeds. A failed seed validation leaves the active batch
+        and queued action intact.
         """
         if seed is not None:
             def checked(value):
@@ -301,7 +341,81 @@ class SharpeArenaVectorEnv(VectorEnv):
                 dtype=object,
             )
             infos["final_info"] = np.array(out["final_info"], dtype=object)
+        if self._fresh_scenarios:
+            self._seeds = out["scenario_seeds"]
+            infos["scenario_seed"] = np.array(self._seeds, dtype=np.int64)
+            infos["drawn_scenario_seed"] = np.array(out["drawn_seeds"], dtype=object)
         return obs, rewards, terminated, truncated, infos
+
+    def step_array(
+        self, actions: np.ndarray
+    ) -> tuple[dict[str, np.ndarray], np.ndarray, np.ndarray, np.ndarray, dict]:
+        """Run one batched step through the binary path, with no JSON at the boundary.
+
+        Takes the same actions and returns the same batch as :meth:`step`, byte for byte,
+        including recycling and ``fresh_v1`` draws, and leaves the engine in the same
+        state. ``final_info`` entries carry ``nav`` but no ``events``: process events stay
+        in the engine's trace, so use :meth:`step` to read them. :meth:`step` stays the
+        canonical wire format. Raises if a ``step_async`` is pending.
+        """
+        if self._pending_actions is not None:
+            raise RuntimeError("step_array called with a step_async pending")
+        weights = validated_action(actions, self.action_space)
+        b, n = self.num_envs, len(self._symbols)
+        closes = np.empty((b, n), dtype=np.float64)
+        positions = np.empty((b, n), dtype=np.float64)
+        cash = np.empty((b, 1), dtype=np.float64)
+        rewards = np.empty(b, dtype=np.float64)
+        navs = np.empty(b, dtype=np.float64)
+        terminated = np.empty(b, dtype=np.uint8)
+        truncated = np.empty(b, dtype=np.uint8)
+        first = np.empty(b, dtype=np.uint8)
+        same_step = self._autoreset_mode == "same_step"
+        finals = (
+            {
+                "final_closes": np.empty((b, n), dtype=np.float64),
+                "final_positions": np.empty((b, n), dtype=np.float64),
+                "final_cash": np.empty((b, 1), dtype=np.float64),
+                "final_navs": np.empty(b, dtype=np.float64),
+            }
+            if same_step
+            else {}
+        )
+        self._env.step_batch_array(
+            weights,
+            closes,
+            positions,
+            cash,
+            rewards,
+            terminated,
+            truncated,
+            first,
+            navs,
+            reasoning="SharpeArenaVectorEnv.step",
+            **finals,
+        )
+        recycled = first.view(bool)
+        infos = {
+            "scenario_seed": np.array(self._seeds, dtype=np.int64),
+            "first": recycled,
+            "nav": navs,
+        }
+        if same_step:
+            final_obs = np.empty(b, dtype=object)
+            final_info = np.empty(b, dtype=object)
+            for lane in np.flatnonzero(recycled):
+                final_obs[lane] = {
+                    "closes": finals["final_closes"][lane],
+                    "positions": finals["final_positions"][lane],
+                    "cash": finals["final_cash"][lane],
+                }
+                final_info[lane] = {"nav": float(finals["final_navs"][lane])}
+            infos["final_obs"] = final_obs
+            infos["final_info"] = final_info
+        if self._fresh_scenarios:
+            self._record_draws(infos, self._seeds, recycled, self._env.scenario_seeds)
+        obs = {"closes": closes, "positions": positions, "cash": cash}
+        return obs, rewards, terminated.view(bool), truncated.view(bool), infos
 
     def step(
         self, actions: np.ndarray

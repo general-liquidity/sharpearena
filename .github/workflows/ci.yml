@@ -211,6 +211,12 @@ jobs:
       # proves is a property of the commit it runs on: the tip of a pushed branch and
       # the head of a pull request, not every commit in between. This workflow runs
       # on every push to main and every pull request.
+      # Bench's copies of the register's generator and checker are the source; these
+      # are byte-identical, and bench-main.yml holds them so.
+      - name: The register's own rules hold
+        run: python -m unittest scripts/test_check_evidence_register.py
+      - name: Every claim maps to an artifact and carries a disposition
+        run: python scripts/check-evidence-register.py
       - name: check-provenance (manifest matches the tree)
         run: python paper/src/check-provenance.py
 
@@ -333,13 +339,14 @@ jobs:
         run: |
           python -m venv .venv
           source .venv/bin/activate
-          pip install --upgrade pip
+          pip install "pip==26.2.2"
           # Pinned, like every other dependency this job installs: an unpinned build
           # backend is a floating input to the extension module the suite then tests.
           pip install --requirement build-requirements.txt
           pip install --requirement ci-requirements.txt
           maturin develop --locked
           python -m pytest -q
+          python -m pytest -q ../../paper/src/test_rescore_f1_f3.py
       # pytest never runs under -O, and `assert` is stripped by the CPython compiler
       # there, so a guard written as an assertion is absent from a configuration a
       # user can run. `tests/test_optimized_guards.py` (in the run above) re-enters
@@ -469,7 +476,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          # ubuntu-latest no longer serves 3.9, and the declared floor stays tested.
+          - os: ubuntu-24.04
             python: "3.9"
           - os: ubuntu-latest
             python: "3.12"
@@ -576,14 +584,70 @@ jobs:
           set -euo pipefail
           wheels=(dist/*.whl)
           test "${#wheels[@]}" -eq 1
-          torch_options=()
+          extra_options=()
           if [ "$EXTRA" = sb3 ]; then
-            torch_options=(--cpu-torch --run scripts/test-sb3-wheel-check.py)
+            extra_options=(--cpu-torch --pytest --run scripts/test-sb3-wheel-check.py
+              --run "scripts/run-learner-tests.py test_sb3_learner.py"
+              --run scripts/check-cleanrl-style-example.py)
           elif [ "$EXTRA" = torchrl ]; then
-            torch_options=(--cpu-torch --run scripts/test-torchrl-wheel-check.py)
+            extra_options=(--cpu-torch --pytest --run scripts/test-torchrl-wheel-check.py
+              --run "scripts/run-learner-tests.py test_torchrl_learner.py")
+          elif [ "$EXTRA" = minari ]; then
+            extra_options=(--pytest
+              --run "scripts/run-learner-tests.py test_minari_learner.py")
           elif [ "$EXTRA" = ray ]; then
-            torch_options=(--run scripts/test-ray-wheel-check.py)
+            # Resolved on its own: ray[rllib] pins gymnasium==1.2.2, below the source suite.
+            extra_options=(--extra pettingzoo --cpu-torch --pytest
+              --run scripts/test-ray-wheel-check.py
+              --run "scripts/run-learner-tests.py test_rllib_learner.py")
           fi
           python scripts/check-wheel-install.py --wheel "${wheels[0]}" \
-            --extra "$EXTRA" "${torch_options[@]}" \
+            --extra "$EXTRA" "${extra_options[@]}" \
             --run "scripts/check-optional-extras.py --extra $EXTRA"
+
+  # Local feasibility only, not adapter support: this runs the INT-08 fixture so its
+  # tests stop skipping for want of `hud`. Non-blocking because an unpinned transitive
+  # dependency of the SDK can move under it. The job holds no secret and sets no key,
+  # and the test module removes HUD_API_KEY before `hud` reads its settings.
+  hud-local-feasibility:
+    name: HUD local fixture (optional, no account, no upload)
+    needs: wheel-install-import
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HUD_TELEMETRY_ENABLED: "false"
+      HUD_CLI_ANALYTICS_ENABLED: "false"
+      HUD_FILE_TRACKING_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: wheel-cp312-linux
+          path: dist
+      - name: Run the fixture against the installed wheel and hud
+        run: |
+          set -euo pipefail
+          wheels=(dist/*.whl)
+          test "${#wheels[@]}" -eq 1
+          python -m venv "$RUNNER_TEMP/hud-venv"
+          source "$RUNNER_TEMP/hud-venv/bin/activate"
+          pip install --quiet "${wheels[0]}" "hud==0.6.18" "pytest==9.1.1"
+          cd crates/sharpearena-py
+          python -m pytest -q tests/test_hud_local.py --junitxml="$RUNNER_TEMP/hud.xml"
+      # pytest exits 0 when `importorskip` skips the module, which is the state this
+      # job exists to end, so the count itself is the assertion.
+      - name: All eleven tests ran and none skipped
+        run: |
+          python - "$RUNNER_TEMP/hud.xml" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ElementTree
+
+          suite = ElementTree.parse(sys.argv[1]).getroot().find("testsuite")
+          counts = {key: int(suite.get(key)) for key in ("tests", "skipped", "failures", "errors")}
+          print(counts)
+          assert counts == {"tests": 11, "skipped": 0, "failures": 0, "errors": 0}
+          PY

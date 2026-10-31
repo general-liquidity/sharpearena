@@ -13,7 +13,7 @@
 # array of floats still satisfies `Sequence[float]`).
 
 from collections.abc import Sequence
-from typing import final
+from typing import Any, final
 
 EVAL_SEED_BASE: int
 MIN_SEALED_SALT_BYTES: int
@@ -56,6 +56,7 @@ class TradingEnv:
         jump_burst_probability: float = 0.0,
         jump_burst_persistence: float = 0.0,
         jump_burst_size: float = 0.0,
+        fixed_delay_bars: int | None = None,
     ) -> None: ...
     @classmethod
     def from_csv(
@@ -70,6 +71,7 @@ class TradingEnv:
         financing_bps: float | None = None,
         max_participation: float | None = None,
         exec_seed: int | None = None,
+        fixed_delay_bars: int | None = None,
     ) -> TradingEnv: ...
     @property
     def scenario_seed(self) -> int: ...
@@ -77,6 +79,14 @@ class TradingEnv:
     def effective_config(self) -> str: ...
     def reset(self) -> str: ...
     def step(self, decision_json: str) -> tuple[str, float, bool, str]: ...
+    def step_array(
+        self,
+        weights: Any,
+        closes: Any,
+        positions: Any,
+        cash: Any,
+        reasoning: str = "",
+    ) -> tuple[float, bool, float]: ...
     def clone_state(self) -> str: ...
     def restore_state(self, state_json: str) -> None: ...
 
@@ -102,6 +112,7 @@ class VecTradingEnv:
         jump_burst_persistence: float = 0.0,
         jump_burst_size: float = 0.0,
         max_episode_steps: int | None = None,
+        autoreset_scenarios: str = "replay",
     ) -> None: ...
     @classmethod
     def from_csv(
@@ -125,8 +136,27 @@ class VecTradingEnv:
     def effective_configs(self) -> list[str]: ...
     @property
     def autoreset_mode(self) -> str: ...
+    @property
+    def autoreset_scenarios(self) -> str: ...
     def reset_batch(self) -> str: ...
     def step_batch(self, decisions_json: str) -> str: ...
+    def step_batch_array(
+        self,
+        weights: Any,
+        closes: Any,
+        positions: Any,
+        cash: Any,
+        rewards: Any,
+        terminated: Any,
+        truncated: Any,
+        first: Any,
+        navs: Any,
+        final_closes: Any = None,
+        final_positions: Any = None,
+        final_cash: Any = None,
+        final_navs: Any = None,
+        reasoning: str = "",
+    ) -> None: ...
 
 @final
 class PyMarketClearing:
@@ -147,9 +177,12 @@ class PyMarketClearing:
         eta_radius: float | None = None,
         uncertainty_correlation: float = 0.0,
         impact_exponent: float = 1.0,
+        execution: str | None = None,
     ) -> None: ...
     @property
     def scenario_seed(self) -> int: ...
+    @property
+    def effective_config(self) -> str: ...
     @property
     def uncertainty(self) -> str | None: ...
     def set_uncertainty(
@@ -226,6 +259,12 @@ def perturb_action(
 def sealed_seed(salt: bytes, slot: int) -> int: ...
 def spec_hash() -> str: ...
 def _raise_coded(code: str, message: str) -> None: ...
+def _array_decision_pair(
+    symbols: Sequence[str],
+    weights: Sequence[float],
+    reasoning: str,
+    decision_json: str,
+) -> tuple[str, str]: ...
 def generate_scenario_json(
     seed: int,
     n_symbols: int = 4,

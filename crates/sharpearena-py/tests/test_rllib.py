@@ -3,13 +3,9 @@ the flatten/unflatten parity claim, and config construction under both constrain
 module docstring records as re-verified against the installed Ray build.
 
 Everything here runs with `ray[rllib]` installed and no GPU. It deliberately does not
-call `AlgorithmConfig.build_algo()` or train a step: that additionally needs a deep
-learning framework (`torch` or `tf2`), which is not part of this package's `ray` extra
-or its CI dependency set, so a route that needs it is out of scope for this suite.
-Both PPO configs here were built and trained for one iteration by hand against Ray
-2.58.0 with `torch==2.14.0+cpu` outside this test run; `docs/integrations/support-status.md`
-records that as local, not CI, evidence, which is the distinction the project already
-draws for the `verifiers` version gap in `inventory.md`.
+call `AlgorithmConfig.build_algo()` or train a step: that additionally needs `torch`,
+which is not part of this package's `ray` extra. `test_rllib_learner.py` is where both
+PPO configs are built, trained, checkpointed and restored.
 
 The multi-agent route additionally needs `pettingzoo` (`SharpeArenaMultiAgentEnv`
 wraps `pettingzoo_env.MultiAgentSharpeArenaEnv`), so those tests carry both guards.
@@ -252,10 +248,8 @@ def test_multi_agent_config_shares_one_policy_across_symmetric_seats():
 
 @needs_rllib_and_pettingzoo
 def test_multi_agent_config_accepts_vectorised_env_runners():
-    """The docstring's fourth re-verified claim: at 2.58.0, `MultiAgentEnvRunner`
-    actually vectorises via `gymnasium.make_vec`, unlike what both cited upstream pages
-    still state. This only checks the config accepts the setting the module offers for
-    it; the vectorised run itself was exercised by hand (see module docstring)."""
+    """The config carries the setting; `test_rllib_learner.py` runs it, because
+    accepting the value says nothing about whether the runner vectorises."""
     cfg = multi_agent_config(
         env_config={"n_agents": 2, "n_symbols": 2, "n_days": 20},
         num_env_runners=1,

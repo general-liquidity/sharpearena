@@ -64,6 +64,12 @@ pub use kernel_score::score_returns;
 pub mod vec_env;
 pub use vec_env::{BatchStep, LaneConfig, VecTradingEnv};
 
+// Opt-in scenario redraw for recycled vector lanes: a frozen, band-confined seed stream.
+pub mod fresh_scenarios;
+pub use fresh_scenarios::{
+    fresh_scenario_seed, AutoresetScenarios, FreshScenarioError, FreshScenarios, FRESH_SEED_BAND,
+};
+
 // --- Per-scenario trading mandates (MiniGrid Fetch-style per-episode objective) -----------
 
 pub mod mandate;
@@ -84,7 +90,9 @@ pub use lob_market::{Fill, LadderSnapshot, OrderBook, OrderKind, RestingOrder, S
 pub mod market;
 pub use market::{
     clear_bar, clear_bar_concave, clear_bar_robust, AgentFill, ClearResult, EllipticUncertaintySet,
-    ImpactCoefficients, MarketClearing, MarketParams,
+    ExecutionSchema, ExecutionSettings, ExecutionSettingsError, ExecutionTrace, FixedDecisionDelay,
+    ImpactCoefficients, MarketClearing, MarketExecutionIdentity, MarketParams, SettlementRecord,
+    TerminalSettlement, TransientImpact, TransientShape,
 };
 
 // --- Transport-fault gate: a masked hold is a failed cell, never a return series ----------

@@ -81,7 +81,26 @@ def wheel_version(wheel: Path) -> str:
     return parts[1]
 
 
-def verify(wheel: Path, extras: list, checks: list, cpu_torch: bool = False) -> None:
+def pinned_pytest() -> str:
+    """The pytest the source suite pins, so a learner cell runs the same runner."""
+    for line in (CRATE / "ci-requirements.txt").read_text(encoding="utf-8").splitlines():
+        if line.startswith("pytest=="):
+            return line.strip()
+    raise SystemExit("ci-requirements.txt pins no pytest")
+
+
+# The extra sets a cell may constrain to CPU Torch. Ray declares no learning framework, so
+# its cell brings Torch itself for RLlib training, and PettingZoo for the multi-agent route.
+CPU_TORCH_EXTRAS = (["sb3"], ["torchrl"], ["ray", "pettingzoo"])
+
+
+def verify(
+    wheel: Path,
+    extras: list,
+    checks: list,
+    cpu_torch: bool = False,
+    pytest_runner: bool = False,
+) -> None:
     requirement = str(wheel)
     if extras:
         requirement = f"{requirement}[{','.join(extras)}]"
@@ -121,6 +140,11 @@ def verify(wheel: Path, extras: list, checks: list, cpu_torch: bool = False) -> 
             [python, "-m", "pip", "install", "--quiet", *constraints, requirement],
             env=environment,
         )
+        if pytest_runner:
+            run(
+                [python, "-m", "pip", "install", "--quiet", pinned_pytest()],
+                env=environment,
+            )
         if cpu_torch:
             run(
                 [python, "-c", "import torch; assert torch.version.cuda is None"],
@@ -148,7 +172,12 @@ def main() -> int:
     parser.add_argument(
         "--cpu-torch",
         action="store_true",
-        help="install and constrain Torch 2.9.0+cpu for an SB3 or TorchRL wheel cell",
+        help="install and constrain Torch 2.9.0+cpu for a learner wheel cell",
+    )
+    parser.add_argument(
+        "--pytest",
+        action="store_true",
+        help="install the pinned pytest, for scripts/run-learner-tests.py",
     )
     parser.add_argument(
         "--github-env",
@@ -176,9 +205,9 @@ def main() -> int:
     checks = list(arguments.checks)
     if not checks:
         raise SystemExit("--wheel needs at least one --run check to be worth anything")
-    if arguments.cpu_torch and arguments.extras not in (["sb3"], ["torchrl"]):
-        raise SystemExit("--cpu-torch supports exactly --extra sb3 or --extra torchrl")
-    verify(wheel, arguments.extras, checks, arguments.cpu_torch)
+    if arguments.cpu_torch and arguments.extras not in CPU_TORCH_EXTRAS:
+        raise SystemExit(f"--cpu-torch supports exactly the extras {CPU_TORCH_EXTRAS}")
+    verify(wheel, arguments.extras, checks, arguments.cpu_torch, arguments.pytest)
     print(f"verified {wheel.name} with extras {arguments.extras or 'none'}")
     return 0
 

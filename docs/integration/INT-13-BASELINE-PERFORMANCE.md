@@ -4,7 +4,7 @@ Status: **the native half is measured and reported below, on a machine verified 
 before, during and after the run. The Python-boundary half is still PENDING: it was
 attempted on the same day, ran for 55 minutes, and was aborted unfinished when concurrent
 activity on this machine made the remainder of it a contended run.** Per
-[the integration plan, section 16](../../SHARPE-HANDOFF-SUPPORT/product-planning/SHARPEARENA-INTEGRATION-PLAN-2026-09-22.md),
+section 16 of the maintainers' integration plan, which is not published in this repository,
 this baseline exists to decide whether a native bridge (INT-14, INT-15) would address a
 real bottleneck. That question needs a number measured on a quiet machine. Half of it now
 has one. A contended run is worse than no run: it looks like evidence and is not one, so

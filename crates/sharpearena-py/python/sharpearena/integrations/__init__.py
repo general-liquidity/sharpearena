@@ -7,13 +7,16 @@ themselves depend only on the base package and NumPy.
 """
 
 from .contracts import (
+    ACTION_SPACE_DTYPE,
     AUTORESET_MODES_WITH_FINAL_OBS,
+    ENGINE_ACTION_DTYPE,
     ENGINE_EXACTNESS,
     SUPPORTED_AUTORESET_MODES,
     AttemptCounts,
     ContractViolation,
     ExactnessDomain,
     TrustClass,
+    is_float32_exact,
 )
 from .parity import (
     CORE_FIXTURES,
@@ -33,8 +36,10 @@ from .parity import (
 )
 
 __all__ = [
+    "ACTION_SPACE_DTYPE",
     "AUTORESET_MODES_WITH_FINAL_OBS",
     "CORE_FIXTURES",
+    "ENGINE_ACTION_DTYPE",
     "ENGINE_EXACTNESS",
     "SUPPORTED_AUTORESET_MODES",
     "AttemptCounts",
@@ -53,5 +58,6 @@ __all__ = [
     "decision_json",
     "deterministic_actions",
     "engine_rollout",
+    "is_float32_exact",
     "observation_digest",
 ]

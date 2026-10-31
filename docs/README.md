@@ -3,10 +3,18 @@
 The root [`README`](../README.md) is the product entry point. Start here when a task
 needs more detail.
 
-**Current engineering goal.** The [verification and completion checklist](audits/2026-09-09/IMPLEMENTATION.md)
-is shared with SharpeBench. It records new findings, remaining implementations
-and delivery checks. The 2026-09-07 audit is a completed historical checkpoint.
-[`AGENTS.md`](../AGENTS.md) carries the working rules.
+## Current state
+
+The active goal is to close the gap programme, shared with SharpeBench, with no
+release until the owner approves it at the end. [`AGENTS.md`](../AGENTS.md)
+carries that goal and its rules. The latest tag is `v0.31.0`, `[Unreleased]` in
+[`CHANGELOG.md`](../CHANGELOG.md) lists the work after it, and the tree pins
+SharpeBench at `=0.28.0`.
+
+[Evidence and current status](evidence.md) says what has been measured, and
+[support status](integrations/support-status.md) says what each interface has
+been tested against. The audits under [`audits/`](audits/) are finished records,
+not schedules.
 
 ## Use the product
 
@@ -36,6 +44,7 @@ Registry-specific instructions live with the [Rust crate](../crates/sharpearena/
 | Which package owns each responsibility? | [Architecture](architecture.md) |
 | What is guaranteed, and where does the boundary stop? | [Integrity and security](integrity-and-security.md) |
 | What has been measured, and what has not? | [Evidence and current status](evidence.md) |
+| Which artifact backs a paper claim, and what does it support today? | [Evidence register](evidence-register.md) |
 | Which RL-contract behaviours have tests, and which are open? | [RL-contract coverage matrix](rl-contract-coverage.md) |
 | Which seeds, gates, and reports define an evaluation? | [`EVALUATION.md`](../EVALUATION.md) |
 | Where are the paper and committed evidence? | [`paper/`](../paper/) |

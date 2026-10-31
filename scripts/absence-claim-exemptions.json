@@ -32,11 +32,6 @@
       "file": "CHANGELOG.md",
       "claim": "It said Harbor published no logo, when `docs-mintlify/harbor-logo.png` sits in the same repository",
       "reason": "A released changelog entry recording that the previous entry was wrong. It states the false claim in order to correct it in the same sentence, and released entries are history rather than current assertions, so it is not rewritten."
-    },
-    {
-      "file": "CHANGELOG.md",
-      "claim": "Harbor publishes no logo in its repository or on its site",
-      "reason": "The released entry that carried the original error. Keep a Changelog entries describe the state at a release and are not edited afterwards; the entry above it in this same file records the correction, which is where a reader is told the current answer."
     }
   ]
 }

@@ -11,7 +11,8 @@
       "hard",
       "extreme",
       "cointegrated_pairs",
-      "regime_shift"
+      "regime_shift",
+      "martingale_v1"
     ],
     "Regime": [
       "bull",

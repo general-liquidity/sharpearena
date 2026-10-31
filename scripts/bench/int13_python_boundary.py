@@ -13,9 +13,15 @@ workload, and decomposes the boundary into three separately reported parts:
 Each cell is repeated; the report carries median, mean, sample standard deviation and a
 95 percent normal-approximation interval, not a single peak steps-per-second number.
 
+The ``*_array`` cells measure the binary path added after the INT-13 baseline. They are
+new cells, not part of the recorded baseline. Pass ``--contended`` on a loaded machine:
+the record is then labelled so its numbers cannot be read as baseline results, and
+``--reps`` may shorten the run.
+
 Usage::
 
     python scripts/bench/int13_python_boundary.py --out int13-python.json
+    python scripts/bench/int13_python_boundary.py --contended --reps 5 --out contended.json
 
 Requires the built wheel installed (``maturin build --release`` then ``pip install``);
 a debug build would measure the wrong thing.
@@ -35,7 +41,7 @@ from typing import Any, Callable
 import numpy as np
 
 import sharpearena
-from sharpearena import SharpeArenaEnv, TradingEnv, VecTradingEnv
+from sharpearena import SharpeArenaEnv, SharpeArenaVectorEnv, TradingEnv, VecTradingEnv
 
 MANIFEST_DEFAULT = Path("docs/integration/int13/workload-manifest.json")
 
@@ -102,14 +108,27 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--manifest", default=str(MANIFEST_DEFAULT))
     ap.add_argument("--out", default="int13-python.json")
+    ap.add_argument(
+        "--contended",
+        action="store_true",
+        help="label the record as measured on a loaded machine, never as a baseline",
+    )
+    ap.add_argument("--reps", type=int, help="override the manifest repetitions")
+    ap.add_argument(
+        "--max-lanes", type=int, help="stop the vector curve at this many lanes"
+    )
     args = ap.parse_args()
 
     manifest = json.loads(Path(args.manifest).read_text(encoding="utf-8"))
     panel = manifest["panel"]
     policy = manifest["action_policy"]
-    reps = manifest["measurement"]["repetitions"]
+    reps = args.reps or manifest["measurement"]["repetitions"]
     warmup = 2
-    lane_counts = manifest["scaling"]["lane_counts"]
+    lane_counts = [
+        lanes
+        for lanes in manifest["scaling"]["lane_counts"]
+        if args.max_lanes is None or lanes <= args.max_lanes
+    ]
 
     cells: list[dict[str, Any]] = []
     sizes: dict[str, Any] = {}
@@ -187,6 +206,32 @@ def main() -> int:
         note="adds json.dumps of the decision and json.loads of the observation and info",
     )
 
+    # --- cell 2b: binary path with reused buffers ------------------------------------
+    n_symbols = len(symbols)
+    weights = np.full(n_symbols, policy["target_weight"], dtype=np.float64)
+
+    def raw_array_binding() -> float:
+        env = build_env(panel, 11)
+        env.reset()
+        closes, positions, cash = np.empty(n_symbols), np.empty(n_symbols), np.empty(1)
+        bars = 20_000
+        t0 = time.perf_counter()
+        steps = 0
+        for _ in range(bars):
+            _r, done, _nav = env.step_array(weights, closes, positions, cash)
+            steps += 1
+            if done:
+                env.reset()
+        return steps / (time.perf_counter() - t0)
+
+    add(
+        "py_scalar_step_array_reused_buffers",
+        "steps/s",
+        repeat(raw_array_binding, reps, warmup),
+        lanes=1,
+        note="float64 buffers through the buffer protocol; no JSON on the step, JSON reset only",
+    )
+
     # --- cell 3: Python-side JSON alone, no engine ----------------------------------
     def pyjson_only() -> float:
         iters = 20_000
@@ -232,6 +277,32 @@ def main() -> int:
         repeat(gym_step, reps, warmup),
         lanes=1,
         note="SharpeArenaEnv.step: action encode, JSON boundary, observation decode into numpy",
+    )
+
+    def gym_step_array() -> float:
+        env = SharpeArenaEnv(
+            n_symbols=panel["n_symbols"], n_days=panel["n_days"], seed=7
+        )
+        env.reset(seed=7)
+        action = np.full(
+            (panel["n_symbols"],), policy["target_weight"], dtype=np.float32
+        )
+        bars = 20_000
+        t0 = time.perf_counter()
+        steps = 0
+        for _ in range(bars):
+            _o, _r, term, trunc, _i = env.step_array(action)
+            steps += 1
+            if term or trunc:
+                env.reset()
+        return steps / (time.perf_counter() - t0)
+
+    add(
+        "py_gymnasium_env_step_array",
+        "steps/s",
+        repeat(gym_step_array, reps, warmup),
+        lanes=1,
+        note="SharpeArenaEnv.step_array: action validation, binary boundary, new arrays per step",
     )
 
     # --- cell 5: reset and checkpoint overhead at the boundary ----------------------
@@ -322,6 +393,55 @@ def main() -> int:
                 _decoded = json.loads(out)
             return (calls * lanes) / (time.perf_counter() - t0)
 
+        def vec_array(lanes: int = lanes, seeds: list[int] = seeds) -> float:
+            batch = VecTradingEnv(seeds=seeds, **_panel_kwargs(panel))
+            batch.reset_batch()
+            calls = max(50, 200_000 // lanes)
+            batch_weights = np.full((lanes, n_symbols), policy["target_weight"])
+            buffers = (
+                np.empty((lanes, n_symbols)),
+                np.empty((lanes, n_symbols)),
+                np.empty((lanes, 1)),
+                np.empty(lanes),
+                np.empty(lanes, dtype=np.uint8),
+                np.empty(lanes, dtype=np.uint8),
+                np.empty(lanes, dtype=np.uint8),
+                np.empty(lanes),
+            )
+            t0 = time.perf_counter()
+            for _ in range(calls):
+                batch.step_batch_array(batch_weights, *buffers)
+            return (calls * lanes) / (time.perf_counter() - t0)
+
+        def vec_env_array(lanes: int = lanes) -> float:
+            env = SharpeArenaVectorEnv(
+                seeds=list(range(lanes)),
+                n_symbols=panel["n_symbols"],
+                n_days=panel["n_days"],
+                distribution_mode=panel["distribution_mode"],
+            )
+            env.reset()
+            calls = max(50, 200_000 // lanes)
+            actions = np.full(
+                (lanes, n_symbols), policy["target_weight"], dtype=np.float32
+            )
+            t0 = time.perf_counter()
+            for _ in range(calls):
+                env.step_array(actions)
+            return (calls * lanes) / (time.perf_counter() - t0)
+
+        add(
+            "py_vector_step_batch_array_reused_buffers",
+            "steps/s",
+            repeat(vec_array, reps, warmup),
+            lanes=lanes,
+        )
+        add(
+            "py_vector_env_step_array",
+            "steps/s",
+            repeat(vec_env_array, reps, warmup),
+            lanes=lanes,
+        )
         add(
             "py_vector_step_batch_no_python_json",
             "steps/s",
@@ -338,6 +458,11 @@ def main() -> int:
     record = {
         "harness": "int13_python_boundary",
         "manifest_id": manifest["manifest_id"],
+        "measurement_context": (
+            "contended machine; not an INT-13 baseline result"
+            if args.contended
+            else "uncontended run requested"
+        ),
         "repetitions": reps,
         "warmup_repetitions": warmup,
         "environment": {

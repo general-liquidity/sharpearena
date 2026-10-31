@@ -1,8 +1,9 @@
 # RL-contract coverage matrix
 
 Which parts of the declared reinforcement-learning contract are covered by a test, where
-that test lives, and what remains open. Written for ticket P17, against
-`crates/sharpearena-py` at the v0.31.0 tree.
+that test lives, and what remains open. Written for internal ticket P17, against
+`crates/sharpearena-py` at the v0.31.0 tree. The vector reset row and the section on
+closed boundaries were added after PR #118.
 
 This is engineering coverage of the environment contract. It says nothing about what a
 learner would learn in this environment, and it is not evidence for any learning claim.
@@ -49,13 +50,16 @@ rewritten, duplicated or re-counted as new work.
 | Same seed reproduces the trajectory; different seeds diverge | `test_gym.py::test_determinism_same_seed_identical_rewards`, `test_conformance.py::test_same_seed_identical_reset_obs`, `test_different_seed_reset_obs_differ` | none | covered before |
 | Observation and action spaces match the dataset and hold under the Gymnasium checker | `test_conformance.py::test_gymnasium_env_checker_passes`, `test_vector.py::test_vector_wrapper_reset_step_shapes`, `test_registration.py::test_make_resolves_each_tier` | none | covered before |
 | Observation dtypes crossing the native boundary match the declared space | none: `contains` casts safely, so the existing membership assertions pass on a narrowed dtype | `test_rl_contract.py::test_observation_dtypes_match_the_declared_space_across_the_binding` | gap closed |
-| A recycled lane restarts its own scenario rather than drawing a new one | `test_vector.py::test_auto_reset_keeps_batch_running` (that recycling happens) | `test_rl_contract.py::test_autoreset_restarts_the_same_lane_scenario` | gap closed |
+| A recycled lane restarts its own scenario rather than drawing a new one | `test_vector.py::test_auto_reset_keeps_batch_running` (that recycling happens) | `test_rl_contract.py::test_autoreset_restarts_the_same_lane_scenario` | gap closed for the default `replay` policy |
+| The opt-in `fresh_v1` policy draws a deterministic per-lane scenario stream confined to the training band | none | `test_fresh_autoreset.py` (all cases), `crates/sharpearena/src/fresh_scenarios.rs` and `vec_env.rs` `fresh_*` unit tests | gap closed |
+| The binary step path is the same environment as the JSON path | none | `test_array_step.py` (all cases), `scripts/check-packaged-adapter.py` for the installed wheel | gap closed |
 | Invalid actions are refused before any lane advances | `test_action_validation.py` (all cases), `test_checkpoint.py::test_checkpoint_wrapper_rejects_invalid_actions_before_advance`, `test_gym.py::test_native_binding_rejects_bad_json` | none | covered before |
 | Scenario and execution seeds are distinct streams resolved from one user seed | `test_gym.py::test_reset_info_carries_split_seeds`, `test_equivalence.py::test_batched_equals_scalar_under_execution_noise` | `test_rl_contract.py::test_execution_seed_moves_fills_without_moving_the_price_path`, `test_scenario_seed_moves_the_price_path` | gap closed |
 | `terminated` is a blow-up, reached inside the horizon | none: every prior `terminated` assertion ran against a stub env, never the engine | `test_rl_contract.py::test_insolvency_terminates_inside_the_horizon_without_truncating` | gap closed |
 | `truncated` is the window ending, and the terminal observation a learner sees | `test_gym.py::test_full_episode_finite_rewards_and_terminates` (that an episode ends), `test_conformance.py::test_time_limit_truncates_at_cap` (the wrapper cap) | `test_rl_contract.py::test_running_out_of_bars_truncates_and_repeats_the_last_bar` | gap closed |
 | Scalar and vector trajectories agree under aligned seeds | `test_equivalence.py::test_batched_equals_scalar`, `test_batched_equals_scalar_under_execution_noise`, `test_vector.py::test_b1_matches_scalar_engine` | none | covered before |
 | Each supported autoreset mode behaves as declared | `test_vector.py::test_next_step_defers_reset_to_following_step`, `test_same_step_surfaces_final_obs`, `test_disabled_never_resets`, `test_unknown_autoreset_mode_rejected` | `test_rl_contract.py::test_metadata_records_the_gymnasium_autoreset_mode`, `test_only_the_three_upstream_modes_are_accepted` | gap closed for the recorded mode |
+| Vector `reset(seed=...)` rebuilds the lanes, and a positive `max_episode_steps` truncates each lane | none | none in this ticket; PR #118 added `test_vector_contract.py::test_seeded_reset_rebuilds_native_lanes_and_readbacks`, `test_invalid_reset_is_atomic`, `test_eval_explicit_reset_seeds_are_literal_not_shifted`, `test_episode_cap_counts_executed_steps_and_preserves_autoreset` | closed later by PR #118 |
 | Lanes hold independent state | `test_vector.py::test_auto_reset_keeps_batch_running` (uniform actions only) | `test_rl_contract.py::test_each_lane_matches_a_solo_env_under_per_lane_actions` | gap closed |
 | Checkpoint and restore continuity, including the RNG-implied state | `test_checkpoint.py::test_restore_returns_to_snapshot_point`, `test_checkpoint_preserves_every_scenario_control`, `test_replay_checkpoint_after_native_restore_keeps_the_entire_prefix`, `test_native_checkpoint_matches_replay`, `test_two_branches_same_actions_identical` | none | covered before |
 | Per-step reward, episode accounting and the reported evaluation metric are one chain | `test_metrics_panel.py` (panel arithmetic on supplied series), `test_eval_seeds_gate.py` (the pinned snapshot) | `test_rl_contract.py::test_reward_is_the_nav_return_the_metrics_panel_reconstructs`, `test_the_reported_eval_metric_scores_exactly_the_reward_series` | gap closed |
@@ -111,7 +115,29 @@ which is what lets the checkpoint layer replay the exact bytes it recorded.
 `test_autoreset_restarts_the_same_lane_scenario` shows that a recycled lane returns to bar
 zero of the scenario its construction seed selected, under both recycling modes. Episodes
 after the first in a lane are replays. A collection loop that treats every recycled
-episode as a fresh sample is counting one scenario many times.
+episode as a fresh sample is counting one scenario many times. That remains the default;
+`autoreset_scenarios="fresh_v1"` is the opt-in that changes it.
+
+`test_each_recycled_episode_matches_a_scalar_env_on_its_recorded_seed` is what makes a
+`fresh_v1` run replayable. It takes the seed a lane recorded and steps a scalar engine on
+that seed alone, with execution noise active, and every reward and close must match. The
+band tests drive at least a hundred draws through both recycling modes, and the refusal
+tests cover eval mode, an eval seed, a batch with one held-out lane, and a held-out
+`reset(seed=...)`, which must leave the running batch intact. The stream is frozen by the
+same values in Rust and through the binding, and those values were first reproduced by an
+independent Python implementation of the derivation. `fresh_v1` touches no `SPEC_HASH`
+input: `fresh_scenarios.rs` and `vec_env.rs` select a scenario and define no tape bytes.
+
+`test_array_step.py` compares the binary path against the JSON path exactly. Across all
+three autoreset modes and both scenario policies it compares observation, reward, flag and
+`nav` bytes, and for the scalar env it compares the engine's own snapshot after every
+step, which is what shows the book and the RNG cursor agree rather than only the numbers
+a learner sees. The fills read only symbol and target weight, so that snapshot cannot
+detect a wrong action label or confidence; a mutation control confirmed both survive it.
+`test_the_array_decision_is_the_decision_the_adapter_sends_as_json` therefore compares the
+two decisions directly in the engine's own serialization. Refusal tests confirm that a bad
+array leaves the engine state untouched, because a refusal after the step would silently
+lose it.
 
 `test_the_adapter_runs_with_every_optional_dependency_blocked` installs an import blocker
 for `verifiers`, `minari`, `pettingzoo`, `mcp`, `torch` and `jax` in a subprocess before
@@ -138,20 +164,38 @@ intended test only.
 | `_decode_obs` narrows the decoded closes to float32 | the dtype test only; `test_gym.py` and `test_conformance.py` stay green, which is the gap |
 | `step_lane`'s `SameStep` branch relabels the terminal observation as the restart instead of using the reset lane's own observation, rebuilt and installed as a wheel | the `same_step` case of the autoreset-restart test; the `next_step` case, unaffected by this branch, stays green |
 | The dependency blocker is pointed at a required dependency | the blocked-dependency subprocess, confirming the blocker bites |
+| `fresh_scenario_seed` returns the raw draw instead of reducing it into the band, rebuilt and installed as a wheel | the band, determinism, frozen-stream and recorded-seed tests |
+| `fresh_scenario_seed` ignores the lane index | the frozen-stream test; the per-lane assertion in `vec_env.rs` covers it directly |
+| `FreshScenarios::new` drops the band check | the held-out seed, mixed-lane and held-out reset refusals only; the eval-mode refusals, which sit in the wrapper, stay green |
+| The stream's domain constant moves by one | the frozen-stream test only |
+| A redraw records the seed but never swaps the lane's engine | the recorded-seed replay test for both recycling modes only |
+| A redrawn lane keeps its first execution seed | the recorded-seed replay test for both recycling modes only |
+| The readback omits drawn seeds, or fingerprints the constructed tape instead of the live one | the readback test only |
+| `final_info` names the new scenario rather than the finished one | the `same_step` replay test and the `same_step`, `fresh_v1` path comparison |
+| The default `autoreset_scenarios` becomes `fresh_v1` | the default wire-shape test only |
+| The array path states a different confidence, or labels a short as hold | the serialized-decision test only; every trajectory and snapshot comparison stays green, which is why that test exists |
+| The array path accepts a non-finite weight | the two non-finite refusal cases only |
+| The array path reads every position as flat | the scalar and vector path comparisons |
+| An unset `final_*` row reads zero instead of NaN | the unfinished-lane test only |
+| The `cash` buffer is checked after the engine advances | the `cash` shape refusal case only |
 
 A spec-hash or import mismatch cannot stand in for these failures. The suite already
 fails loudly and separately on either: `test_spec_hash.py` and `scripts/check-packaged-spec.py`
 cover the cross-surface handshake, and `test_exports.py` covers the import surface. The
 added tests assert numeric and flag-level behaviour that those checks do not produce.
 
+## Boundaries closed after this ticket
+
+P17 recorded that `SharpeArenaVectorEnv.reset(seed=...)` accepted a seed and ignored it.
+PR #118 changed that semantics with the owner's approval, recorded in
+[the vector contract note](audits/2026-10-10/vector-contract.md). An integer seed now
+rebuilds the native lanes on consecutive seeds, and a list supplies one seed per lane.
+`reset(seed=None)` and automatic resets replay the current scenarios, and invalid seed
+input leaves the active batch untouched. The same pull request added a
+`max_episode_steps` cap that truncates each lane through its selected autoreset mode.
+
 ## Unresolved boundaries
 
-- `SharpeArenaVectorEnv.reset(seed=...)` accepts a seed and ignores it. Lane seeds are
-  fixed by the constructor and `scenario_seeds` is unchanged after such a call, so
-  reseeding a batch means constructing a new one. Gymnasium's vector API expects
-  `reset(seed=...)` to reseed. This is left as found; resolving it changes environment
-  semantics, which P17 does not authorize. It is deliberately not pinned by a test, so
-  that a later fix is not blocked by a regression blessing the current behaviour.
 - `SharpeArenaEnv` derives its execution seed from the user seed and rejects an
   `env_kwargs={"exec_seed": ...}` override with a `TypeError` from the duplicate keyword.
   The vector surface accepts the same override. The stream-separation tests therefore run

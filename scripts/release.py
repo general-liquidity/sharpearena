@@ -11,6 +11,7 @@ making the tag's complete in-scope tree verifiable.
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import os
 import re
@@ -18,6 +19,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
+import urllib.error
+import urllib.request
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
@@ -39,6 +43,15 @@ from provenance_common import (
 MANIFEST_PATH = "paper/evidence/provenance.json"
 TAG_RE = re.compile(r"^v(?P<version>[0-9]+\.[0-9]+\.[0-9]+)$")
 VERSION_RE = re.compile(r'(?m)^version\s*=\s*"(?P<version>[0-9]+\.[0-9]+\.[0-9]+)"')
+BENCH_PIN_MANIFESTS = (
+    "crates/sharpearena/Cargo.toml",
+    "crates/sharpearena-py/Cargo.toml",
+)
+BENCH_LOCKS = ("Cargo.lock", "crates/sharpearena-py/Cargo.lock")
+BENCH_PIN_RE = re.compile(r"=(?P<version>[0-9]+\.[0-9]+\.[0-9]+)")
+BENCH_INDEX_ENV = "SHARPEARENA_BENCH_INDEX"
+CRATES_IO_SOURCE = "registry+https://github.com/rust-lang/crates.io-index"
+CRATES_IO_INDEX = "https://index.crates.io"
 
 
 class ReleaseError(RuntimeError):
@@ -188,6 +201,138 @@ def version_problems(root: Path, commit: str, expected: str) -> list[str]:
             problems.append(f"{path} has no literal sharpearena dependency version")
         else:
             compare(f"{path} sharpearena dependency", matched.group("version"))
+    return problems
+
+
+def fetch_bench_index(crate: str) -> str | None:
+    """Return one crate's sparse-index document, or None when no such crate exists.
+
+    Anything else raises: an index that cannot be read has confirmed nothing, and a
+    release must not read that as a pin that checked out.
+    """
+    url = f"{CRATES_IO_INDEX}/{crate[:2]}/{crate[2:4]}/{crate}"
+    request = urllib.request.Request(
+        url, headers={"User-Agent": "sharpearena-release (general-liquidity)"}
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return response.read().decode("utf-8")
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            return None
+        raise ReleaseError(f"crates.io index answered {error.code} for {crate}") from error
+    except (OSError, http.client.HTTPException, UnicodeDecodeError) as error:
+        raise ReleaseError(f"cannot read the crates.io index for {crate}: {error}") from error
+
+
+def fixture_bench_index(directory: Path) -> Callable[[str], str | None]:
+    """The same lookup over saved index documents, so the check is testable offline."""
+
+    def lookup(crate: str) -> str | None:
+        path = directory / crate
+        return path.read_text(encoding="utf-8") if path.is_file() else None
+
+    return lookup
+
+
+def default_bench_index() -> Callable[[str], str | None]:
+    directory = os.environ.get(BENCH_INDEX_ENV)
+    return fixture_bench_index(Path(directory)) if directory else fetch_bench_index
+
+
+def bench_dependency_specs(manifest: dict) -> list[tuple[str, object]]:
+    """Every sharpebench dependency entry in a parsed manifest, one per table.
+
+    A list, because one crate can appear in several tables and each entry has to pin.
+    """
+    tables = [manifest, *manifest.get("target", {}).values()]
+    specs: list[tuple[str, object]] = []
+    for table in tables:
+        for section in ("dependencies", "dev-dependencies", "build-dependencies"):
+            for name, spec in table.get(section, {}).items():
+                if name.startswith("sharpebench"):
+                    specs.append((name, spec))
+    return specs
+
+
+def published_bench_release(document: str, version: str) -> dict | None:
+    for line in document.splitlines():
+        if line.strip():
+            record = json.loads(line)
+            if record.get("vers") == version:
+                return record
+    return None
+
+
+def bench_pin_problems(
+    root: Path, commit: str, lookup: Callable[[str], str | None]
+) -> list[str]:
+    """Refuse a SharpeBench pin that does not name one published release.
+
+    A rehearsal builds with whatever the lockfile resolves, so it passes on a pin to
+    the wrong release as readily as on the right one. The checks here are the ones that
+    build cannot make: every manifest pins exactly, all at one version, each lockfile
+    resolves that version from crates.io, and the registry serves it unyanked under the
+    checksum the lockfile recorded. A check that finds no pins refuses rather than
+    passes, and so does a lookup that fails.
+    """
+    problems: list[str] = []
+    pinned: set[str] = set()
+    for path in BENCH_PIN_MANIFESTS:
+        manifest = tomllib.loads(git_bytes(root, f"{commit}:{path}").decode("utf-8"))
+        specs = bench_dependency_specs(manifest)
+        if not specs:
+            problems.append(f"{path} has no SharpeBench dependency to check")
+        for name, spec in specs:
+            text = spec if isinstance(spec, str) else spec.get("version")
+            matched = BENCH_PIN_RE.fullmatch(text) if isinstance(text, str) else None
+            if matched is None:
+                problems.append(f"{path} must pin {name} as =X.Y.Z, got {spec!r}")
+            elif isinstance(spec, dict) and ({"path", "git"} & spec.keys()):
+                problems.append(f"{path} takes {name} from outside crates.io: {spec!r}")
+            else:
+                pinned.add(matched.group("version"))
+    if len(pinned) != 1:
+        problems.append(
+            f"the SharpeBench pins must name one release, found {sorted(pinned)}"
+        )
+        return problems
+    version = pinned.pop()
+
+    locked: dict[str, str] = {}
+    for path in BENCH_LOCKS:
+        lock = tomllib.loads(git_bytes(root, f"{commit}:{path}").decode("utf-8"))
+        found = False
+        for package in lock.get("package", []):
+            name = str(package.get("name", ""))
+            if not name.startswith("sharpebench"):
+                continue
+            found = True
+            if package.get("version") != version:
+                problems.append(
+                    f"{path} locks {name} {package.get('version')}, pins require {version}"
+                )
+            elif package.get("source") != CRATES_IO_SOURCE:
+                problems.append(f"{path} does not resolve {name} from crates.io")
+            else:
+                checksum = str(package.get("checksum", ""))
+                if locked.setdefault(name, checksum) != checksum:
+                    problems.append(f"the lockfiles disagree on the checksum of {name}")
+        if not found:
+            problems.append(f"{path} locks no SharpeBench crate")
+
+    for name, checksum in sorted(locked.items()):
+        document = lookup(name)
+        record = None if document is None else published_bench_release(document, version)
+        if record is None:
+            problems.append(f"{name} {version} is not a published SharpeBench release")
+        elif record.get("yanked") is not False:
+            problems.append(f"{name} {version} is yanked")
+        elif record.get("cksum") != checksum:
+            problems.append(
+                f"{name} {version} on crates.io has checksum {record.get('cksum')}, "
+                f"the lockfile recorded {checksum}"
+            )
     return problems
 
 
@@ -408,6 +553,7 @@ def verify_tag(
 
     problems += manifest_problems(root, commit, manifest)
     problems += version_problems(root, commit, expected_version)
+    problems += bench_pin_problems(root, commit, default_bench_index())
     return problems, commit
 
 
@@ -723,6 +869,11 @@ def execute_release(
         run(root, "git", "fetch", "--quiet", "origin", "main", "--tags")
     base = resolve_base(root, base_ref)
     require_pushed_changelog(root, base)
+    # Before the cut, so a wrong pin costs seconds, not a bundle rebuild. verify_tag
+    # repeats it on the tagged tree.
+    problems = bench_pin_problems(root, base, default_bench_index())
+    if problems:
+        raise ReleaseError("SharpeBench pin refused:\n" + "\n".join(problems))
     current = parse_toml_version(git_bytes(root, f"{base}:Cargo.toml"), "Cargo.toml")
     target = next_version(current, bump)
     target_tag = f"v{target}"
@@ -964,7 +1115,7 @@ def main() -> int:
         suffix = " without pushing" if args.no_push else " and pushed atomically"
         print(f"OK: created {tag}{suffix}")
         return 0
-    except (OSError, ReleaseError, json.JSONDecodeError) as error:
+    except (OSError, ReleaseError, ValueError) as error:
         print(f"release: {error}")
         return 1
 
