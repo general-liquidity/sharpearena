@@ -255,6 +255,33 @@ rather than in Harbor's artifact-collection pipeline. No fixture in
 defect found by reading the code, not a result from any of the eight
 recorded trials.
 
+**Task-package changes, 2026-10-30, not rerun in a container.** Docker was not
+running, so every result above stands as recorded, and each statement here is a
+prediction until a job runs.
+
+- Probe order. `writable_grader_path` now probes before it writes, so its
+  `tests_dir_exists: true` in section 3 is a measurement error of the old fixture and
+  the note below that table describes the old ordering.
+- Pre-collection check. Harbor offers `[[verifier.collect]]`, which runs after the agent
+  phase and before collection. The inline hook in `task.toml` counts and removes
+  everything under `/logs/artifacts` that is neither a regular file nor a directory, and
+  writes the count to `.sa-transfer-check.json`. `[[artifacts]]` could not do this,
+  because Harbor always collects the convention directory. The grader refuses a nonzero
+  count as `artifact_tree_unsafe`, walks the uploaded tree for the same entries, and
+  refuses a missing or malformed result as `transfer_check_unavailable`. Run against a
+  local root, `path_traversal` reaches `artifact_tree_unsafe`.
+- Limits. Harbor treats the hook as best effort and the hook runs in the container the
+  agent controlled. If it fails, or an agent process recreates an entry after it, the
+  section 5 crash can recur. The marker is agent-writable until the hook replaces it, so
+  it is a report, not proof, and neither the agent's filesystem nor the upstream
+  re-upload changed.
+- Metric. `integrations/harbor/metric.py` replaces the default mean in
+  `jobs/tampering.yaml`. Section 4's limit still applies to any job that does not name it.
+  Harbor passes a job metric the reward dicts only, so the job path reads `accepted` from
+  the new `reward.json`, and the `--job-dir` path reads each `report.json`. Harbor 0.23.0's
+  real `UvScript` ran the file on sample rewards with no job behind them. The script
+  needs `uv`.
+
 ## 6. Reference-doc drift confirmed against the installed package
 
 - **`schema_version`**: the reference doc's "follow the reference, not the
