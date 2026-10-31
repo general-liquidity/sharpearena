@@ -3281,6 +3281,39 @@ mod tests {
         assert_eq!(last.navs[0], cash_before + shares * fill);
     }
 
+    /// With flow on the last bar the liquidation clears against the price that flow left:
+    /// the bar's permanent increment and the undecayed transient state are both in the mid.
+    #[test]
+    fn settlement_clears_against_the_price_the_last_bar_left_behind() {
+        let data = Dataset::synthetic(1, 22, 5);
+        let params = MarketParams {
+            lambda: 0.3,
+            eta: 0.0,
+            volume_scale: 1.0,
+            vol_scale: 0.0,
+        };
+        let mut market = MarketClearing::from_dataset(&data, 1, 1.0)
+            .with_execution(settings(
+                None,
+                Some(kernel(0.2, 0.5, TransientShape::Linear)),
+                TerminalSettlement::CashLiquidation,
+            ))
+            .unwrap();
+        let first = market.step(&[vec![0.5]], &params);
+        let carried = 0.5 * first.net_flow[0];
+        let last = market.step(&[vec![0.9]], &params);
+        assert!(last.done);
+        let flow = last.net_flow[0];
+        assert!(flow > 0.0);
+        let trace = last.execution.as_ref().unwrap();
+        let exo = data.close_at(&market.symbols()[0], 21).unwrap();
+        let mult = trace.permanent_multiplier[0] * (1.0 + 0.3 * flow);
+        let expected = exo * mult * (1.0 + 0.2 * (carried + flow));
+        let terminal = trace.settlement.as_ref().unwrap();
+        assert_eq!(terminal.mids[0], expected);
+        assert_ne!(terminal.mids[0], last.cleared_mids[0]);
+    }
+
     #[test]
     fn settings_are_versioned_validated_and_identified() {
         for bad in [
