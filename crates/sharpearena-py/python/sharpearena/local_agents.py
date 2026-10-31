@@ -458,6 +458,14 @@ class DatasetSpec:
         return record
 
 
+#: The rule that orders a field's cells for execution, recorded in the plan
+#: digest beside ``FieldPlan.order_seed``. A round is one (dataset, repetition)
+#: pair; every model runs once per round, in a permutation drawn from the seed,
+#: so no model arm runs as one contiguous block and drift in the serving host
+#: or in a remote model spreads across arms instead of landing on one of them.
+CELL_ORDER_RULE = "sharpearena.cell-order.round-permuted-models.v1"
+
+
 @dataclass(frozen=True)
 class FieldPlan:
     """Precommitted Cartesian field and its reproducibility controls."""
@@ -470,8 +478,17 @@ class FieldPlan:
     parallel_requests: int = 4
     shard_index: int = 0
     shard_count: int = 1
+    # Seed of the interleaved execution order (see ``CELL_ORDER_RULE``). It
+    # decides when a cell runs, never which cells run or what they score.
+    order_seed: int = 0
 
     def __post_init__(self) -> None:
+        if (
+            isinstance(self.order_seed, bool)
+            or not isinstance(self.order_seed, int)
+            or not 0 <= self.order_seed < 2**64
+        ):
+            raise ValueError("order_seed must be an unsigned 64-bit integer")
         if not self.models or not self.datasets or not self.seeds:
             raise ValueError("models, datasets, and seeds must be non-empty")
         if self.repetitions <= 0 or self.parallel_requests <= 0:
@@ -513,6 +530,7 @@ class FieldPlan:
                 "repetitions": self.repetitions,
                 "max_steps": self.max_steps,
                 "parallel_requests": self.parallel_requests,
+                "cell_order": {"rule": CELL_ORDER_RULE, "seed": self.order_seed},
             }
         )
 
@@ -1383,18 +1401,54 @@ class LocalFieldRunner:
         return self.renderer
 
     @staticmethod
+    def execution_order(plan: FieldPlan) -> list[FieldCell]:
+        """Every cell of the unsharded field, in the order ``CELL_ORDER_RULE`` runs it.
+
+        Rounds go dataset by dataset, repetition by repetition. Within a round
+        the models are permuted by the SHA-256 of the rule, ``order_seed``, the
+        round and the model index, a permutation that depends on nothing but
+        those values, and each model's seeds follow in plan order.
+        """
+
+        order: list[FieldCell] = []
+        # inv: ``order`` holds every cell of the rounds before this one, once.
+        for dataset_index in range(len(plan.datasets)):
+            for repetition in range(plan.repetitions):
+                models = sorted(
+                    range(len(plan.models)),
+                    key=lambda model_index: (
+                        _digest(
+                            [
+                                CELL_ORDER_RULE,
+                                plan.order_seed,
+                                dataset_index,
+                                repetition,
+                                model_index,
+                            ]
+                        ),
+                        model_index,
+                    ),
+                )
+                for model_index in models:
+                    order.extend(
+                        FieldCell(model_index, dataset_index, seed, repetition)
+                        for seed in plan.seeds
+                    )
+        return order
+
+    @staticmethod
     def cells(plan: FieldPlan) -> list[FieldCell]:
-        cells = [
-            FieldCell(model_index, dataset_index, seed, repetition)
-            for model_index in range(len(plan.models))
-            for dataset_index in range(len(plan.datasets))
-            for seed in plan.seeds
-            for repetition in range(plan.repetitions)
-        ]
+        """This shard's cells, in execution order.
+
+        Shard membership is the Cartesian ordinal modulo ``shard_count``, which
+        the order seed does not touch: every cell lands in exactly one shard
+        whatever the seed.
+        """
+
         return [
             cell
-            for index, cell in enumerate(cells)
-            if index % plan.shard_count == plan.shard_index
+            for cell in LocalFieldRunner.execution_order(plan)
+            if cell.ordinal(plan) % plan.shard_count == plan.shard_index
         ]
 
     @staticmethod
@@ -1423,8 +1477,10 @@ class LocalFieldRunner:
         completed = journal.completed_keys()
         counts = {"completed": 0, "failed": 0, "skipped": 0}
         cells = self.cells(plan)
-        for model_index, model in enumerate(plan.models):
-            # Resolved before any inference, so a mislabeled entry runs nothing.
+        # Every arm is resolved and checked before any inference, so a
+        # mislabeled or oversized entry runs nothing, whichever round it is in.
+        arms: list[tuple[PromptRenderer, ModelIdentity]] = []
+        for model in plan.models:
             renderer = self.renderer_for(model)
             identity = self.model_client.identity(model)
             if (
@@ -1435,22 +1491,42 @@ class LocalFieldRunner:
                     f"configured context cap {model.sampling.context_tokens} exceeds "
                     f"{model.model!r} context length {identity.context_length}"
                 )
-            for dataset_index, dataset in enumerate(plan.datasets):
-                group = [
-                    cell
-                    for cell in cells
-                    if cell.model_index == model_index
-                    and cell.dataset_index == dataset_index
-                ]
-                pending = [cell for cell in group if cell.key(plan) not in completed]
-                counts["skipped"] += len(group) - len(pending)
-                if not pending:
-                    continue
-                group_counts = self._run_group(
-                    plan, model, identity, dataset, pending, journal, renderer
-                )
-                counts["completed"] += group_counts["completed"]
-                counts["failed"] += group_counts["failed"]
+            arms.append((renderer, identity))
+        # One batch per (model, dataset, repetition) block, in the interleaved
+        # execution order. A cell's outcome depends on its own seed and sampling
+        # seed only, so how cells are batched moves when they run, not what they
+        # score.
+        blocks: list[list[FieldCell]] = []
+        # inv: ``blocks`` partitions the cells before the current one into
+        # maximal runs sharing (model, dataset, repetition).
+        for cell in cells:
+            block_key = (cell.model_index, cell.dataset_index, cell.repetition)
+            if blocks and (
+                blocks[-1][0].model_index,
+                blocks[-1][0].dataset_index,
+                blocks[-1][0].repetition,
+            ) == block_key:
+                blocks[-1].append(cell)
+            else:
+                blocks.append([cell])
+        for block in blocks:
+            pending = [cell for cell in block if cell.key(plan) not in completed]
+            counts["skipped"] += len(block) - len(pending)
+            if not pending:
+                continue
+            model = plan.models[block[0].model_index]
+            renderer, identity = arms[block[0].model_index]
+            group_counts = self._run_group(
+                plan,
+                model,
+                identity,
+                plan.datasets[block[0].dataset_index],
+                pending,
+                journal,
+                renderer,
+            )
+            counts["completed"] += group_counts["completed"]
+            counts["failed"] += group_counts["failed"]
         return counts
 
     def _run_group(
@@ -1835,6 +1911,7 @@ class LocalFieldRunner:
 
 
 __all__ = [
+    "CELL_ORDER_RULE",
     "DURATION_SOURCES",
     "DURATION_UNIT_NS",
     "FINISH_REASONS",
