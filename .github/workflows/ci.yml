@@ -211,6 +211,12 @@ jobs:
       # proves is a property of the commit it runs on: the tip of a pushed branch and
       # the head of a pull request, not every commit in between. This workflow runs
       # on every push to main and every pull request.
+      # Bench's copies of the register's generator and checker are the source; these
+      # are byte-identical, and bench-main.yml holds them so.
+      - name: The register's own rules hold
+        run: python -m unittest scripts/test_check_evidence_register.py
+      - name: Every claim maps to an artifact and carries a disposition
+        run: python scripts/check-evidence-register.py
       - name: check-provenance (manifest matches the tree)
         run: python paper/src/check-provenance.py
 
@@ -340,6 +346,7 @@ jobs:
           pip install --requirement ci-requirements.txt
           maturin develop --locked
           python -m pytest -q
+          python -m pytest -q ../../paper/src/test_rescore_f1_f3.py
       # pytest never runs under -O, and `assert` is stripped by the CPython compiler
       # there, so a guard written as an assertion is absent from a configuration a
       # user can run. `tests/test_optimized_guards.py` (in the run above) re-enters
