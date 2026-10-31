@@ -162,8 +162,14 @@ def test_generalization_rows_record_the_constant_track_reason():
         lambda seed: SharpeArenaEnv(n_symbols=3, n_days=60, seed=seed), [0, 1], FlatPolicy()
     )
     assert result["deflated_sharpe"] == WITHHELD
-    # A plain tally of the kernel's per-run gate, which a run with no Sharpe ratio fails.
-    assert result["passed_k_rate"] == 0.0
+    # Every seed is a constant track the kernel withholds, so no seed was scored and
+    # the rate is the kernel's reason rather than a 0.0 over no evidence.
+    assert result["passed_k_rate"] == WITHHELD
+    assert (result["n_seeds_passed"], result["n_seeds_scored"], result["n_seeds_unscorable"]) == (
+        0,
+        0,
+        2,
+    )
 
 
 def test_verifiers_rewards_and_trace_meta_withhold_a_constant_rollout():

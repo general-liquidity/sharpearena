@@ -143,7 +143,15 @@ def test_run_baselines_returns_scored_rows():
     names = {r["policy"] for r in rows}
     assert {"flat", "equal_weight_long", "momentum"} <= names
     for r in rows:
-        assert set(r) == {"policy", "deflated_sharpe", "passed_k_rate", "mean_return"}
+        assert set(r) == {
+            "policy",
+            "deflated_sharpe",
+            "passed_k_rate",
+            "n_seeds_passed",
+            "n_seeds_scored",
+            "n_seeds_unscorable",
+            "mean_return",
+        }
         assert np.isfinite(r["mean_return"])
         if r["policy"] == "flat":
             assert r["deflated_sharpe"] == r["passed_k_rate"] == FLAT_WITHHELD
