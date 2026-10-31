@@ -416,6 +416,9 @@ const MARTINGALE_V1_B: f64 = 0.86;
 /// `2 * MARTINGALE_V1_TAIL_K`, the largest move is 0.55975, so the `-0.95` return floor
 /// can never bind and cannot add a conditional mean.
 const MARTINGALE_V1_SCALE_CAP: f64 = 0.11195;
+// A build whose largest possible move could reach the return floor must not exist: the
+// floor would add a positive conditional mean to a tier that promises none.
+const _: () = assert!(MARTINGALE_V1_SCALE_CAP * 2.0 * MARTINGALE_V1_TAIL_K < 0.95);
 
 /// One step of the [`martingale_v1`] scale recursion, capped so that the largest possible
 /// move stays clear of the return floor.
@@ -881,7 +884,6 @@ mod tests {
     /// of reach, and the path must honor every geometry the other tiers honor.
     #[test]
     fn martingale_v1_never_reaches_the_floor_and_honors_geometry() {
-        assert!(MARTINGALE_V1_SCALE_CAP * 2.0 * MARTINGALE_V1_TAIL_K < 0.95);
         for (n_symbols, n_days) in [(1, 1), (1, 2), (3, 7), (5, 300)] {
             let d = generate_scenario(&martingale_spec(n_symbols, n_days), 3);
             assert_eq!(d.closes.len(), n_symbols);
