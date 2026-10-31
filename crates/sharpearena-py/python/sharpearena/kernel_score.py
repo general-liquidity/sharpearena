@@ -29,7 +29,7 @@ for a withheld confidence interval. No path in this module returns a default.
 from __future__ import annotations
 
 import math
-from typing import Any, Mapping, Union
+from typing import Any, Mapping, Optional, Sequence, Union
 
 UNAVAILABLE_KERNEL_ERROR = "unavailable_scoring_kernel_error"
 UNAVAILABLE_KERNEL_VALUE = "unavailable_scoring_kernel_value"
@@ -129,15 +129,65 @@ def kernel_score_difference(left: KernelScore, right: KernelScore) -> KernelScor
     return float(left) - float(right)
 
 
+NO_SEED_OBSERVATIONS = "unavailable: no seed observations"
+
+
+def seed_pass_tally(composites: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """The pass^k rate over every evaluated seed, with the counts behind it.
+
+    ``composites`` holds one ``score_run`` composite per seed, in seed order, for every
+    seed that was evaluated. A seed whose composite the kernel withheld (any typed
+    ``*_error``, or no finite ``deflated_sharpe``) is *unscorable*: it stays in the
+    denominator and counts as not passed. Dropping it would let a policy that breaks a
+    seed's evaluation raise its own pass rate, because the rate would then be computed
+    over the seeds it did not break.
+
+    Returns ``passed_k_rate`` (``n_seeds_passed / n_seeds``) beside ``n_seeds_passed``,
+    ``n_seeds_scored`` and ``n_seeds_unscorable``, where
+    ``n_seeds_scored + n_seeds_unscorable == len(composites)``. When no seed is
+    scorable there is no evidence for a rate at all, so ``passed_k_rate`` is the first
+    seed's unavailability reason (or :data:`NO_SEED_OBSERVATIONS` for an empty list),
+    never ``0.0``.
+    """
+    passed = 0
+    scored = 0
+    first_reason: Optional[str] = None
+    # inv: passed <= scored <= composites read so far, and first_reason is the reason
+    # of the first unscorable composite read so far, if any.
+    for composite in composites:
+        score = kernel_score_or_unavailable(composite)
+        if is_kernel_score_unavailable(score):
+            if first_reason is None:
+                first_reason = str(score)
+            continue
+        scored += 1
+        if bool(composite.get("passed_k", False)):
+            passed += 1
+    n_seeds = len(composites)
+    rate: KernelScore
+    if scored == 0:
+        rate = first_reason if first_reason is not None else NO_SEED_OBSERVATIONS
+    else:
+        rate = passed / n_seeds
+    return {
+        "passed_k_rate": rate,
+        "n_seeds_passed": passed,
+        "n_seeds_scored": scored,
+        "n_seeds_unscorable": n_seeds - scored,
+    }
+
+
 __all__ = [
     "KernelScore",
     "KernelScoreUnavailable",
     "UNAVAILABLE_KERNEL_ERROR",
     "UNAVAILABLE_KERNEL_VALUE",
+    "NO_SEED_OBSERVATIONS",
     "is_kernel_score_unavailable",
     "kernel_deflated_sharpe",
     "kernel_errors",
     "kernel_psr",
     "kernel_score_difference",
     "kernel_score_or_unavailable",
+    "seed_pass_tally",
 ]
