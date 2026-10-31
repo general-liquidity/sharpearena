@@ -570,8 +570,8 @@ impl PyTradingEnv {
     /// Advance one step from a float64 target-weight array and write the numeric
     /// observation into caller-owned float64 arrays, with no JSON at the boundary.
     /// `weights`, `closes` and `positions` hold one value per symbol, `cash` holds one.
-    /// Returns `(reward, done, nav)`. The engine sees the decision the JSON path would
-    /// send, so the trajectory and the recorded state are byte-identical; the step's
+    /// Returns `(reward, done, nav)`. The engine sees the decision the adapters' JSON path
+    /// would send, so the trajectory and the engine state are byte-identical; the step's
     /// process events stay in the engine's trace and are not returned. `step` remains the
     /// canonical wire format. Every array is checked before the engine advances.
     #[pyo3(signature = (weights, closes, positions, cash, reasoning = ""))]
@@ -1419,6 +1419,27 @@ fn _raise_coded(code: &str, message: &str) -> PyResult<()> {
     Err(relay_err(code, message))
 }
 
+/// Test hook for the array path: the decision it builds and the decision `decision_json`
+/// parses to, each in the engine's own serialization. It exists because the fills read
+/// only symbol and target weight, so a wrong action label or confidence on the array path
+/// would leave every trajectory and snapshot unchanged while corrupting what a consumer of
+/// the decision reads. Underscored and excluded from the package re-exports: not public API.
+#[pyfunction]
+fn _array_decision_pair(
+    symbols: Vec<String>,
+    weights: Vec<f64>,
+    reasoning: &str,
+    decision_json: &str,
+) -> PyResult<(String, String)> {
+    let built = array_decision(&symbols, &weights, reasoning)?;
+    let parsed: Decision = serde_json::from_str(decision_json)
+        .map_err(|e| engine_err(CODE_INVALID_JSON, format!("invalid decision JSON: {e}")))?;
+    let encode = |decision: &Decision| {
+        serde_json::to_string(decision).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))
+    };
+    Ok((encode(&built)?, encode(&parsed)?))
+}
+
 /// The engine's tape-semantics fingerprint (`sharpearena::SPEC_HASH_HEX`, compiled in
 /// by the core crate's `build.rs` over the tape-defining sources). The pure-Python
 /// package pins the hash it was generated against and compares it to this value at
@@ -1923,6 +1944,7 @@ fn sharpearena_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(sealed_seed, m)?)?;
     m.add_function(wrap_pyfunction!(spec_hash, m)?)?;
     m.add_function(wrap_pyfunction!(_raise_coded, m)?)?;
+    m.add_function(wrap_pyfunction!(_array_decision_pair, m)?)?;
     m.add_function(wrap_pyfunction!(generate_scenario_json, m)?)?;
     m.add_function(wrap_pyfunction!(
         calm_calibration_candidate_scenario_json,

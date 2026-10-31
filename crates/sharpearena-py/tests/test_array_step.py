@@ -2,9 +2,10 @@
 
 ``step_array`` is only worth having if it is the same environment, so every comparison
 here is exact: observation, reward and flag bytes, plus the engine's own snapshot, whose
-trace records the decisions and whose RNG cursor records the execution noise. Weight
-paths move through long, short and flat so the action label and the fill logic are both
-exercised.
+book and RNG cursor record the fills and the execution noise. The fills read only symbol
+and target weight, so the snapshot cannot speak for the action label or the confidence;
+those are compared directly on the serialized decision. Weight paths move through long,
+short and flat.
 """
 
 import json
@@ -13,7 +14,12 @@ import numpy as np
 import pytest
 
 from sharpearena.gym import SharpeArenaEnv
-from sharpearena.sharpearena_py import InvalidArgument, TradingEnv, VecTradingEnv
+from sharpearena.sharpearena_py import (
+    InvalidArgument,
+    TradingEnv,
+    VecTradingEnv,
+    _array_decision_pair,
+)
 from sharpearena.vector import SharpeArenaVectorEnv
 
 PANEL = dict(n_symbols=3, n_days=24)
@@ -29,6 +35,22 @@ def weights_at(step, shape):
 
 def equal_obs(a, b):
     return all(a[k].tobytes() == b[k].tobytes() for k in ("closes", "positions", "cash"))
+
+
+@pytest.mark.parametrize(
+    "weights",
+    [
+        pytest.param([0.25, 0.5, 0.75], id="long"),
+        pytest.param([-0.25, -0.5, -0.75], id="short"),
+        pytest.param([0.0, 0.0, 0.0], id="flat"),
+        pytest.param([0.5, -0.5, 0.0], id="mixed"),
+    ],
+)
+def test_the_array_decision_is_the_decision_the_adapter_sends_as_json(weights):
+    env = SharpeArenaEnv(**PANEL)
+    wire = env._action_to_decision_json(np.array(weights))
+    built, parsed = _array_decision_pair(env.symbols, weights, "SharpeArenaEnv.step", wire)
+    assert built == parsed
 
 
 def test_scalar_paths_produce_identical_trajectories_and_engine_state():
