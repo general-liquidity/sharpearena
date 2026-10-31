@@ -546,8 +546,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, default=None)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--sharpebench-data", default=None)
-    parser.add_argument("--retry-failed", action="store_true")
+    parser.add_argument(
+        "--retry-failed",
+        type=Path,
+        default=None,
+        metavar="REASONS.json",
+        help="retry the failed keys named in this {key: infrastructure reason} file",
+    )
     args = parser.parse_args(argv)
+    retry_reasons = common.load_retry_reasons(args.retry_failed)
 
     protocol, sha = common.load_protocol(PROTOCOL_PATH)
     root = args.out if args.out is not None else HERE / "runs"
@@ -567,13 +574,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise StudyRefused("the diagnostic stage has failed or missing jobs")
     sources = resolve_sources(args, protocol, out)
     jobs = build_jobs(protocol, args.stage, sources)
-    counts = common.run_jobs(jobs, run_job, out, args.workers, retry_failed=args.retry_failed)
-    common.write_json(out / "summary.json", summarize(protocol, jobs, out, args.stage, prior))
+    counts = common.run_jobs(jobs, run_job, out, args.workers, retry_reasons=retry_reasons)
+    ledger = common.attempt_ledger(out)
+    summary = summarize(protocol, jobs, out, args.stage, prior)
+    summary["attempt_ledger"] = ledger
+    common.write_json(out / "summary.json", summary)
     common.write_json(
         out / "manifest.json",
         common.manifest(
             protocol["protocol_id"], protocol["version"], sha, args.stage,
-            {"datasets": {s["name"]: s["sha256"] for s in sources}},
+            {"datasets": {s["name"]: s["sha256"] for s in sources}, "attempt_ledger": ledger},
         ),
     )
     print(f"{args.stage}: {counts}; core-seconds {common.core_seconds(out):.1f}")

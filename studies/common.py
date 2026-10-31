@@ -2,6 +2,11 @@
 
 Everything that decides a result is deterministic. Wall time is kept out of the job files
 so two runs of one commit can be compared byte for byte; it goes to ``timing/``.
+
+Every attempt at a job is kept. ``attempts/<key>/NNN.json`` is written once and never
+replaced, and its wall time goes to ``timing/<key>/NNN.json``. ``jobs/<key>.json`` holds
+the latest attempt's result for collection. A failed key is retried only with a recorded
+infrastructure reason, which is stored in the new attempt's record.
 """
 
 from __future__ import annotations
@@ -17,7 +22,7 @@ import traceback
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Iterable, Sequence
+from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
 
 from scipy import stats
 
@@ -134,7 +139,38 @@ def job_path(out: Path, key: str) -> Path:
     return out / "jobs" / f"{key}.json"
 
 
-def _run_one(func: Callable[[dict], dict], job: Job, out: Path) -> tuple[str, str, float]:
+def attempt_dir(out: Path, key: str) -> Path:
+    return out / "attempts" / key
+
+
+def attempt_records(out: Path, key: str) -> list[Path]:
+    """The key's attempt records in attempt order (``001.json``, ``002.json``, ...)."""
+    folder = attempt_dir(out, key)
+    if not folder.is_dir():
+        return []
+    return sorted(p for p in folder.glob("*.json") if p.stem.isdigit())
+
+
+def write_once(path: Path, value: Any) -> None:
+    """Write ``path`` only if it does not exist. An attempt record is never replaced.
+
+    The text goes to a temp file first and is then hard-linked into place, which fails
+    rather than overwrites when the name is taken, on POSIX and on NTFS alike.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + f".tmp{os.getpid()}")
+    tmp.write_text(canonical(value), encoding="utf-8", newline="\n")
+    try:
+        os.link(tmp, path)
+    except FileExistsError as exc:
+        raise StudyRefused(f"attempt record {path} already exists; attempts are append-only") from exc
+    finally:
+        tmp.unlink()
+
+
+def _run_one(
+    func: Callable[[dict], dict], job: Job, out: Path, attempt: int, retry_reason: Optional[str]
+) -> tuple[str, str, float]:
     started = time.perf_counter()
     try:
         result = {"status": "ok", "key": job.key, "result": func(job.payload)}
@@ -146,10 +182,26 @@ def _run_one(func: Callable[[dict], dict], job: Job, out: Path) -> tuple[str, st
             "error": str(exc)[:500],
             "trace_tail": traceback.format_exc()[-800:],
         }
-    write_json(job_path(out, job.key), result)
     elapsed = time.perf_counter() - started
-    write_json(out / "timing" / f"{job.key}.json", {"seconds": elapsed, "pid": os.getpid()})
+    record = {**result, "attempt": attempt, "retry_reason": retry_reason}
+    write_once(attempt_dir(out, job.key) / f"{attempt:03d}.json", record)
+    write_once(
+        out / "timing" / job.key / f"{attempt:03d}.json", {"seconds": elapsed, "pid": os.getpid()}
+    )
+    write_json(job_path(out, job.key), result)
     return job.key, result["status"], elapsed
+
+
+def load_retry_reasons(path: Optional[Path]) -> dict[str, str]:
+    """Read a ``{key: infrastructure reason}`` JSON file, refusing an empty reason."""
+    if path is None:
+        return {}
+    reasons = read_json(path)
+    if not isinstance(reasons, dict) or not all(
+        isinstance(k, str) and isinstance(v, str) and v.strip() for k, v in reasons.items()
+    ):
+        raise StudyRefused(f"{path} must map each job key to a non-empty infrastructure reason")
+    return reasons
 
 
 def run_jobs(
@@ -158,36 +210,61 @@ def run_jobs(
     out: Path,
     workers: int,
     *,
-    retry_failed: bool = False,
+    retry_reasons: Optional[Mapping[str, str]] = None,
 ) -> dict[str, int]:
     """Run every job without a finished file. An ok file is never recomputed.
 
-    A failed file stays unless ``retry_failed`` is set, because a failure is a result of
-    the run until someone records that it was infrastructure.
+    A failed job stays failed, because a failure is a result of the run until someone
+    records that it was infrastructure. ``retry_reasons`` maps a failed key to that
+    recorded reason; only such keys are retried, and the reason is stored in the new
+    attempt's record beside the earlier attempts, which are kept. A reason for a key
+    that is not failed in ``out`` is refused, so a reason cannot be attached to a
+    result it does not describe.
     """
     keys = [job.key for job in jobs]
     if len(set(keys)) != len(keys):
         raise StudyRefused("duplicate job keys")
-    pending = []
+    reasons = dict(retry_reasons or {})
+    for key, reason in reasons.items():
+        if not isinstance(reason, str) or not reason.strip():
+            raise StudyRefused(f"retry of {key} needs a non-empty infrastructure reason")
+    pending: list[tuple[Job, int, Optional[str]]] = []
     skipped = 0
+    retried: set[str] = set()
+    # inv: every job before this one is either skipped or in `pending` with the next
+    # unused attempt number, and `retried` holds the keys among them retried by reason.
     for job in jobs:
         path = job_path(out, job.key)
+        previous = attempt_records(out, job.key)
         if path.exists():
+            if not previous:
+                raise StudyRefused(
+                    f"{path} has no attempt ledger; it predates append-only attempts"
+                )
             status = read_json(path).get("status")
-            if status == "ok" or (status == "failed" and not retry_failed):
+            if status == "ok" or (status == "failed" and job.key not in reasons):
                 skipped += 1
                 continue
-        pending.append(job)
+            retried.add(job.key)
+            pending.append((job, len(previous) + 1, reasons[job.key]))
+        else:
+            pending.append((job, len(previous) + 1, None))
+    stray = set(reasons) - retried
+    if stray:
+        raise StudyRefused(f"retry reasons given for keys that are not failed: {sorted(stray)}")
     counts = {"ok": 0, "failed": 0, "skipped": skipped}
     if not pending:
         return counts
     if workers <= 1:
-        for job in pending:
-            _, status, _ = _run_one(func, job, out)
+        for job, attempt, reason in pending:
+            _, status, _ = _run_one(func, job, out, attempt, reason)
             counts[status] += 1
         return counts
     with ProcessPoolExecutor(max_workers=min(workers, len(pending))) as pool:
-        futures = [pool.submit(_run_one, func, job, out) for job in pending]
+        futures = [
+            pool.submit(_run_one, func, job, out, attempt, reason)
+            for job, attempt, reason in pending
+        ]
         for future in as_completed(futures):
             _, status, _ = future.result()
             counts[status] += 1
@@ -214,7 +291,39 @@ def collect(out: Path, keys: Sequence[str]) -> tuple[dict[str, dict], list[dict]
 
 
 def core_seconds(out: Path) -> float:
+    """Wall seconds summed over every attempt of every job in ``out``, failed ones too."""
     return sum(read_json(p)["seconds"] for p in (out / "timing").rglob("*.json"))
+
+
+def attempt_ledger(out: Path) -> dict:
+    """Attempt counts and core-seconds over every attempt in ``out``.
+
+    ``attempts`` counts every attempt record, so a retried key contributes each of its
+    tries. ``core_seconds`` is wall time and differs between runs of one commit, which is
+    why it lives here and in the manifest and never in a job file.
+    """
+    by_status: dict[str, int] = {}
+    keys = 0
+    retried = 0
+    attempts = 0
+    root = out / "attempts"
+    folders = sorted({p.parent for p in root.rglob("*.json")}) if root.is_dir() else []
+    # inv: the counts cover exactly the folders already read.
+    for folder in folders:
+        records = sorted(p for p in folder.glob("*.json") if p.stem.isdigit())
+        keys += 1
+        attempts += len(records)
+        retried += len(records) > 1
+        for record in records:
+            status = read_json(record)["status"]
+            by_status[status] = by_status.get(status, 0) + 1
+    return {
+        "jobs_attempted": keys,
+        "attempts": attempts,
+        "jobs_retried": retried,
+        "attempts_by_status": dict(sorted(by_status.items())),
+        "core_seconds_all_attempts": core_seconds(out),
+    }
 
 
 # -- intervals ----------------------------------------------------------------

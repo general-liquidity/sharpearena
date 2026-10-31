@@ -76,12 +76,72 @@ def test_finished_jobs_are_not_recomputed_and_a_failure_stays(tmp_path):
     ]
 
 
-def test_retry_failed_reruns_only_the_failure(tmp_path):
+def _flaky(payload: dict) -> dict:
+    """Fails until the marker file exists, the way an out-of-memory kill would."""
+    if not Path(payload["marker"]).exists():
+        raise MemoryError("worker killed")
+    return {"value": payload["value"]}
+
+
+def test_a_retry_keeps_the_failed_attempt_and_its_timing(tmp_path):
+    """Regression (2026-10-31 bench2 review): a retry overwrote the failed result and
+    its timing, so the run kept no trace of the failure and undercounted core-seconds."""
+    marker = tmp_path / "healthy"
+    jobs = [Job("a", {"value": 2, "marker": str(marker)})]
+    assert common.run_jobs(jobs, _flaky, tmp_path, 1) == {"ok": 0, "failed": 1, "skipped": 0}
+    marker.write_text("x")
+    reason = "worker OOM-killed by the host, not by the job"
+    counts = common.run_jobs(jobs, _flaky, tmp_path, 1, retry_reasons={"a": reason})
+    assert counts == {"ok": 1, "failed": 0, "skipped": 0}
+
+    first, second = (common.read_json(p) for p in common.attempt_records(tmp_path, "a"))
+    assert (first["attempt"], first["status"], first["retry_reason"]) == (1, "failed", None)
+    assert first["error_type"] == "MemoryError"
+    assert (second["attempt"], second["status"], second["retry_reason"]) == (2, "ok", reason)
+    timings = sorted((tmp_path / "timing" / "a").glob("*.json"))
+    assert [t.stem for t in timings] == ["001", "002"]
+
+    ledger = common.attempt_ledger(tmp_path)
+    assert ledger["attempts"] == 2 and ledger["jobs_retried"] == 1
+    assert ledger["attempts_by_status"] == {"failed": 1, "ok": 1}
+    total = sum(common.read_json(t)["seconds"] for t in timings)
+    assert ledger["core_seconds_all_attempts"] == pytest.approx(total)
+    # Collection reads the latest attempt.
+    assert common.collect(tmp_path, ["a"]) == ({"a": {"value": 2}}, [])
+
+
+def test_a_failed_key_is_not_retried_without_a_recorded_reason(tmp_path):
     marker = tmp_path / "calls"
     jobs = [Job("a", {"value": 2, "marker": str(marker)}), Job("b", {"value": -1, "marker": str(marker)})]
     common.run_jobs(jobs, _double, tmp_path, 1)
-    counts = common.run_jobs(jobs, _double, tmp_path, 1, retry_failed=True)
+    assert common.run_jobs(jobs, _double, tmp_path, 1) == {"ok": 0, "failed": 0, "skipped": 2}
+    with pytest.raises(StudyRefused, match="non-empty infrastructure reason"):
+        common.run_jobs(jobs, _double, tmp_path, 1, retry_reasons={"b": " "})
+    # A reason cannot be attached to a key that did not fail.
+    with pytest.raises(StudyRefused, match="not failed"):
+        common.run_jobs(jobs, _double, tmp_path, 1, retry_reasons={"a": "disk full"})
+    counts = common.run_jobs(jobs, _double, tmp_path, 1, retry_reasons={"b": "disk full"})
     assert counts == {"ok": 0, "failed": 1, "skipped": 1}
+    assert len(common.attempt_records(tmp_path, "b")) == 2
+
+
+def test_an_attempt_record_is_never_replaced(tmp_path):
+    common.write_once(tmp_path / "001.json", {"status": "failed"})
+    with pytest.raises(StudyRefused, match="append-only"):
+        common.write_once(tmp_path / "001.json", {"status": "ok"})
+    assert common.read_json(tmp_path / "001.json") == {"status": "failed"}
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["001.json"]
+
+
+def test_a_retry_reasons_file_needs_a_reason_per_key(tmp_path):
+    good = tmp_path / "good.json"
+    good.write_text(json.dumps({"k": "node rebooted"}))
+    assert common.load_retry_reasons(good) == {"k": "node rebooted"}
+    bad = tmp_path / "bad.json"
+    bad.write_text(json.dumps({"k": ""}))
+    with pytest.raises(StudyRefused):
+        common.load_retry_reasons(bad)
+    assert common.load_retry_reasons(None) == {}
 
 
 def test_a_job_output_has_no_clock():

@@ -826,10 +826,14 @@ def required_bands(sd: float, n_pilot: int, protocol: dict) -> dict:
     return {"bands": k, "sd_upper": upper, "half_width": float(reached), "cap_binds": True}
 
 
-def run_stage(protocol: dict, sha: str, stage: str, out: Path, design: dict, workers: int, retry: bool, n_trial_runs: int, prefix: str = "") -> tuple[dict, dict, list[Job], list[dict], dict]:
+def run_stage(protocol: dict, sha: str, stage: str, out: Path, design: dict, workers: int, retry: dict[str, str], n_trial_runs: int, prefix: str = "") -> tuple[dict, dict, list[Job], list[dict], dict]:
     controls, training = build_jobs(protocol, stage, design, n_trial_runs, prefix)
-    counts_c = common.run_jobs(controls, run_job, out, workers, retry_failed=retry)
-    counts_t = common.run_jobs(training, run_job, out, workers, retry_failed=retry)
+    keys_c = {j.key for j in controls}
+    keys_t = {j.key for j in training}
+    retry_c = {k: v for k, v in retry.items() if k in keys_c}
+    retry_t = {k: v for k, v in retry.items() if k in keys_t}
+    counts_c = common.run_jobs(controls, run_job, out, workers, retry_reasons=retry_c)
+    counts_t = common.run_jobs(training, run_job, out, workers, retry_reasons=retry_t)
     control_results, absent_c = common.collect(out, [j.key for j in controls])
     results, absent_t = common.collect(out, [j.key for j in training])
     return control_results, results, training, absent_c + absent_t, {"controls": counts_c, "training": counts_t}
@@ -840,10 +844,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--stage", required=True, choices=("smoke", "pilot", "pilot-decide", "main"))
     parser.add_argument("--out", type=Path, default=None)
     parser.add_argument("--workers", type=int, default=4)
-    parser.add_argument("--retry-failed", action="store_true")
+    parser.add_argument(
+        "--retry-failed",
+        type=Path,
+        default=None,
+        metavar="REASONS.json",
+        help="retry the failed keys named in this {key: infrastructure reason} file",
+    )
     parser.add_argument("--smoke-steps", type=int, default=2048)
     parser.add_argument("--escalate", action="store_true", help="use the protocol's one budget escalation")
     args = parser.parse_args(argv)
+    retry_reasons = common.load_retry_reasons(args.retry_failed)
 
     protocol, sha = common.load_protocol(PROTOCOL_PATH)
     root = args.out if args.out is not None else HERE / "runs"
@@ -857,7 +868,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         out = root / "smoke"
         design = stage_design(protocol, "smoke", None, args.smoke_steps)
         controls, results, training, absent, counts = run_stage(
-            protocol, sha, "smoke", out, design, args.workers, args.retry_failed,
+            protocol, sha, "smoke", out, design, args.workers, retry_reasons,
             len(design["configs"]) * design["n_bands"] * design["runs_per_band"],
         )
         summary = {"cells": {}}
@@ -870,7 +881,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         search = pilot_design(protocol, "search", None, steps)
         search_trials = len(protocol["configs"]) * search["n_bands"] * search["runs_per_band"]
         controls, results, _, absent, counts = run_stage(
-            protocol, sha, "pilot", out, search, args.workers, args.retry_failed, search_trials, "search_"
+            protocol, sha, "pilot", out, search, args.workers, retry_reasons, search_trials, "search_"
         )
         ranked = []
         for name in protocol["configs"]:
@@ -885,7 +896,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         design = pilot_design(protocol, "design", chosen, steps)
         trials = search_trials + design["n_bands"] * design["runs_per_band"]
         controls2, results2, training, absent2, counts2 = run_stage(
-            protocol, sha, "pilot", out, design, args.workers, args.retry_failed, trials, "design_"
+            protocol, sha, "pilot", out, design, args.workers, retry_reasons, trials, "design_"
         )
         row = analyze_cell(results2, controls2, "design_", "A", chosen, protocol)
         row["verdict"] = verdict(row, protocol)
@@ -925,7 +936,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         per_cell = design["n_bands"] * design["runs_per_band"]
         trials = decision["pilot_trial_runs"] + per_cell * len(design["cells"])
         controls, results, training, absent, counts = run_stage(
-            protocol, sha, "main", out, design, args.workers, args.retry_failed, trials
+            protocol, sha, "main", out, design, args.workers, retry_reasons, trials
         )
         summary = {"cells": {}, "trial_runs": trials}
         for cell in design["cells"]:
@@ -937,6 +948,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     summary["absent_jobs"] = absent
     summary["jobs_expected"] = len(training)
+    ledger = common.attempt_ledger(out)
+    summary["attempt_ledger"] = ledger
+    extra["attempt_ledger"] = ledger
     common.write_json(out / "summary.json", summary)
     common.write_json(
         out / "manifest.json",
