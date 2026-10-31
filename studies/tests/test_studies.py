@@ -145,9 +145,9 @@ def test_shuffling_keeps_each_marginal_and_breaks_time_order():
     shuffled = realism.shuffled_window(np.random.default_rng(2), window)
     assert np.array_equal(np.sort(window, axis=0), np.sort(shuffled, axis=0))
     assert not np.array_equal(window, shuffled)
-    first_col_order = np.argsort(shuffled[:, 0])
-    second_col_order = np.argsort(shuffled[:, 1])
-    assert not np.array_equal(first_col_order, second_col_order)
+    # Symbols move independently, so the rows themselves are new. A joint row shuffle
+    # would keep every row and with it the co-movement this control has to destroy.
+    assert {tuple(r) for r in shuffled} != {tuple(r) for r in window}
 
 
 def test_garch_control_refuses_a_non_stationary_spec():
@@ -419,6 +419,13 @@ def test_pilot_bands_do_not_reuse_search_bands():
 def test_position_env_closes_ignore_own_orders():
     spec = LEARNER["env"]
     assert learner.closes_are_exogenous(5, spec, spec["primary_tier"])
+
+
+def test_a_bad_arm_inside_the_margin_is_not_reported_as_detected():
+    rows = [{"share": 0.5 + d, "fills": [1, 1]} for d in (0.0005, -0.0005, 0.0002, -0.0002)]
+    job = {"rows": rows, "mark": "ex_own_mid", "controllers": "per_seat"}
+    results = {"execution/b/e1_seeded_shuffle": job, "execution/b/e1_agent_index": job}
+    assert realism.execution_block(results, REALISM, "b")["e1"]["bad_arm_detected"] is False
 
 
 def test_training_reward_is_the_ledger_times_a_fixed_constant():
