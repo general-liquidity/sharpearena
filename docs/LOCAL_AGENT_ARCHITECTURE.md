@@ -44,7 +44,11 @@ graph acyclic while making the two products operationally interdependent.
 
 `sharpearena.local_agents` supplies:
 
-- a scaffold-neutral, stateless prompt renderer;
+- a scaffold-neutral, stateless prompt renderer, bound to its label: a model entry's
+  `scaffold` must name a renderer in `SCAFFOLD_RENDERERS`, an unknown label is refused
+  when the entry is built, and each record's `scaffold` block names the renderer class
+  that ran and a `render_probe_sha256` digest of the messages it renders for a fixed
+  probe, so a renderer that frames the prompt differently cannot pass under the label;
 - a loopback-only Ollama client with redirect refusal and the published Decision JSON
   Schema as its constrained-output format;
 - native `VecTradingEnv` batch stepping;

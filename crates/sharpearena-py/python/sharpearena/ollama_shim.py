@@ -15,7 +15,12 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import IO, Optional, Sequence
 
-from .local_agents import ModelRunConfig, OllamaClient, PromptRenderer, SamplingConfig
+from .local_agents import (
+    ModelRunConfig,
+    OllamaClient,
+    SamplingConfig,
+    renderer_for_scaffold,
+)
 
 
 def run_stdio(
@@ -36,7 +41,7 @@ def run_stdio(
                 json.dumps(asdict(identity), sort_keys=True, indent=2) + "\n",
                 encoding="utf-8",
             )
-        renderer = PromptRenderer()
+        renderer = renderer_for_scaffold(config.scaffold)
         previous = None
         logical_step = 0
         for line in source:
