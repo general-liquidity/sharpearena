@@ -14,13 +14,23 @@ import json
 import os
 from pathlib import Path
 
-ARTIFACT = Path("/logs/artifacts/actions.jsonl")
+ARTIFACTS_DIR = Path("/logs/artifacts")
+ARTIFACT = ARTIFACTS_DIR / "actions.jsonl"
+# Written by the [[verifier.collect]] hook in task.toml. The hook runs inside the
+# agent container, so this file reports what the hook did; it proves nothing about
+# a tree the hook never saw, which is why _require_safe_tree() walks the upload too.
+TRANSFER_CHECK = ARTIFACTS_DIR / ".sa-transfer-check.json"
 PRIVATE = Path("/tests/private/future_prices.json")
 VERIFIER_DIR = Path("/logs/verifier")
 REWARD_PATH = VERIFIER_DIR / "reward.txt"
+# Harbor prefers reward.json and hands only that dict to a job metric, never
+# report.json, so "accepted" must travel here for metric.py to separate a refusal
+# from a scored zero.
+REWARD_JSON_PATH = VERIFIER_DIR / "reward.json"
 REPORT_PATH = VERIFIER_DIR / "report.json"
 
 MAX_ARTIFACT_BYTES = 64 * 1024
+MAX_TRANSFER_CHECK_BYTES = 1024
 EXPECTED_STEPS = 8
 LEGAL_ACTIONS = {"hold", "buy", "sell"}
 TERMINAL_ACTION = "close"
@@ -35,12 +45,52 @@ class Refusal(Exception):
 
 def _require_clean_verifier_dir() -> None:
     """A reward file present before grading means a stale or injected output."""
-    for name in ("reward.txt", "rewards.json"):
+    for name in ("reward.txt", "reward.json", "rewards.json"):
         if (VERIFIER_DIR / name).exists():
             raise Refusal(
                 "pre_existing_reward_file",
                 f"{name} existed in the verifier directory before grading",
             )
+
+
+def _require_transfer_check() -> None:
+    """Refuse when the pre-transfer hook found unsafe entries or left no result."""
+    try:
+        if TRANSFER_CHECK.is_symlink() or not TRANSFER_CHECK.is_file():
+            raise Refusal("transfer_check_unavailable", f"{TRANSFER_CHECK} is not a file")
+        with TRANSFER_CHECK.open("rb") as stream:
+            payload = stream.read(MAX_TRANSFER_CHECK_BYTES + 1)
+    except OSError as exc:
+        raise Refusal("transfer_check_unavailable", str(exc)) from exc
+    try:
+        check = json.loads(payload)
+    except ValueError as exc:
+        raise Refusal("transfer_check_unavailable", f"unparseable: {exc}") from exc
+    removed = check.get("removed") if isinstance(check, dict) else None
+    if type(removed) is not int or removed < 0 or check.get("version") != 1:
+        raise Refusal("transfer_check_unavailable", f"malformed result {check!r}")
+    if removed:
+        raise Refusal(
+            "artifact_tree_unsafe",
+            f"{removed} non-regular entries were removed before artifact transfer",
+        )
+
+
+def _require_safe_tree() -> None:
+    """Refuse a link or special file anywhere in the uploaded artifact tree."""
+    if ARTIFACTS_DIR.is_symlink():
+        raise Refusal("artifact_tree_unsafe", f"{ARTIFACTS_DIR} is a symlink")
+
+    def walk_failed(exc: OSError) -> None:
+        raise Refusal("artifact_unreadable", str(exc)) from exc
+
+    for directory, subdirs, files in os.walk(ARTIFACTS_DIR, onerror=walk_failed):
+        for name in [*subdirs, *files]:
+            path = Path(directory) / name
+            if path == ARTIFACT:
+                continue  # _read_artifact() owns the graded path's own reason codes.
+            if path.is_symlink() or not (path.is_dir() or path.is_file()):
+                raise Refusal("artifact_tree_unsafe", f"{path} is not a regular entry")
 
 
 def _read_artifact() -> list[dict[str, object]]:
@@ -127,9 +177,11 @@ def _score(records: list[dict[str, object]]) -> float:
 
 def main() -> int:
     VERIFIER_DIR.mkdir(parents=True, exist_ok=True)
-    report: dict[str, object] = {"grader": "sa-replay-feasibility", "version": 1}
+    report: dict[str, object] = {"grader": "sa-replay-feasibility", "version": 2}
     try:
         _require_clean_verifier_dir()
+        _require_transfer_check()
+        _require_safe_tree()
         records = _validate(_read_artifact())
         reward = _score(records)
         report.update({"accepted": True, "refusal": None, "reward": reward})
@@ -141,6 +193,9 @@ def main() -> int:
     report["private_input_visible"] = PRIVATE.exists()
     report["tests_dir_visible"] = os.path.isdir("/tests")
     REPORT_PATH.write_text(json.dumps(report, sort_keys=True), encoding="utf-8")
+    REWARD_JSON_PATH.write_text(
+        json.dumps({"accepted": int(report["accepted"]), "reward": reward}), encoding="utf-8"
+    )
     REWARD_PATH.write_text(f"{reward}", encoding="utf-8")
     return 0
 

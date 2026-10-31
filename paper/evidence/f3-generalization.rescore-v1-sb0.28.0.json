@@ -1,0 +1,422 @@
+{
+  "artifact_kind": "rescore",
+  "band_dsr_ci": {
+    "calm": {
+      "test": {
+        "frozen": {
+          "hi": 0.9999999999996902,
+          "lo": 0.05922839415260833,
+          "point": 0.9988480297588872
+        },
+        "hi": 0.9999999999996899,
+        "lo": 0.059228474300861096,
+        "point": 0.9988479330451021
+      },
+      "train": {
+        "frozen": {
+          "hi": 1.0,
+          "lo": 0.925139966556392,
+          "point": 0.9999998996838715
+        },
+        "hi": 1.0,
+        "lo": 0.9251397553665472,
+        "point": 0.9999998996561708
+      }
+    },
+    "extreme": {
+      "test": {
+        "frozen": {
+          "hi": 0.8749698941474505,
+          "lo": 0.0014467156849449602,
+          "point": 0.12803340999930535
+        },
+        "hi": 0.8749679578576056,
+        "lo": 0.0014467177297551065,
+        "point": 0.12803386291985186
+      },
+      "train": {
+        "frozen": {
+          "hi": 0.32554619418211234,
+          "lo": 0.00023814357895884377,
+          "point": 0.026855170890666524
+        },
+        "hi": 0.3255464193924862,
+        "lo": 0.00023814305274061644,
+        "point": 0.026855265050533483
+      }
+    },
+    "hard": {
+      "test": {
+        "frozen": {
+          "hi": 0.9476576788274534,
+          "lo": 0.0367104563741387,
+          "point": 0.4618465830962276
+        },
+        "hi": 0.9476598694302806,
+        "lo": 0.0367104567079799,
+        "point": 0.46184658413376395
+      },
+      "train": {
+        "frozen": {
+          "hi": 0.9435244356237983,
+          "lo": 2.7316541206118265e-05,
+          "point": 0.12305180817549216
+        },
+        "hi": 0.9435230659281583,
+        "lo": 2.731592879784001e-05,
+        "point": 0.12305241990082766
+      }
+    }
+  },
+  "bootstrap": {
+    "alpha": 0.05,
+    "convention": "percentile bootstrap over resampled seeds; transfer cells are seed-paired (shared indices across regimes); one RNG stream per CI job, seeded (resample_seed, job id)",
+    "n_boot": 2000,
+    "resample_seed": 0
+  },
+  "cross_regime_transfer": {
+    "calm->calm": {
+      "frozen_transfer_gap_deflated_sharpe": 0.0,
+      "in_distribution": {
+        "deflated_sharpe": 0.9999998996561708,
+        "mean_return": 0.00035573742621374584,
+        "n_seeds": 16,
+        "passed_k_rate": 0.625
+      },
+      "out_of_distribution": {
+        "deflated_sharpe": 0.9999998996561708,
+        "mean_return": 0.00035573742621374584,
+        "n_seeds": 16,
+        "passed_k_rate": 0.625
+      },
+      "test_mode": "calm",
+      "train_mode": "calm",
+      "transfer_gap_deflated_sharpe": 0.0,
+      "transfer_gap_deflated_sharpe_delta": 0.0
+    },
+    "calm->extreme": {
+      "frozen_transfer_gap_deflated_sharpe": 0.9731447287932049,
+      "in_distribution": {
+        "deflated_sharpe": 0.9999998996561708,
+        "mean_return": 0.00035573742621374584,
+        "n_seeds": 16,
+        "passed_k_rate": 0.625
+      },
+      "out_of_distribution": {
+        "deflated_sharpe": 0.026855265050533483,
+        "mean_return": 0.0004729804941509475,
+        "n_seeds": 16,
+        "passed_k_rate": 0.0625
+      },
+      "test_mode": "extreme",
+      "train_mode": "calm",
+      "transfer_gap_deflated_sharpe": 0.9731446346056373,
+      "transfer_gap_deflated_sharpe_delta": -9.418756763412972e-08
+    },
+    "calm->hard": {
+      "frozen_transfer_gap_deflated_sharpe": 0.8769480915083794,
+      "in_distribution": {
+        "deflated_sharpe": 0.9999998996561708,
+        "mean_return": 0.00035573742621374584,
+        "n_seeds": 16,
+        "passed_k_rate": 0.625
+      },
+      "out_of_distribution": {
+        "deflated_sharpe": 0.12305241990082766,
+        "mean_return": 0.00024282440073386362,
+        "n_seeds": 16,
+        "passed_k_rate": 0.3125
+      },
+      "test_mode": "hard",
+      "train_mode": "calm",
+      "transfer_gap_deflated_sharpe": 0.8769474797553432,
+      "transfer_gap_deflated_sharpe_delta": -6.117530362281798e-07
+    },
+    "extreme->calm": {
+      "frozen_transfer_gap_deflated_sharpe": -0.9731447287932049,
+      "in_distribution": {
+        "deflated_sharpe": 0.026855265050533483,
+        "mean_return": 0.0004729804941509475,
+        "n_seeds": 16,
+        "passed_k_rate": 0.0625
+      },
+      "out_of_distribution": {
+        "deflated_sharpe": 0.9999998996561708,
+        "mean_return": 0.00035573742621374584,
+        "n_seeds": 16,
+        "passed_k_rate": 0.625
+      },
+      "test_mode": "calm",
+      "train_mode": "extreme",
+      "transfer_gap_deflated_sharpe": -0.9731446346056373,
+      "transfer_gap_deflated_sharpe_delta": 9.418756763412972e-08
+    },
+    "extreme->extreme": {
+      "frozen_transfer_gap_deflated_sharpe": 0.0,
+      "in_distribution": {
+        "deflated_sharpe": 0.026855265050533483,
+        "mean_return": 0.0004729804941509475,
+        "n_seeds": 16,
+        "passed_k_rate": 0.0625
+      },
+      "out_of_distribution": {
+        "deflated_sharpe": 0.026855265050533483,
+        "mean_return": 0.0004729804941509475,
+        "n_seeds": 16,
+        "passed_k_rate": 0.0625
+      },
+      "test_mode": "extreme",
+      "train_mode": "extreme",
+      "transfer_gap_deflated_sharpe": 0.0,
+      "transfer_gap_deflated_sharpe_delta": 0.0
+    },
+    "extreme->hard": {
+      "frozen_transfer_gap_deflated_sharpe": -0.09619663728482564,
+      "in_distribution": {
+        "deflated_sharpe": 0.026855265050533483,
+        "mean_return": 0.0004729804941509475,
+        "n_seeds": 16,
+        "passed_k_rate": 0.0625
+      },
+      "out_of_distribution": {
+        "deflated_sharpe": 0.12305241990082766,
+        "mean_return": 0.00024282440073386362,
+        "n_seeds": 16,
+        "passed_k_rate": 0.3125
+      },
+      "test_mode": "hard",
+      "train_mode": "extreme",
+      "transfer_gap_deflated_sharpe": -0.09619715485029418,
+      "transfer_gap_deflated_sharpe_delta": -5.175654685385389e-07
+    },
+    "hard->calm": {
+      "frozen_transfer_gap_deflated_sharpe": -0.8769480915083794,
+      "in_distribution": {
+        "deflated_sharpe": 0.12305241990082766,
+        "mean_return": 0.00024282440073386362,
+        "n_seeds": 16,
+        "passed_k_rate": 0.3125
+      },
+      "out_of_distribution": {
+        "deflated_sharpe": 0.9999998996561708,
+        "mean_return": 0.00035573742621374584,
+        "n_seeds": 16,
+        "passed_k_rate": 0.625
+      },
+      "test_mode": "calm",
+      "train_mode": "hard",
+      "transfer_gap_deflated_sharpe": -0.8769474797553432,
+      "transfer_gap_deflated_sharpe_delta": 6.117530362281798e-07
+    },
+    "hard->extreme": {
+      "frozen_transfer_gap_deflated_sharpe": 0.09619663728482564,
+      "in_distribution": {
+        "deflated_sharpe": 0.12305241990082766,
+        "mean_return": 0.00024282440073386362,
+        "n_seeds": 16,
+        "passed_k_rate": 0.3125
+      },
+      "out_of_distribution": {
+        "deflated_sharpe": 0.026855265050533483,
+        "mean_return": 0.0004729804941509475,
+        "n_seeds": 16,
+        "passed_k_rate": 0.0625
+      },
+      "test_mode": "extreme",
+      "train_mode": "hard",
+      "transfer_gap_deflated_sharpe": 0.09619715485029418,
+      "transfer_gap_deflated_sharpe_delta": 5.175654685385389e-07
+    },
+    "hard->hard": {
+      "frozen_transfer_gap_deflated_sharpe": 0.0,
+      "in_distribution": {
+        "deflated_sharpe": 0.12305241990082766,
+        "mean_return": 0.00024282440073386362,
+        "n_seeds": 16,
+        "passed_k_rate": 0.3125
+      },
+      "out_of_distribution": {
+        "deflated_sharpe": 0.12305241990082766,
+        "mean_return": 0.00024282440073386362,
+        "n_seeds": 16,
+        "passed_k_rate": 0.3125
+      },
+      "test_mode": "hard",
+      "train_mode": "hard",
+      "transfer_gap_deflated_sharpe": 0.0,
+      "transfer_gap_deflated_sharpe_delta": 0.0
+    }
+  },
+  "declared_trials": 0,
+  "finding": "F3",
+  "frozen_input": {
+    "path": "paper/evidence/f3-generalization.json",
+    "sha256": "3bff445e13dd4d094a45ebe20e713ec0bc63b06e017c30a399d3aa41a8cf50e1"
+  },
+  "generalization_gap": {
+    "calm": {
+      "frozen_gap_deflated_sharpe": 0.0011518699249842834,
+      "gap_deflated_sharpe": 0.0011519666110686444,
+      "gap_deflated_sharpe_delta": 9.668608436097514e-08,
+      "gap_mean_return": 8.307079740736635e-05,
+      "test": {
+        "deflated_sharpe": 0.9988479330451021,
+        "mean_return": 0.0002726666288063795,
+        "n_seeds": 16,
+        "passed_k_rate": 0.625
+      },
+      "train": {
+        "deflated_sharpe": 0.9999998996561708,
+        "mean_return": 0.00035573742621374584,
+        "n_seeds": 16,
+        "passed_k_rate": 0.625
+      }
+    },
+    "extreme": {
+      "frozen_gap_deflated_sharpe": -0.10117823910863882,
+      "gap_deflated_sharpe": -0.10117859786931838,
+      "gap_deflated_sharpe_delta": -3.5876067955298296e-07,
+      "gap_mean_return": -0.00030627105916553423,
+      "test": {
+        "deflated_sharpe": 0.12803386291985186,
+        "mean_return": 0.0007792515533164817,
+        "n_seeds": 16,
+        "passed_k_rate": 0.125
+      },
+      "train": {
+        "deflated_sharpe": 0.026855265050533483,
+        "mean_return": 0.0004729804941509475,
+        "n_seeds": 16,
+        "passed_k_rate": 0.0625
+      }
+    },
+    "hard": {
+      "frozen_gap_deflated_sharpe": -0.33879477492073545,
+      "gap_deflated_sharpe": -0.3387941642329363,
+      "gap_deflated_sharpe_delta": 6.106877991629567e-07,
+      "gap_mean_return": -0.00013579129696834202,
+      "test": {
+        "deflated_sharpe": 0.46184658413376395,
+        "mean_return": 0.00037861569770220564,
+        "n_seeds": 16,
+        "passed_k_rate": 0.3125
+      },
+      "train": {
+        "deflated_sharpe": 0.12305241990082766,
+        "mean_return": 0.00024282440073386362,
+        "n_seeds": 16,
+        "passed_k_rate": 0.3125
+      }
+    }
+  },
+  "kernel": {
+    "sharpearena_version": "0.31.0",
+    "sharpebench_pin": "0.28.0",
+    "spec_hash": "0b426f58a65094c9"
+  },
+  "method": "recomputation from the frozen file's recorded return series; no environment was stepped and the frozen file is unchanged",
+  "rescore_version": 1,
+  "transfer_gap_ci": {
+    "calm->calm": {
+      "frozen": {
+        "hi": 0.0,
+        "lo": 0.0,
+        "point": 0.0
+      },
+      "hi": 0.0,
+      "lo": 0.0,
+      "point": 0.0
+    },
+    "calm->extreme": {
+      "frozen": {
+        "hi": 0.9994575849016921,
+        "lo": 0.6348367708380569,
+        "point": 0.9731447287932049
+      },
+      "hi": 0.9994575856886863,
+      "lo": 0.6348378496581529,
+      "point": 0.9731446346056373
+    },
+    "calm->hard": {
+      "frozen": {
+        "hi": 0.9989156358526634,
+        "lo": 0.05404852610101361,
+        "point": 0.8769480915083794
+      },
+      "hi": 0.9989156145308231,
+      "lo": 0.05404938954822363,
+      "point": 0.8769474797553432
+    },
+    "extreme->calm": {
+      "frozen": {
+        "hi": -0.6583195694322306,
+        "lo": -0.9995307000583149,
+        "point": -0.9731447287932049
+      },
+      "hi": -0.6583194004338668,
+      "lo": -0.9995306790161778,
+      "point": -0.9731446346056373
+    },
+    "extreme->extreme": {
+      "frozen": {
+        "hi": 0.0,
+        "lo": 0.0,
+        "point": 0.0
+      },
+      "hi": 0.0,
+      "lo": 0.0,
+      "point": 0.0
+    },
+    "extreme->hard": {
+      "frozen": {
+        "hi": 0.22009435747423783,
+        "lo": -0.88976577182292,
+        "point": -0.09619663728482564
+      },
+      "hi": 0.22009354390829677,
+      "lo": -0.8897654840166201,
+      "point": -0.09619715485029418
+    },
+    "hard->calm": {
+      "frozen": {
+        "hi": -0.0470450534729005,
+        "lo": -0.9989741048934081,
+        "point": -0.8769480915083794
+      },
+      "hi": -0.047044154659949954,
+      "lo": -0.9989741022807,
+      "point": -0.8769474797553432
+    },
+    "hard->extreme": {
+      "frozen": {
+        "hi": 0.911268191345829,
+        "lo": -0.21764069915909645,
+        "point": 0.09619663728482564
+      },
+      "hi": 0.9112655584114658,
+      "lo": -0.21763953517583556,
+      "point": 0.09619715485029418
+    },
+    "hard->hard": {
+      "frozen": {
+        "hi": 0.0,
+        "lo": 0.0,
+        "point": 0.0
+      },
+      "hi": 0.0,
+      "lo": 0.0,
+      "point": 0.0
+    }
+  },
+  "worked_instance": {
+    "agreement": "four displayed decimals; the bits differ because the moments changed",
+    "deflated_sharpe": 0.11138658706018584,
+    "delta_from_frozen_f1_value": 5.992017563238861e-07,
+    "frozen_f1_value": 0.11138598785842951,
+    "printed": "0.1114",
+    "series": "f3-generalization.json per_seed_returns.hard.train",
+    "series_equals_f1_hard_equal_weight_long": true,
+    "statement": "rescoring the committed F3 Hard train series at six trials reproduces the printed 0.1114",
+    "trials": 6
+  }
+}

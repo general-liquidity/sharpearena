@@ -57,6 +57,7 @@ _MODE_FIXTURES = {
     "extreme": "scenario-extreme-4x120-seed7",
     "cointegrated_pairs": "scenario-cointegrated-4x120-seed7",
     "regime_shift": "scenario-regime-4x120-seed7",
+    "martingale_v1": "scenario-martingale-v1-4x120-seed7",
 }
 
 
@@ -77,6 +78,7 @@ def fnv1a(data: bytes) -> int:
         ("extreme", GOLDEN_EXTREME_4X120_SEED7_FNV1A),
         ("cointegrated_pairs", GOLDEN_COINTEGRATED_4X120_SEED7_FNV1A),
         ("regime_shift", GOLDEN_REGIME_4X120_SEED7_FNV1A),
+        ("martingale_v1", 0xf7d7_fd4e_a890_9352),
     ],
 )
 def test_scenario_fingerprint_matches_committed_golden(mode: str, golden: int) -> None:

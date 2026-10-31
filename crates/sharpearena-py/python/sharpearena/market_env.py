@@ -69,6 +69,8 @@ small documented JSON interface:
 from __future__ import annotations
 
 import json
+import math
+from dataclasses import dataclass, replace
 from typing import Any, Optional
 
 import numpy as np
@@ -128,6 +130,82 @@ def _normalize_uncertainty(uncertainty: Any) -> Optional[tuple[float, float, flo
     )
 
 
+TRANSIENT_SHAPES = ("linear", "square_root")
+SETTLEMENTS = ("marked", "cash_liquidation")
+
+
+@dataclass(frozen=True)
+class MarketExecution:
+    """Versioned opt-in execution settings (``sharpearena.market-execution.v1``).
+
+    ``None`` on a market is the frozen default path. Every value here is a declared
+    setting chosen by the caller. None of them is fitted, so no result under them is a
+    calibrated claim about any real market.
+
+    ``fixed_delay_bars`` counts bars from the last observed close to the fill: ``1`` means
+    a decision made on bar ``t`` fills on ``t + 1`` for every decision, in SharpeBench's
+    ``sharpebench.fixed-decision-delay.v1`` FIFO schema. ``transient_coefficient`` and
+    ``transient_decay`` (the fraction of the state surviving one bar, in ``[0, 1)``) add a
+    decaying displacement beside the permanent multiplier, and are set together.
+    ``transient_shape`` is ``linear`` (the exponential kernel) or ``square_root`` (of the
+    decayed cumulative flow). ``settlement`` is ``marked`` or ``cash_liquidation``.
+    Range checks live in the native binding.
+    """
+
+    fixed_delay_bars: Optional[int] = None
+    transient_coefficient: Optional[float] = None
+    transient_decay: Optional[float] = None
+    transient_shape: str = "linear"
+    settlement: str = "marked"
+
+    def __post_init__(self) -> None:
+        if (self.transient_coefficient is None) != (self.transient_decay is None):
+            raise ValueError("transient_coefficient and transient_decay are set together")
+        if self.transient_shape not in TRANSIENT_SHAPES:
+            raise ValueError(f"transient_shape must be one of {TRANSIENT_SHAPES}")
+        if self.settlement not in SETTLEMENTS:
+            raise ValueError(f"settlement must be one of {SETTLEMENTS}")
+        if self.transient_coefficient is not None and not (
+            math.isfinite(self.transient_coefficient) and math.isfinite(self.transient_decay)
+        ):
+            raise ValueError("transient_coefficient and transient_decay must be finite")
+
+    def without_impact(self) -> MarketExecution:
+        """The same timing, shape and settlement with no displacement: the zero-impact
+        reference a paired attribution runs against."""
+        if self.transient_coefficient is None:
+            return self
+        return replace(self, transient_coefficient=0.0)
+
+    def to_json(self) -> str:
+        """The versioned wire record the native binding parses."""
+        delay = (
+            None
+            if self.fixed_delay_bars is None
+            else {
+                "schema_version": "sharpebench.fixed-decision-delay.v1",
+                "bars": int(self.fixed_delay_bars),
+            }
+        )
+        transient = (
+            None
+            if self.transient_coefficient is None
+            else {
+                "coefficient": float(self.transient_coefficient),
+                "decay_per_bar": float(self.transient_decay),
+                "shape": self.transient_shape,
+            }
+        )
+        return json.dumps(
+            {
+                "schema_version": "sharpearena.market-execution.v1",
+                "fixed_delay": delay,
+                "transient": transient,
+                "settlement": self.settlement,
+            }
+        )
+
+
 class EndogenousMarketEnv(ParallelEnv):
     """A shared-book, endogenous-impact :class:`pettingzoo.ParallelEnv` over SharpeArena.
 
@@ -166,6 +244,7 @@ class EndogenousMarketEnv(ParallelEnv):
         allow_short: bool = True,
         uncertainty: Optional[Any] = None,
         impact_exponent: float = 1.0,
+        execution: Optional[MarketExecution] = None,
     ) -> None:
         if not _HAS_PETTINGZOO:
             raise RuntimeError(
@@ -190,6 +269,7 @@ class EndogenousMarketEnv(ParallelEnv):
         self._allow_short = bool(allow_short)
         self._uncertainty = _normalize_uncertainty(uncertainty)
         self._impact_exponent = float(impact_exponent)
+        self._execution = execution
 
         self.possible_agents: list[str] = _agent_ids(self._n_agents)
         self.agents: list[str] = list(self.possible_agents)
@@ -232,6 +312,8 @@ class EndogenousMarketEnv(ParallelEnv):
             )
         if self._impact_exponent != 1.0:
             kwargs.update(impact_exponent=self._impact_exponent)
+        if self._execution is not None:
+            kwargs.update(execution=self._execution.to_json())
         try:
             self._market = PyMarketClearing(**kwargs)
             return
@@ -241,6 +323,10 @@ class EndogenousMarketEnv(ParallelEnv):
         # then uncertainty, then richness, then vol_scale). Drop them only when they sit at
         # their defaults, so default behavior is unchanged; a non-default request for a
         # missing param still surfaces the error.
+        if self._execution is not None:
+            raise TypeError(
+                "the native binding predates the 'execution' settings (needs a rebuild)"
+            )
         if self._impact_exponent != 1.0:
             raise TypeError(
                 "the native binding predates the 'impact_exponent' concavity parameter "
@@ -343,6 +429,16 @@ class EndogenousMarketEnv(ParallelEnv):
         """The permanent-impact exponent (1.0 = linear, < 1.0 = concave)."""
         return self._impact_exponent
 
+    @property
+    def execution(self) -> Optional[MarketExecution]:
+        """The installed execution settings (``None`` = the frozen default path)."""
+        return self._execution
+
+    @property
+    def effective_config(self) -> dict:
+        """What the native market is actually clearing with, read back from it."""
+        return json.loads(self._market.effective_config)
+
     def reset(
         self, seed: Optional[int] = None, options: Optional[dict] = None
     ) -> tuple[dict[str, Any], dict[str, dict]]:
@@ -412,6 +508,8 @@ class EndogenousMarketEnv(ParallelEnv):
                 "fills": result["fills"][idx],
                 "scenario_seed": self._seed,
             }
+            if "execution" in result:
+                infos[agent]["execution"] = result["execution"]
 
         # Drop agents whose episode ended; iterate canonical order so the survivors stay
         # sorted (PettingZoo keeps them in possible_agents).

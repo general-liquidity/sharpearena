@@ -29,6 +29,83 @@ The three tiers are the same point-in-time market under increasing volatility-an
 stress (Calm / Hard / Extreme), matching the procedural `ScenarioSpec` generator. An
 agent that clears Calm but collapses on Extreme is not robust; report all three.
 
+## What an agent can learn from each tier
+
+A synthetic tape only teaches what its generator put there, so read a score against this
+table before reading it as skill. Calm, the default, hands an agent a tradable signal. It
+comes from the generator's momentum term and per-symbol drift, not from anything a market
+does, and a high Calm score may mean the entry found that term. Measured on seeds
+`[128, 256)` at 4 symbols by 120 days. Each cell is a mean across 128 seeds, Sharpe is
+annualized at 252 bars and gross of all costs, and the kurtosis is a median.
+
+| Tier | Lag-1 autocorr. | Buy-and-hold Sharpe | 1-bar momentum Sharpe | 20-bar trend Sharpe | Excess kurtosis | Mean `\|r\|` ACF | Next-bar vol forecast corr. | Gate passes |
+|---|---|---|---|---|---|---|---|---|
+| `calm` | +0.18 | +1.71 | +5.71 | +6.74 | -1.00 | +0.003 | -0.01 | 0/128 |
+| `hard` | +0.08 | +0.57 | +3.09 | +2.62 | +15.67 | -0.007 | -0.03 | 5/128 |
+| `extreme` | +0.01 | +0.17 | +1.50 | +0.78 | +11.88 | -0.007 | -0.04 | 5/128 |
+| `cointegrated_pairs` | -0.12 | +0.09 | -2.23 | -0.98 | -0.58 | -0.007 | -0.04 | 0/128 |
+| `regime_shift` | -0.24 | +5.79 | +0.90 | +5.63 | +0.50 | +0.095 | +0.17 | 54/128 |
+| `calm_calibration_candidate` | +0.14 | +1.49 | +5.02 | +5.59 | +1.94 | +0.025 | +0.05 | 78/128 |
+| `martingale_v1` | -0.01 | +0.09 | +0.12 | +0.17 | +1.62 | +0.044 | +0.10 | 101/128 |
+
+- **`calm`** teaches direction. Returns follow an AR(1) momentum term plus a positive drift
+  that rises with the symbol index. On long paths lag-1 autocorrelation is 0.23 and
+  buy-and-hold Sharpe runs from 0.95 to 2.09 by symbol; the 119-return estimator reads
+  lag-1 near 0.18 because demeaning a short sample pulls it down. Tails are thinner than
+  Gaussian and volatility does not cluster, so there is no risk to learn.
+- **`hard`** and **`extreme`** are the Calm panel rescaled around each path's own mean,
+  with independent jumps. They teach tail survival. The momentum is diluted, not removed:
+  one-bar momentum still earns a gross Sharpe of 3.09 on Hard and 1.50 on Extreme. Tails
+  are fat, but jumps are independent, so large moves do not cluster.
+- **`cointegrated_pairs`** teaches a relationship. Each pair's spread mean-reverts, and
+  single-symbol returns are negatively autocorrelated. There is no drift to harvest.
+- **`regime_shift`** teaches change detection. A trend with drift gives way to a whipsaw,
+  so direction is learnable and regime timing is what is tested.
+- **`martingale_v1`** teaches risk and offers no direction. Each symbol is an independent
+  martingale: the next return has conditional mean zero given the whole past, so any
+  weights chosen from past data earn zero expected per-bar return before costs. That is a
+  property of the recursion, not of the fit. Volatility clusters and tails are fat, so an
+  agent can forecast risk and size to it, and diversifying across symbols lowers variance.
+  Use it as a null: an entry with a positive score here has found luck or an artifact, and
+  the score needs its seed count stated. It has no common factor, leverage effect, skew or
+  volume, so it is a calibrated control and not a model of a market.
+
+The gate column is a development measurement and not the frozen realism study. It also
+shows what the gate does not measure: `calm_calibration_candidate` passes 78 of 128 panels
+with momentum intact, and `regime_shift` passes 54 with the largest signal in the table.
+A gate pass says a tape has three stylized facts. It says nothing about whether the tape
+is free of signal, and `martingale_v1` is the only tier here built to be.
+
+The default is unchanged: `ScenarioSpec::default()` and the canonical Calm, Hard and
+Extreme environment IDs produce the same bytes as before. `martingale_v1` is opt-in through
+`distribution_mode`, and its constants are frozen under that name, so a retune would be
+`martingale_v2`.
+
+### Calibration record
+
+`studies/generator-calibration/` holds the protocol, frozen in a commit before any candidate
+ran, the scripts, and every number above. Parameters were fitted on seeds `[0, 128)` to
+daily index and commodity tape in the SharpeBench `data/` directory: median excess kurtosis
+1.37, mean `|r|` autocorrelation 0.041 and daily volatility 0.0153 over 127 windows. Crypto
+and FX were held out because the frozen realism study uses them as controls. Of 216 grid
+cells, 135 cleared the fit-seed gate bar, and the chosen cell had the smallest distance to
+the targets.
+
+On the report seeds all seven pre-registered criteria passed, including every Sharpe
+interval sitting inside plus or minus 0.5. The volatility fit is at the level of that tape
+and is about four times Calm's, so it is not a comparable-risk substitute for Calm. Report
+seed median kurtosis, 1.62, sits above the 1.30 seen on fit seeds, because the two are
+different estimators: a seed-level median of panel means against a median of single series.
+
+Two deviations from the protocol. The first fit run had a scaling bug that pinned the
+volatility cap, which a missed volatility target exposed; it was fixed and rerun on fit
+seeds with a guard added, before any report seed was read. Second, the report seeds gave a
+mean-return interval touching zero and an equal-weight Sharpe of +0.21, so a third band of
+4096 seeds, not pre-registered, was added to try to break the zero-mean claim: mean daily
+return +0.000015 (95% interval -0.000007 to +0.000037), and all four rule Sharpes within
+0.09 of zero with intervals covering it. Lag-1 was -0.0094, which matches the finite-sample
+expectation of -1/119. No parameter changed as a result.
+
 ## Train / held-out split (operator's responsibility)
 
 Seeds are integer-interval bands, and the bands are **provably disjoint** (Procgen's
@@ -229,8 +306,86 @@ flat replay of the same path. It reports three numbers:
 | Log-log exponent of end-of-execution impact against duration, for a fixed total | about 0 | about `1 - exponent` |
 
 At exponents 1.0 and 0.5 the default probe measures execution exponents within 0.05 of 1
-and duration exponents within 0.05 of `1 - exponent`, and the tests pin both. A
-transient-impact kernel is future work.
+and duration exponents within 0.05 of `1 - exponent`, and the tests pin both.
+
+## Execution settings (optional, versioned, not calibrated)
+
+By default the shared-book market clears every decision against the close it was
+made on, compounds permanent impact without decay, and values residual shares at
+the last cleared mid. `MarketExecution` (wire schema `sharpearena.market-execution.v1`,
+passed as `EndogenousMarketEnv(execution=...)` or `PyMarketClearing(execution=...)`)
+changes that. Absent settings leave every published path and golden unchanged.
+Every coefficient and decay rate is a declared setting chosen by the caller. None is
+fitted to any market, so a result under these settings is not a calibrated claim.
+
+- **Timing.** `fixed_delay_bars=n` uses SharpeBench's `sharpebench.fixed-decision-delay.v1`
+  schema and counts bars from the last close a decision observed to its fill. With
+  `n=1`, a decision made on bar `t` fills on `t+1` throughout: the first traded close is
+  withheld from the first observation. Larger `n` queues decisions first in, first out,
+  as in Bench. A queued decision is priced and sized at eligibility, is never replaced
+  by a later one, and never fills past the window. `TradingEnv(fixed_delay_bars=n)`
+  carries the same FIFO around the pinned engine, which predates the setting. One stated
+  difference: an invalid decision is reported when it becomes eligible, not when it was
+  submitted.
+- **Transient impact.** `transient_coefficient` and `transient_decay` add a displacement
+  `I = coefficient * h(J)` that sits beside the permanent multiplier. `J` is the decayed
+  cumulative normalized flow, `J <- decay * (J + Q/V)`. The cleared mid is
+  `exo * M * (1 + I)`. `M` never decays and `I` never enters `M`. Fills on the net-flow
+  side pay the increment in `I` that their bar causes. Fills against the net flow pay
+  nothing and receive nothing.
+- **Square-root shape.** `transient_shape="square_root"` sets `h(J) = sign(J) sqrt(|J|)`.
+  The probe reports this only where the arithmetic produces it (one symbol, seed 0,
+  `kyle_lambda=0`, coefficient 0.1):
+
+  | Decay per bar | Execution exponent | Duration exponent | Impact 20 bars after the end, as a ratio |
+  |---|---|---|---|
+  | 0.5 | 0.06 | -0.48 | 0.001 |
+  | 0.9 | 0.28 | -0.28 | 0.35 |
+  | 0.99 | 0.47 | -0.03 | 0.90 |
+  | 0.999 | 0.50 | 0.00 | 0.99 |
+
+  An exponent near 0.5 with no duration dependence appears only when execution is short
+  against the decay horizon, and then relaxation is slow. Fast decay gives quick
+  relaxation and no square-root growth. No single setting delivers both, so this is not
+  the empirical square-root law, only a concave kernel whose shape the probe measures.
+  The linear shape relaxes geometrically at the decay rate and grows about linearly.
+- **Settlement.** Order sizes are `capital * (w - prev_w) / mid`. A round trip that is
+  flat in target weight is therefore not flat in shares once the mid has moved. On
+  seeds 0 to 7 of the default manipulation probe, residual positions under the default
+  settings were worth -1.2% to +1.5% of capital. `settlement="cash_liquidation"` sells
+  every residual on the last bar as one further clearing at the post-flow price, through
+  the same impact terms, so terminal NAV is cash and no residual shares remain.
+
+Every setting is bound into execution identity. `PyMarketClearing.effective_config`
+reads the live coefficients, exponent, uncertainty set and execution settings back from
+the engine, and `execution_fnv1a64` fingerprints them. A setter call or any changed
+setting moves the fingerprint. For `TradingEnv`, a delay adds `fixed_delay` and an
+`execution_fnv1a64` over costs and timing to the existing readback. Without a delay the
+readback is byte-identical.
+
+**What the manipulation probe found.** Each cell runs a round trip against a paired
+zero-impact reference with the same timing and settlement, under cash liquidation, on a
+finite grid. A finite grid is evidence about that grid, not a no-arbitrage theorem.
+
+- With no followers and `kyle_lambda = 0` (`eta` 0 or 0.05), no seed of 16
+  paid across 768 cells: linear and square-root shapes, decay 0, 0.5, 0.9 and 0.99,
+  coefficients 0.05 and 0.2, six asymmetric schedules, both sides and two sizes. A
+  hill-climbing search over arbitrary 40-bar weight paths, started from the best ramp,
+  found no profitable path under any kernel setting tested (best seed-mean
+  `impact_pnl` between -2.9e-5 and -2.6e-3). Under the same search the concave
+  permanent exponent 0.5 positive control paid +7.7e-3, so the search could find a
+  profit where one existed.
+- With three momentum followers, an earlier kernel paid fills against the net flow the
+  displacement increment as a rebate. Under the square-root shape the increment's slope
+  is unbounded near `J = 0`, and pushing into the followers paid on 53 of 144 cells (best
+  seed mean +1.9e-2, 7 of 8 seeds). The engine no longer pays that rebate, and the same
+  grid now gives 0 of 288 transient cells with a positive seed mean.
+- Under half the increment, in a diagnostic build only, the square-root kernel became
+  profitable (+4.2e-2 at decay 0.99). The full-increment charge is what keeps it
+  unprofitable, and the result depends on that convention.
+
+The tests pin the grid without followers, the follower cell that found the rebate, the
+positive control, and cash-settlement accounting.
 
 ## Statistical confidence (is A > B beyond seed noise?)
 

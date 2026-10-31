@@ -373,6 +373,9 @@ mod goldens {
             "hard_clustered_4x120_seed7" => include_str!(
                 "../../sharpearena/contract/attestation/pre-hash/scenario-hard-clustered-4x120-seed7.json"
             ),
+            "martingale_v1_4x120_seed7" => include_str!(
+                "../../sharpearena/contract/attestation/pre-hash/scenario-martingale-v1-4x120-seed7.json"
+            ),
             other => panic!("golden {other:?} has no committed pre-hash fixture"),
         }
     }

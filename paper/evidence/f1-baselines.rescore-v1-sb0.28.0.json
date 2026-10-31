@@ -1,0 +1,689 @@
+{
+  "artifact_kind": "rescore",
+  "bootstrap": {
+    "alpha": 0.05,
+    "convention": "seed-paired percentile bootstrap on the deflated Sharpe",
+    "n_boot": 2000,
+    "resample_seed": 1537679398
+  },
+  "declared_trials": 6,
+  "finding": "F1",
+  "frozen_input": {
+    "path": "paper/evidence/f1-baselines.json",
+    "sha256": "ec61a9a1f4340d58d497545ce401c159bd1e61201cb7c001773dd66b9e381f67"
+  },
+  "kernel": {
+    "sharpearena_version": "0.31.0",
+    "sharpebench_pin": "0.28.0",
+    "spec_hash": "0b426f58a65094c9"
+  },
+  "method": "recomputation from the frozen file's recorded return series; no environment was stepped and the frozen file is unchanged",
+  "rescore_version": 1,
+  "tiers": {
+    "calm": {
+      "best_passed_k_rate": 0.75,
+      "leaderboard_markdown": "| Rank | Policy | Deflated Sharpe | Bootstrap CI | pass^k rate | Mean return |\n|---|---|---|---|---|---|\n| 1~ | kelly_vol_target | 1.0000 | 95% [0.9798, 1.0000] | 0.75 | 0.000337 |\n| 2~ | equal_weight_long | 1.0000 | 95% [0.8343, 1.0000] | 0.62 | 0.000356 |\n| 3 | min_variance | 0.9849 | 95% [0.0264, 1.0000] | 0.44 | 0.000240 |\n| 4= | momentum | 0.0000 | 95% [0.0000, 0.0000] | 0.00 | -0.000869 |\n| 4= | max_sharpe | 0.0000 | 95% [0.0000, 0.0000] | 0.06 | -0.001002 |\n| - | flat | unavailable_scoring_kernel_error: deflation_error: returns must not be constant: a constant series has no Sharpe ratio | unavailable | unavailable_scoring_kernel_error: deflation_error: returns must not be constant: a constant series has no Sharpe ratio | 0.000000 |\n\n`=` exact tie in the ranked estimator (order within a tie is arbitrary); `~` separated only beyond the four displayed decimals. Neither is a claim of statistical separation; use `show_ci=True` and `pairwise_significance`.",
+      "n_policies_all_seeds_pass": 0,
+      "rows": [
+        {
+          "arena_deflated_sharpe_ci": null,
+          "confidence_status": "unavailable_scoring_kernel_error: deflation_error: returns must not be constant: a constant series has no Sharpe ratio",
+          "deflated_sharpe": "unavailable_scoring_kernel_error: deflation_error: returns must not be constant: a constant series has no Sharpe ratio",
+          "deflated_sharpe_ci": null,
+          "deflated_sharpe_delta": "unavailable_scoring_kernel_error: deflation_error: returns must not be constant: a constant series has no Sharpe ratio",
+          "frozen": {
+            "deflated_sharpe": 0.000686601376451601,
+            "deflated_sharpe_ci": {
+              "confidence": 0.95,
+              "hi": 0.000686601376451601,
+              "lo": 0.000686601376451601,
+              "n_boot": 2000,
+              "point": 0.000686601376451601,
+              "width": 0.0
+            },
+            "passed_k_rate": 0.0
+          },
+          "mean_return": 0.0,
+          "passed_k_rate": "unavailable_scoring_kernel_error: deflation_error: returns must not be constant: a constant series has no Sharpe ratio",
+          "passed_k_rate_delta": "unavailable_scoring_kernel_error: deflation_error: returns must not be constant: a constant series has no Sharpe ratio",
+          "policy": "flat"
+        },
+        {
+          "arena_deflated_sharpe_ci": {
+            "confidence": 0.95,
+            "hi": 1.0,
+            "lo": 0.83433214196566,
+            "n_boot": 2000,
+            "point": 0.999999862255373,
+            "width": 0.16566785803434003
+          },
+          "confidence_status": "scoring_kernel_reproduced",
+          "deflated_sharpe": 0.999999862255373,
+          "deflated_sharpe_ci": {
+            "confidence": 0.95,
+            "hi": 1.0,
+            "lo": 0.83433214196566,
+            "n_boot": 2000,
+            "point": 0.999999862255373,
+            "width": 0.16566785803434003
+          },
+          "deflated_sharpe_delta": -3.7191583146523044e-11,
+          "frozen": {
+            "deflated_sharpe": 0.9999998622925645,
+            "deflated_sharpe_ci": {
+              "confidence": 0.95,
+              "hi": 1.0,
+              "lo": 0.8343323510020905,
+              "n_boot": 2000,
+              "point": 0.9999998622925645,
+              "width": 0.16566764899790953
+            },
+            "passed_k_rate": 0.625
+          },
+          "mean_return": 0.00035573742621374584,
+          "passed_k_rate": 0.625,
+          "passed_k_rate_delta": 0.0,
+          "policy": "equal_weight_long"
+        },
+        {
+          "arena_deflated_sharpe_ci": {
+            "confidence": 0.95,
+            "hi": 0.0,
+            "lo": 0.0,
+            "n_boot": 2000,
+            "point": 0.0,
+            "width": 0.0
+          },
+          "confidence_status": "scoring_kernel_reproduced",
+          "deflated_sharpe": 0.0,
+          "deflated_sharpe_ci": {
+            "confidence": 0.95,
+            "hi": 0.0,
+            "lo": 0.0,
+            "n_boot": 2000,
+            "point": 0.0,
+            "width": 0.0
+          },
+          "deflated_sharpe_delta": 0.0,
+          "frozen": {
+            "deflated_sharpe": 0.0,
+            "deflated_sharpe_ci": {
+              "confidence": 0.95,
+              "hi": 0.0,
+              "lo": 0.0,
+              "n_boot": 2000,
+              "point": 0.0,
+              "width": 0.0
+            },
+            "passed_k_rate": 0.0
+          },
+          "mean_return": -0.0008687911302546309,
+          "passed_k_rate": 0.0,
+          "passed_k_rate_delta": 0.0,
+          "policy": "momentum"
+        },
+        {
+          "arena_deflated_sharpe_ci": {
+            "confidence": 0.95,
+            "hi": 0.9999999999335246,
+            "lo": 0.02637129765161019,
+            "n_boot": 2000,
+            "point": 0.9848997607371817,
+            "width": 0.9736287022819144
+          },
+          "confidence_status": "scoring_kernel_reproduced",
+          "deflated_sharpe": 0.9848997607371817,
+          "deflated_sharpe_ci": {
+            "confidence": 0.95,
+            "hi": 0.9999999999335246,
+            "lo": 0.02637129765161019,
+            "n_boot": 2000,
+            "point": 0.9848997607371817,
+            "width": 0.9736287022819144
+          },
+          "deflated_sharpe_delta": -7.930485177443103e-07,
+          "frozen": {
+            "deflated_sharpe": 0.9849005537856994,
+            "deflated_sharpe_ci": {
+              "confidence": 0.95,
+              "hi": 0.9999999999335922,
+              "lo": 0.02637103461615041,
+              "n_boot": 2000,
+              "point": 0.9849005537856994,
+              "width": 0.9736289653174418
+            },
+            "passed_k_rate": 0.4375
+          },
+          "mean_return": 0.00024021247588494615,
+          "passed_k_rate": 0.4375,
+          "passed_k_rate_delta": 0.0,
+          "policy": "min_variance"
+        },
+        {
+          "arena_deflated_sharpe_ci": {
+            "confidence": 0.95,
+            "hi": 3.3445468616832083e-16,
+            "lo": 0.0,
+            "n_boot": 2000,
+            "point": 0.0,
+            "width": 3.3445468616832083e-16
+          },
+          "confidence_status": "scoring_kernel_reproduced",
+          "deflated_sharpe": 0.0,
+          "deflated_sharpe_ci": {
+            "confidence": 0.95,
+            "hi": 3.3445468616832083e-16,
+            "lo": 0.0,
+            "n_boot": 2000,
+            "point": 0.0,
+            "width": 3.3445468616832083e-16
+          },
+          "deflated_sharpe_delta": 0.0,
+          "frozen": {
+            "deflated_sharpe": 0.0,
+            "deflated_sharpe_ci": {
+              "confidence": 0.95,
+              "hi": 3.3445468616832083e-16,
+              "lo": 0.0,
+              "n_boot": 2000,
+              "point": 0.0,
+              "width": 3.3445468616832083e-16
+            },
+            "passed_k_rate": 0.0625
+          },
+          "mean_return": -0.0010015178447088647,
+          "passed_k_rate": 0.0625,
+          "passed_k_rate_delta": 0.0,
+          "policy": "max_sharpe"
+        },
+        {
+          "arena_deflated_sharpe_ci": {
+            "confidence": 0.95,
+            "hi": 1.0,
+            "lo": 0.9797920667460531,
+            "n_boot": 2000,
+            "point": 0.9999999999258579,
+            "width": 0.020207933253946875
+          },
+          "confidence_status": "scoring_kernel_reproduced",
+          "deflated_sharpe": 0.9999999999258579,
+          "deflated_sharpe_ci": {
+            "confidence": 0.95,
+            "hi": 1.0,
+            "lo": 0.9797920667460531,
+            "n_boot": 2000,
+            "point": 0.9999999999258579,
+            "width": 0.020207933253946875
+          },
+          "deflated_sharpe_delta": -5.562217353372034e-14,
+          "frozen": {
+            "deflated_sharpe": 0.9999999999259135,
+            "deflated_sharpe_ci": {
+              "confidence": 0.95,
+              "hi": 1.0,
+              "lo": 0.9797929698323339,
+              "n_boot": 2000,
+              "point": 0.9999999999259135,
+              "width": 0.020207030167666118
+            },
+            "passed_k_rate": 0.75
+          },
+          "mean_return": 0.00033674146479307213,
+          "passed_k_rate": 0.75,
+          "passed_k_rate_delta": 0.0,
+          "policy": "kelly_vol_target"
+        }
+      ],
+      "unavailable_policies": [
+        "flat"
+      ]
+    },
+    "extreme": {
+      "best_passed_k_rate": 0.125,
+      "leaderboard_markdown": "| Rank | Policy | Deflated Sharpe | Bootstrap CI | pass^k rate | Mean return |\n|---|---|---|---|---|---|\n| 1 | min_variance | 0.0243 | 95% [0.0001, 0.3292] | 0.06 | 0.000585 |\n| 2 | equal_weight_long | 0.0234 | 95% [0.0001, 0.3076] | 0.06 | 0.000473 |\n| 3 | kelly_vol_target | 0.0029 | 95% [0.0000, 0.1109] | 0.12 | 0.000139 |\n| 4~ | momentum | 0.0000 | 95% [0.0000, 0.0049] | 0.06 | -0.000306 |\n| 5~ | max_sharpe | 0.0000 | 95% [0.0000, 0.0001] | 0.00 | -0.001578 |\n| - | flat | unavailable_scoring_kernel_error: deflation_error: returns must not be constant: a constant series has no Sharpe ratio | unavailable | unavailable_scoring_kernel_error: deflation_error: returns must not be constant: a constant series has no Sharpe ratio | 0.000000 |\n\n`=` exact tie in the ranked estimator (order within a tie is arbitrary); `~` separated only beyond the four displayed decimals. Neither is a claim of statistical separation; use `show_ci=True` and `pairwise_significance`.",
+      "n_policies_all_seeds_pass": 0,
+      "rows": [
+        {
+          "arena_deflated_sharpe_ci": null,
+          "confidence_status": "unavailable_scoring_kernel_error: deflation_error: returns must not be constant: a constant series has no Sharpe ratio",
+          "deflated_sharpe": "unavailable_scoring_kernel_error: deflation_error: returns must not be constant: a constant series has no Sharpe ratio",
+          "deflated_sharpe_ci": null,
+          "deflated_sharpe_delta": "unavailable_scoring_kernel_error: deflation_error: returns must not be constant: a constant series has no Sharpe ratio",
+          "frozen": {
+            "deflated_sharpe": 0.000686601376451601,
+            "deflated_sharpe_ci": {
+              "confidence": 0.95,
+              "hi": 0.000686601376451601,
+              "lo": 0.000686601376451601,
+              "n_boot": 2000,
+              "point": 0.000686601376451601,
+              "width": 0.0
+            },
+            "passed_k_rate": 0.0
+          },
+          "mean_return": 0.0,
+          "passed_k_rate": "unavailable_scoring_kernel_error: deflation_error: returns must not be constant: a constant series has no Sharpe ratio",
+          "passed_k_rate_delta": "unavailable_scoring_kernel_error: deflation_error: returns must not be constant: a constant series has no Sharpe ratio",
+          "policy": "flat"
+        },
+        {
+          "arena_deflated_sharpe_ci": {
+            "confidence": 0.95,
+            "hi": 0.30761352873239634,
+            "lo": 0.0001314085416439778,
+            "n_boot": 2000,
+            "point": 0.023372953280097197,
+            "width": 0.3074821201907524
+          },
+          "confidence_status": "scoring_kernel_reproduced",
+          "deflated_sharpe": 0.023372953280097197,
+          "deflated_sharpe_ci": {
+            "confidence": 0.95,
+            "hi": 0.30761352873239634,
+            "lo": 0.0001314085416439778,
+            "n_boot": 2000,
+            "point": 0.023372953280097197,
+            "width": 0.3074821201907524
+          },
+          "deflated_sharpe_delta": 8.639382537145579e-08,
+          "frozen": {
+            "deflated_sharpe": 0.023372866886271826,
+            "deflated_sharpe_ci": {
+              "confidence": 0.95,
+              "hi": 0.3076142654153913,
+              "lo": 0.00013140955382958674,
+              "n_boot": 2000,
+              "point": 0.023372866886271826,
+              "width": 0.3074828558615617
+            },
+            "passed_k_rate": 0.0625
+          },
+          "mean_return": 0.0004729804941509475,
+          "passed_k_rate": 0.0625,
+          "passed_k_rate_delta": 0.0,
+          "policy": "equal_weight_long"
+        },
+        {
+          "arena_deflated_sharpe_ci": {
+            "confidence": 0.95,
+            "hi": 0.004916262122105774,
+            "lo": 6.834036045400006e-10,
+            "n_boot": 2000,
+            "point": 1.0382519588847394e-05,
+            "width": 0.004916261438702169
+          },
+          "confidence_status": "scoring_kernel_reproduced",
+          "deflated_sharpe": 1.0382519588847394e-05,
+          "deflated_sharpe_ci": {
+            "confidence": 0.95,
+            "hi": 0.004916262122105774,
+            "lo": 6.834036045400006e-10,
+            "n_boot": 2000,
+            "point": 1.0382519588847394e-05,
+            "width": 0.004916261438702169
+          },
+          "deflated_sharpe_delta": -7.059047790747286e-11,
+          "frozen": {
+            "deflated_sharpe": 1.0382590179325302e-05,
+            "deflated_sharpe_ci": {
+              "confidence": 0.95,
+              "hi": 0.004916283669462837,
+              "lo": 6.83531593825837e-10,
+              "n_boot": 2000,
+              "point": 1.0382590179325302e-05,
+              "width": 0.004916282985931243
+            },
+            "passed_k_rate": 0.0625
+          },
+          "mean_return": -0.0003058307277867303,
+          "passed_k_rate": 0.0625,
+          "passed_k_rate_delta": 0.0,
+          "policy": "momentum"
+        },
+        {
+          "arena_deflated_sharpe_ci": {
+            "confidence": 0.95,
+            "hi": 0.32915255239709407,
+            "lo": 7.137753040727668e-05,
+            "n_boot": 2000,
+            "point": 0.02426308029440316,
+            "width": 0.3290811748666868
+          },
+          "confidence_status": "scoring_kernel_reproduced",
+          "deflated_sharpe": 0.02426308029440316,
+          "deflated_sharpe_ci": {
+            "confidence": 0.95,
+            "hi": 0.32915255239709407,
+            "lo": 7.137753040727668e-05,
+            "n_boot": 2000,
+            "point": 0.02426308029440316,
+            "width": 0.3290811748666868
+          },
+          "deflated_sharpe_delta": 2.1988089149438395e-07,
+          "frozen": {
+            "deflated_sharpe": 0.024262860413511667,
+            "deflated_sharpe_ci": {
+              "confidence": 0.95,
+              "hi": 0.32915292144285574,
+              "lo": 7.138018462923278e-05,
+              "n_boot": 2000,
+              "point": 0.024262860413511667,
+              "width": 0.32908154125822653
+            },
+            "passed_k_rate": 0.0625
+          },
+          "mean_return": 0.0005852614018752274,
+          "passed_k_rate": 0.0625,
+          "passed_k_rate_delta": 0.0,
+          "policy": "min_variance"
+        },
+        {
+          "arena_deflated_sharpe_ci": {
+            "confidence": 0.95,
+            "hi": 0.00010381011216880851,
+            "lo": 3.706891738008977e-12,
+            "n_boot": 2000,
+            "point": 9.784275817326105e-08,
+            "width": 0.00010381010846191677
+          },
+          "confidence_status": "scoring_kernel_reproduced",
+          "deflated_sharpe": 9.784275817326105e-08,
+          "deflated_sharpe_ci": {
+            "confidence": 0.95,
+            "hi": 0.00010381011216880851,
+            "lo": 3.706891738008977e-12,
+            "n_boot": 2000,
+            "point": 9.784275817326105e-08,
+            "width": 0.00010381010846191677
+          },
+          "deflated_sharpe_delta": -4.469535852535955e-12,
+          "frozen": {
+            "deflated_sharpe": 9.784722770911358e-08,
+            "deflated_sharpe_ci": {
+              "confidence": 0.95,
+              "hi": 0.00010380990712516673,
+              "lo": 3.7079908588033564e-12,
+              "n_boot": 2000,
+              "point": 9.784722770911358e-08,
+              "width": 0.00010380990341717586
+            },
+            "passed_k_rate": 0.0
+          },
+          "mean_return": -0.0015783676547257062,
+          "passed_k_rate": 0.0,
+          "passed_k_rate_delta": 0.0,
+          "policy": "max_sharpe"
+        },
+        {
+          "arena_deflated_sharpe_ci": {
+            "confidence": 0.95,
+            "hi": 0.11089636711944646,
+            "lo": 1.9978308393689416e-06,
+            "n_boot": 2000,
+            "point": 0.0028753258548237515,
+            "width": 0.11089436928860709
+          },
+          "confidence_status": "scoring_kernel_reproduced",
+          "deflated_sharpe": 0.0028753258548237515,
+          "deflated_sharpe_ci": {
+            "confidence": 0.95,
+            "hi": 0.11089636711944646,
+            "lo": 1.9978308393689416e-06,
+            "n_boot": 2000,
+            "point": 0.0028753258548237515,
+            "width": 0.11089436928860709
+          },
+          "deflated_sharpe_delta": 2.1267218985876468e-08,
+          "frozen": {
+            "deflated_sharpe": 0.0028753045876047656,
+            "deflated_sharpe_ci": {
+              "confidence": 0.95,
+              "hi": 0.11089696042253971,
+              "lo": 1.9979969484357206e-06,
+              "n_boot": 2000,
+              "point": 0.0028753045876047656,
+              "width": 0.11089496242559128
+            },
+            "passed_k_rate": 0.125
+          },
+          "mean_return": 0.00013935044345451754,
+          "passed_k_rate": 0.125,
+          "passed_k_rate_delta": 0.0,
+          "policy": "kelly_vol_target"
+        }
+      ],
+      "unavailable_policies": [
+        "flat"
+      ]
+    },
+    "hard": {
+      "best_passed_k_rate": 0.3125,
+      "leaderboard_markdown": "| Rank | Policy | Deflated Sharpe | Bootstrap CI | pass^k rate | Mean return |\n|---|---|---|---|---|---|\n| 1 | equal_weight_long | 0.1114 | 95% [0.0000, 0.9513] | 0.31 | 0.000243 |\n| 2 | kelly_vol_target | 0.0277 | 95% [0.0000, 0.8175] | 0.31 | 0.000118 |\n| 3 | min_variance | 0.0024 | 95% [0.0000, 0.4635] | 0.19 | 0.000051 |\n| 4~ | max_sharpe | 0.0000 | 95% [0.0000, 0.0000] | 0.00 | -0.000928 |\n| 5~ | momentum | 0.0000 | 95% [0.0000, 0.0000] | 0.00 | -0.000844 |\n| - | flat | unavailable_scoring_kernel_error: deflation_error: returns must not be constant: a constant series has no Sharpe ratio | unavailable | unavailable_scoring_kernel_error: deflation_error: returns must not be constant: a constant series has no Sharpe ratio | 0.000000 |\n\n`=` exact tie in the ranked estimator (order within a tie is arbitrary); `~` separated only beyond the four displayed decimals. Neither is a claim of statistical separation; use `show_ci=True` and `pairwise_significance`.",
+      "n_policies_all_seeds_pass": 0,
+      "rows": [
+        {
+          "arena_deflated_sharpe_ci": null,
+          "confidence_status": "unavailable_scoring_kernel_error: deflation_error: returns must not be constant: a constant series has no Sharpe ratio",
+          "deflated_sharpe": "unavailable_scoring_kernel_error: deflation_error: returns must not be constant: a constant series has no Sharpe ratio",
+          "deflated_sharpe_ci": null,
+          "deflated_sharpe_delta": "unavailable_scoring_kernel_error: deflation_error: returns must not be constant: a constant series has no Sharpe ratio",
+          "frozen": {
+            "deflated_sharpe": 0.000686601376451601,
+            "deflated_sharpe_ci": {
+              "confidence": 0.95,
+              "hi": 0.000686601376451601,
+              "lo": 0.000686601376451601,
+              "n_boot": 2000,
+              "point": 0.000686601376451601,
+              "width": 0.0
+            },
+            "passed_k_rate": 0.0
+          },
+          "mean_return": 0.0,
+          "passed_k_rate": "unavailable_scoring_kernel_error: deflation_error: returns must not be constant: a constant series has no Sharpe ratio",
+          "passed_k_rate_delta": "unavailable_scoring_kernel_error: deflation_error: returns must not be constant: a constant series has no Sharpe ratio",
+          "policy": "flat"
+        },
+        {
+          "arena_deflated_sharpe_ci": {
+            "confidence": 0.95,
+            "hi": 0.9512691050604621,
+            "lo": 2.5209248638859158e-05,
+            "n_boot": 2000,
+            "point": 0.11138658706018584,
+            "width": 0.9512438958118232
+          },
+          "confidence_status": "scoring_kernel_reproduced",
+          "deflated_sharpe": 0.11138658706018584,
+          "deflated_sharpe_ci": {
+            "confidence": 0.95,
+            "hi": 0.9512691050604621,
+            "lo": 2.5209248638859158e-05,
+            "n_boot": 2000,
+            "point": 0.11138658706018584,
+            "width": 0.9512438958118232
+          },
+          "deflated_sharpe_delta": 5.992017563238861e-07,
+          "frozen": {
+            "deflated_sharpe": 0.11138598785842951,
+            "deflated_sharpe_ci": {
+              "confidence": 0.95,
+              "hi": 0.9512691062562165,
+              "lo": 2.5209794706167195e-05,
+              "n_boot": 2000,
+              "point": 0.11138598785842951,
+              "width": 0.9512438964615103
+            },
+            "passed_k_rate": 0.3125
+          },
+          "mean_return": 0.00024282440073386362,
+          "passed_k_rate": 0.3125,
+          "passed_k_rate_delta": 0.0,
+          "policy": "equal_weight_long"
+        },
+        {
+          "arena_deflated_sharpe_ci": {
+            "confidence": 0.95,
+            "hi": 0.0,
+            "lo": 0.0,
+            "n_boot": 2000,
+            "point": 0.0,
+            "width": 0.0
+          },
+          "confidence_status": "scoring_kernel_reproduced",
+          "deflated_sharpe": 0.0,
+          "deflated_sharpe_ci": {
+            "confidence": 0.95,
+            "hi": 0.0,
+            "lo": 0.0,
+            "n_boot": 2000,
+            "point": 0.0,
+            "width": 0.0
+          },
+          "deflated_sharpe_delta": 0.0,
+          "frozen": {
+            "deflated_sharpe": 0.0,
+            "deflated_sharpe_ci": {
+              "confidence": 0.95,
+              "hi": 0.0,
+              "lo": 0.0,
+              "n_boot": 2000,
+              "point": 0.0,
+              "width": 0.0
+            },
+            "passed_k_rate": 0.0
+          },
+          "mean_return": -0.0008436013174086953,
+          "passed_k_rate": 0.0,
+          "passed_k_rate_delta": 0.0,
+          "policy": "momentum"
+        },
+        {
+          "arena_deflated_sharpe_ci": {
+            "confidence": 0.95,
+            "hi": 0.46346366104760667,
+            "lo": 2.9388763922444383e-09,
+            "n_boot": 2000,
+            "point": 0.002369524480341889,
+            "width": 0.46346365810873025
+          },
+          "confidence_status": "scoring_kernel_reproduced",
+          "deflated_sharpe": 0.002369524480341889,
+          "deflated_sharpe_ci": {
+            "confidence": 0.95,
+            "hi": 0.46346366104760667,
+            "lo": 2.9388763922444383e-09,
+            "n_boot": 2000,
+            "point": 0.002369524480341889,
+            "width": 0.46346365810873025
+          },
+          "deflated_sharpe_delta": 2.7962449244967047e-08,
+          "frozen": {
+            "deflated_sharpe": 0.002369496517892644,
+            "deflated_sharpe_ci": {
+              "confidence": 0.95,
+              "hi": 0.4634634594284803,
+              "lo": 2.9400442566607232e-09,
+              "n_boot": 2000,
+              "point": 0.002369496517892644,
+              "width": 0.463463456488436
+            },
+            "passed_k_rate": 0.1875
+          },
+          "mean_return": 5.062849984026578e-05,
+          "passed_k_rate": 0.1875,
+          "passed_k_rate_delta": 0.0,
+          "policy": "min_variance"
+        },
+        {
+          "arena_deflated_sharpe_ci": {
+            "confidence": 0.95,
+            "hi": 1.1796998485871785e-05,
+            "lo": 0.0,
+            "n_boot": 2000,
+            "point": 1.81265558119037e-11,
+            "width": 1.1796998485871785e-05
+          },
+          "confidence_status": "scoring_kernel_reproduced",
+          "deflated_sharpe": 1.81265558119037e-11,
+          "deflated_sharpe_ci": {
+            "confidence": 0.95,
+            "hi": 1.1796998485871785e-05,
+            "lo": 0.0,
+            "n_boot": 2000,
+            "point": 1.81265558119037e-11,
+            "width": 1.1796998485871785e-05
+          },
+          "deflated_sharpe_delta": 7.66053886991358e-15,
+          "frozen": {
+            "deflated_sharpe": 1.8118895273033786e-11,
+            "deflated_sharpe_ci": {
+              "confidence": 0.95,
+              "hi": 1.1796121926335717e-05,
+              "lo": 0.0,
+              "n_boot": 2000,
+              "point": 1.8118895273033786e-11,
+              "width": 1.1796121926335717e-05
+            },
+            "passed_k_rate": 0.0
+          },
+          "mean_return": -0.0009282175972647795,
+          "passed_k_rate": 0.0,
+          "passed_k_rate_delta": 0.0,
+          "policy": "max_sharpe"
+        },
+        {
+          "arena_deflated_sharpe_ci": {
+            "confidence": 0.95,
+            "hi": 0.8174936816656827,
+            "lo": 1.6367807472120188e-06,
+            "n_boot": 2000,
+            "point": 0.027696750528723002,
+            "width": 0.8174920448849355
+          },
+          "confidence_status": "scoring_kernel_reproduced",
+          "deflated_sharpe": 0.027696750528723002,
+          "deflated_sharpe_ci": {
+            "confidence": 0.95,
+            "hi": 0.8174936816656827,
+            "lo": 1.6367807472120188e-06,
+            "n_boot": 2000,
+            "point": 0.027696750528723002,
+            "width": 0.8174920448849355
+          },
+          "deflated_sharpe_delta": 3.4044735935934156e-07,
+          "frozen": {
+            "deflated_sharpe": 0.027696410081363643,
+            "deflated_sharpe_ci": {
+              "confidence": 0.95,
+              "hi": 0.8174945593180574,
+              "lo": 1.6369952487299555e-06,
+              "n_boot": 2000,
+              "point": 0.027696410081363643,
+              "width": 0.8174929223228087
+            },
+            "passed_k_rate": 0.3125
+          },
+          "mean_return": 0.00011797959279202692,
+          "passed_k_rate": 0.3125,
+          "passed_k_rate_delta": 0.0,
+          "policy": "kelly_vol_target"
+        }
+      ],
+      "unavailable_policies": [
+        "flat"
+      ]
+    }
+  },
+  "worked_instance": {
+    "agreement": "four displayed decimals; the bits differ because the moments changed",
+    "deflated_sharpe": 0.11138658706018584,
+    "delta_from_frozen_f1_value": 5.992017563238861e-07,
+    "frozen_f1_value": 0.11138598785842951,
+    "printed": "0.1114",
+    "series": "f3-generalization.json per_seed_returns.hard.train",
+    "series_equals_f1_hard_equal_weight_long": true,
+    "statement": "rescoring the committed F3 Hard train series at six trials reproduces the printed 0.1114",
+    "trials": 6
+  }
+}

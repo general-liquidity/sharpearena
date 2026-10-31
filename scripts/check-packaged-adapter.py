@@ -65,6 +65,63 @@ def assert_import_is_the_installed_package(module) -> None:
         raise SystemExit(f"imported {location}, which is not an installed distribution")
 
 
+def check_binary_step_path(scalar_type, vector_type, np) -> None:
+    """The installed extension's array path against its JSON path, byte for byte."""
+    json_env, array_env = (scalar_type(n_symbols=3, n_days=40, seed=1) for _ in range(2))
+    json_env.reset(seed=1)
+    array_env.reset(seed=1)
+    action = np.full(json_env.action_space.shape, 0.25, dtype=np.float32)
+    for _ in range(40):
+        expected = json_env.step(action)
+        got = array_env.step_array(action)
+        if expected[0]["closes"].tobytes() != got[0]["closes"].tobytes():
+            raise SystemExit("step_array closes differ from the JSON path")
+        if expected[1:4] != got[1:4]:
+            raise SystemExit(f"step_array differs from the JSON path: {expected[1:4]}, {got[1:4]}")
+    if json_env.clone_state() != array_env.clone_state():
+        raise SystemExit("step_array left the engine in a different state")
+
+    json_batch, array_batch = (
+        vector_type(seeds=[1, 2], n_symbols=3, n_days=4, autoreset_mode="same_step")
+        for _ in range(2)
+    )
+    json_batch.reset()
+    array_batch.reset()
+    actions = np.full((2, 3), 0.25, dtype=np.float32)
+    for _ in range(9):
+        expected = json_batch.step(actions)
+        got = array_batch.step_array(actions)
+        if (
+            expected[0]["positions"].tobytes() != got[0]["positions"].tobytes()
+            or expected[1].tobytes() != got[1].tobytes()
+            or expected[3].tobytes() != got[3].tobytes()
+        ):
+            raise SystemExit("step_array batch differs from the JSON path")
+
+
+def check_fresh_scenarios(vector_type, np) -> None:
+    """The installed extension draws the frozen stream and keeps it in the train band."""
+    from sharpearena._seed_bands import EVAL_SEED_BASE
+
+    vector = vector_type(
+        seeds=[0],
+        n_symbols=2,
+        n_days=1,
+        autoreset_mode="same_step",
+        autoreset_scenarios="fresh_v1",
+    )
+    vector.reset()
+    action = np.zeros((1, 2), dtype=np.float32)
+    drawn = [vector.step_array(action)[4]["drawn_scenario_seed"][0] for _ in range(4)]
+    if drawn != [579153, 783213, 915425, 650791]:
+        raise SystemExit(f"fresh_v1 drew an unexpected stream: {drawn}")
+    try:
+        vector_type(seeds=[EVAL_SEED_BASE], autoreset_scenarios="fresh_v1")
+    except ValueError:
+        return
+    raise SystemExit("fresh_v1 accepted a held-out lane")
+
+
 def main() -> int:
     assert_no_optional_dependencies()
 
@@ -112,6 +169,9 @@ def main() -> int:
         raise SystemExit("a 40-bar lane ended on its first step")
     if infos["nav"].shape != (3,):
         raise SystemExit(f"unexpected nav shape: {infos['nav'].shape}")
+
+    check_binary_step_path(SharpeArenaEnv, SharpeArenaVectorEnv, np)
+    check_fresh_scenarios(SharpeArenaVectorEnv, np)
 
     print(
         f"packaged adapter ok: scalar and vector rollouts ran with no optional "

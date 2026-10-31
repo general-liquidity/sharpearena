@@ -32,3 +32,6 @@ __pycache__/
 
 # Claude Code agent worktrees
 .claude/worktrees/
+
+# Study run outputs; a coordinator step decides what enters paper/evidence
+studies/*/runs/

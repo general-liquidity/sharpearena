@@ -15,11 +15,11 @@ import math
 import numpy as np
 import pytest
 
-from sharpearena.sharpearena_py import TradingEnv, VecTradingEnv
+from sharpearena.sharpearena_py import InvalidArgument, TradingEnv, VecTradingEnv
 from sharpearena.vector import SharpeArenaVectorEnv
 
 
-@pytest.mark.parametrize("mode", ["calm", "hard", "extreme", "cointegrated_pairs", "regime_shift"])
+@pytest.mark.parametrize("mode", ["calm", "hard", "extreme", "cointegrated_pairs", "regime_shift", "martingale_v1"])
 def test_native_lane_config_readbacks_match_the_constructed_scalar_lanes(mode):
     seeds = [13, 29]
     vector = VecTradingEnv(seeds=seeds, n_symbols=3, n_days=40,
@@ -255,5 +255,5 @@ def test_disabled_never_resets():
 
 
 def test_unknown_autoreset_mode_rejected():
-    with pytest.raises(Exception):
+    with pytest.raises(InvalidArgument, match='unknown autoreset_mode "bogus"'):
         SharpeArenaVectorEnv(seeds=[1], n_symbols=2, n_days=20, autoreset_mode="bogus")
