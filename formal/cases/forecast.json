@@ -1,0 +1,42 @@
+{
+  "schema_version": "sharpe.formal-cases.v1",
+  "description": "Submission classification, effective-revision selection, claim-to-contract binding and the fixed-point Brier numerator. Timestamps are integers. In effective cases every submission is against one contract with the window given, a submission's ordinal is the number of earlier submissions for its claim, and effective maps each claim to the ordinal of its effective revision, or null.",
+  "classify": [
+    {"opens_at": 10, "deadline": 20, "submitted_at": 9, "status": "rejected"},
+    {"opens_at": 10, "deadline": 20, "submitted_at": 10, "status": "eligible"},
+    {"opens_at": 10, "deadline": 20, "submitted_at": 15, "status": "eligible"},
+    {"opens_at": 10, "deadline": 20, "submitted_at": 20, "status": "eligible"},
+    {"opens_at": 10, "deadline": 20, "submitted_at": 21, "status": "late"},
+    {"opens_at": 10, "deadline": 10, "submitted_at": 10, "status": "eligible"},
+    {"opens_at": 10, "deadline": 10, "submitted_at": 11, "status": "late"}
+  ],
+  "effective": [
+    {"name": "late revision after an eligible one", "opens_at": 10, "deadline": 20,
+     "history": [{"claim": "x", "submitted_at": 12}, {"claim": "x", "submitted_at": 25}],
+     "effective": {"x": 0}},
+    {"name": "last eligible revision wins", "opens_at": 10, "deadline": 20,
+     "history": [{"claim": "x", "submitted_at": 12}, {"claim": "x", "submitted_at": 18}, {"claim": "x", "submitted_at": 14}],
+     "effective": {"x": 2}},
+    {"name": "pre-open then eligible", "opens_at": 10, "deadline": 20,
+     "history": [{"claim": "x", "submitted_at": 5}, {"claim": "x", "submitted_at": 11}],
+     "effective": {"x": 1}},
+    {"name": "only ineligible attempts", "opens_at": 10, "deadline": 20,
+     "history": [{"claim": "x", "submitted_at": 5}, {"claim": "x", "submitted_at": 30}],
+     "effective": {"x": null}},
+    {"name": "two claims interleaved", "opens_at": 10, "deadline": 20,
+     "history": [{"claim": "x", "submitted_at": 12}, {"claim": "y", "submitted_at": 13}, {"claim": "x", "submitted_at": 22}, {"claim": "y", "submitted_at": 19}, {"claim": "x", "submitted_at": 20}],
+     "effective": {"x": 2, "y": 1}}
+  ],
+  "rebind": [
+    {"prior": "contract-a", "candidate": "contract-a", "accepted": true},
+    {"prior": "contract-a", "candidate": "contract-b", "accepted": false}
+  ],
+  "brier": [
+    {"probability": 0, "truth": 0, "scale": 1000, "numerator": 0},
+    {"probability": 1000, "truth": 1000, "scale": 1000, "numerator": 0},
+    {"probability": 500, "truth": 500, "scale": 1000, "numerator": 250000000},
+    {"probability": 900, "truth": 200, "scale": 1000, "numerator": 650000000},
+    {"probability": 100, "truth": 800, "scale": 1000, "numerator": 650000000},
+    {"probability": 3, "truth": 7, "scale": 10, "numerator": 370}
+  ]
+}
