@@ -34,7 +34,12 @@ byte-identical.
 Edit the JSONL row, then run `python scripts/make-evidence-register.py` to
 rewrite this file and `python scripts/check-evidence-register.py` to validate
 both. A disposition that changes gets a new `status_history` entry with its own
-rationale; repeating the previous entry's text fails the check. An artifact's
+rationale; repeating the previous entry's text fails the check. Every entry
+names its recorder in `recorded_by` (`human` or `model` with an `id`, or
+`unknown` when the history does not say) and states in `independent` whether
+the recorder was someone other than the author of the change under review. An
+unknown recorder is never independent, and the checker prints how many entries
+have one. An artifact's
 `sha256` is over the file's bytes, and the checker prints the digest it computed
 when a recorded one does not match.
 
@@ -146,10 +151,10 @@ The headline claims whose present applicability is not established, worst first.
 
 **Status history.**
 
-| Date | Disposition | Rationale |
-|---|---|---|
-| 2026-09-23 | historical-only | Initial entry: The artifact validly records the run and no later change moves its numbers, but nothing re-establishes it against the current tree: the producer is off the golden-hash path and the artifact was not rerun. |
-| 2026-10-31 | historical-only | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
+| Date | Disposition | Recorded by | Independent | Rationale |
+|---|---|---|---|---|
+| 2026-09-23 | historical-only | unknown | no | Initial entry: The artifact validly records the run and no later change moves its numbers, but nothing re-establishes it against the current tree: the producer is off the golden-hash path and the artifact was not rerun. |
+| 2026-10-31 | historical-only | unknown | no | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
 
 ### `SA-calm-calibration`
 
@@ -186,10 +191,10 @@ The headline claims whose present applicability is not established, worst first.
 
 **Status history.**
 
-| Date | Disposition | Rationale |
-|---|---|---|
-| 2026-09-23 | historical-only | Initial entry: The artifact validly records the sweep and its negative outcome; nothing re-establishes it against the current tree. |
-| 2026-10-31 | historical-only | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
+| Date | Disposition | Recorded by | Independent | Rationale |
+|---|---|---|---|---|
+| 2026-09-23 | historical-only | unknown | no | Initial entry: The artifact validly records the sweep and its negative outcome; nothing re-establishes it against the current tree. |
+| 2026-10-31 | historical-only | unknown | no | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
 
 ### `SA-tab-f5`
 
@@ -228,10 +233,10 @@ The headline claims whose present applicability is not established, worst first.
 
 **Status history.**
 
-| Date | Disposition | Rationale |
-|---|---|---|
-| 2026-09-23 | historical-only | Initial entry: The artifact validly records the run; the later changes add fields and tighten configuration validation without being shown to move the frozen values, and no re-verification is recorded. |
-| 2026-10-31 | historical-only | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
+| Date | Disposition | Recorded by | Independent | Rationale |
+|---|---|---|---|---|
+| 2026-09-23 | historical-only | unknown | no | Initial entry: The artifact validly records the run; the later changes add fields and tighten configuration validation without being shown to move the frozen values, and no re-verification is recorded. |
+| 2026-10-31 | historical-only | unknown | no | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
 
 ### `SA-f5-concave`
 
@@ -267,10 +272,10 @@ The headline claims whose present applicability is not established, worst first.
 
 **Status history.**
 
-| Date | Disposition | Rationale |
-|---|---|---|
-| 2026-09-23 | historical-only | Initial entry: The artifact validly records the probe and the manuscript already scopes it as a stress setting rather than an estimate. |
-| 2026-10-31 | historical-only | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
+| Date | Disposition | Recorded by | Independent | Rationale |
+|---|---|---|---|---|
+| 2026-09-23 | historical-only | unknown | no | Initial entry: The artifact validly records the probe and the manuscript already scopes it as a stress setting rather than an estimate. |
+| 2026-10-31 | historical-only | unknown | no | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
 
 ### `SA-f5-positive-control`
 
@@ -306,10 +311,10 @@ The headline claims whose present applicability is not established, worst first.
 
 **Status history.**
 
-| Date | Disposition | Rationale |
-|---|---|---|
-| 2026-09-23 | still-applicable | Initial entry: A documented recomputation exists in the review record, which is a comparison rather than an inference; the quantities do not pass through the scorer that later changed. |
-| 2026-10-31 | still-applicable | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
+| Date | Disposition | Recorded by | Independent | Rationale |
+|---|---|---|---|---|
+| 2026-09-23 | still-applicable | unknown | no | Initial entry: A documented recomputation exists in the review record, which is a comparison rather than an inference; the quantities do not pass through the scorer that later changed. |
+| 2026-10-31 | still-applicable | unknown | no | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
 
 ### `SA-f5-extended-sweeps`
 
@@ -345,10 +350,10 @@ The headline claims whose present applicability is not established, worst first.
 
 **Status history.**
 
-| Date | Disposition | Rationale |
-|---|---|---|
-| 2026-09-23 | historical-only | Initial entry: The artifact validly records the sweep; no documented recomputation covers this leg, unlike the positive control. |
-| 2026-10-31 | historical-only | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
+| Date | Disposition | Recorded by | Independent | Rationale |
+|---|---|---|---|---|
+| 2026-09-23 | historical-only | unknown | no | Initial entry: The artifact validly records the sweep; no documented recomputation covers this leg, unlike the positive control. |
+| 2026-10-31 | historical-only | unknown | no | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
 
 ### `SA-tab-f6`
 
@@ -387,10 +392,10 @@ The headline claims whose present applicability is not established, worst first.
 
 **Status history.**
 
-| Date | Disposition | Rationale |
-|---|---|---|
-| 2026-09-23 | historical-only | Initial entry: The artifact validly records the run; the repairs named change how parity is reported rather than establishing that the frozen numbers still reproduce. |
-| 2026-10-31 | historical-only | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
+| Date | Disposition | Recorded by | Independent | Rationale |
+|---|---|---|---|---|
+| 2026-09-23 | historical-only | unknown | no | Initial entry: The artifact validly records the run; the repairs named change how parity is reported rather than establishing that the frozen numbers still reproduce. |
+| 2026-10-31 | historical-only | unknown | no | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
 
 ### `SA-f6-endogenous`
 
@@ -427,10 +432,10 @@ The headline claims whose present applicability is not established, worst first.
 
 **Status history.**
 
-| Date | Disposition | Rationale |
-|---|---|---|
-| 2026-09-23 | historical-only | Initial entry: The artifact validly records the arm; the one cross-check that would strengthen it names no test that could be located. |
-| 2026-10-31 | historical-only | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
+| Date | Disposition | Recorded by | Independent | Rationale |
+|---|---|---|---|---|
+| 2026-09-23 | historical-only | unknown | no | Initial entry: The artifact validly records the arm; the one cross-check that would strengthen it names no test that could be located. |
+| 2026-10-31 | historical-only | unknown | no | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
 
 ### `SA-predictability`
 
@@ -469,10 +474,10 @@ The headline claims whose present applicability is not established, worst first.
 
 **Status history.**
 
-| Date | Disposition | Rationale |
-|---|---|---|
-| 2026-09-23 | needs-new-experiment | Initial entry: The deflated-Sharpe leg cannot be rescored from the artifact, which stores scores rather than return series, so recomputing it means re-running the producer. The producer is deterministic in its seeds, which makes the run cheap, but it is a new execution rather than a correction. P00-E maps evidence and authorizes no rerun. The follow-up names the ticket that would own one. |
-| 2026-10-31 | needs-new-experiment | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
+| Date | Disposition | Recorded by | Independent | Rationale |
+|---|---|---|---|---|
+| 2026-09-23 | needs-new-experiment | unknown | no | Initial entry: The deflated-Sharpe leg cannot be rescored from the artifact, which stores scores rather than return series, so recomputing it means re-running the producer. The producer is deterministic in its seeds, which makes the run cheap, but it is a new execution rather than a correction. P00-E maps evidence and authorizes no rerun. The follow-up names the ticket that would own one. |
+| 2026-10-31 | needs-new-experiment | unknown | no | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
 
 ### `SA-seed-search`
 
@@ -505,10 +510,10 @@ The headline claims whose present applicability is not established, worst first.
 
 **Status history.**
 
-| Date | Disposition | Rationale |
-|---|---|---|
-| 2026-09-23 | historical-only | Initial entry: The artifact validly records the scan; the timing leg is bound to an unrecorded machine, which the missing-provenance field states rather than the disposition hiding. |
-| 2026-10-31 | historical-only | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
+| Date | Disposition | Recorded by | Independent | Rationale |
+|---|---|---|---|---|
+| 2026-09-23 | historical-only | unknown | no | Initial entry: The artifact validly records the scan; the timing leg is bound to an unrecorded machine, which the missing-provenance field states rather than the disposition hiding. |
+| 2026-10-31 | historical-only | unknown | no | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
 
 ### `SA-sealed-seeds`
 
@@ -544,10 +549,10 @@ The headline claims whose present applicability is not established, worst first.
 
 **Status history.**
 
-| Date | Disposition | Rationale |
-|---|---|---|
-| 2026-09-23 | needs-new-experiment | Initial entry: The measurement instrument changed, not just the scorer, and the artifact records the old check's outcome rather than inputs a new check could be run over. The producer is deterministic, so the new run is cheap, but it measures something the frozen record did not. P00-E maps evidence and authorizes no rerun. The follow-up names the ticket that would own one. |
-| 2026-10-31 | needs-new-experiment | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
+| Date | Disposition | Recorded by | Independent | Rationale |
+|---|---|---|---|---|
+| 2026-09-23 | needs-new-experiment | unknown | no | Initial entry: The measurement instrument changed, not just the scorer, and the artifact records the old check's outcome rather than inputs a new check could be run over. The producer is deterministic, so the new run is cheap, but it measures something the frozen record did not. P00-E maps evidence and authorizes no rerun. The follow-up names the ticket that would own one. |
+| 2026-10-31 | needs-new-experiment | unknown | no | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
 
 ### `SA-tab-f1`
 
@@ -589,10 +594,10 @@ The headline claims whose present applicability is not established, worst first.
 
 **Status history.**
 
-| Date | Disposition | Rationale |
-|---|---|---|
-| 2026-09-23 | needs-rescore | Initial entry: The artifact serializes per_seed_returns, so the deflated Sharpes and their intervals are recomputable under the corrected estimator without re-running the environment. Sufficiency is evidenced by the manuscript's own worked instance, which rescores the committed F3 return series at six trials and reproduces 0.1114 exactly. Any rescore is separately versioned and does not overwrite the frozen artifact. P00-E maps evidence and authorizes no rerun. The follow-up names the ticket that would own one. |
-| 2026-10-31 | still-applicable | Rescored from the committed per_seed_returns under SharpeBench 0.28.0. Moves to still-applicable: scored values change by at most 7.9e-7 and the flat rows are typed unavailable, which the manuscript already states they would be. |
+| Date | Disposition | Recorded by | Independent | Rationale |
+|---|---|---|---|---|
+| 2026-09-23 | needs-rescore | unknown | no | Initial entry: The artifact serializes per_seed_returns, so the deflated Sharpes and their intervals are recomputable under the corrected estimator without re-running the environment. Sufficiency is evidenced by the manuscript's own worked instance, which rescores the committed F3 return series at six trials and reproduces 0.1114 exactly. Any rescore is separately versioned and does not overwrite the frozen artifact. P00-E maps evidence and authorizes no rerun. The follow-up names the ticket that would own one. |
+| 2026-10-31 | still-applicable | unknown | no | Rescored from the committed per_seed_returns under SharpeBench 0.28.0. Moves to still-applicable: scored values change by at most 7.9e-7 and the flat rows are typed unavailable, which the manuscript already states they would be. |
 
 ### `SA-tab-witness`
 
@@ -631,10 +636,10 @@ The headline claims whose present applicability is not established, worst first.
 
 **Status history.**
 
-| Date | Disposition | Rationale |
-|---|---|---|
-| 2026-09-23 | needs-new-experiment | Initial entry: Missing inputs prevent a rescore: the artifact stores crossings, not the trajectories behind them, so establishing the crossing under the corrected gates means re-running the bisection. The producer is deterministic in its seeds. P00-E maps evidence and authorizes no rerun. The follow-up names the ticket that would own one. |
-| 2026-10-31 | needs-new-experiment | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
+| Date | Disposition | Recorded by | Independent | Rationale |
+|---|---|---|---|---|
+| 2026-09-23 | needs-new-experiment | unknown | no | Initial entry: Missing inputs prevent a rescore: the artifact stores crossings, not the trajectories behind them, so establishing the crossing under the corrected gates means re-running the bisection. The producer is deterministic in its seeds. P00-E maps evidence and authorizes no rerun. The follow-up names the ticket that would own one. |
+| 2026-10-31 | needs-new-experiment | unknown | no | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
 
 ### `SA-f2-regret`
 
@@ -670,10 +675,10 @@ The headline claims whose present applicability is not established, worst first.
 
 **Status history.**
 
-| Date | Disposition | Rationale |
-|---|---|---|
-| 2026-09-23 | still-applicable | Initial entry: This is the one artifact in the manuscript with a recorded comparison against a later guard that reproduces the frozen numbers exactly, which is a check rather than an inference. |
-| 2026-10-31 | still-applicable | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
+| Date | Disposition | Recorded by | Independent | Rationale |
+|---|---|---|---|---|
+| 2026-09-23 | still-applicable | unknown | no | Initial entry: This is the one artifact in the manuscript with a recorded comparison against a later guard that reproduces the frozen numbers exactly, which is a check rather than an inference. |
+| 2026-10-31 | still-applicable | unknown | no | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
 
 ### `SA-tab-f3`
 
@@ -712,10 +717,10 @@ The headline claims whose present applicability is not established, worst first.
 
 **Status history.**
 
-| Date | Disposition | Rationale |
-|---|---|---|
-| 2026-09-23 | needs-rescore | Initial entry: Recorded inputs suffice: per_seed_returns is committed and the manuscript records a worked rescore of that series, so a corrected-estimator result is a recomputation rather than a new run. P00-E maps evidence and authorizes no rerun. The follow-up names the ticket that would own one. |
-| 2026-10-31 | still-applicable | Rescored from the committed per_seed_returns under SharpeBench 0.28.0. Moves to still-applicable: every printed cell is unchanged and the worked instance reproduces 0.1114. |
+| Date | Disposition | Recorded by | Independent | Rationale |
+|---|---|---|---|---|
+| 2026-09-23 | needs-rescore | unknown | no | Initial entry: Recorded inputs suffice: per_seed_returns is committed and the manuscript records a worked rescore of that series, so a corrected-estimator result is a recomputation rather than a new run. P00-E maps evidence and authorizes no rerun. The follow-up names the ticket that would own one. |
+| 2026-10-31 | still-applicable | unknown | no | Rescored from the committed per_seed_returns under SharpeBench 0.28.0. Moves to still-applicable: every printed cell is unchanged and the worked instance reproduces 0.1114. |
 
 ### `SA-tab-f7`
 
@@ -751,10 +756,10 @@ The headline claims whose present applicability is not established, worst first.
 
 **Status history.**
 
-| Date | Disposition | Rationale |
-|---|---|---|
-| 2026-09-23 | still-applicable | Initial entry: The documented comparison is the recorded regeneration for 0.29.0 after the taxonomy repair and the mandate draw change, which the manuscript states and the artifact's readback block supports. |
-| 2026-10-31 | still-applicable | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
+| Date | Disposition | Recorded by | Independent | Rationale |
+|---|---|---|---|---|
+| 2026-09-23 | still-applicable | unknown | no | Initial entry: The documented comparison is the recorded regeneration for 0.29.0 after the taxonomy repair and the mandate draw change, which the manuscript states and the artifact's readback block supports. |
+| 2026-10-31 | still-applicable | unknown | no | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
 
 ### `SA-tab-f8`
 
@@ -792,10 +797,10 @@ The headline claims whose present applicability is not established, worst first.
 
 **Status history.**
 
-| Date | Disposition | Rationale |
-|---|---|---|
-| 2026-09-23 | historical-only | Initial entry: The artifact validly records the run and no later change reaches it, but nothing re-establishes it against the current tree. |
-| 2026-10-31 | historical-only | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
+| Date | Disposition | Recorded by | Independent | Rationale |
+|---|---|---|---|---|
+| 2026-09-23 | historical-only | unknown | no | Initial entry: The artifact validly records the run and no later change reaches it, but nothing re-establishes it against the current tree. |
+| 2026-10-31 | historical-only | unknown | no | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
 
 ### `SA-tab-throughput`
 
@@ -830,10 +835,10 @@ The headline claims whose present applicability is not established, worst first.
 
 **Status history.**
 
-| Date | Disposition | Rationale |
-|---|---|---|
-| 2026-09-23 | historical-only | Initial entry: The artifact validly records a timed run on a named host; a current measurement would be a different machine's number rather than a correction of this one. |
-| 2026-10-31 | historical-only | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
+| Date | Disposition | Recorded by | Independent | Rationale |
+|---|---|---|---|---|
+| 2026-09-23 | historical-only | unknown | no | Initial entry: The artifact validly records a timed run on a named host; a current measurement would be a different machine's number rather than a correction of this one. |
+| 2026-10-31 | historical-only | unknown | no | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
 
 ### `SA-orderbook-mark`
 
@@ -867,10 +872,10 @@ The headline claims whose present applicability is not established, worst first.
 
 **Status history.**
 
-| Date | Disposition | Rationale |
-|---|---|---|
-| 2026-09-23 | unresolved | Initial entry: The artifact cannot be located, so the ticket's rule applies: record unresolved rather than guess. |
-| 2026-10-31 | still-applicable | Resolved as a provenance answer: test_a_lone_quote_walk_is_not_booked_as_reward asserts the numbers and passes on the current tree. The 2026-09-23 entry searched paper/evidence only. |
+| Date | Disposition | Recorded by | Independent | Rationale |
+|---|---|---|---|---|
+| 2026-09-23 | unresolved | unknown | no | Initial entry: The artifact cannot be located, so the ticket's rule applies: record unresolved rather than guess. |
+| 2026-10-31 | still-applicable | unknown | no | Resolved as a provenance answer: test_a_lone_quote_walk_is_not_booked_as_reward asserts the numbers and passes on the current tree. The 2026-09-23 entry searched paper/evidence only. |
 
 ### `SA-seeded-shuffle`
 
@@ -903,10 +908,10 @@ The headline claims whose present applicability is not established, worst first.
 
 **Status history.**
 
-| Date | Disposition | Rationale |
-|---|---|---|
-| 2026-09-23 | unresolved | Initial entry: The supporting measurement has no artifact in the evidence scope, so no disposition can be chosen without guessing. |
-| 2026-10-31 | still-applicable | Resolved as a provenance answer: two named tests assert the measurement and pass on the current tree. The 2026-09-23 entry searched paper/evidence only. |
+| Date | Disposition | Recorded by | Independent | Rationale |
+|---|---|---|---|---|
+| 2026-09-23 | unresolved | unknown | no | Initial entry: The supporting measurement has no artifact in the evidence scope, so no disposition can be chosen without guessing. |
+| 2026-10-31 | still-applicable | unknown | no | Resolved as a provenance answer: two named tests assert the measurement and pass on the current tree. The 2026-09-23 entry searched paper/evidence only. |
 
 ### `SA-nonempirical-tables`
 
@@ -941,10 +946,10 @@ The headline claims whose present applicability is not established, worst first.
 
 **Status history.**
 
-| Date | Disposition | Rationale |
-|---|---|---|
-| 2026-09-23 | still-applicable | Initial entry: No cell reports a measurement, so no artifact can go stale under these tables. |
-| 2026-10-31 | still-applicable | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
+| Date | Disposition | Recorded by | Independent | Rationale |
+|---|---|---|---|---|
+| 2026-09-23 | still-applicable | unknown | no | Initial entry: No cell reports a measurement, so no artifact can go stale under these tables. |
+| 2026-10-31 | still-applicable | unknown | no | Rechecked against SharpeBench #118, #171 and #172, SharpeArena #118 and the foundation branch through 7769ef5: no evidence producer steps a vector environment, so SharpeArena #118 reaches no artifact here. The artifact digests were opened against the sharpearena tree and match. This row moved here from the SharpeBench register, which keeps a mirror of it. |
 
 ### `SA-sec-leakfree`
 
@@ -977,9 +982,9 @@ The headline claims whose present applicability is not established, worst first.
 
 **Status history.**
 
-| Date | Disposition | Rationale |
-|---|---|---|
-| 2026-10-31 | still-applicable | Initial entry: A test in this repository asserts the property and runs in continuous integration on the current tree. |
+| Date | Disposition | Recorded by | Independent | Rationale |
+|---|---|---|---|---|
+| 2026-10-31 | still-applicable | unknown | no | Initial entry: A test in this repository asserts the property and runs in continuous integration on the current tree. |
 
 ### `SA-sec-determinism`
 
@@ -1014,9 +1019,9 @@ The headline claims whose present applicability is not established, worst first.
 
 **Status history.**
 
-| Date | Disposition | Rationale |
-|---|---|---|
-| 2026-10-31 | still-applicable | Initial entry: A test in this repository asserts the property and runs in continuous integration on the current tree. |
+| Date | Disposition | Recorded by | Independent | Rationale |
+|---|---|---|---|---|
+| 2026-10-31 | still-applicable | unknown | no | Initial entry: A test in this repository asserts the property and runs in continuous integration on the current tree. |
 
 ### `SA-sec-replay`
 
@@ -1049,9 +1054,9 @@ The headline claims whose present applicability is not established, worst first.
 
 **Status history.**
 
-| Date | Disposition | Rationale |
-|---|---|---|
-| 2026-10-31 | still-applicable | Initial entry: A test in this repository asserts the property and runs in continuous integration on the current tree. |
+| Date | Disposition | Recorded by | Independent | Rationale |
+|---|---|---|---|---|
+| 2026-10-31 | still-applicable | unknown | no | Initial entry: A test in this repository asserts the property and runs in continuous integration on the current tree. |
 
 ### `SA-sec-wire-contract`
 
@@ -1085,9 +1090,9 @@ The headline claims whose present applicability is not established, worst first.
 
 **Status history.**
 
-| Date | Disposition | Rationale |
-|---|---|---|
-| 2026-10-31 | still-applicable | Initial entry: A test in this repository asserts the property and runs in continuous integration on the current tree. |
+| Date | Disposition | Recorded by | Independent | Rationale |
+|---|---|---|---|---|
+| 2026-10-31 | still-applicable | unknown | no | Initial entry: A test in this repository asserts the property and runs in continuous integration on the current tree. |
 
 ### `SA-sec-transport-fault`
 
@@ -1120,9 +1125,9 @@ The headline claims whose present applicability is not established, worst first.
 
 **Status history.**
 
-| Date | Disposition | Rationale |
-|---|---|---|
-| 2026-10-31 | still-applicable | Initial entry: A test in this repository asserts the property and runs in continuous integration on the current tree. |
+| Date | Disposition | Recorded by | Independent | Rationale |
+|---|---|---|---|---|
+| 2026-10-31 | still-applicable | unknown | no | Initial entry: A test in this repository asserts the property and runs in continuous integration on the current tree. |
 
 ### `SA-sec-agentic-layer`
 
@@ -1159,9 +1164,9 @@ The headline claims whose present applicability is not established, worst first.
 
 **Status history.**
 
-| Date | Disposition | Rationale |
-|---|---|---|
-| 2026-10-31 | still-applicable | Initial entry: A test in this repository asserts the property and runs in continuous integration on the current tree. |
+| Date | Disposition | Recorded by | Independent | Rationale |
+|---|---|---|---|---|
+| 2026-10-31 | still-applicable | unknown | no | Initial entry: A test in this repository asserts the property and runs in continuous integration on the current tree. |
 
 ### `SA-sec-prospective-protocol`
 
@@ -1197,9 +1202,9 @@ The headline claims whose present applicability is not established, worst first.
 
 **Status history.**
 
-| Date | Disposition | Rationale |
-|---|---|---|
-| 2026-10-31 | still-applicable | Initial entry: A test in this repository asserts the property and runs in continuous integration on the current tree. |
+| Date | Disposition | Recorded by | Independent | Rationale |
+|---|---|---|---|---|
+| 2026-10-31 | still-applicable | unknown | no | Initial entry: A test in this repository asserts the property and runs in continuous integration on the current tree. |
 
 ### `SA-forecast-pilot`
 
@@ -1234,9 +1239,9 @@ The headline claims whose present applicability is not established, worst first.
 
 **Status history.**
 
-| Date | Disposition | Rationale |
-|---|---|---|
-| 2026-10-31 | historical-only | Initial entry: Retained so the protocol history is not rewritten, and bound to its own commit. It validates no current model. |
+| Date | Disposition | Recorded by | Independent | Rationale |
+|---|---|---|---|---|
+| 2026-10-31 | historical-only | unknown | no | Initial entry: Retained so the protocol history is not rewritten, and bound to its own commit. It validates no current model. |
 
 ### `SA-sec-protocol-seeds`
 
@@ -1269,9 +1274,9 @@ The headline claims whose present applicability is not established, worst first.
 
 **Status history.**
 
-| Date | Disposition | Rationale |
-|---|---|---|
-| 2026-10-31 | still-applicable | Initial entry: The inputs are committed and the arithmetic is recorded here, and the conclusion the sentence draws does not depend on the difference between 12 and 13.6. |
+| Date | Disposition | Recorded by | Independent | Rationale |
+|---|---|---|---|---|
+| 2026-10-31 | still-applicable | unknown | no | Initial entry: The inputs are committed and the arithmetic is recorded here, and the conclusion the sentence draws does not depend on the difference between 12 and 13.6. |
 
 ### `SA-sec-throughput-derived`
 
@@ -1304,9 +1309,9 @@ The headline claims whose present applicability is not established, worst first.
 
 **Status history.**
 
-| Date | Disposition | Rationale |
-|---|---|---|
-| 2026-10-31 | historical-only | Initial entry: The arithmetic recomputes from the artifact, and the artifact is bound to its recorded host. |
+| Date | Disposition | Recorded by | Independent | Rationale |
+|---|---|---|---|---|
+| 2026-10-31 | historical-only | unknown | no | Initial entry: The arithmetic recomputes from the artifact, and the artifact is bound to its recorded host. |
 
 ### `SA-sec-absences`
 
@@ -1339,9 +1344,9 @@ The headline claims whose present applicability is not established, worst first.
 
 **Status history.**
 
-| Date | Disposition | Rationale |
-|---|---|---|
-| 2026-10-31 | still-applicable | Initial entry: A statement of the manuscript's own scope. The tree agrees with its first two parts, and the third is the owner's to keep current. |
+| Date | Disposition | Recorded by | Independent | Rationale |
+|---|---|---|---|---|
+| 2026-10-31 | still-applicable | unknown | no | Initial entry: A statement of the manuscript's own scope. The tree agrees with its first two parts, and the third is the owner's to keep current. |
 
 ### `SA-cited-figures`
 
@@ -1374,6 +1379,6 @@ The headline claims whose present applicability is not established, worst first.
 
 **Status history.**
 
-| Date | Disposition | Rationale |
-|---|---|---|
-| 2026-10-31 | still-applicable | Initial entry: A citation carries no evidence artifact of this product, and freshness does not apply to it. |
+| Date | Disposition | Recorded by | Independent | Rationale |
+|---|---|---|---|---|
+| 2026-10-31 | still-applicable | unknown | no | Initial entry: A citation carries no evidence artifact of this product, and freshness does not apply to it. |
