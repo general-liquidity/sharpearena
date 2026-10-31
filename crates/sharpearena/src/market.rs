@@ -78,6 +78,54 @@
 //! pinned to the linear point-estimate dynamics, which the concave path is never allowed
 //! to move.
 //!
+//! ## Execution realism: versioned opt-in settings
+//!
+//! [`ExecutionSettings`] (`sharpearena.market-execution.v1`) is installed with
+//! [`MarketClearing::with_execution`] and is absent by default, in which case no line below
+//! changes a bit of the frozen path. It carries three independent choices.
+//!
+//! **Timing.** The default market already fills every decision after the first on the bar
+//! after the last close it observed: a step's observation ends at bar `t` and the next
+//! decision clears at `t + 1`. Only the first decision sees the bar it fills on.
+//! `fixed_delay` reuses SharpeBench's `sharpebench.fixed-decision-delay.v1` FIFO setting and
+//! counts `bars` from the last observed close to the fill, for every decision. `bars = 1`
+//! withholds the first traded bar from the first observation, so a decision made on bar `t`
+//! fills on `t + 1` throughout. `bars = n` also queues `n - 1` decisions first in, first
+//! out. Sizes, prices and costs are taken at eligibility, a waiting decision is not
+//! replaced by a later one, bars with nothing eligible hold the prior target, and
+//! window-tail decisions never fill.
+//!
+//! **Transient impact.** [`TransientImpact`] adds a displacement that decays, separate from
+//! the permanent multiplier `M`. With `x_t = Q_t / V`, a per-symbol state `J` follows
+//!
+//! ```text
+//! J_t+    = J_t + x_t              (the bar's flow arrives)
+//! J_{t+1} = decay_per_bar * J_t+   (the book recovers between bars)
+//! I_t     = coefficient * h(J_t)   (h = identity, or signed sqrt)
+//! ```
+//!
+//! and the cleared mid becomes `exo_mid * M_t * (1 + I_t)`. Every agent's fill also pays the
+//! whole displacement increment `coefficient * (h(J_t+) - h(J_t))` inside the existing
+//! impact term, the same full-increment convention the permanent crowd term uses. `I` never
+//! enters `M`, and `M` never decays. With the identity `h` the state is the exponential
+//! kernel `I_{t+1} = decay * (I_t + coefficient * x_t)`. `decay_per_bar = 0` leaves only an
+//! extra same-bar cost. Each coefficient and decay is a declared setting: nothing here is
+//! fitted, and no default is a calibration.
+//!
+//! The signed square root is a function of the *decayed cumulative* flow, not of one bar's
+//! flow, which is why it can bend impact in the executed quantity where
+//! [`clear_bar_concave`]'s per-bar exponent cannot. `sqrt` is correctly rounded by IEEE 754,
+//! so this stays inside the determinism argument below and needs no `powf`.
+//! `meta_order_impact_shape` measures what the arithmetic does.
+//!
+//! **Settlement.** Order sizes are `capital * (w - prev_w) / mid`, so a round trip that is
+//! flat in target weight is not flat in shares when the mid moved: buying low and selling
+//! high in weight leaves a long residual. [`TerminalSettlement::Marked`] (the default
+//! behaviour) values that residual at the last cleared mid, a price the same agent's flow
+//! may have pushed. [`TerminalSettlement::CashLiquidation`] sells every residual on the last
+//! bar as one further clearing at the post-flow price, through the same impact arithmetic,
+//! so terminal NAV is cash and the mark cannot book unrealized push.
+//!
 //! ## Determinism
 //!
 //! Every step is a pure function of `(exogenous path, lambda, eta, V, vol_scale, capital,
@@ -106,7 +154,7 @@
 //! price-impact channel of a real market, not an information leak.
 
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 
 use crate::richness::ObservationRichness;
 use crate::{Dataset, MarketObservation, PositionState, SymbolSnapshot};
@@ -337,6 +385,224 @@ impl EllipticUncertaintySet {
     }
 }
 
+/// The SharpeBench fixed-delay schema, mirrored byte for byte on the wire. The pinned
+/// `sharpebench-sim` predates this setting, so it cannot be imported yet. When the pin moves
+/// to a release that carries it, this type becomes a re-export and no serialized record
+/// changes. Unknown versions are refused rather than read as immediate execution.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "schema_version", deny_unknown_fields)]
+pub enum FixedDecisionDelay {
+    /// FIFO decisions become eligible after exactly `bars` steps; window-tail decisions
+    /// never fill.
+    #[serde(rename = "sharpebench.fixed-decision-delay.v1")]
+    Fifo { bars: usize },
+}
+
+impl FixedDecisionDelay {
+    /// Bars from the decision to its eligibility.
+    pub fn bars(self) -> usize {
+        match self {
+            Self::Fifo { bars } => bars,
+        }
+    }
+}
+
+/// The wire version of [`ExecutionSettings`]. An unknown version is refused at
+/// deserialization rather than read as some other timing or kernel.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ExecutionSchema {
+    /// Fixed delay, transient kernel and terminal settlement as documented on this module.
+    #[serde(rename = "sharpearena.market-execution.v1")]
+    V1,
+}
+
+/// The shape `h` of a [`TransientImpact`] displacement, applied to the decayed cumulative
+/// normalized flow `J`. Both variants use only operations IEEE 754 rounds correctly.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TransientShape {
+    /// `h(J) = J`: the exponential-kernel displacement, linear in flow.
+    #[serde(rename = "linear")]
+    Linear,
+    /// `h(J) = sign(J) * sqrt(|J|)`, concave in the decayed cumulative flow.
+    #[serde(rename = "square_root")]
+    SquareRoot,
+}
+
+impl TransientShape {
+    fn level(self, state: f64) -> f64 {
+        match self {
+            Self::Linear => state,
+            Self::SquareRoot if state >= 0.0 => state.sqrt(),
+            Self::SquareRoot => -(-state).sqrt(),
+        }
+    }
+}
+
+/// A decaying impact displacement, kept apart from the permanent multiplier. The fields are
+/// declared settings, not estimates. See the module docs for the recursion.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TransientImpact {
+    /// `coefficient` in `I = coefficient * h(J)`; finite and non-negative.
+    pub coefficient: f64,
+    /// Fraction of `J` that survives one bar, in `[0, 1)`. One is refused: it would be a
+    /// second permanent channel under a name that promises decay.
+    pub decay_per_bar: f64,
+    /// The displacement shape.
+    pub shape: TransientShape,
+}
+
+/// What happens to residual share holdings on the last bar.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TerminalSettlement {
+    /// Residuals stay held and NAV marks them at the last cleared mid.
+    #[serde(rename = "marked")]
+    Marked,
+    /// Residuals are liquidated to cash as one further clearing on the last bar.
+    #[serde(rename = "cash_liquidation")]
+    CashLiquidation,
+}
+
+/// Versioned opt-in execution settings for the shared-book market. Absent settings are the
+/// frozen default path. See the module docs for each field's semantics.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExecutionSettings {
+    pub schema_version: ExecutionSchema,
+    /// Bars from the last observed close to the fill, in Bench's FIFO schema.
+    pub fixed_delay: Option<FixedDecisionDelay>,
+    pub transient: Option<TransientImpact>,
+    pub settlement: TerminalSettlement,
+}
+
+/// A refused [`ExecutionSettings`] value.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ExecutionSettingsError {
+    /// `fixed_delay` of zero bars. Immediate execution is the absent setting.
+    ZeroDelay,
+    /// `coefficient` is not finite and non-negative.
+    TransientCoefficient { coefficient: f64 },
+    /// `decay_per_bar` is not finite or lies outside `[0, 1)`.
+    TransientDecay { decay_per_bar: f64 },
+}
+
+impl std::fmt::Display for ExecutionSettingsError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ZeroDelay => write!(
+                f,
+                "[INVALID_ARGUMENT] fixed_delay of zero bars is not a setting: omit it for \
+                 the default timing"
+            ),
+            Self::TransientCoefficient { coefficient } => write!(
+                f,
+                "[INVALID_ARGUMENT] transient coefficient {coefficient} must be finite and \
+                 non-negative"
+            ),
+            Self::TransientDecay { decay_per_bar } => write!(
+                f,
+                "[INVALID_ARGUMENT] transient decay_per_bar {decay_per_bar} must be finite \
+                 and lie in [0, 1)"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ExecutionSettingsError {}
+
+impl ExecutionSettings {
+    /// The settings that change nothing: default timing, no transient kernel, marked NAV.
+    pub fn frozen_default() -> Self {
+        Self {
+            schema_version: ExecutionSchema::V1,
+            fixed_delay: None,
+            transient: None,
+            settlement: TerminalSettlement::Marked,
+        }
+    }
+
+    /// Refuse a value that does not describe the documented semantics.
+    pub fn validate(&self) -> Result<(), ExecutionSettingsError> {
+        if self.fixed_delay.is_some_and(|delay| delay.bars() == 0) {
+            return Err(ExecutionSettingsError::ZeroDelay);
+        }
+        if let Some(transient) = &self.transient {
+            if !(transient.coefficient.is_finite() && transient.coefficient >= 0.0) {
+                return Err(ExecutionSettingsError::TransientCoefficient {
+                    coefficient: transient.coefficient,
+                });
+            }
+            if !(transient.decay_per_bar.is_finite()
+                && (0.0..1.0).contains(&transient.decay_per_bar))
+            {
+                return Err(ExecutionSettingsError::TransientDecay {
+                    decay_per_bar: transient.decay_per_bar,
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+/// The identity of everything that decides a fill on one market: impact coefficients,
+/// permanent exponent, uncertainty set and execution settings. Two runs that differ in any
+/// field serialize differently, and a surface fingerprints that canonical record as its
+/// execution identity. That is a compatibility check in the sense of `SPEC_HASH`, not a
+/// cryptographic attestation.
+#[derive(Clone, Copy, Debug, Serialize)]
+pub struct MarketExecutionIdentity<'a> {
+    pub schema_version: &'static str,
+    pub params: &'a MarketParams,
+    pub impact_exponent: f64,
+    pub uncertainty: Option<&'a EllipticUncertaintySet>,
+    pub execution: Option<&'a ExecutionSettings>,
+}
+
+impl<'a> MarketExecutionIdentity<'a> {
+    /// The identity record of one market configuration.
+    pub fn new(
+        params: &'a MarketParams,
+        impact_exponent: f64,
+        uncertainty: Option<&'a EllipticUncertaintySet>,
+        execution: Option<&'a ExecutionSettings>,
+    ) -> Self {
+        Self {
+            schema_version: "sharpearena.market-execution-identity.v1",
+            params,
+            impact_exponent,
+            uncertainty,
+            execution,
+        }
+    }
+}
+
+/// One bar's decomposition under [`ExecutionSettings`], present only when settings are
+/// installed so the default wire shape is unchanged.
+#[derive(Clone, Debug, Serialize)]
+pub struct ExecutionTrace {
+    /// Whether a submitted decision reached the book this bar (false while a delay fills).
+    pub decision_eligible: bool,
+    /// The permanent multiplier `M_t` each symbol cleared at.
+    pub permanent_multiplier: Vec<f64>,
+    /// The transient displacement `I_t` each symbol cleared at (`0.0` with no kernel).
+    pub transient_displacement: Vec<f64>,
+    /// The terminal liquidation, present on the last bar under
+    /// [`TerminalSettlement::CashLiquidation`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub settlement: Option<SettlementRecord>,
+}
+
+/// The terminal liquidation: one further clearing on the last bar.
+#[derive(Clone, Debug, Serialize)]
+pub struct SettlementRecord {
+    /// The post-flow mid per symbol the liquidation cleared against.
+    pub mids: Vec<f64>,
+    /// Aggregate liquidation flow per symbol.
+    pub net_flow: Vec<f64>,
+    /// Per-agent, per-symbol liquidation fills.
+    pub fills: Vec<Vec<AgentFill>>,
+}
+
 /// The signed power `sign(q) * |q|^exponent` applied to the permanent-impact flow term on
 /// the concave path.
 ///
@@ -392,6 +658,10 @@ pub struct ClearResult {
     /// entirely, so the default wire shape is unchanged.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub robust_impact: Option<Vec<ImpactCoefficients>>,
+    /// The bar's decomposition, present only when [`ExecutionSettings`] are installed; the
+    /// field is then absent from the default wire shape.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution: Option<ExecutionTrace>,
 }
 
 /// One agent's running book: cash, per-symbol holdings, per-symbol accumulated cost
@@ -486,6 +756,13 @@ pub struct MarketClearing {
     ///
     /// [`DEFAULT_LOOKBACK`]: crate::DEFAULT_LOOKBACK
     richness: ObservationRichness,
+    /// Opt-in execution settings; `None` is the frozen default path.
+    execution: Option<ExecutionSettings>,
+    /// Decayed cumulative normalized flow `J` per symbol (all zero without a kernel).
+    transient_state: Vec<f64>,
+    /// FIFO decisions waiting for eligibility, oldest first. Empty unless the delay is at
+    /// least two bars: at one bar the withheld first close is the whole lag.
+    delayed_decisions: VecDeque<Vec<Vec<f64>>>,
 }
 
 impl MarketClearing {
@@ -564,7 +841,34 @@ impl MarketClearing {
             start_bar,
             n_bars,
             richness,
+            execution: None,
+            transient_state: vec![0.0; n_sym],
+            delayed_decisions: VecDeque::new(),
         }
+    }
+
+    /// Install validated [`ExecutionSettings`] and restart the episode, so no state cleared
+    /// under other settings survives into this run.
+    pub fn with_execution(
+        mut self,
+        settings: ExecutionSettings,
+    ) -> Result<Self, ExecutionSettingsError> {
+        settings.validate()?;
+        self.execution = Some(settings);
+        self.reset();
+        Ok(self)
+    }
+
+    /// The installed execution settings, or `None` on the frozen default path.
+    pub fn execution(&self) -> Option<&ExecutionSettings> {
+        self.execution.as_ref()
+    }
+
+    /// Bars from the last observed close to the fill, `0` for the default timing.
+    fn fixed_delay_bars(&self) -> usize {
+        self.execution
+            .and_then(|settings| settings.fixed_delay)
+            .map_or(0, FixedDecisionDelay::bars)
     }
 
     /// Reset the episode over the same immutable exogenous path and disclosure.
@@ -602,6 +906,8 @@ impl MarketClearing {
             book.cost_basis.fill(0.0);
             book.prev_weight.fill(0.0);
         }
+        self.transient_state.fill(0.0);
+        self.delayed_decisions.clear();
     }
 
     /// The observation-richness disclosure this market surfaces (the information-poverty
@@ -658,9 +964,17 @@ impl MarketClearing {
 
     /// The pre-trade observations for each agent's **first** decision: the burn-in cleared
     /// tape (untraded, so cleared == exogenous) terminated by the first traded bar's
-    /// exogenous reference mid. Agents in canonical order.
+    /// exogenous reference mid. Agents in canonical order. Under a fixed delay that bar is
+    /// withheld: the first decision is made on the last burn-in close, so like every later
+    /// decision it precedes its fill by the delay.
     pub fn initial_observations(&self) -> Vec<MarketObservation> {
-        let date = self.dates.get(self.start_bar).cloned().unwrap_or_default();
+        let delayed = self.fixed_delay_bars() > 0;
+        let date_bar = if delayed {
+            self.start_bar - 1
+        } else {
+            self.start_bar
+        };
+        let date = self.dates.get(date_bar).cloned().unwrap_or_default();
         (0..self.agents.len())
             .map(|agent| {
                 let symbols = self
@@ -669,7 +983,9 @@ impl MarketClearing {
                     .enumerate()
                     .map(|(s, sym)| {
                         let mut hist = self.cleared_history[s].clone();
-                        hist.push(self.exo[s][self.start_bar.min(self.exo[s].len() - 1)]);
+                        if !delayed {
+                            hist.push(self.exo[s][self.start_bar.min(self.exo[s].len() - 1)]);
+                        }
                         self.snapshot(sym, &hist)
                     })
                     .collect();
@@ -946,12 +1262,52 @@ pub fn clear_bar_concave(
 
     let v = params.volume_scale;
 
+    // (0) under a delay of at least two bars, submit this decision and take the oldest
+    //     eligible one. Until one is eligible the book holds its prior target, which is
+    //     zero order size by construction. inv: after this block the queue holds
+    //     min(decisions submitted, delay - 1) entries, so exactly one decision leaves it
+    //     per bar once it is full, in submission order.
+    let delay = state.fixed_delay_bars();
+    let mut decision_eligible = true;
+    let eligible_orders: Option<Vec<Vec<f64>>> = (delay > 1).then(|| {
+        state.delayed_decisions.push_back(agent_orders.to_vec());
+        if state.delayed_decisions.len() >= delay {
+            state
+                .delayed_decisions
+                .pop_front()
+                .expect("the queue was just pushed")
+        } else {
+            decision_eligible = false;
+            state
+                .agents
+                .iter()
+                .map(|book| book.prev_weight.clone())
+                .collect()
+        }
+    });
+    let agent_orders: &[Vec<f64>] = eligible_orders.as_deref().unwrap_or(agent_orders);
+    let transient = state.execution.and_then(|settings| settings.transient);
+
     // (1) cleared reference mid = exogenous mid * accumulated permanent impact (prior bars).
-    let cleared_mid: Vec<f64> = exo_mid
+    let mut cleared_mid: Vec<f64> = exo_mid
         .iter()
         .zip(&state.impact_mult)
         .map(|(m, mult)| m * mult)
         .collect();
+    // The transient displacement left by prior bars' flow scales the mid; it never enters
+    // the permanent multiplier.
+    let transient_displacement: Option<Vec<f64>> = transient.map(|kernel| {
+        state
+            .transient_state
+            .iter()
+            .map(|j| kernel.coefficient * kernel.shape.level(*j))
+            .collect()
+    });
+    if let Some(displacement) = &transient_displacement {
+        for (mid, level) in cleared_mid.iter_mut().zip(displacement) {
+            *mid *= 1.0 + level;
+        }
+    }
 
     // Volatility-scaling factor for temporary impact (one per symbol). Read the trailing
     // vol proxy — which holds only *past* cleared returns — and form a capped multiplier.
@@ -1020,8 +1376,25 @@ pub fn clear_bar_concave(
         ],
     };
 
+    // The whole displacement increment this bar's flow causes, one per-share term per
+    // symbol, paid inside the impact term like the permanent crowd term.
+    let transient_cost: Option<Vec<f64>> = transient.map(|kernel| {
+        (0..n_sym)
+            .map(|s| {
+                let before = state.transient_state[s];
+                kernel.coefficient
+                    * (kernel.shape.level(before + net_flow[s] / v) - kernel.shape.level(before))
+            })
+            .collect()
+    });
+
     // (3) fill each agent at its temporary-impact price, advance its book, and book the
     //     bar's realized return (marked at the cleared mids, paid at its own fills).
+    let settling = state.cursor + 1 >= state.n_bars
+        && state
+            .execution
+            .is_some_and(|settings| settings.settlement == TerminalSettlement::CashLiquidation);
+    let mut nav_before_bar = vec![0.0_f64; if settling { n_agents } else { 0 }];
     let mut fills: Vec<Vec<AgentFill>> = Vec::with_capacity(n_agents);
     let mut rewards = vec![0.0_f64; n_agents];
     let mut navs = vec![0.0_f64; n_agents];
@@ -1037,6 +1410,9 @@ pub fn clear_bar_concave(
                     .map(|(sh, m)| sh * m)
                     .sum::<f64>()
         };
+        if settling {
+            nav_before_bar[i] = nav_prev;
+        }
         let mut agent_fills = Vec::with_capacity(n_sym);
         for s in 0..n_sym {
             let qi = q[i][s];
@@ -1049,6 +1425,10 @@ pub fn clear_bar_concave(
             } else {
                 impact[s].lambda * signed_pow(net_flow[s] / v, impact_exponent)
                     + impact[s].eta * qi / v
+            };
+            let impact_term = match &transient_cost {
+                Some(cost) => impact_term + cost[s],
+                None => impact_term,
             };
             let fill = mid * (1.0 + vol_factor[s] * impact_term);
             let sym = state.symbols[s].clone();
@@ -1088,6 +1468,27 @@ pub fn clear_bar_concave(
         fills.push(agent_fills);
     }
 
+    // (3b) terminal cash liquidation: one further clearing on the last bar, against the
+    //      price this bar's flow left behind, before the terminal observation is built.
+    let settlement = settling.then(|| {
+        settle_residuals(
+            &SettlementInputs {
+                exo_mid,
+                net_flow: &net_flow,
+                impact: &impact,
+                vol_factor: &vol_factor,
+                params,
+                uncertainty,
+                impact_exponent,
+                transient,
+                nav_before_bar: &nav_before_bar,
+            },
+            state,
+            &mut navs,
+            &mut rewards,
+        )
+    });
+
     // (4) extend the realized cleared tape, then build each agent's next observation.
     for (hist, mid) in state.cleared_history.iter_mut().zip(&cleared_mid) {
         hist.push(*mid);
@@ -1105,6 +1506,16 @@ pub fn clear_bar_concave(
         })
         .collect();
 
+    // The decomposition reads the multiplier this bar cleared at, so take it before (5).
+    let execution = state.execution.map(|_| ExecutionTrace {
+        decision_eligible,
+        permanent_multiplier: state.impact_mult.clone(),
+        transient_displacement: transient_displacement
+            .clone()
+            .unwrap_or_else(|| vec![0.0; n_sym]),
+        settlement,
+    });
+
     // (5) permanent impact accumulates into the running multiplier for the next bar; the
     //     cleared mid becomes the mark for the next bar's holding PnL.
     for (s, (mult, flow)) in state.impact_mult.iter_mut().zip(&net_flow).enumerate() {
@@ -1114,6 +1525,12 @@ pub fn clear_bar_concave(
             impact[s].lambda * signed_pow(*flow / v, impact_exponent)
         };
         *mult *= 1.0 + permanent;
+    }
+    // The bar's flow arrives in the transient state, then the book recovers one bar.
+    if let Some(kernel) = transient {
+        for (level, flow) in state.transient_state.iter_mut().zip(&net_flow) {
+            *level = kernel.decay_per_bar * (*level + *flow / v);
+        }
     }
     // Fold this bar's realized cleared return into each symbol's trailing vol proxy, for the
     // *next* bar's scaling. `prev_mid` still holds the previous bar's cleared mid here.
@@ -1136,6 +1553,117 @@ pub fn clear_bar_concave(
         observations,
         done,
         robust_impact,
+        execution,
+    }
+}
+
+/// Everything [`settle_residuals`] reads from the bar being cleared.
+struct SettlementInputs<'a> {
+    exo_mid: &'a [f64],
+    net_flow: &'a [f64],
+    impact: &'a [ImpactCoefficients],
+    vol_factor: &'a [f64],
+    params: &'a MarketParams,
+    uncertainty: Option<&'a EllipticUncertaintySet>,
+    impact_exponent: f64,
+    transient: Option<TransientImpact>,
+    nav_before_bar: &'a [f64],
+}
+
+/// Liquidate every residual to cash as one further clearing on the last bar.
+///
+/// Post: every agent holds exactly zero shares and zero cost basis, `navs[i]` equals its
+/// cash, and `rewards[i]` is the bar's return including the liquidation. Each agent's
+/// residual is sold into the aggregate liquidation flow at the mid this bar's flow left
+/// behind (the permanent multiplier and transient state after the bar, before any decay),
+/// paying the same crowd, own-size and transient terms a fill pays. A zero residual across
+/// the book is a zero-size clearing and leaves cash unchanged.
+fn settle_residuals(
+    inputs: &SettlementInputs<'_>,
+    state: &mut MarketClearing,
+    navs: &mut [f64],
+    rewards: &mut [f64],
+) -> SettlementRecord {
+    let v = inputs.params.volume_scale;
+    let n_sym = state.symbols.len();
+    let mut net_flow = vec![0.0_f64; n_sym];
+    for book in &state.agents {
+        for (s, shares) in book.shares.iter().enumerate() {
+            net_flow[s] -= shares;
+        }
+    }
+    let exponent = inputs.impact_exponent;
+    let impact_of = |coefficient: f64, flow: f64| {
+        if exponent == 1.0 {
+            coefficient * flow / v
+        } else {
+            coefficient * signed_pow(flow / v, exponent)
+        }
+    };
+    let mut mids = Vec::with_capacity(n_sym);
+    let mut resolved = Vec::with_capacity(n_sym);
+    let mut transient_cost = vec![0.0_f64; n_sym];
+    for s in 0..n_sym {
+        // inv: mids, resolved and transient_cost hold symbols 0..s.
+        let bar_lambda = inputs.impact[s].lambda;
+        let mult_after = state.impact_mult[s] * (1.0 + impact_of(bar_lambda, inputs.net_flow[s]));
+        let mut mid = inputs.exo_mid[s] * mult_after;
+        if let Some(kernel) = inputs.transient {
+            let after_bar = state.transient_state[s] + inputs.net_flow[s] / v;
+            mid *= 1.0 + kernel.coefficient * kernel.shape.level(after_bar);
+            transient_cost[s] = kernel.coefficient
+                * (kernel.shape.level(after_bar + net_flow[s] / v) - kernel.shape.level(after_bar));
+        }
+        mids.push(mid);
+        resolved.push(match inputs.uncertainty {
+            Some(set) => {
+                let own: f64 = state
+                    .agents
+                    .iter()
+                    .map(|book| book.shares[s] * book.shares[s])
+                    .sum();
+                set.worst_case(inputs.params, net_flow[s] * net_flow[s], own)
+            }
+            None => ImpactCoefficients {
+                lambda: inputs.params.lambda,
+                eta: inputs.params.eta,
+            },
+        });
+    }
+    let symbols = &state.symbols;
+    let mut fills = Vec::with_capacity(state.agents.len());
+    for (i, book) in state.agents.iter_mut().enumerate() {
+        // inv: agents 0..i are settled, and in the loop below so are this agent's symbols 0..s.
+        let mut agent_fills = Vec::with_capacity(n_sym);
+        for s in 0..n_sym {
+            let size = -book.shares[s];
+            let term = impact_of(resolved[s].lambda, net_flow[s])
+                + resolved[s].eta * size / v
+                + transient_cost[s];
+            let fill = mids[s] * (1.0 + inputs.vol_factor[s] * term);
+            book.cash -= size * fill;
+            book.shares[s] = 0.0;
+            book.cost_basis[s] = 0.0;
+            book.prev_weight[s] = 0.0;
+            agent_fills.push(AgentFill {
+                symbol: symbols[s].clone(),
+                size,
+                fill_price: fill,
+            });
+        }
+        fills.push(agent_fills);
+        navs[i] = book.cash;
+        let nav_prev = inputs.nav_before_bar[i];
+        rewards[i] = if nav_prev.abs() > EPS {
+            (book.cash - nav_prev) / nav_prev
+        } else {
+            0.0
+        };
+    }
+    SettlementRecord {
+        mids,
+        net_flow,
+        fills,
     }
 }
 
@@ -2456,6 +2984,394 @@ mod tests {
             assert!(snap.close_history.len() <= 7);
             assert!(!snap.fundamentals.is_empty(), "fundamentals flag honored");
             assert!(snap.news.is_empty(), "news flag honored independently");
+        }
+    }
+
+    // --- Execution settings (row 37) ------------------------------------------------
+
+    fn settings(
+        delay: Option<usize>,
+        transient: Option<TransientImpact>,
+        settlement: TerminalSettlement,
+    ) -> ExecutionSettings {
+        ExecutionSettings {
+            schema_version: ExecutionSchema::V1,
+            fixed_delay: delay.map(|bars| FixedDecisionDelay::Fifo { bars }),
+            transient,
+            settlement,
+        }
+    }
+
+    fn kernel(coefficient: f64, decay_per_bar: f64, shape: TransientShape) -> TransientImpact {
+        TransientImpact {
+            coefficient,
+            decay_per_bar,
+            shape,
+        }
+    }
+
+    fn no_impact() -> MarketParams {
+        MarketParams {
+            lambda: 0.0,
+            eta: 0.0,
+            volume_scale: 1.0,
+            vol_scale: 0.0,
+        }
+    }
+
+    fn last_close(observation: &MarketObservation) -> f64 {
+        *observation.symbols[0].close_history.last().unwrap()
+    }
+
+    /// Serialized default steps, stripped of nothing: settings that change nothing must
+    /// leave every step byte-identical apart from the opt-in `execution` field itself.
+    #[test]
+    fn frozen_default_settings_change_no_bit_of_the_path() {
+        let data = Dataset::synthetic(2, 40, 7);
+        let params = MarketParams {
+            vol_scale: 3.0,
+            ..MarketParams::default()
+        };
+        let mut plain = MarketClearing::from_dataset(&data, 2, 1.0);
+        let mut opted = MarketClearing::from_dataset(&data, 2, 1.0)
+            .with_execution(ExecutionSettings::frozen_default())
+            .unwrap();
+        assert_eq!(
+            serde_json::to_string(&plain.initial_observations()).unwrap(),
+            serde_json::to_string(&opted.initial_observations()).unwrap()
+        );
+        let orders = vec![vec![0.6, 0.2], vec![-0.2, 0.1]];
+        while !plain.is_done() {
+            let left = plain.step(&orders, &params);
+            let mut right = opted.step(&orders, &params);
+            assert!(right.execution.take().is_some());
+            assert_eq!(
+                serde_json::to_string(&left).unwrap(),
+                serde_json::to_string(&right).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn the_default_market_fills_only_its_first_decision_on_the_observed_close() {
+        let data = Dataset::synthetic(1, 40, 3);
+        let mut market = MarketClearing::from_dataset(&data, 1, 1.0);
+        let start = market.start_bar();
+        let first = market.initial_observations();
+        let params = no_impact();
+        let step = market.step(&[vec![0.5]], &params);
+        assert_eq!(last_close(&first[0]), step.fills[0][0].fill_price);
+        let seen = last_close(&step.observations[0]);
+        let next = market.step(&[vec![0.7]], &params);
+        assert_eq!(seen, data.close_at(&market.symbols()[0], start).unwrap());
+        assert_eq!(
+            next.fills[0][0].fill_price,
+            data.close_at(&market.symbols()[0], start + 1).unwrap()
+        );
+        assert_ne!(seen, next.fills[0][0].fill_price);
+    }
+
+    /// A decision fills `bars` bars after the last close it saw, on every decision
+    /// including the first, and waiting decisions execute in submission order.
+    #[test]
+    fn a_fixed_delay_fills_every_decision_after_its_last_observed_close() {
+        let data = Dataset::synthetic(1, 40, 3);
+        let symbol = data.symbols()[0].clone();
+        for bars in [1_usize, 2, 3] {
+            let mut market = MarketClearing::from_dataset(&data, 1, 1.0)
+                .with_execution(settings(Some(bars), None, TerminalSettlement::Marked))
+                .unwrap();
+            let start = market.start_bar();
+            let params = no_impact();
+            let mut observed_bar = start - 1;
+            assert_eq!(
+                last_close(&market.initial_observations()[0]),
+                data.close_at(&symbol, observed_bar).unwrap()
+            );
+            let mut weights = Vec::new();
+            let mut step = 0;
+            // inv: weights[k] was submitted having observed bar start - 1 + k, and at the
+            // top of the loop every decision older than `bars - 1` steps has been filled.
+            while !market.is_done() {
+                let weight = 0.01 * (step + 1) as f64;
+                weights.push(weight);
+                let bar = market.cursor();
+                let cleared = market.step(&[vec![weight]], &params);
+                let trace = cleared.execution.as_ref().unwrap();
+                assert_eq!(trace.decision_eligible, step + 1 >= bars);
+                if step + 1 >= bars {
+                    let decision = step + 1 - bars;
+                    assert_eq!(bar, start + decision + bars - 1);
+                    // Observed start - 1 + decision, filled `bars` later.
+                    assert_eq!(start - 1 + decision + bars, bar);
+                    assert_eq!(
+                        cleared.fills[0][0].fill_price,
+                        data.close_at(&symbol, bar).unwrap()
+                    );
+                    let previous = if decision == 0 {
+                        0.0
+                    } else {
+                        weights[decision - 1]
+                    };
+                    let expected = (weights[decision] - previous) / cleared.cleared_mids[0];
+                    assert_eq!(cleared.fills[0][0].size, expected);
+                } else {
+                    assert_eq!(cleared.fills[0][0].size, 0.0);
+                }
+                observed_bar = bar;
+                step += 1;
+            }
+            assert_eq!(observed_bar, 39);
+            // Tail decisions never fill: bars - 1 submissions stayed in the queue.
+            assert_eq!(market.delayed_decisions.len(), bars - 1);
+            market.reset();
+            assert!(market.delayed_decisions.is_empty());
+        }
+    }
+
+    #[test]
+    fn transient_impact_decays_exactly_and_never_touches_the_permanent_multiplier() {
+        let data = Dataset::synthetic(1, 40, 4);
+        let mut market = MarketClearing::from_dataset(&data, 1, 1.0)
+            .with_execution(settings(
+                None,
+                Some(kernel(0.2, 0.5, TransientShape::Linear)),
+                TerminalSettlement::Marked,
+            ))
+            .unwrap();
+        let params = no_impact();
+        let entry = market.step(&[vec![0.8]], &params);
+        let x = entry.net_flow[0];
+        assert!(x > 0.0);
+        // The entry fill pays the whole increment; the mid had no displacement yet.
+        assert_eq!(
+            entry.fills[0][0].fill_price,
+            entry.cleared_mids[0] * (1.0 + 0.2 * x)
+        );
+        let mut expected_state = 0.5 * x;
+        for _ in 0..5 {
+            let hold = market.step(&[vec![0.8]], &params);
+            let trace = hold.execution.as_ref().unwrap();
+            assert_eq!(trace.transient_displacement[0], 0.2 * expected_state);
+            assert_eq!(trace.permanent_multiplier[0], 1.0);
+            expected_state *= 0.5;
+        }
+        assert!(expected_state < x / 32.0);
+    }
+
+    #[test]
+    fn zero_decay_leaves_no_displacement_on_the_tape() {
+        let data = Dataset::synthetic(1, 30, 4);
+        let symbol = data.symbols()[0].clone();
+        let mut market = MarketClearing::from_dataset(&data, 1, 1.0)
+            .with_execution(settings(
+                None,
+                Some(kernel(0.5, 0.0, TransientShape::SquareRoot)),
+                TerminalSettlement::Marked,
+            ))
+            .unwrap();
+        let params = no_impact();
+        for step in 0..8 {
+            let bar = market.cursor();
+            let cleared = market.step(&[vec![0.1 * step as f64]], &params);
+            assert_eq!(
+                cleared.cleared_mids[0],
+                data.close_at(&symbol, bar).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn the_square_root_shape_is_antisymmetric_and_concave_in_cumulative_flow() {
+        let shape = TransientShape::SquareRoot;
+        assert_eq!(shape.level(0.0), 0.0);
+        assert_eq!(shape.level(0.25), 0.5);
+        assert_eq!(shape.level(-0.25), -0.5);
+        assert_eq!(TransientShape::Linear.level(-0.25), -0.25);
+        assert!(shape.level(0.04) - shape.level(0.03) < shape.level(0.02) - shape.level(0.01));
+    }
+
+    fn weights_up_then_flat(bar: usize) -> f64 {
+        match bar {
+            0..=4 => 0.2 * (bar + 1) as f64,
+            5 => 1.0,
+            6..=10 => 1.0 - 0.2 * (bar - 5) as f64,
+            _ => 0.0,
+        }
+    }
+
+    /// The reader-note claim, measured: a target-weight round trip on a moving mid leaves
+    /// residual shares under the marked default, and settlement turns them into cash.
+    #[test]
+    fn a_target_flat_round_trip_is_not_share_flat_and_settlement_is_cash() {
+        let data = Dataset::synthetic(1, 40, 11);
+        let params = MarketParams {
+            lambda: 0.5,
+            eta: 0.05,
+            volume_scale: 1.0,
+            vol_scale: 0.0,
+        };
+        let run = |settlement| {
+            let mut market = MarketClearing::from_dataset(&data, 1, 1.0)
+                .with_execution(settings(None, None, settlement))
+                .unwrap();
+            let mut bar = 0;
+            loop {
+                let cleared = market.step(&[vec![weights_up_then_flat(bar)]], &params);
+                bar += 1;
+                if cleared.done {
+                    return (market, cleared);
+                }
+            }
+        };
+        let (marked, marked_last) = run(TerminalSettlement::Marked);
+        let residual = marked.agents[0].shares[0];
+        assert!(residual.abs() > 1e-6, "residual shares {residual}");
+        assert!(marked_last.execution.unwrap().settlement.is_none());
+
+        let (settled, settled_last) = run(TerminalSettlement::CashLiquidation);
+        let book = &settled.agents[0];
+        assert_eq!(book.shares[0], 0.0);
+        assert_eq!(book.cost_basis[0], 0.0);
+        assert_eq!(settled_last.navs[0], book.cash);
+        let terminal = settled_last.execution.unwrap().settlement.unwrap();
+        assert_eq!(terminal.fills[0][0].size, -residual);
+        assert_eq!(terminal.net_flow[0], -residual);
+        assert_eq!(
+            settled_last.observations[0].portfolio[0].shares, 0.0,
+            "the terminal observation must show the settled book"
+        );
+        // Selling a residual through impact cannot beat marking it at the pre-sale mid.
+        assert!(settled_last.navs[0] < marked_last.navs[0] + residual.abs() * 1e-2);
+    }
+
+    /// Exact accounting on one hand-computed settlement: the post-flow mid carries the
+    /// bar's own permanent impact, and the sale pays crowd plus own-size terms.
+    #[test]
+    fn settlement_prices_the_post_flow_mid_through_the_impact_terms() {
+        let data = Dataset::synthetic(1, 22, 5);
+        let params = MarketParams {
+            lambda: 0.3,
+            eta: 0.1,
+            volume_scale: 2.0,
+            vol_scale: 0.0,
+        };
+        let mut market = MarketClearing::from_dataset(&data, 1, 1.0)
+            .with_execution(settings(None, None, TerminalSettlement::CashLiquidation))
+            .unwrap();
+        // Bars 20 and 21 trade; 21 is the last.
+        let first = market.step(&[vec![0.5]], &params);
+        let shares = first.net_flow[0];
+        let cash_before = 1.0 - shares * first.fills[0][0].fill_price;
+        let last = market.step(&[vec![0.5]], &params);
+        assert!(last.done);
+        assert_eq!(last.net_flow[0].abs(), 0.0);
+        let terminal = last
+            .execution
+            .as_ref()
+            .unwrap()
+            .settlement
+            .as_ref()
+            .unwrap();
+        // No flow on the last bar: the post-flow mid is the cleared mid.
+        assert_eq!(terminal.mids[0], last.cleared_mids[0]);
+        let fill = terminal.mids[0] * (1.0 + (0.3 * (-shares) / 2.0 + 0.1 * (-shares) / 2.0));
+        assert_eq!(terminal.fills[0][0].fill_price, fill);
+        assert!(fill < last.cleared_mids[0]);
+        assert_eq!(last.navs[0], cash_before + shares * fill);
+    }
+
+    #[test]
+    fn settings_are_versioned_validated_and_identified() {
+        for bad in [
+            settings(Some(0), None, TerminalSettlement::Marked),
+            settings(
+                None,
+                Some(kernel(-0.1, 0.5, TransientShape::Linear)),
+                TerminalSettlement::Marked,
+            ),
+            settings(
+                None,
+                Some(kernel(f64::NAN, 0.5, TransientShape::Linear)),
+                TerminalSettlement::Marked,
+            ),
+            settings(
+                None,
+                Some(kernel(0.1, 1.0, TransientShape::Linear)),
+                TerminalSettlement::Marked,
+            ),
+            settings(
+                None,
+                Some(kernel(0.1, -0.1, TransientShape::Linear)),
+                TerminalSettlement::Marked,
+            ),
+        ] {
+            assert!(bad.validate().is_err(), "{bad:?} must be refused");
+        }
+        let delay = serde_json::to_string(&FixedDecisionDelay::Fifo { bars: 2 }).unwrap();
+        assert_eq!(
+            delay,
+            r#"{"schema_version":"sharpebench.fixed-decision-delay.v1","bars":2}"#
+        );
+        let good = settings(
+            Some(1),
+            Some(kernel(0.1, 0.5, TransientShape::SquareRoot)),
+            TerminalSettlement::CashLiquidation,
+        );
+        let wire = serde_json::to_string(&good).unwrap();
+        assert_eq!(
+            serde_json::from_str::<ExecutionSettings>(&wire).unwrap(),
+            good
+        );
+        for refused in [
+            wire.replace("market-execution.v1", "market-execution.v2"),
+            wire.replace("fixed-decision-delay.v1", "fixed-decision-delay.v2"),
+            wire.replace("square_root", "cube_root"),
+            wire.replace("cash_liquidation", "cash"),
+            wire.replace("\"coefficient\"", "\"extra\":1,\"coefficient\""),
+        ] {
+            assert!(
+                serde_json::from_str::<ExecutionSettings>(&refused).is_err(),
+                "{refused} must be refused"
+            );
+        }
+        let params = MarketParams::default();
+        let identity = |execution: Option<&ExecutionSettings>| {
+            serde_json::to_string(&MarketExecutionIdentity::new(&params, 1.0, None, execution))
+                .unwrap()
+        };
+        let mut changed = good;
+        changed.settlement = TerminalSettlement::Marked;
+        assert_ne!(identity(Some(&good)), identity(Some(&changed)));
+        assert_ne!(identity(Some(&good)), identity(None));
+    }
+
+    #[test]
+    fn reset_clears_transient_state_and_replays_under_settings() {
+        let data = Dataset::synthetic(2, 40, 7);
+        let params = MarketParams::default();
+        let installed = settings(
+            Some(2),
+            Some(kernel(0.2, 0.9, TransientShape::SquareRoot)),
+            TerminalSettlement::CashLiquidation,
+        );
+        let orders = vec![vec![0.6, 0.2], vec![-0.2, 0.1]];
+        let mut used = MarketClearing::from_dataset(&data, 2, 1.0)
+            .with_execution(installed)
+            .unwrap();
+        let mut fresh = MarketClearing::from_dataset(&data, 2, 1.0)
+            .with_execution(installed)
+            .unwrap();
+        for _ in 0..7 {
+            used.step(&orders, &params);
+        }
+        used.reset();
+        assert_eq!(used.transient_state, vec![0.0, 0.0]);
+        while !used.is_done() {
+            assert_eq!(
+                serde_json::to_string(&used.step(&orders, &params)).unwrap(),
+                serde_json::to_string(&fresh.step(&orders, &params)).unwrap()
+            );
         }
     }
 }
