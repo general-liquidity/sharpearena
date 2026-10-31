@@ -11,8 +11,8 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyType;
 use pyo3::wrap_pyfunction;
-use std::collections::VecDeque;
 use sharpearena::exec_noise::{perturb as core_perturb_action, ExecNoise};
+use std::collections::VecDeque;
 
 // --- Typed errors across the FFI boundary --------------------------------------------------
 
@@ -294,13 +294,12 @@ fn bind_fixed_delay(
     };
     let mut block: serde_json::Value =
         serde_json::from_str(&effective).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))?;
-    let timing = serde_json::to_value(delay.wire()).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))?;
+    let timing =
+        serde_json::to_value(delay.wire()).map_err(|e| engine_err(CODE_ENGINE_FAILURE, e))?;
     let identity = serde_json::json!({ "costs": costs, "fixed_delay": timing });
     block["fixed_delay"] = timing;
-    block["execution_fnv1a64"] = serde_json::json!(format!(
-        "{:016x}",
-        fnv1a64(identity.to_string().as_bytes())
-    ));
+    block["execution_fnv1a64"] =
+        serde_json::json!(format!("{:016x}", fnv1a64(identity.to_string().as_bytes())));
     Ok(block.to_string())
 }
 
@@ -744,9 +743,8 @@ impl PyTradingEnv {
     /// Restore a trusted snapshot produced by [`clone_state`] without replay.
     /// Copying and JSON parsing scale with state size, including accumulated trace data.
     fn restore_state(&mut self, state_json: &str) -> PyResult<()> {
-        let invalid = |e: serde_json::Error| {
-            engine_err(CODE_INVALID_JSON, format!("invalid env state: {e}"))
-        };
+        let invalid =
+            |e: serde_json::Error| engine_err(CODE_INVALID_JSON, format!("invalid env state: {e}"));
         match &mut self.delay {
             Some(delay) => {
                 let mut state: serde_json::Value =
