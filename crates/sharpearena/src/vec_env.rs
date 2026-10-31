@@ -16,10 +16,10 @@
 //! `every_dispatch_produces_the_same_trajectory`). On `wasm32`, where threads do not
 //! build, the same loop runs serially.
 //!
-//! Scheduling is therefore a pure cost decision. One transition is microseconds of work
-//! and a Rayon fork-join is tens to hundreds, so a batch only goes parallel when its
-//! estimated work pays for the dispatch, and then in chunks large enough to pay for each
-//! task (see [`Dispatch`]). The estimate reads lane and symbol counts, never a clock.
+//! Scheduling is therefore a pure cost decision. One transition is microseconds of work,
+//! and a Rayon fork-join costs more the larger the pool it wakes, so a batch only goes
+//! parallel when its estimated work pays for a fork on the current pool (see
+//! [`Dispatch`]). The estimate reads lane, symbol and thread counts, never a clock.
 
 #[cfg(not(target_arch = "wasm32"))]
 use rayon::prelude::*;
@@ -305,15 +305,18 @@ impl BatchStep {
     }
 }
 
-/// Estimated work below which a batch steps serially. A native-only tuning value: it
+/// Fork-join cost per squared pool thread. A batch on a `T`-thread pool goes parallel only
+/// when its estimated work is at least `T * T` times this. A native-only tuning value: it
 /// picks a schedule and cannot reach a result, because every schedule yields the same
 /// bytes.
+///
+/// Measured on a contended 64-core host over 1 to 64 threads and 8 to 256 lanes, the
+/// break-even work grows faster than linearly in the pool size: one-lane tasks beat the
+/// serial loop at 24 us of work on 4 threads, need well over 100 us on 8, and lose at
+/// 768 us on 32 and 64. Splitting lanes into pool-sized chunks lost to one-lane tasks at
+/// every small pool measured, so a parallel batch keeps Rayon's own splitting.
 #[cfg(not(target_arch = "wasm32"))]
-const SERIAL_BELOW_NS: u64 = 2_000_000;
-
-/// Estimated work one Rayon task must carry to be worth dispatching.
-#[cfg(not(target_arch = "wasm32"))]
-const PARALLEL_GRAIN_NS: u64 = 200_000;
+const FORK_NS_PER_THREAD_SQ: u64 = 2_000;
 
 /// Estimated nanoseconds to step one lane of `n_symbols`. A line fitted to measured
 /// release-build transitions from 1 to 64 symbols, floored at the small-panel cost. It
@@ -338,22 +341,25 @@ enum Dispatch {
 }
 
 /// Pick the schedule for `lanes` lanes costing `work_ns` in total on a `threads`-sized
-/// pool. A batch that cannot pay for the fork-join stays serial; one that can is cut into
-/// tasks of at least [`PARALLEL_GRAIN_NS`], since one lane per task spends more on
-/// dispatch than on transitions.
+/// pool. A batch that cannot pay for a fork-join on this pool stays serial; one that can
+/// runs one lane per Rayon task, as before this planner existed.
 #[cfg(not(target_arch = "wasm32"))]
 fn plan_dispatch(lanes: usize, work_ns: u64, threads: usize) -> Dispatch {
-    if threads <= 1 || lanes <= 1 || work_ns < SERIAL_BELOW_NS {
+    if threads <= 1 || lanes <= 1 || work_ns < fork_break_even_ns(threads) {
         return Dispatch::Serial;
     }
-    let lanes_wide = u128::try_from(lanes).unwrap_or(u128::MAX);
-    let min_lanes = lanes_wide
-        .saturating_mul(u128::from(PARALLEL_GRAIN_NS))
-        .div_ceil(u128::from(work_ns));
-    match usize::try_from(min_lanes).ok().and_then(NonZeroUsize::new) {
-        Some(min_lanes) => Dispatch::Parallel { min_lanes },
-        None => Dispatch::Serial,
+    Dispatch::Parallel {
+        min_lanes: NonZeroUsize::MIN,
     }
+}
+
+/// The estimated work at which a fork-join on a `threads`-sized pool pays for itself.
+#[cfg(not(target_arch = "wasm32"))]
+fn fork_break_even_ns(threads: usize) -> u64 {
+    let threads = u64::try_from(threads).unwrap_or(u64::MAX);
+    threads
+        .saturating_mul(threads)
+        .saturating_mul(FORK_NS_PER_THREAD_SQ)
 }
 
 /// A batch of `B` independent [`TradingEnv`] lanes stepped together.
@@ -774,37 +780,27 @@ mod tests {
 
     #[test]
     fn dispatch_plan_stays_serial_until_the_work_pays_for_a_fork() {
-        assert_eq!(plan_dispatch(64, SERIAL_BELOW_NS - 1, 64), Dispatch::Serial);
+        let one = Dispatch::Parallel {
+            min_lanes: NonZeroUsize::MIN,
+        };
+        for threads in [2, 4, 8, 16, 64] {
+            let even = fork_break_even_ns(threads);
+            assert_eq!(plan_dispatch(64, even - 1, threads), Dispatch::Serial);
+            assert_eq!(plan_dispatch(64, even, threads), one, "{threads}");
+        }
         assert_eq!(plan_dispatch(1, u64::MAX, 64), Dispatch::Serial);
         assert_eq!(plan_dispatch(0, 0, 64), Dispatch::Serial);
         assert_eq!(plan_dispatch(512, u64::MAX, 1), Dispatch::Serial);
-        assert!(matches!(
-            plan_dispatch(64, SERIAL_BELOW_NS, 64),
-            Dispatch::Parallel { .. }
-        ));
+        assert_eq!(plan_dispatch(usize::MAX, u64::MAX, usize::MAX), one);
     }
 
     #[test]
-    fn parallel_tasks_carry_at_least_one_grain() {
-        for (lanes, work_ns) in [
-            (2, SERIAL_BELOW_NS),
-            (512, 2_048_000),
-            (4_096, 16_384_000),
-            (32, 32 * lane_cost_ns(64)),
-            (usize::MAX, u64::MAX),
-        ] {
-            let Dispatch::Parallel { min_lanes } = plan_dispatch(lanes, work_ns, 64) else {
-                panic!("{lanes} lanes at {work_ns} ns should go parallel");
-            };
-            let task_ns = work_ns as f64 * min_lanes.get() as f64 / lanes as f64;
-            assert!(task_ns >= PARALLEL_GRAIN_NS as f64, "{lanes} {work_ns}");
-        }
-        // 4 us a lane and a 200 us grain: 50 lanes a task, not one.
-        let plan = plan_dispatch(512, 2_048_000, 64);
-        let want = Dispatch::Parallel {
-            min_lanes: NonZeroUsize::new(50).unwrap(),
-        };
-        assert_eq!(plan, want);
+    fn break_even_grows_with_the_square_of_the_pool() {
+        assert_eq!(fork_break_even_ns(1), 2_000);
+        assert_eq!(fork_break_even_ns(4), 32_000);
+        assert_eq!(fork_break_even_ns(8), 128_000);
+        assert_eq!(fork_break_even_ns(64), 8_192_000);
+        assert_eq!(fork_break_even_ns(usize::MAX), u64::MAX);
     }
 
     #[test]
@@ -817,29 +813,34 @@ mod tests {
     }
 
     #[test]
-    fn dispatch_reads_the_lane_panels() {
-        let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(8)
-            .build()
-            .unwrap();
-        // The INT-13 workload at a lane count that used to lose to the scalar loop.
+    fn dispatch_reads_the_pool_and_the_lane_panels() {
+        let pool = |threads| {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()
+                .unwrap()
+        };
+        let (small, large) = (pool(4), pool(64));
+        // The INT-13 workload at 256 lanes: worth a fork on 4 threads, not on 64.
         let narrow = VecTradingEnv::from_configs(&vec![LaneConfig::new(4, 30, 1); 256]);
-        assert_eq!(pool.install(|| narrow.dispatch()), Dispatch::Serial);
-        // Same lane count, wide panels: the work now pays for the fork.
+        assert!(matches!(
+            small.install(|| narrow.dispatch()),
+            Dispatch::Parallel { .. }
+        ));
+        assert_eq!(large.install(|| narrow.dispatch()), Dispatch::Serial);
+        // Same lane count, wide panels: the work pays for a fork on 64 threads too.
         let wide = VecTradingEnv::from_configs(&vec![LaneConfig::new(64, 30, 1); 256]);
         assert!(matches!(
-            pool.install(|| wide.dispatch()),
+            large.install(|| wide.dispatch()),
             Dispatch::Parallel { .. }
         ));
         // `from_envs` cannot see a panel until the first reset reports it.
-        let envs: Vec<TradingEnv> = (0..32)
-            .map(|_| LaneConfig::new(64, 30, 1).build())
-            .collect();
-        let mut built = VecTradingEnv::from_envs(envs, vec![1; 32]);
-        assert_eq!(pool.install(|| built.dispatch()), Dispatch::Serial);
+        let envs: Vec<TradingEnv> = (0..4).map(|_| LaneConfig::new(64, 30, 1).build()).collect();
+        let mut built = VecTradingEnv::from_envs(envs, vec![1; 4]);
+        assert_eq!(small.install(|| built.dispatch()), Dispatch::Serial);
         built.reset_batch();
         assert!(matches!(
-            pool.install(|| built.dispatch()),
+            small.install(|| built.dispatch()),
             Dispatch::Parallel { .. }
         ));
     }
