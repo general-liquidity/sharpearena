@@ -43,9 +43,18 @@ own reading, where running out of bars is truncation and a blown account is term
 ``rllib-env`` and ``multi-agent-envs`` state that "multi-agent setups aren't
 vectorizable yet". In the installed 2.58.0, ``MultiAgentEnvRunner.make_env`` calls
 ``gymnasium.make_vec`` with ``num_envs_per_env_runner`` and asserts the result is a
-``VectorMultiAgentEnv``. ``tests/test_rllib.py`` trains the multi-agent route with
-``num_envs_per_env_runner=2`` and records what actually happens, so the claim in this
-tree rests on the run rather than on either page.
+``VectorMultiAgentEnv``. ``tests/test_rllib_learner.py`` trains the multi-agent route
+with ``num_envs_per_env_runner=2`` and reads the lane count back from the runner, so the
+claim in this tree rests on the run rather than on either page.
+
+**The runner's seed decides the scenario, not the creator's.** An ``EnvRunner``'s first
+``reset`` passes ``seed=`` derived from ``.debugging(seed=...)``, and ``reset(seed=k)``
+rebuilds the scenario, so whatever seed the creator read out of ``env_config`` lasts only
+until that call. Left alone, a held-out ``env_config["seed"]`` would quietly trade the
+training band. The config builders therefore run RLlib on the declared scenario seed and
+refuse the two settings that cannot be honoured: a ``seed`` argument that contradicts
+``env_config["seed"]``, and ``seed_per_worker=False``, since the runner gives every lane
+its own seed regardless.
 """
 
 from __future__ import annotations
@@ -256,6 +265,29 @@ def register_sharpearena_envs() -> tuple[str, str]:
     return SINGLE_AGENT_ENV, MULTI_AGENT_ENV
 
 
+def _run_seed(env_config: Mapping[str, Any], seed: Optional[int]) -> int:
+    """The seed RLlib runs on: the scenario the caller declared, stated once.
+
+    See the module docstring for why this cannot be left to the creator. Contradictions
+    are refused rather than resolved, because either resolution silently trades a
+    scenario someone did not ask for.
+    """
+    if env_config.get("seed_per_worker") is False:
+        raise ValueError(
+            "seed_per_worker=False cannot be honoured through an RLlib config: the "
+            "EnvRunner seeds every lane itself on its first reset"
+        )
+    declared = env_config.get("seed")
+    if declared is None:
+        return 0 if seed is None else int(seed)
+    if seed is not None and int(seed) != int(declared):
+        raise ValueError(
+            f"seed={seed} contradicts env_config seed={declared}; RLlib's first reset "
+            "applies the run seed to the scenario, so the two must agree"
+        )
+    return int(declared)
+
+
 def single_agent_config(
     *,
     env_config: Optional[Mapping[str, Any]] = None,
@@ -264,7 +296,7 @@ def single_agent_config(
     train_batch_size: int = 256,
     minibatch_size: int = 64,
     num_epochs: int = 1,
-    seed: int = 0,
+    seed: Optional[int] = None,
 ):
     """A PPO config over the single-agent route.
 
@@ -292,7 +324,7 @@ def single_agent_config(
             num_epochs=int(num_epochs),
         )
         .learners(num_learners=0)
-        .debugging(seed=int(seed))
+        .debugging(seed=_run_seed(dict(env_config or {}), seed))
     )
 
 
@@ -313,7 +345,7 @@ def multi_agent_config(
     train_batch_size: int = 256,
     minibatch_size: int = 64,
     num_epochs: int = 1,
-    seed: int = 0,
+    seed: Optional[int] = None,
 ):
     """A PPO config over the multi-agent route, with every seat on one shared policy.
 
@@ -341,7 +373,7 @@ def multi_agent_config(
             num_epochs=int(num_epochs),
         )
         .learners(num_learners=0)
-        .debugging(seed=int(seed))
+        .debugging(seed=_run_seed(dict(env_config or {}), seed))
     )
 
 
