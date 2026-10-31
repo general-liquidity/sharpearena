@@ -221,6 +221,13 @@ fn main() {
         .find(|w| w[0] == "--manifest")
         .map(|w| w[1].clone())
         .unwrap_or_else(|| "docs/integration/int13/workload-manifest.json".to_string());
+    // What the machine was doing during the run. Recorded rather than assumed: a run on a
+    // shared machine must not read as a quiet-machine baseline.
+    let condition = args
+        .windows(2)
+        .find(|w| w[0] == "--condition")
+        .map(|w| w[1].clone())
+        .unwrap_or_else(|| "unstated".to_string());
 
     let text = std::fs::read_to_string(&manifest_path)
         .unwrap_or_else(|e| panic!("cannot read manifest {manifest_path}: {e}"));
@@ -390,6 +397,7 @@ fn main() {
     let record = serde_json::json!({
         "harness": "bench-int13 (native)",
         "manifest_id": m.manifest_id,
+        "condition": condition,
         "steps_per_episode": steps_per_episode,
         "rustc": option_env!("RUSTC_VERSION").unwrap_or("see report"),
         "ambient_rayon_threads": ambient_threads,
