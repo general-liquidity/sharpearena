@@ -44,7 +44,16 @@ def main(names: list) -> int:
     outcomes = Outcomes()
     paths = [str(TESTS / name) for name in names]
     status = pytest.main(
-        ["-q", "-p", "no:cacheprovider", "--import-mode=importlib", *paths],
+        # --rootdir: the runner sits in an empty temporary directory, and without this
+        # pytest can root at a shared parent and trip over whatever else lives there.
+        [
+            "-q",
+            "-p",
+            "no:cacheprovider",
+            "--import-mode=importlib",
+            f"--rootdir={TESTS}",
+            *paths,
+        ],
         plugins=[outcomes],
     )
     if status != 0:
