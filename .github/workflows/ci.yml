@@ -333,7 +333,7 @@ jobs:
         run: |
           python -m venv .venv
           source .venv/bin/activate
-          pip install --upgrade pip
+          pip install "pip==26.2.2"
           # Pinned, like every other dependency this job installs: an unpinned build
           # backend is a floating input to the extension module the suite then tests.
           pip install --requirement build-requirements.txt
