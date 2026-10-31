@@ -3150,10 +3150,13 @@ mod tests {
         );
         let mut expected_state = 0.5 * x;
         for _ in 0..5 {
+            let bar = market.cursor();
             let hold = market.step(&[vec![0.8]], &params);
             let trace = hold.execution.as_ref().unwrap();
             assert_eq!(trace.transient_displacement[0], 0.2 * expected_state);
             assert_eq!(trace.permanent_multiplier[0], 1.0);
+            let exo = data.close_at(&market.symbols()[0], bar).unwrap();
+            assert_eq!(hold.cleared_mids[0], exo * (1.0 + 0.2 * expected_state));
             expected_state *= 0.5;
         }
         assert!(expected_state < x / 32.0);
