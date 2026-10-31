@@ -319,8 +319,14 @@ Reward-hack classes from Karotte's `docs/why-karotte.md`, compared with the fixt
 | (d) a lingering process swaps the artifact after the check | `lingering_swap` | one descriptor, checks on it, one read | `artifact_not_regular_file` |
 | (e) planted `sitecustomize.py` or binary on a path | `planted_interpreter` | `test.sh` run with the artifact dir on `PATH` and `PYTHONPATH` and as cwd | planted code does not run; honest score |
 | (f) background process left running | `lingering_swap` | as (d) | as (d) |
-| (g) exhaust memory, processes or disk | `sparse_artifact` covers disk through the transfer | `cpus` and `memory_mb` set; no pids or storage limit in the Docker provider | open for fork bombs and disk fills outside `/logs/artifacts`; a verifier that cannot write its report counts as a crash |
-| (h) agent reaches the network | none | `no-network` is unavailable on this host (section 2) | open |
+| (g) exhaust memory, processes or disk | `sparse_artifact` covers disk through the transfer; harness tests for low verifier disk and for a grader that never starts | `cpus` and `memory_mb` set. Harbor 0.23.0's Docker provider declares only `cpu_limit` and `memory_limit`, ignores `storage_mb` and has no pids field. The grader refuses below 1 MiB free as `verifier_resources_exhausted`; `test.sh` writes `verifier_unavailable` with shell builtins when the grader leaves no verdict | **limit, not closed**: a fork bomb or disk fill is not bounded. A verifier that notices reports `infrastructure`, which makes the headline unavailable; one that cannot write at all leaves no reward, which counts as a crash |
+| (h) agent reaches the network | `network_egress` (records TCP and DNS attempts in `egress.json`) | `network_mode = "no-network"` on both containers; Harbor refuses the task where the provider cannot enforce it | closed by configuration, fail closed. On this host Harbor refuses the job (no nftables fib inet), so no container has shown blocked egress; the shell harness only checks the setting |
+
+Infrastructure verdicts are not evaluator faults. An agent can cause the exhaustion,
+so dropping those trials from the denominator would let it dodge a 0; scoring them
+would charge it for a host failure. The metric reports them and withholds the headline.
+Every outcome in this table comes from the shell harness under WSL2, not from a
+container run.
 
 In a real job the verifier runs in its own container, so (d) to (f) can only act in the
 agent container before collection. The fixtures model that order on one filesystem and

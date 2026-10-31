@@ -72,7 +72,7 @@ at fixtures that are in this tree; a fixture is not adapter support.
 |---|---|---|
 | CleanRL | Not supported. The tree holds a CleanRL-style example, listed above, not CleanRL. | [CleanRL: dependency ranges don't intersect](#cleanrl-dependency-ranges-dont-intersect), below. |
 | <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/hud-dark.svg"><img src="../assets/logos/hud.svg" alt="" height="14"></picture> HUD | Local feasibility only, not a supported integration | [HUD: a local feasibility check, now in the tree](#hud-a-local-feasibility-check-now-in-the-tree), below. |
-| <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/harbor-dark.png"><img src="../assets/logos/harbor.png" alt="" height="13"></picture> Harbor | Local feasibility only, not a supported integration | `integrations/harbor/`, recorded in [INT-09](INT-09-harbor-local-feasibility.md). A local job ran end to end under Harbor 0.23.0 on Docker Desktop over WSL2 with a separate-container verifier. Of the seven tampering fixtures run (an eighth, honest, trial is the control), none was caught by a tamper-specific reason code - the grader's two dedicated checks never fired; two were refused on a generic submission/schema code; four were accepted with the attack scoring no better than an honest run; one crashed the trial before grading. The evidence covers that one host: it is not evidence against kernel-level container escape, and network egress is untested because `no-network` is unavailable there. Harbor's built-in job aggregation counts a missing or crashed reward as 0; `integrations/harbor/metric.py` now separates accepted, refused and crashed trials, and that tally predates it. |
+| <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/logos/harbor-dark.png"><img src="../assets/logos/harbor.png" alt="" height="13"></picture> Harbor | Local feasibility only, not a supported integration | `integrations/harbor/`, recorded in [INT-09](INT-09-harbor-local-feasibility.md). A local job ran end to end under Harbor 0.23.0 on Docker Desktop over WSL2 with a separate-container verifier. Of the seven tampering fixtures run (an eighth, honest, trial is the control), none was caught by a tamper-specific reason code - the grader's two dedicated checks never fired; two were refused on a generic submission/schema code; four were accepted with the attack scoring no better than an honest run; one crashed the trial before grading. The evidence covers that one host: it is not evidence against kernel-level container escape, and network egress is untested because `no-network` is unavailable there. The task now requests `no-network`, so Harbor refuses it on that host rather than running it with egress open. Harbor's built-in job aggregation counts a missing or crashed reward as 0; `integrations/harbor/metric.py` now separates accepted, refused and crashed trials, and that tally predates it. |
 | PufferLib | Ruled out | [Ruled out: PufferLib and EnvPool](#ruled-out-pufferlib-and-envpool), below. |
 | <img src="../assets/logos/envpool.svg" alt="" height="12"> EnvPool | Ruled out | [Ruled out: PufferLib and EnvPool](#ruled-out-pufferlib-and-envpool), below. |
 
@@ -202,6 +202,16 @@ any of the following, so the tally above stands as recorded.
   `accepted`, `agent_fault` and `evaluator_fault` fields the grader writes to
   `reward.json`. See INT-09 for the 2026-10-31 hardening and the reward-hack coverage
   table.
+- Documented limit, resource exhaustion (Karotte class g). Harbor 0.23.0's Docker
+  provider declares `cpu_limit` and `memory_limit` only: it ignores `storage_mb` and has
+  no pids limit, so the task sets `cpus` and `memory_mb` and nothing else. A fork bomb
+  or disk fill in the agent container is not bounded. The verifier reports exhaustion
+  it can detect as `infrastructure` (headline unavailable, trial neither scored nor
+  dropped); a verifier that can write nothing leaves no reward, counted as crashed.
+- Network (class h). Both containers set `network_mode = "no-network"`. Harbor rejects
+  that task on a provider that cannot enforce it, and Docker enforces it only with
+  nftables fib inet support in the engine kernel, which the recorded WSL2 host lacks.
+  Blocked egress has not been observed in a container.
 - A `[[verifier.collect]]` hook in `task.toml` removes and counts symlinks and special
   files before Harbor collects artifacts, and the grader refuses them as
   `artifact_tree_unsafe`. This is as far as the task package reaches. The upstream
