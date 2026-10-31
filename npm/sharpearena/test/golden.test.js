@@ -46,6 +46,7 @@ test("the committed .wasm reproduces every cross-runtime scenario golden", () =>
   const PRE_HASH_FIXTURES = {
     calm_4x120_seed7: "scenario-calm-4x120-seed7.json",
     hard_clustered_4x120_seed7: "scenario-hard-clustered-4x120-seed7.json",
+    martingale_v1_4x120_seed7: "scenario-martingale-v1-4x120-seed7.json",
   };
 
   for (const scenario of GOLDENS.scenarios) {

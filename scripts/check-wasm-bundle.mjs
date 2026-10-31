@@ -116,7 +116,7 @@ function battery() {
     push(`generate_scenario(golden ${scenario.name})`, "generate_scenario", JSON.stringify(scenario.input));
   }
   const base = { start_level: 0, num_levels: 0, n_symbols: 3, n_days: 90 };
-  for (const mode of ["calm", "hard", "extreme", "cointegrated_pairs", "regime_shift"]) {
+  for (const mode of ["calm", "hard", "extreme", "cointegrated_pairs", "regime_shift", "martingale_v1"]) {
     push(`generate_scenario(mode ${mode})`, "generate_scenario", JSON.stringify({ spec: { ...base, distribution_mode: mode }, seed: 13 }));
   }
   push(

@@ -1,0 +1,42 @@
+{
+  "protocol_id": "sharpearena-generator-calibration",
+  "version": 1,
+  "tier": "martingale_v1",
+  "geometry": {"n_days": 120, "n_symbols": 4, "n_returns": 119},
+  "seeds": {
+    "baseline": {"start": 0, "count": 256},
+    "fit": {"start": 0, "count": 128},
+    "report": {"start": 128, "count": 128}
+  },
+  "recursion": {
+    "burn_in_bars": 64,
+    "cap": 5.0,
+    "stream_salt": "0x4D61_7274_696E_6731",
+    "draws_per_bar": 5
+  },
+  "grid": {
+    "alpha_share_g": [0.04, 0.06, 0.08, 0.10, 0.12, 0.15],
+    "persistence_P": [0.90, 0.94, 0.96, 0.98],
+    "tail_probability_p": [0.02, 0.05, 0.08],
+    "tail_scale_k": [2.5, 3.0, 4.0],
+    "note": "a = g / m and b = P - g, with m = (7/15) * ((1 - p) + p * k)"
+  },
+  "selection": {
+    "min_fit_pass_share": 0.75,
+    "tie_break": ["a", "p", "k"],
+    "sbar_significant_figures": 4
+  },
+  "targets": {
+    "fit_files": ["us-indices-1d.csv", "commodities-1d.csv"],
+    "comparison_files": ["crypto-majors-1d.csv", "fx-majors-1d.csv"],
+    "excluded_files": ["rates-1d.csv"],
+    "window_closes": 120
+  },
+  "criteria": {
+    "C1_lag1_margin": 0.03,
+    "C2_mean_daily_return_margin": 0.0005,
+    "C3_buy_and_hold_sharpe_margin": 0.5,
+    "C4_strategy_sharpe_margin": 0.5,
+    "C7_min_pass_share": 0.75
+  }
+}
