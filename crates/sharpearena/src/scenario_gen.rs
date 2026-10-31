@@ -417,6 +417,13 @@ const MARTINGALE_V1_B: f64 = 0.86;
 /// can never bind and cannot add a conditional mean.
 const MARTINGALE_V1_SCALE_CAP: f64 = 0.11195;
 
+/// One step of the [`martingale_v1`] scale recursion, capped so that the largest possible
+/// move stays clear of the return floor.
+fn martingale_v1_next_scale(scale: f64, r: f64) -> f64 {
+    (MARTINGALE_V1_W + MARTINGALE_V1_A * r.max(-r) + MARTINGALE_V1_B * scale)
+        .min(MARTINGALE_V1_SCALE_CAP)
+}
+
 /// Overwrite each symbol with the [`DistributionMode::MartingaleV1`] path, starting at 100:
 /// `r_t = s_t * z_t`, then `s_(t+1) = min(w + a * |r_t| + b * s_t, cap)`.
 ///
@@ -452,8 +459,7 @@ fn martingale_v1(mut base: Dataset, seed: u64) -> Dataset {
                 price *= 1.0 + r.max(-0.95);
                 series[bar - MARTINGALE_V1_BURN_IN + 1] = price;
             }
-            scale = (MARTINGALE_V1_W + MARTINGALE_V1_A * r.max(-r) + MARTINGALE_V1_B * scale)
-                .min(MARTINGALE_V1_SCALE_CAP);
+            scale = martingale_v1_next_scale(scale, r);
         }
     }
     base
@@ -888,6 +894,23 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// The cap never binds on a short path, so a panel cannot show it missing. It is what
+    /// keeps the floor out of reach, so the step is tested directly at the largest state
+    /// and move the recursion can produce, and symmetrically in the sign of the move.
+    #[test]
+    fn martingale_v1_scale_step_is_capped_and_symmetric() {
+        let largest_move = MARTINGALE_V1_SCALE_CAP * 2.0 * MARTINGALE_V1_TAIL_K;
+        assert_eq!(
+            martingale_v1_next_scale(MARTINGALE_V1_SCALE_CAP, largest_move),
+            MARTINGALE_V1_SCALE_CAP
+        );
+        assert_eq!(
+            martingale_v1_next_scale(MARTINGALE_V1_SCALE_MEAN, 0.01),
+            martingale_v1_next_scale(MARTINGALE_V1_SCALE_MEAN, -0.01)
+        );
+        assert!(martingale_v1_next_scale(MARTINGALE_V1_SCALE_MEAN, 0.0) < MARTINGALE_V1_SCALE_MEAN);
     }
 
     /// A longer episode must not rewrite bars an agent has already seen. The first symbol
