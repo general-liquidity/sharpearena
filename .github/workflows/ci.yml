@@ -576,14 +576,22 @@ jobs:
           set -euo pipefail
           wheels=(dist/*.whl)
           test "${#wheels[@]}" -eq 1
-          torch_options=()
+          extra_options=()
           if [ "$EXTRA" = sb3 ]; then
-            torch_options=(--cpu-torch --run scripts/test-sb3-wheel-check.py)
+            extra_options=(--cpu-torch --pytest --run scripts/test-sb3-wheel-check.py
+              --run "scripts/run-learner-tests.py test_sb3_learner.py")
           elif [ "$EXTRA" = torchrl ]; then
-            torch_options=(--cpu-torch --run scripts/test-torchrl-wheel-check.py)
+            extra_options=(--cpu-torch --pytest --run scripts/test-torchrl-wheel-check.py
+              --run "scripts/run-learner-tests.py test_torchrl_learner.py")
+          elif [ "$EXTRA" = minari ]; then
+            extra_options=(--pytest
+              --run "scripts/run-learner-tests.py test_minari_learner.py")
           elif [ "$EXTRA" = ray ]; then
-            torch_options=(--run scripts/test-ray-wheel-check.py)
+            # Resolved on its own: ray[rllib] pins gymnasium==1.2.2, below the source suite.
+            extra_options=(--extra pettingzoo --cpu-torch --pytest
+              --run scripts/test-ray-wheel-check.py
+              --run "scripts/run-learner-tests.py test_rllib_learner.py")
           fi
           python scripts/check-wheel-install.py --wheel "${wheels[0]}" \
-            --extra "$EXTRA" "${torch_options[@]}" \
+            --extra "$EXTRA" "${extra_options[@]}" \
             --run "scripts/check-optional-extras.py --extra $EXTRA"
