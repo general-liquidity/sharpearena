@@ -210,7 +210,8 @@ export type DistributionMode =
   | "hard"
   | "extreme"
   | "cointegrated_pairs"
-  | "regime_shift";
+  | "regime_shift"
+  | "martingale_v1";
 
 /**
  * How much of the market the agent is shown at each step. The kernel deserializes this
