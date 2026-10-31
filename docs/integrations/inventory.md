@@ -75,7 +75,9 @@ false claim. Coverage differs by component:
   loss, staggered NEXT_STEP resets and SAME_STEP terminal rewards. Its drawdown
   compounds emitted rewards as simple returns, so shaped rewards need not match
   native NAV drawdown. These are diagnostics, not benchmark scores.
-  `VectorCausalNormalizeObservation` still has no direct class-specific test.
+  `VectorCausalNormalizeObservation` now has direct tests in
+  `tests/test_normalizer_state.py`: by-hand per-lane z-scores, staggered lane
+  resets, persistence and the evaluation freeze.
 - `spaces.py` (`flatten_obs`, `unflatten_obs`, `flat_dim`, `FlattenObservation`) is
   exercised indirectly through `PreprocessingConfig(flatten=True)` in
   `tests/test_preprocessing.py`, and now also directly: INT-07's
