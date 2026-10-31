@@ -106,7 +106,7 @@ def test_ray_cell_keeps_its_own_resolution_with_torch_and_pettingzoo():
     assert "ray" not in pinned
 
 
-def _load_runner(monkeypatch, tmp_path, body):
+def _load_runner(monkeypatch, tmp_path, name, body):
     spec = importlib.util.spec_from_file_location(
         "learner_runner", SCRIPTS / "run-learner-tests.py"
     )
@@ -117,7 +117,8 @@ def _load_runner(monkeypatch, tmp_path, body):
     (package / "__init__.py").write_text("")
     monkeypatch.syspath_prepend(str(package.parent))
     monkeypatch.delitem(sys.modules, "sharpearena", raising=False)
-    (tmp_path / "test_gated_case.py").write_text(body)
+    # Distinct per test: repeated in-process runs share importlib-mode's module cache.
+    (tmp_path / name).write_text(body)
     monkeypatch.setattr(runner, "TESTS", tmp_path)
     return runner
 
@@ -126,22 +127,27 @@ def test_learner_runner_fails_a_cell_whose_tests_skipped(monkeypatch, tmp_path):
     runner = _load_runner(
         monkeypatch,
         tmp_path,
+        "test_gated_skip.py",
         "import pytest\n\ndef test_gated():\n    pytest.skip('extra absent')\n",
     )
     with pytest.raises(SystemExit, match="skipped in a cell"):
-        runner.main(["test_gated_case.py"])
+        runner.main(["test_gated_skip.py"])
 
 
 def test_learner_runner_passes_a_cell_whose_tests_ran(monkeypatch, tmp_path):
-    runner = _load_runner(monkeypatch, tmp_path, "def test_gated():\n    pass\n")
-    assert runner.main(["test_gated_case.py"]) == 0
+    runner = _load_runner(
+        monkeypatch, tmp_path, "test_gated_ran.py", "def test_gated():\n    pass\n"
+    )
+    assert runner.main(["test_gated_ran.py"]) == 0
 
 
 def test_learner_runner_refuses_a_source_tree_import(monkeypatch, tmp_path):
-    runner = _load_runner(monkeypatch, tmp_path, "def test_gated():\n    pass\n")
+    runner = _load_runner(
+        monkeypatch, tmp_path, "test_gated_source.py", "def test_gated():\n    pass\n"
+    )
     source = tmp_path / "checkout" / "sharpearena"
     source.mkdir(parents=True)
     (source / "__init__.py").write_text("")
     monkeypatch.syspath_prepend(str(source.parent))
     with pytest.raises(SystemExit, match="not an installed distribution"):
-        runner.main(["test_gated_case.py"])
+        runner.main(["test_gated_source.py"])
