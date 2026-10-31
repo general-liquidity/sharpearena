@@ -64,6 +64,12 @@ pub use kernel_score::score_returns;
 pub mod vec_env;
 pub use vec_env::{BatchStep, LaneConfig, VecTradingEnv};
 
+// Opt-in scenario redraw for recycled vector lanes: a frozen, band-confined seed stream.
+pub mod fresh_scenarios;
+pub use fresh_scenarios::{
+    fresh_scenario_seed, AutoresetScenarios, FreshScenarioError, FreshScenarios, FRESH_SEED_BAND,
+};
+
 // --- Per-scenario trading mandates (MiniGrid Fetch-style per-episode objective) -----------
 
 pub mod mandate;
