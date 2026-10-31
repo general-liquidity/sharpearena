@@ -157,3 +157,12 @@ class PlantedInterpreterAgent(TamperAgent):
     @override
     def name() -> str:
         return "sa-planted-interpreter"
+
+
+class NetworkEgressAgent(TamperAgent):
+    case = "network_egress"
+
+    @staticmethod
+    @override
+    def name() -> str:
+        return "sa-network-egress"

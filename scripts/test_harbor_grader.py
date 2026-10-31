@@ -165,8 +165,22 @@ class HarborGraderTests(unittest.TestCase):
         self.assertEqual(self.run_grader("artifact_missing")["fault"], "agent")
         reward = json.loads(self.grader.REWARD_JSON_PATH.read_text(encoding="utf-8"))
         self.assertEqual(
-            reward, {"accepted": 0, "agent_fault": 1, "evaluator_fault": 0, "reward": 0.0}
+            reward,
+            {"accepted": 0, "agent_fault": 1, "evaluator_fault": 0, "infrastructure_fault": 0, "reward": 0.0},
         )
+
+    def test_a_verifier_without_disk_headroom_reports_infrastructure_not_a_score(self):
+        """Class (g): Harbor's Docker provider bounds neither disk nor processes, so an
+        agent can exhaust the host. The verifier says so instead of scoring."""
+        self.write_records(self.records())
+        usage = shutil.disk_usage(self.grader.VERIFIER_DIR.parent)
+        full = type(usage)(usage.total, usage.total - 4096, 4096)
+        with patch.object(self.grader.shutil, "disk_usage", lambda _path: full):
+            report = self.run_grader("verifier_resources_exhausted")
+        self.assertEqual(report["fault"], "infrastructure")
+        reward = json.loads(self.grader.REWARD_JSON_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(reward["infrastructure_fault"], 1)
+        self.assertEqual(reward["agent_fault"] + reward["evaluator_fault"] + reward["accepted"], 0)
 
     def test_final_close_with_a_nonzero_size_is_refused(self):
         """instruction.md requires the last line to be a close with size 0."""
@@ -361,6 +375,17 @@ class HarborMetricTests(unittest.TestCase):
             with self.subTest(report=report):
                 self.assertEqual(self.metric.classify_report(report), self.metric.CRASH)
 
+    def test_an_infrastructure_verdict_blocks_the_headline_and_is_not_dropped(self):
+        """An agent that exhausts disk or processes must neither earn nor dodge a 0."""
+        self.trial("a", self.accepted(0.8))
+        self.trial("b", self.refused("verifier_resources_exhausted", "infrastructure"))
+        group = self.metric.summarize_job(self.root)["pooled"]
+        self.assertEqual((group["infrastructure"], group["evaluator_fault"], group["crashed"]), (1, 0, 0))
+        self.assertIsNone(group["mean_reward_all_trials"])
+        self.assertIn("1 infrastructure-unavailable", group["mean_reward_all_trials_unavailable"])
+        self.assertAlmostEqual(group["mean_reward_crashes_as_zero"], 0.4)
+        self.assertEqual(group["infrastructure_codes"], {"verifier_resources_exhausted": 1})
+
     def test_no_scored_trial_leaves_the_means_unavailable(self):
         summary = self.metric.summarize([("evaluator_fault", None, "private_input_missing")])
         self.assertIsNone(summary["mean_reward_all_trials"])
@@ -371,22 +396,23 @@ class HarborMetricTests(unittest.TestCase):
         rewards = self.root / "rewards.jsonl"
         rewards.write_text(
             "null\n"
-            '{"accepted": 0, "agent_fault": 1, "evaluator_fault": 0, "reward": 0.0}\n'
-            '{"accepted": 0, "agent_fault": 0, "evaluator_fault": 1, "reward": 0.0}\n'
-            '{"accepted": 1, "agent_fault": 0, "evaluator_fault": 0, "reward": 0.5}\n'
+            '{"accepted": 0, "agent_fault": 1, "evaluator_fault": 0, "infrastructure_fault": 0, "reward": 0.0}\n'
+            '{"accepted": 0, "agent_fault": 0, "evaluator_fault": 1, "infrastructure_fault": 0, "reward": 0.0}\n'
+            '{"accepted": 1, "agent_fault": 0, "evaluator_fault": 0, "infrastructure_fault": 0, "reward": 0.5}\n'
+            '{"accepted": 0, "agent_fault": 0, "evaluator_fault": 0, "infrastructure_fault": 1, "reward": 0.0}\n'
             '{"accepted": 0, "reward": 0.0}\n'
-            '{"accepted": 1, "agent_fault": 1, "evaluator_fault": 0, "reward": 0.5}\n',
+            '{"accepted": 1, "agent_fault": 1, "evaluator_fault": 0, "infrastructure_fault": 0, "reward": 0.5}\n',
             encoding="utf-8",
         )
         output = self.root / "metric.json"
         self.assertEqual(self.metric.main(["-i", str(rewards), "-o", str(output)]), 0)
         out = json.loads(output.read_text(encoding="utf-8"))
         self.assertEqual(
-            {k: out[k] for k in ("trials", "accepted", "agent_fault", "evaluator_fault", "crashed")},
-            {"trials": 6, "accepted": 1, "agent_fault": 1, "evaluator_fault": 1, "crashed": 3},
+            {k: out[k] for k in ("trials", "accepted", "agent_fault", "evaluator_fault", "infrastructure", "crashed")},
+            {"trials": 7, "accepted": 1, "agent_fault": 1, "evaluator_fault": 1, "infrastructure": 1, "crashed": 3},
         )
         self.assertIsNone(out["mean_reward_all_trials"])
-        self.assertAlmostEqual(out["mean_reward_crashes_as_zero"], 0.1)
+        self.assertAlmostEqual(out["mean_reward_crashes_as_zero"], 0.5 / 6)
         self.assertIn("not visible", out["grouping"])
 
     def test_a_job_with_no_trials_is_an_error_not_an_empty_success(self):
@@ -411,6 +437,7 @@ class FixtureScriptTests(unittest.TestCase):
         "sparse_artifact": "artifact_transfer_oversized",
         "lingering_swap": "artifact_not_regular_file",
         "planted_interpreter": None,
+        "network_egress": None,
     }
 
     def setUp(self):
@@ -541,6 +568,38 @@ class FixtureScriptTests(unittest.TestCase):
         self.assertEqual(probe["private_bytes"], "")
         # The attack must still run, after the measurement.
         self.assertTrue((agent / "tests/grade.py").is_file())
+
+
+class TestShFallbackTests(unittest.TestCase):
+    @posix_only
+    def test_a_grader_that_never_runs_leaves_an_infrastructure_verdict(self):
+        """Class (g): if no grader process can start (or it is killed), test.sh writes
+        an infrastructure verdict with shell builtins. Simulated with a missing
+        interpreter; a real process-table exhaustion was not reproduced."""
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / "logs/verifier").mkdir(parents=True)
+        script = rooted((TASK / "tests/test.sh").read_text(encoding="utf-8"), root)
+        script = script.replace("/usr/local/bin/python3", str(root / "missing/python3"))
+        (root / "test.sh").write_text(script, encoding="utf-8")
+        subprocess.run(["bash", str(root / "test.sh")], check=True)
+        report = json.loads((root / "logs/verifier/report.json").read_text(encoding="utf-8"))
+        self.assertEqual((report["refusal"], report["fault"]), ("verifier_unavailable", "infrastructure"))
+        reward = json.loads((root / "logs/verifier/reward.json").read_text(encoding="utf-8"))
+        metric = load_module("harbor_metric_fallback", METRIC_PATH)
+        self.assertEqual(metric.classify_reward(reward)[0], metric.INFRASTRUCTURE)
+        self.assertEqual(metric.classify_report(report)[0], metric.INFRASTRUCTURE)
+
+
+class TaskNetworkTests(unittest.TestCase):
+    def test_both_containers_request_no_network(self):
+        """Class (h). Harbor 0.23.0 refuses a no-network task on a provider that
+        cannot enforce it, so this is fail closed; whether egress is actually blocked
+        is a container result, recorded by the network_egress fixture."""
+        task = tomllib.loads((TASK / "task.toml").read_text(encoding="utf-8"))
+        self.assertEqual(task["environment"].get("network_mode"), "no-network")
+        self.assertEqual(task["verifier"]["environment"].get("network_mode"), "no-network")
 
 
 class TaskImageTests(unittest.TestCase):

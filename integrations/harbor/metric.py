@@ -10,14 +10,17 @@ Every trial is one of four outcomes:
 - agent_fault: the grader refused the submission for something the agent did.
 - evaluator_fault: the grader refused for something only the evaluator could
   cause (its own private input). The agent was never graded.
+- infrastructure: the verifier ran out of a resource (disk, processes, time) that
+  the agent may have exhausted, and said so. Not scored and not dropped.
 - crashed: no trustworthy grader result exists. Anything unclassifiable lands here.
 
 The headline, ``mean_reward_all_trials``, averages every accepted and agent-fault
 trial with each agent fault scored 0. Evaluator faults leave the denominator and
 are counted. ``mean_reward_accepted_only`` is a secondary figure that drops agent
-faults too, so it is never the headline. A crash cannot be attributed to the agent
-or the evaluator, so any crash makes the headline unavailable;
-``mean_reward_crashes_as_zero`` then gives the figure with every crash scored 0.
+faults too, so it is never the headline. A crash or an infrastructure verdict cannot
+be attributed to the agent or the evaluator, so either makes the headline
+unavailable; ``mean_reward_crashes_as_zero`` then gives the figure with every crash
+and infrastructure trial scored 0.
 
 Trials from different agents or job configurations are never pooled. ``--job-dir``
 groups trials by the agent identity and resolved trial configuration in each
@@ -43,6 +46,7 @@ GRADER = "sa-replay-feasibility"
 ACCEPTED = "accepted"
 AGENT_FAULT = "agent_fault"
 EVALUATOR_FAULT = "evaluator_fault"
+INFRASTRUCTURE = "infrastructure"
 CRASHED = "crashed"
 
 Outcome = tuple[str, float | None, str | None]
@@ -70,15 +74,18 @@ def classify_reward(reward: object) -> Outcome:
     """Classify one line of Harbor's rewards.jsonl (the grader's reward.json)."""
     if not isinstance(reward, dict) or not _finite(reward.get("reward")):
         return CRASH
-    flags = tuple(_flag(reward.get(key)) for key in ("accepted", "agent_fault", "evaluator_fault"))
+    keys = ("accepted", "agent_fault", "evaluator_fault", "infrastructure_fault")
+    flags = tuple(_flag(reward.get(key)) for key in keys)
     if None in flags or sum(flags) != 1:
         return CRASH
-    accepted, agent_fault, _ = flags
+    accepted, agent_fault, evaluator_fault, _ = flags
     if accepted:
         return (ACCEPTED, float(reward["reward"]), None)
     if reward["reward"] != 0:
         return CRASH
-    return (AGENT_FAULT, None, None) if agent_fault else (EVALUATOR_FAULT, None, None)
+    if agent_fault:
+        return (AGENT_FAULT, None, None)
+    return (EVALUATOR_FAULT, None, None) if evaluator_fault else (INFRASTRUCTURE, None, None)
 
 
 def classify_report(report: object) -> Outcome:
@@ -97,6 +104,8 @@ def classify_report(report: object) -> Outcome:
             return (AGENT_FAULT, None, refusal)
         if fault == "evaluator":
             return (EVALUATOR_FAULT, None, refusal)
+        if fault == "infrastructure":
+            return (INFRASTRUCTURE, None, refusal)
     return CRASH
 
 
@@ -152,16 +161,18 @@ def summarize(outcomes: list[Outcome]) -> dict[str, object]:
     rewards = [reward for kind, reward, _ in outcomes if kind == ACCEPTED]
     counts = {
         kind: sum(k == kind for k, _, _ in outcomes)
-        for kind in (ACCEPTED, AGENT_FAULT, EVALUATOR_FAULT, CRASHED)
+        for kind in (ACCEPTED, AGENT_FAULT, EVALUATOR_FAULT, INFRASTRUCTURE, CRASHED)
     }
     scored = counts[ACCEPTED] + counts[AGENT_FAULT]
+    unattributable = counts[CRASHED] + counts[INFRASTRUCTURE]
     summary: dict[str, object] = {"trials": len(outcomes), **counts, "scored_trials": scored}
-    if counts[CRASHED]:
+    if unattributable:
         summary["mean_reward_all_trials"] = None
         summary["mean_reward_all_trials_unavailable"] = (
-            f"{counts[CRASHED]} crashed trials have no attributable fault"
+            f"{counts[CRASHED]} crashed and {counts[INFRASTRUCTURE]} infrastructure-unavailable "
+            "trials have no attributable fault"
         )
-        summary["mean_reward_crashes_as_zero"] = _mean(rewards, scored + counts[CRASHED])
+        summary["mean_reward_crashes_as_zero"] = _mean(rewards, scored + unattributable)
     elif scored:
         summary["mean_reward_all_trials"] = _mean(rewards, scored)
     else:
@@ -171,7 +182,7 @@ def summarize(outcomes: list[Outcome]) -> dict[str, object]:
     summary["mean_reward_accepted_only_note"] = (
         "secondary: excludes agent faults, so it is not the headline"
     )
-    for kind in (AGENT_FAULT, EVALUATOR_FAULT):
+    for kind in (AGENT_FAULT, EVALUATOR_FAULT, INFRASTRUCTURE):
         codes = sorted(code for k, _, code in outcomes if k == kind and code)
         if codes:
             summary[f"{kind}_codes"] = {code: codes.count(code) for code in dict.fromkeys(codes)}

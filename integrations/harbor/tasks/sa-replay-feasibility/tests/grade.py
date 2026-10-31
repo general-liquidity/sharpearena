@@ -21,6 +21,7 @@ import errno
 import json
 import os
 from pathlib import Path
+import shutil
 import stat
 
 ARTIFACTS_DIR = Path("/logs/artifacts")
@@ -49,6 +50,12 @@ TERMINAL_ACTION = "close"
 # is an agent fault, including codes an evaluator defect could also produce, so an
 # agent can never move a trial out of the denominator by tripping an ambiguous code.
 EVALUATOR_FAULT_CODES = frozenset({"private_input_missing", "private_input_unreadable"})
+# Resource exhaustion the agent may have caused (Harbor's Docker provider bounds
+# neither processes nor disk). Not scored and not dropped: metric.py makes the
+# headline unavailable, so exhausting a resource can neither earn nor dodge a 0.
+INFRASTRUCTURE_FAULT_CODES = frozenset({"verifier_resources_exhausted"})
+# Room the verifier needs to write its three outputs, with a wide margin.
+MIN_VERIFIER_FREE_BYTES = 1024 * 1024
 
 # O_NOFOLLOW refuses a link as the final path component (ELOOP), O_NONBLOCK keeps a
 # FIFO with no writer from blocking the open. Both are Linux flags; the getattr
@@ -103,6 +110,19 @@ def read_regular_bounded(path: Path, limit: int, *, missing: str, not_regular: s
         raise Refusal(unreadable, str(exc)) from exc
     finally:
         os.close(fd)
+
+
+def _require_verifier_headroom() -> None:
+    """Refuse to grade when the verifier could not reliably write its verdict."""
+    try:
+        free = shutil.disk_usage(VERIFIER_DIR).free
+    except OSError as exc:
+        raise Refusal("verifier_resources_exhausted", f"disk usage unreadable: {exc}") from exc
+    if free < MIN_VERIFIER_FREE_BYTES:
+        raise Refusal(
+            "verifier_resources_exhausted",
+            f"{free} bytes free under {VERIFIER_DIR}, below {MIN_VERIFIER_FREE_BYTES}",
+        )
 
 
 def _require_clean_verifier_dir() -> None:
@@ -252,6 +272,7 @@ def main() -> int:
     VERIFIER_DIR.mkdir(parents=True, exist_ok=True)
     report: dict[str, object] = {"grader": "sa-replay-feasibility", "version": 3}
     try:
+        _require_verifier_headroom()
         _require_clean_verifier_dir()
         _require_transfer_check()
         _require_safe_tree()
@@ -260,7 +281,12 @@ def main() -> int:
         report.update({"accepted": True, "refusal": None, "fault": None, "reward": reward})
     except Refusal as refusal:
         reward = 0.0
-        fault = "evaluator" if refusal.code in EVALUATOR_FAULT_CODES else "agent"
+        if refusal.code in EVALUATOR_FAULT_CODES:
+            fault = "evaluator"
+        elif refusal.code in INFRASTRUCTURE_FAULT_CODES:
+            fault = "infrastructure"
+        else:
+            fault = "agent"
         report.update(
             {
                 "accepted": False,
@@ -279,6 +305,7 @@ def main() -> int:
                 "accepted": int(report["accepted"]),
                 "agent_fault": int(report["fault"] == "agent"),
                 "evaluator_fault": int(report["fault"] == "evaluator"),
+                "infrastructure_fault": int(report["fault"] == "infrastructure"),
                 "reward": reward,
             }
         ),
