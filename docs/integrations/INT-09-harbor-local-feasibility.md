@@ -9,8 +9,8 @@ public Hub submission, no external storage, no credentials, no paid
 provider call were made anywhere in this work.
 
 All findings below are from an actual local run on this machine, not from
-reading the vendor docs. Where a claim in
-`SHARPE-HANDOFF-SUPPORT/product-planning/integration-refs/HUD-HARBOR-REFERENCE.md`
+reading the vendor docs. Where a claim in the maintainers' HUD and Harbor
+reference note, which is not published in this repository,
 is confirmed or contradicted by that run, this says so explicitly.
 
 ## 1. Runtime boundary this evidence covers
@@ -41,9 +41,12 @@ HARBOR_TELEMETRY=off harbor run -p tasks/sa-replay-feasibility -a oracle
 ```
 
 produced a completed trial, `verifier/reward.txt` = `1.0`, in ~1m23s. The
-task package is four files plus a dedicated verifier image, exactly the
-minimum shape the reference doc describes:
-`integrations/harbor/tasks/sa-replay-feasibility/{instruction.md,task.toml,environment/Dockerfile,tests/{Dockerfile,test.sh,grade.py}}`.
+task package at `integrations/harbor/tasks/sa-replay-feasibility/` starts from the
+four minimum files the reference note names: `instruction.md`, `task.toml`,
+`environment/Dockerfile` and `tests/test.sh`. It adds `tests/grade.py`,
+`tests/Dockerfile` for the dedicated verifier image,
+`tests/private/future_prices.json` for the private evaluator data and
+`solution/solve.sh` for the oracle agent.
 
 **`network_mode = "no-network"` does not work on this host.** Setting it and
 rerunning raised, at validation time, before any container started:
@@ -106,7 +109,7 @@ That fixture's own script runs `mkdir -p /tests/private && cat >
 just wrote inside its own container. The verifier still scored 0.87 (the
 real honest-action result), because the separate verifier never sees that
 container at all; it is built fresh from `tests/Dockerfile` in its own
-image. All six other fixtures show `tests_dir_exists: false` from a stock
+image. All seven other fixtures show `tests_dir_exists: false` from a stock
 container, which is the actual answer to "can the agent read `/tests` or
 the private evaluator file": **no** - the private future-return file used
 for scoring was never mounted, copied, or otherwise reachable from the
@@ -289,7 +292,7 @@ Within the boundary in §1:
 
 - The separate verifier's grading code and its one private input
   (`tests/private/future_prices.json`) were never present in, copied to,
-  or readable from the agent's own container in any of the eight
+  or readable from the agent's own container in any of the seven
   fixtures that didn't fabricate the paths themselves. Confirmed by
   direct probe, not by trusting `environment_mode = "separate"`.
 - Tampering that only touches the agent's own container (forged reward

@@ -29,13 +29,15 @@ source coverage and freshly executed package coverage are distinct.
 | <img src="../assets/logos/envpool.svg" alt="" height="10"> PufferLib, EnvPool | No | Nothing in the tree | |
 | <a href="https://pytorch.org/rl"><img src="../assets/logos/torchrl.png" alt="" height="10"></a> TorchRL | Yes | `torchrl_env.py` (`SharpeArenaTorchRLEnv`, an `EnvBase` subclass) | Guarded; `EnvBase` falls back to `object` and construction raises `TorchRLUnavailable` |
 
-Every row above with an upstream project of its own carries that project's logo;
+Every row above whose upstream project publishes a logo carries that logo;
 see [`docs/assets/logos/`](../assets/logos/) for each file's source and the terms
 governing its use. A logo credits the project this tree talks to. It is not a
 support claim: the "Present" column beside it, and
 [`support-status.md`](support-status.md), are where that is stated, and two of
 the rows carrying a logo are local feasibility fixtures rather than supported
-integrations. Rows for ecosystems this tree does not implement carry no logo.
+integrations. CleanRL and PufferLib publish no logo, so they are named in text. The
+combined PufferLib and EnvPool row carries EnvPool's logo for identification, beside
+a "No" that says this tree implements neither.
 
 The declared optional extras are seven: `verifiers`, `minari`, `pettingzoo`, `mcp`,
 `sb3`, `torchrl`, and `ray` (`crates/sharpearena-py/pyproject.toml`). `sb3`,
@@ -107,14 +109,17 @@ alongside the Gymnasium version, because learner support for it is mode dependen
 Termination and truncation are distinct here and the distinction is not the usual one:
 running out of bars at the end of the point-in-time window is **truncation**, and
 bankruptcy (`nav <= 0`) is **termination**, the absorbing state. A value estimate
-bootstraps past the first and must not bootstrap past the second (`gym.py:243`).
+bootstraps past the first and must not bootstrap past the second
+(`SharpeArenaEnv.step` in `gym.py`).
 
 ## Version matrix
 
 Two columns, because they differ and the difference matters. "CI pin" is what
 `crates/sharpearena-py/ci-requirements.txt` installs. "Verified here" is what was
-actually installed in the environment these INT-00 to INT-02 checks ran in; the full
-suite passed under it (1893 passed, 2 skipped).
+actually installed in the environment these INT-00 to INT-02 checks ran in. The full
+suite count recorded for it, 1893 passed and 2 skipped, is unverified: no run log is
+committed, and `support-status.md` gives 1837 passed and 15 skipped for the suite under
+`gymnasium==1.2.2`. Do not cite either count until a rerun settles it.
 
 | Component | Declared floor | CI pin | Verified here |
 |---|---|---|---|
@@ -135,9 +140,9 @@ suite passed under it (1893 passed, 2 skipped).
 
 `ray[rllib]==2.58.0` pins `gymnasium==1.2.2` exactly, which conflicts with this
 tree's CI pin of `gymnasium==1.3.0` in a single `pip install --requirement`
-invocation; the base package's own `gymnasium>=1.0` floor admits 1.2.2 and the
-full 1893-test suite passed under it (recorded above as this row's evidence run),
-but that pin conflict is why `ray` is not installed in the source-suite job and why
+invocation. The base package's own `gymnasium>=1.0` floor admits 1.2.2, but the
+Gymnasium version of the full-suite run is unverified too: the table above lists 1.2.1,
+and an earlier version of this paragraph said 1.2.2. That pin conflict is why `ray` is not installed in the source-suite job and why
 `tests/test_ray_executor.py` and `tests/test_rllib.py` are exercised locally
 rather than in that pinned source matrix. The separate `wheel-extras` Ray cell
 installs a separately resolved consumer graph and exercises workers and the

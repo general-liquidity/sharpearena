@@ -1,8 +1,9 @@
 # RL-contract coverage matrix
 
 Which parts of the declared reinforcement-learning contract are covered by a test, where
-that test lives, and what remains open. Written for ticket P17, against
-`crates/sharpearena-py` at the v0.31.0 tree.
+that test lives, and what remains open. Written for internal ticket P17, against
+`crates/sharpearena-py` at the v0.31.0 tree. The vector reset row and the section on
+closed boundaries were added after PR #118.
 
 This is engineering coverage of the environment contract. It says nothing about what a
 learner would learn in this environment, and it is not evidence for any learning claim.
@@ -56,6 +57,7 @@ rewritten, duplicated or re-counted as new work.
 | `truncated` is the window ending, and the terminal observation a learner sees | `test_gym.py::test_full_episode_finite_rewards_and_terminates` (that an episode ends), `test_conformance.py::test_time_limit_truncates_at_cap` (the wrapper cap) | `test_rl_contract.py::test_running_out_of_bars_truncates_and_repeats_the_last_bar` | gap closed |
 | Scalar and vector trajectories agree under aligned seeds | `test_equivalence.py::test_batched_equals_scalar`, `test_batched_equals_scalar_under_execution_noise`, `test_vector.py::test_b1_matches_scalar_engine` | none | covered before |
 | Each supported autoreset mode behaves as declared | `test_vector.py::test_next_step_defers_reset_to_following_step`, `test_same_step_surfaces_final_obs`, `test_disabled_never_resets`, `test_unknown_autoreset_mode_rejected` | `test_rl_contract.py::test_metadata_records_the_gymnasium_autoreset_mode`, `test_only_the_three_upstream_modes_are_accepted` | gap closed for the recorded mode |
+| Vector `reset(seed=...)` rebuilds the lanes, and a positive `max_episode_steps` truncates each lane | none | none in this ticket; PR #118 added `test_vector_contract.py::test_seeded_reset_rebuilds_native_lanes_and_readbacks`, `test_invalid_reset_is_atomic`, `test_eval_explicit_reset_seeds_are_literal_not_shifted`, `test_episode_cap_counts_executed_steps_and_preserves_autoreset` | closed later by PR #118 |
 | Lanes hold independent state | `test_vector.py::test_auto_reset_keeps_batch_running` (uniform actions only) | `test_rl_contract.py::test_each_lane_matches_a_solo_env_under_per_lane_actions` | gap closed |
 | Checkpoint and restore continuity, including the RNG-implied state | `test_checkpoint.py::test_restore_returns_to_snapshot_point`, `test_checkpoint_preserves_every_scenario_control`, `test_replay_checkpoint_after_native_restore_keeps_the_entire_prefix`, `test_native_checkpoint_matches_replay`, `test_two_branches_same_actions_identical` | none | covered before |
 | Per-step reward, episode accounting and the reported evaluation metric are one chain | `test_metrics_panel.py` (panel arithmetic on supplied series), `test_eval_seeds_gate.py` (the pinned snapshot) | `test_rl_contract.py::test_reward_is_the_nav_return_the_metrics_panel_reconstructs`, `test_the_reported_eval_metric_scores_exactly_the_reward_series` | gap closed |
@@ -144,14 +146,18 @@ fails loudly and separately on either: `test_spec_hash.py` and `scripts/check-pa
 cover the cross-surface handshake, and `test_exports.py` covers the import surface. The
 added tests assert numeric and flag-level behaviour that those checks do not produce.
 
+## Boundaries closed after this ticket
+
+P17 recorded that `SharpeArenaVectorEnv.reset(seed=...)` accepted a seed and ignored it.
+PR #118 changed that semantics with the owner's approval, recorded in
+[the vector contract note](audits/2026-10-10/vector-contract.md). An integer seed now
+rebuilds the native lanes on consecutive seeds, and a list supplies one seed per lane.
+`reset(seed=None)` and automatic resets replay the current scenarios, and invalid seed
+input leaves the active batch untouched. The same pull request added a
+`max_episode_steps` cap that truncates each lane through its selected autoreset mode.
+
 ## Unresolved boundaries
 
-- `SharpeArenaVectorEnv.reset(seed=...)` accepts a seed and ignores it. Lane seeds are
-  fixed by the constructor and `scenario_seeds` is unchanged after such a call, so
-  reseeding a batch means constructing a new one. Gymnasium's vector API expects
-  `reset(seed=...)` to reseed. This is left as found; resolving it changes environment
-  semantics, which P17 does not authorize. It is deliberately not pinned by a test, so
-  that a later fix is not blocked by a regression blessing the current behaviour.
 - `SharpeArenaEnv` derives its execution seed from the user seed and rejects an
   `env_kwargs={"exec_seed": ...}` override with a `TypeError` from the duplicate keyword.
   The vector surface accepts the same override. The stream-separation tests therefore run
