@@ -1,10 +1,10 @@
 {
   "protocol_id": "sharpearena-learner-generalization",
-  "version": 2,
+  "version": 3,
   "env": {"n_symbols": 4, "n_days": 120, "primary_tier": "hard", "transfer_tiers": ["calm", "extreme"]},
   "lanes": 16,
   "algorithm": {"library": "stable_baselines3", "version": "2.9.0", "name": "PPO", "policy": "MultiInputPolicy", "device": "cpu", "torch_threads": 1},
-  "ppo": {"n_steps": 256, "batch_size": 256, "n_epochs": 10, "gamma": 0.99, "gae_lambda": 0.95, "clip_range": 0.2, "log_std_init": -1.0, "reward_scale": 100.0},
+  "ppo": {"n_steps": 256, "batch_size": 256, "n_epochs": 10, "gamma": 0.99, "gae_lambda": 0.95, "clip_range": 0.2, "log_std_init": -1.0, "reward_scale": 100.0, "reward_normalizer": "none"},
   "configs": {
     "c0": {"learning_rate": 0.0003, "ent_coef": 0.0},
     "c1": {"learning_rate": 0.001, "ent_coef": 0.0},

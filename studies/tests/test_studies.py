@@ -421,6 +421,25 @@ def test_position_env_closes_ignore_own_orders():
     assert learner.closes_are_exogenous(5, spec, spec["primary_tier"])
 
 
+def test_training_reward_is_the_ledger_times_a_fixed_constant():
+    """No reward normaliser: the scale must not depend on any data the run has seen."""
+    from sharpearena import SharpeArenaEnv
+
+    spec, scale = LEARNER["env"], LEARNER["ppo"]["reward_scale"]
+    assert LEARNER["ppo"]["reward_normalizer"] == "none"
+    make = learner.SmokeFreezeShim
+    seeds = [79000, 79001]
+    state = learner.fit_normalizer(make, seeds, spec, "hard", 1)
+    env = learner.make_training_env(make, state, seeds, spec, "hard", 2, scale)
+    env.reset()
+    action = np.full((2, 4), 0.25, dtype=np.float32)
+    raw = SharpeArenaEnv(n_symbols=4, n_days=120, seed=79000, distribution_mode="hard")
+    raw.reset()
+    for _ in range(5):
+        _, rewards, _, _ = env.step(action)
+        assert float(rewards[0]) == pytest.approx(raw.step(action[0])[1] * scale, rel=1e-5)
+
+
 def test_smoke_shim_freezes_statistics():
     from sharpearena import SharpeArenaEnv
 

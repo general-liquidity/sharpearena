@@ -1,6 +1,6 @@
 # Learner generalization protocol (acceptance rows P18-E and P18-S)
 
-Status: frozen at version 2 before any pilot. Constants live in `protocol.json`, whose SHA-256 every
+Status: frozen at version 3 before any pilot. Constants live in `protocol.json`, whose SHA-256 every
 artifact records. A change to either file is a new protocol version.
 
 ## Question
@@ -53,6 +53,15 @@ artifact records `normalizer_backend`.
 
 Reward: the environment's per-bar return times 100, for training only. Reward is not the
 ledger. All outcomes come from the unscaled evaluation returns.
+
+The study does not use `CausalNormalizeReward`. The training scale is the constant above, so
+it depends on no data. On `feat/normalizer-freeze` (091f9de) a frozen reward normaliser divides
+by the std of the last finished episode only. That is not acceptable for this study and is
+harmless only because the study does not use it. One 120-bar episode is a noisy estimate of
+scale, and which episode finishes last depends on lane order and the point of the freeze, so
+the effective reward scale would change with the training seed and the seen band. That is an
+uncounted hyperparameter that varies inside the unit of replication. A later version that wants
+a learned scale needs one fitted over the whole seen band, and is a new protocol version.
 
 ## Algorithm and search
 
@@ -139,6 +148,10 @@ Holm correction over the controls. It never changes the gap verdict.
 Version 2, before any run: a fixed 16 lanes, with seeds cycling in cell C. Version 1 tied the lane
 count to the seed count, which would have changed rollout size and updates per environment step
 between cells and broken the equal budget.
+
+Version 3, before any run: records that no reward normaliser is used and why the last-episode
+frozen scale on `feat/normalizer-freeze` would not be acceptable. No outcome, threshold or
+budget moved.
 
 ## Publication
 
