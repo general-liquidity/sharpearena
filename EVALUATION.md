@@ -229,8 +229,86 @@ flat replay of the same path. It reports three numbers:
 | Log-log exponent of end-of-execution impact against duration, for a fixed total | about 0 | about `1 - exponent` |
 
 At exponents 1.0 and 0.5 the default probe measures execution exponents within 0.05 of 1
-and duration exponents within 0.05 of `1 - exponent`, and the tests pin both. A
-transient-impact kernel is future work.
+and duration exponents within 0.05 of `1 - exponent`, and the tests pin both.
+
+## Execution settings (optional, versioned, not calibrated)
+
+By default the shared-book market clears every decision against the close it was
+made on, compounds permanent impact without decay, and values residual shares at
+the last cleared mid. `MarketExecution` (wire schema `sharpearena.market-execution.v1`,
+passed as `EndogenousMarketEnv(execution=...)` or `PyMarketClearing(execution=...)`)
+changes that. Absent settings leave every published path and golden unchanged.
+Every coefficient and decay rate is a declared setting chosen by the caller. None is
+fitted to any market, so a result under these settings is not a calibrated claim.
+
+- **Timing.** `fixed_delay_bars=n` uses SharpeBench's `sharpebench.fixed-decision-delay.v1`
+  schema and counts bars from the last close a decision observed to its fill. With
+  `n=1`, a decision made on bar `t` fills on `t+1` throughout: the first traded close is
+  withheld from the first observation. Larger `n` queues decisions first in, first out,
+  as in Bench. A queued decision is priced and sized at eligibility, is never replaced
+  by a later one, and never fills past the window. `TradingEnv(fixed_delay_bars=n)`
+  carries the same FIFO around the pinned engine, which predates the setting. One stated
+  difference: an invalid decision is reported when it becomes eligible, not when it was
+  submitted.
+- **Transient impact.** `transient_coefficient` and `transient_decay` add a displacement
+  `I = coefficient * h(J)` that sits beside the permanent multiplier. `J` is the decayed
+  cumulative normalized flow, `J <- decay * (J + Q/V)`. The cleared mid is
+  `exo * M * (1 + I)`. `M` never decays and `I` never enters `M`. Fills on the net-flow
+  side pay the increment in `I` that their bar causes. Fills against the net flow pay
+  nothing and receive nothing.
+- **Square-root shape.** `transient_shape="square_root"` sets `h(J) = sign(J) sqrt(|J|)`.
+  The probe reports this only where the arithmetic produces it (one symbol, seed 0,
+  `kyle_lambda=0`, coefficient 0.1):
+
+  | Decay per bar | Execution exponent | Duration exponent | Impact 20 bars after the end, as a ratio |
+  |---|---|---|---|
+  | 0.5 | 0.06 | -0.48 | 0.001 |
+  | 0.9 | 0.28 | -0.28 | 0.35 |
+  | 0.99 | 0.47 | -0.03 | 0.90 |
+  | 0.999 | 0.50 | 0.00 | 0.99 |
+
+  An exponent near 0.5 with no duration dependence appears only when execution is short
+  against the decay horizon, and then relaxation is slow. Fast decay gives quick
+  relaxation and no square-root growth. No single setting delivers both, so this is not
+  the empirical square-root law, only a concave kernel whose shape the probe measures.
+  The linear shape relaxes geometrically at the decay rate and grows about linearly.
+- **Settlement.** Order sizes are `capital * (w - prev_w) / mid`. A round trip that is
+  flat in target weight is therefore not flat in shares once the mid has moved. On
+  seeds 0 to 7 of the default manipulation probe, residual positions under the default
+  settings were worth -1.2% to +1.5% of capital. `settlement="cash_liquidation"` sells
+  every residual on the last bar as one further clearing at the post-flow price, through
+  the same impact terms, so terminal NAV is cash and no residual shares remain.
+
+Every setting is bound into execution identity. `PyMarketClearing.effective_config`
+reads the live coefficients, exponent, uncertainty set and execution settings back from
+the engine, and `execution_fnv1a64` fingerprints them. A setter call or any changed
+setting moves the fingerprint. For `TradingEnv`, a delay adds `fixed_delay` and an
+`execution_fnv1a64` over costs and timing to the existing readback. Without a delay the
+readback is byte-identical.
+
+**What the manipulation probe found.** Each cell runs a round trip against a paired
+zero-impact reference with the same timing and settlement, under cash liquidation, on a
+finite grid. A finite grid is evidence about that grid, not a no-arbitrage theorem.
+
+- With no followers and `kyle_lambda = 0` (`eta` 0 or 0.05), no seed of 16
+  paid across 768 cells: linear and square-root shapes, decay 0, 0.5, 0.9 and 0.99,
+  coefficients 0.05 and 0.2, six asymmetric schedules, both sides and two sizes. A
+  hill-climbing search over arbitrary 40-bar weight paths, started from the best ramp,
+  found no profitable path under any kernel setting tested (best seed-mean
+  `impact_pnl` between -2.9e-5 and -2.6e-3). Under the same search the concave
+  permanent exponent 0.5 positive control paid +7.7e-3, so the search could find a
+  profit where one existed.
+- With three momentum followers, an earlier kernel paid fills against the net flow the
+  displacement increment as a rebate. Under the square-root shape the increment's slope
+  is unbounded near `J = 0`, and pushing into the followers paid on 53 of 144 cells (best
+  seed mean +1.9e-2, 7 of 8 seeds). The engine no longer pays that rebate, and the same
+  grid now gives 0 of 288 transient cells with a positive seed mean.
+- Under half the increment, in a diagnostic build only, the square-root kernel became
+  profitable (+4.2e-2 at decay 0.99). The full-increment charge is what keeps it
+  unprofitable, and the result depends on that convention.
+
+The tests pin the grid without followers, the follower cell that found the rebate, the
+positive control, and cash-settlement accounting.
 
 ## Statistical confidence (is A > B beyond seed noise?)
 

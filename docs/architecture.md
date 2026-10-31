@@ -72,6 +72,15 @@ fingerprints back from the environment that consumed them. This prevents a
 driver from labelling one arm while silently running another, a failure that
 output hashes alone cannot detect.
 
+The shared-book market extends that readback to execution. Its versioned opt-in
+settings (`sharpearena.market-execution.v1`: fixed FIFO delay in SharpeBench's
+schema, a decaying transient impact kernel kept apart from the permanent
+multiplier, and terminal cash liquidation) live in `src/market.rs`, a `SPEC_HASH`
+input. With the settings absent, each step is the frozen path. The readback
+fingerprints every input that decides a fill, the settings included, so two arms
+that differ in timing, kernel or settlement cannot share an execution identity.
+The values are declared settings, not calibrated estimates.
+
 ## Release topology
 
 One workspace version covers Rust, npm/WASM, and Python. The release driver cuts
