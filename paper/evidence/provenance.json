@@ -220,7 +220,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "a9ff953102a7a4be70b291219239f6f58e005545",
+  "generated_at_head": "c7eadd1ff84d1fb7ed6de5108caa98b51864e451",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -942,7 +942,7 @@
     },
     {
       "path": "scripts/check-evidence-register.py",
-      "sha256": "038a6d7da89038048ba28f7f17ada135b1564f5b615cc69aa3c53c6faad046e3"
+      "sha256": "5d927a7f47ce49fbf73165884d6688500f49c0c1cbd01fb4c5e9f224c703cafa"
     },
     {
       "path": "scripts/check-installed-wheel.py",
@@ -982,7 +982,7 @@
     },
     {
       "path": "scripts/make-evidence-register.py",
-      "sha256": "9c7e99a6aaa809a81fa8341b7d57c8244804d2af019986cedc5bd44d065d6fc2"
+      "sha256": "662c7b26162c7f8f9a69d18e8b071e93b2ac5a3e1727413dcbc2be92cfbeb30b"
     },
     {
       "path": "scripts/optional_extras.py",
@@ -1010,7 +1010,7 @@
     },
     {
       "path": "scripts/test_check_evidence_register.py",
-      "sha256": "f99d5d7f533f8d6e2c25081f6c5c81a37dceb0618dde4e06fff4acfa65548341"
+      "sha256": "8aebb3fe6b9b82bfb7b87bdb58259f0bb817b261906ad87b1ee6505e1becb939"
     },
     {
       "path": "scripts/test_check_lean_scope.py",
@@ -1046,6 +1046,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "1cbade1f652046ce2d8bd01e1e41cc6bc9be7ad43d5ff211c842c60a95254ccc",
+  "source_snapshot_sha256": "fe97876c85d397da46a49cfb0f7d97b97c9a2ef27a36fac044f24da6f671db85",
   "validator": "paper/src/check-provenance.py"
 }
