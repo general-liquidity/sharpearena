@@ -1,4 +1,4 @@
-"""Exercise the Harbor grader, metric, collect hook and fixture scripts.
+"""Exercise the Harbor grader, metric, collect hook, test.sh, task images and fixture scripts.
 
 Nothing here needs Docker or the Harbor SDK. The shell cases run the real fixture
 scripts and the real task.toml hook against a throwaway root, which proves their
@@ -12,8 +12,12 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
+import sys
 import tempfile
+import threading
+import time
 import tomllib
 import unittest
 from unittest.mock import patch
@@ -25,6 +29,29 @@ METRIC_PATH = HARBOR / "metric.py"
 SCRIPTS_PATH = HARBOR / "fixtures/sa_harbor_fixtures/scripts.py"
 
 posix_only = unittest.skipUnless(os.name == "posix", "needs POSIX shell and symlinks")
+
+MARKER_CLEAN = '{"version": 2, "removed": 0, "oversized": 0}\n'
+ROOTED = re.compile(r"(?<![\w/.])/(tests|logs|app)\b")
+
+
+def rooted(text, root):
+    """Move the container's /tests, /logs and /app under ``root``."""
+    return ROOTED.sub(lambda m: f"{root}/{m[1]}", text)
+
+
+def run_bounded(grader, seconds=20):
+    """Run grader.main() and fail, rather than hang the suite, if it blocks."""
+    outcome = {}
+
+    def target():
+        outcome["rc"] = grader.main()
+
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    thread.join(seconds)
+    if thread.is_alive():
+        raise AssertionError(f"grader still running after {seconds} s: it blocked")
+    return outcome["rc"]
 
 
 def load_module(name, path):
@@ -55,14 +82,14 @@ class HarborGraderTests(unittest.TestCase):
             self.grader, root / "artifacts", root / "future_prices.json", root / "verifier"
         )
         self.grader.ARTIFACTS_DIR.mkdir()
-        self.grader.TRANSFER_CHECK.write_text('{"version": 1, "removed": 0}\n', encoding="utf-8")
+        self.grader.TRANSFER_CHECK.write_text(MARKER_CLEAN, encoding="utf-8")
         self.grader.PRIVATE.write_text(
             json.dumps({"returns": [0.001] * 8}), encoding="utf-8"
         )
 
     def records(self):
         return [
-            {"step": i, "action": "buy" if i < 7 else "close", "size": 1.0}
+            {"step": i, "action": "buy" if i < 7 else "close", "size": 1.0 if i < 7 else 0}
             for i in range(8)
         ]
 
@@ -76,7 +103,7 @@ class HarborGraderTests(unittest.TestCase):
         self.grader.REWARD_JSON_PATH.unlink()
 
     def run_grader(self, refusal):
-        self.assertEqual(self.grader.main(), 0)
+        self.assertEqual(run_bounded(self.grader), 0)
         report = json.loads(self.grader.REPORT_PATH.read_text(encoding="utf-8"))
         self.assertEqual(report["refusal"], refusal)
         self.assertEqual(report["accepted"], refusal is None)
@@ -118,26 +145,68 @@ class HarborGraderTests(unittest.TestCase):
 
     def test_artifact_read_error_is_reason_coded(self):
         self.write_records(self.records())
-        original_open = Path.open
+        original_open = os.open
 
         def denied(path, *args, **kwargs):
-            if path == self.grader.ARTIFACT:
+            if Path(path) == self.grader.ARTIFACT:
                 raise PermissionError("fixture: unreadable artifact")
             return original_open(path, *args, **kwargs)
 
-        with patch.object(Path, "open", denied):
+        with patch.object(self.grader.os, "open", denied):
             self.run_grader("artifact_unreadable")
 
     def test_reward_json_carries_acceptance_for_the_job_metric(self):
         self.write_records(self.records())
         self.run_grader(None)
         reward = json.loads(self.grader.REWARD_JSON_PATH.read_text(encoding="utf-8"))
-        self.assertEqual(reward["accepted"], 1)
+        self.assertEqual((reward["accepted"], reward["agent_fault"], reward["evaluator_fault"]), (1, 0, 0))
         self.clear_outputs()
         self.grader.ARTIFACT.unlink()
-        self.run_grader("artifact_missing")
+        self.assertEqual(self.run_grader("artifact_missing")["fault"], "agent")
         reward = json.loads(self.grader.REWARD_JSON_PATH.read_text(encoding="utf-8"))
-        self.assertEqual(reward, {"accepted": 0, "reward": 0.0})
+        self.assertEqual(
+            reward,
+            {"accepted": 0, "agent_fault": 1, "evaluator_fault": 0, "infrastructure_fault": 0, "reward": 0.0},
+        )
+
+    def test_a_verifier_without_disk_headroom_reports_infrastructure_not_a_score(self):
+        """Class (g): Harbor's Docker provider bounds neither disk nor processes, so an
+        agent can exhaust the host. The verifier says so instead of scoring."""
+        self.write_records(self.records())
+        usage = shutil.disk_usage(self.grader.VERIFIER_DIR.parent)
+        full = type(usage)(usage.total, usage.total - 4096, 4096)
+        with patch.object(self.grader.shutil, "disk_usage", lambda _path: full):
+            report = self.run_grader("verifier_resources_exhausted")
+        self.assertEqual(report["fault"], "infrastructure")
+        reward = json.loads(self.grader.REWARD_JSON_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(reward["infrastructure_fault"], 1)
+        self.assertEqual(reward["agent_fault"] + reward["evaluator_fault"] + reward["accepted"], 0)
+
+    def test_final_close_with_a_nonzero_size_is_refused(self):
+        """instruction.md requires the last line to be a close with size 0."""
+        records = self.records()
+        records[-1]["size"] = 0.5
+        self.write_records(records)
+        self.run_grader("final_close_size_nonzero")
+        self.clear_outputs()
+        records[-1]["size"] = 0.0
+        self.write_records(records)
+        self.run_grader(None)
+
+    def test_unreadable_private_input_is_an_evaluator_fault(self):
+        self.write_records(self.records())
+        self.grader.PRIVATE.write_text("{not json", encoding="utf-8")
+        report = self.run_grader("private_input_unreadable")
+        self.assertEqual(report["fault"], "evaluator")
+        reward = json.loads(self.grader.REWARD_JSON_PATH.read_text(encoding="utf-8"))
+        self.assertEqual((reward["accepted"], reward["agent_fault"], reward["evaluator_fault"]), (0, 0, 1))
+
+    def test_files_removed_as_oversized_before_transfer_are_refused_by_their_own_code(self):
+        self.write_records(self.records())
+        self.grader.TRANSFER_CHECK.write_text(
+            '{"version": 2, "removed": 0, "oversized": 1}', encoding="utf-8"
+        )
+        self.run_grader("artifact_transfer_oversized")
 
     def test_absent_transfer_check_is_refused(self):
         self.write_records(self.records())
@@ -150,9 +219,11 @@ class HarborGraderTests(unittest.TestCase):
             b"not json",
             b"\xff",
             b"[]",
-            b'{"version": 1, "removed": true}',
-            b'{"version": 1, "removed": -1}',
-            b'{"removed": 0}',
+            b'{"version": 2, "removed": true, "oversized": 0}',
+            b'{"version": 2, "removed": -1, "oversized": 0}',
+            b'{"version": 2, "removed": 0}',
+            b'{"version": 1, "removed": 0, "oversized": 0}',
+            b'{"removed": 0, "oversized": 0}',
         ):
             with self.subTest(payload=payload):
                 self.grader.TRANSFER_CHECK.write_bytes(payload)
@@ -161,7 +232,9 @@ class HarborGraderTests(unittest.TestCase):
 
     def test_entries_removed_before_transfer_are_refused_by_reason_code(self):
         self.write_records(self.records())
-        self.grader.TRANSFER_CHECK.write_text('{"version": 1, "removed": 2}', encoding="utf-8")
+        self.grader.TRANSFER_CHECK.write_text(
+            '{"version": 2, "removed": 2, "oversized": 0}', encoding="utf-8"
+        )
         self.run_grader("artifact_tree_unsafe")
 
     @posix_only
@@ -181,6 +254,18 @@ class HarborGraderTests(unittest.TestCase):
         self.grader.ARTIFACT.symlink_to(self.grader.PRIVATE)
         self.run_grader("artifact_not_regular_file")
 
+    @posix_only
+    def test_fifo_graded_file_is_refused_without_blocking(self):
+        """Karotte class (b), at the grader with no hook in front of it."""
+        os.mkfifo(self.grader.ARTIFACT)
+        self.run_grader("artifact_not_regular_file")
+
+    @posix_only
+    def test_graded_link_to_an_endless_device_is_refused(self):
+        """Karotte class (c): a link to /dev/zero is never opened through."""
+        self.grader.ARTIFACT.symlink_to("/dev/zero")
+        self.run_grader("artifact_not_regular_file")
+
 
 class HarborMetricTests(unittest.TestCase):
     def setUp(self):
@@ -189,39 +274,81 @@ class HarborMetricTests(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
 
-    def trial(self, name, report=None, exception=None):
+    def trial(self, name, report=None, exception=None, agent="sa-honest", config=None):
         trial = self.root / name
         (trial / "verifier").mkdir(parents=True)
-        (trial / "result.json").write_text(
-            json.dumps({"exception_info": exception}), encoding="utf-8"
-        )
+        result = {
+            "exception_info": exception,
+            "task_checksum": "c0",
+            "agent_info": {"name": agent, "version": "1.0.0", "model_info": None},
+            "config": {"trial_name": name, "job_id": "j", "agent": {"import_path": agent}, **(config or {})},
+        }
+        (trial / "result.json").write_text(json.dumps(result), encoding="utf-8")
         if report is not None:
             payload = {"grader": self.metric.GRADER, **report}
             (trial / "verifier/report.json").write_text(json.dumps(payload), encoding="utf-8")
 
-    def test_crash_refusal_and_scored_zero_are_three_different_results(self):
-        self.trial("a", {"accepted": True, "refusal": None, "reward": 0.0})
-        self.trial("b", {"accepted": True, "refusal": None, "reward": 0.8})
-        self.trial("c", {"accepted": False, "refusal": "artifact_missing", "reward": 0.0})
-        self.trial("d", exception={"exception_type": "RuntimeError"})
+    @staticmethod
+    def accepted(reward):
+        return {"accepted": True, "refusal": None, "fault": None, "reward": reward}
+
+    @staticmethod
+    def refused(code, fault):
+        return {"accepted": False, "refusal": code, "fault": fault, "reward": 0.0}
+
+    def test_agent_faults_score_zero_and_evaluator_faults_leave_the_denominator(self):
+        """Regression (2026-10-31 bench2 review): the headline averaged accepted
+        trials only, so a refused submission did not lower it."""
+        self.trial("a", self.accepted(0.8))
+        self.trial("b", self.accepted(0.4))
+        self.trial("c", self.refused("artifact_missing", "agent"))
+        self.trial("d", self.refused("private_input_missing", "evaluator"))
+        out = self.metric.summarize_job(self.root)
+        group = out["pooled"]
         self.assertEqual(
-            self.metric.summarize(self.metric.job_outcomes(self.root)),
-            {
-                "trials": 4,
-                "accepted": 2,
-                "refused": 1,
-                "crashed": 1,
-                "mean_accepted_reward": 0.4,
-                "refusal_codes": {"artifact_missing": 1},
-            },
+            {k: group[k] for k in ("trials", "accepted", "agent_fault", "evaluator_fault", "crashed", "scored_trials")},
+            {"trials": 4, "accepted": 2, "agent_fault": 1, "evaluator_fault": 1, "crashed": 0, "scored_trials": 3},
         )
+        self.assertAlmostEqual(group["mean_reward_all_trials"], 1.2 / 3)
+        self.assertAlmostEqual(group["mean_reward_accepted_only"], 0.6)
+        self.assertEqual(group["agent_fault_codes"], {"artifact_missing": 1})
+        self.assertEqual(group["evaluator_fault_codes"], {"private_input_missing": 1})
+
+    def test_a_crash_makes_the_headline_unavailable_not_a_score(self):
+        self.trial("a", self.accepted(0.8))
+        self.trial("b", exception={"exception_type": "RuntimeError"})
+        group = self.metric.summarize_job(self.root)["pooled"]
+        self.assertIsNone(group["mean_reward_all_trials"])
+        self.assertIn("1 crashed", group["mean_reward_all_trials_unavailable"])
+        self.assertAlmostEqual(group["mean_reward_crashes_as_zero"], 0.4)
+
+    def test_trials_from_different_agents_or_configs_are_not_pooled(self):
+        self.trial("a", self.accepted(0.8), agent="sa-honest")
+        self.trial("b", self.accepted(0.2), agent="sa-forged-reward")
+        self.trial("c", self.accepted(0.2), agent="sa-honest", config={"timeout_multiplier": 2.0})
+        out = self.metric.summarize_job(self.root)
+        self.assertIsNone(out["pooled"])
+        self.assertIn("3 agent or job-configuration groups", out["pooled_refused"])
+        self.assertEqual(len(out["groups"]), 3)
+        # Trials that differ only in per-trial fields stay one group.
+        same = self.root / "same"
+        same.mkdir()
+        self.root, saved = same, self.root
+        self.trial("x", self.accepted(0.8))
+        self.trial("y", self.accepted(0.4))
+        self.root = saved
+        pooled = self.metric.summarize_job(same)["pooled"]
+        self.assertEqual(pooled["trials"], 2)
+
+    def test_a_trial_without_a_readable_result_blocks_pooling(self):
+        self.trial("a", self.accepted(0.8))
+        (self.root / "b").mkdir()
+        out = self.metric.summarize_job(self.root)
+        self.assertIsNone(out["pooled"])
+        self.assertEqual(out["unattributed_trials"], ["b"])
 
     def test_report_from_a_trial_that_raised_is_not_trusted(self):
-        self.trial(
-            "a",
-            {"accepted": True, "refusal": None, "reward": 1.0},
-            exception={"exception_type": "RuntimeError"},
-        )
+        self.trial("a", self.accepted(1.0), exception={"exception_type": "RuntimeError"})
         self.assertEqual(self.metric.classify_trial(self.root / "a"), self.metric.CRASH)
 
     def test_trial_with_no_report_is_a_crash(self):
@@ -233,44 +360,60 @@ class HarborMetricTests(unittest.TestCase):
         for report in (
             None,
             [],
-            {"grader": "PLANTED-BY-AGENT", "accepted": True, "refusal": None, "reward": 1.0},
-            {"grader": grader, "accepted": "yes", "refusal": None, "reward": 1.0},
-            {"grader": grader, "accepted": True, "refusal": None, "reward": None},
-            {"grader": grader, "accepted": True, "refusal": None, "reward": True},
-            {"grader": grader, "accepted": True, "refusal": None, "reward": float("nan")},
-            {"grader": grader, "accepted": True, "refusal": "x", "reward": 1.0},
-            {"grader": grader, "accepted": False, "refusal": "x", "reward": 1.0},
-            {"grader": grader, "accepted": False, "refusal": None, "reward": 0.0},
+            {"grader": "PLANTED-BY-AGENT", "accepted": True, "refusal": None, "fault": None, "reward": 1.0},
+            {"grader": grader, "accepted": "yes", "refusal": None, "fault": None, "reward": 1.0},
+            {"grader": grader, "accepted": True, "refusal": None, "fault": None, "reward": None},
+            {"grader": grader, "accepted": True, "refusal": None, "fault": None, "reward": True},
+            {"grader": grader, "accepted": True, "refusal": None, "fault": None, "reward": float("nan")},
+            {"grader": grader, "accepted": True, "refusal": "x", "fault": None, "reward": 1.0},
+            {"grader": grader, "accepted": True, "refusal": None, "fault": "agent", "reward": 1.0},
+            {"grader": grader, "accepted": False, "refusal": "x", "fault": "agent", "reward": 1.0},
+            {"grader": grader, "accepted": False, "refusal": None, "fault": "agent", "reward": 0.0},
+            {"grader": grader, "accepted": False, "refusal": "x", "fault": None, "reward": 0.0},
+            {"grader": grader, "accepted": False, "refusal": "x", "fault": "nobody", "reward": 0.0},
         ):
             with self.subTest(report=report):
                 self.assertEqual(self.metric.classify_report(report), self.metric.CRASH)
 
-    def test_no_accepted_trial_leaves_the_mean_unavailable(self):
-        summary = self.metric.summarize([self.metric.CRASH])
-        self.assertIsNone(summary["mean_accepted_reward"])
-        self.assertEqual(summary["crashed"], 1)
+    def test_an_infrastructure_verdict_blocks_the_headline_and_is_not_dropped(self):
+        """An agent that exhausts disk or processes must neither earn nor dodge a 0."""
+        self.trial("a", self.accepted(0.8))
+        self.trial("b", self.refused("verifier_resources_exhausted", "infrastructure"))
+        group = self.metric.summarize_job(self.root)["pooled"]
+        self.assertEqual((group["infrastructure"], group["evaluator_fault"], group["crashed"]), (1, 0, 0))
+        self.assertIsNone(group["mean_reward_all_trials"])
+        self.assertIn("1 infrastructure-unavailable", group["mean_reward_all_trials_unavailable"])
+        self.assertAlmostEqual(group["mean_reward_crashes_as_zero"], 0.4)
+        self.assertEqual(group["infrastructure_codes"], {"verifier_resources_exhausted": 1})
 
-    def test_harbor_contract_splits_null_refused_and_scored_zero(self):
+    def test_no_scored_trial_leaves_the_means_unavailable(self):
+        summary = self.metric.summarize([("evaluator_fault", None, "private_input_missing")])
+        self.assertIsNone(summary["mean_reward_all_trials"])
+        self.assertIsNone(summary["mean_reward_accepted_only"])
+        self.assertEqual(summary["evaluator_fault"], 1)
+
+    def test_harbor_contract_splits_null_faults_and_scored_zero(self):
         rewards = self.root / "rewards.jsonl"
         rewards.write_text(
             "null\n"
+            '{"accepted": 0, "agent_fault": 1, "evaluator_fault": 0, "infrastructure_fault": 0, "reward": 0.0}\n'
+            '{"accepted": 0, "agent_fault": 0, "evaluator_fault": 1, "infrastructure_fault": 0, "reward": 0.0}\n'
+            '{"accepted": 1, "agent_fault": 0, "evaluator_fault": 0, "infrastructure_fault": 0, "reward": 0.5}\n'
+            '{"accepted": 0, "agent_fault": 0, "evaluator_fault": 0, "infrastructure_fault": 1, "reward": 0.0}\n'
             '{"accepted": 0, "reward": 0.0}\n'
-            '{"accepted": 1, "reward": 0.0}\n'
-            '{"reward": 1.0}\n',
+            '{"accepted": 1, "agent_fault": 1, "evaluator_fault": 0, "infrastructure_fault": 0, "reward": 0.5}\n',
             encoding="utf-8",
         )
         output = self.root / "metric.json"
         self.assertEqual(self.metric.main(["-i", str(rewards), "-o", str(output)]), 0)
+        out = json.loads(output.read_text(encoding="utf-8"))
         self.assertEqual(
-            json.loads(output.read_text(encoding="utf-8")),
-            {
-                "trials": 4,
-                "accepted": 1,
-                "refused": 1,
-                "crashed": 2,
-                "mean_accepted_reward": 0.0,
-            },
+            {k: out[k] for k in ("trials", "accepted", "agent_fault", "evaluator_fault", "infrastructure", "crashed")},
+            {"trials": 7, "accepted": 1, "agent_fault": 1, "evaluator_fault": 1, "infrastructure": 1, "crashed": 3},
         )
+        self.assertIsNone(out["mean_reward_all_trials"])
+        self.assertAlmostEqual(out["mean_reward_crashes_as_zero"], 0.5 / 6)
+        self.assertIn("not visible", out["grouping"])
 
     def test_a_job_with_no_trials_is_an_error_not_an_empty_success(self):
         with self.assertRaises(SystemExit) as caught:
@@ -290,6 +433,11 @@ class FixtureScriptTests(unittest.TestCase):
         "stale_outputs": None,
         "cross_task_state": None,
         "private_evaluator_read": None,
+        "fifo_artifact": "artifact_tree_unsafe",
+        "sparse_artifact": "artifact_transfer_oversized",
+        "lingering_swap": "artifact_not_regular_file",
+        "planted_interpreter": None,
+        "network_egress": None,
     }
 
     def setUp(self):
@@ -299,8 +447,17 @@ class FixtureScriptTests(unittest.TestCase):
 
     @staticmethod
     def sh(script, root):
-        rooted = re.sub(r"(?<![\w/.])/(tests|logs|app)\b", lambda m: f"{root}/{m[1]}", script)
-        subprocess.run(["bash", "-c", rooted], check=True)
+        subprocess.run(["bash", "-c", rooted(script, root)], check=True)
+
+    @staticmethod
+    def wait_for_lingering(agent):
+        """A fixture that leaves a process running marks /app/.sa-pending until it acts."""
+        pending = agent / "app/.sa-pending"
+        deadline = time.monotonic() + 20
+        while pending.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        if pending.exists():
+            raise AssertionError("the lingering fixture process never acted")
 
     def run_case(self, case):
         temp = tempfile.TemporaryDirectory()
@@ -310,6 +467,7 @@ class FixtureScriptTests(unittest.TestCase):
         self.sh(self.cases[case], agent)
         for hook in self.hooks:
             self.sh(hook["command"], agent)
+        self.wait_for_lingering(agent)
         grader = load_module(f"harbor_grader_{case}", GRADER_PATH)
         point_grader_at(
             grader,
@@ -317,7 +475,7 @@ class FixtureScriptTests(unittest.TestCase):
             TASK / "tests/private/future_prices.json",
             Path(temp.name, "verifier"),
         )
-        self.assertEqual(grader.main(), 0)
+        self.assertEqual(run_bounded(grader), 0)
         return json.loads(grader.REPORT_PATH.read_text(encoding="utf-8")), agent
 
     def test_the_outcome_table_names_every_fixture(self):
@@ -340,7 +498,53 @@ class FixtureScriptTests(unittest.TestCase):
         self.assertFalse(os.path.lexists(artifacts / "actions.jsonl"))
         self.assertFalse(os.path.lexists(artifacts / "shadow.jsonl"))
         marker = json.loads((artifacts / ".sa-transfer-check.json").read_text(encoding="utf-8"))
-        self.assertEqual(marker, {"version": 1, "removed": 2})
+        self.assertEqual(marker, {"version": 2, "removed": 2, "oversized": 0})
+
+    @posix_only
+    def test_collect_hook_removes_a_sparse_file_before_transfer(self):
+        """Karotte classes (c) and (g): the 8 GiB file never reaches the transfer."""
+        _, agent = self.run_case("sparse_artifact")
+        artifacts = agent / "logs/artifacts"
+        self.assertFalse(os.path.lexists(artifacts / "actions.jsonl"))
+        marker = json.loads((artifacts / ".sa-transfer-check.json").read_text(encoding="utf-8"))
+        self.assertEqual(marker, {"version": 2, "removed": 0, "oversized": 1})
+
+    @posix_only
+    def test_planted_interpreter_and_sitecustomize_never_run_under_test_sh(self):
+        """Karotte class (e). The verifier's own test.sh runs with the artifact
+        directory first on PATH and on PYTHONPATH and as the working directory,
+        which is more than a real verifier hands it. The planted python3 and
+        sitecustomize.py must not run, and the real grader must score the honest
+        submission."""
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / "app").mkdir()
+        self.sh(self.cases["planted_interpreter"], root)
+        for hook in self.hooks:
+            self.sh(hook["command"], root)
+        tests = root / "tests"
+        (tests / "private").mkdir(parents=True)
+        shutil.copy(TASK / "tests/private/future_prices.json", tests / "private")
+        (tests / "grade.py").write_text(
+            rooted(GRADER_PATH.read_text(encoding="utf-8"), root), encoding="utf-8"
+        )
+        script = rooted((TASK / "tests/test.sh").read_text(encoding="utf-8"), root)
+        script = script.replace("/usr/local/bin/python3", sys.executable)
+        (tests / "test.sh").write_text(script, encoding="utf-8")
+        artifacts = root / "logs/artifacts"
+        hostile = {
+            **os.environ,
+            "PATH": f"{artifacts}:{os.environ.get('PATH', '/usr/bin:/bin')}",
+            "PYTHONPATH": str(artifacts),
+        }
+        subprocess.run(["bash", str(tests / "test.sh")], cwd=artifacts, env=hostile, check=True)
+        self.assertFalse((root / "logs/PWNED").exists(), (root / "logs/PWNED").read_text() if (root / "logs/PWNED").exists() else "")
+        report = json.loads((root / "logs/verifier/report.json").read_text(encoding="utf-8"))
+        self.assertEqual((report["accepted"], report["refusal"]), (True, None))
+        reward = float((root / "logs/verifier/reward.txt").read_text(encoding="utf-8"))
+        self.assertEqual(reward, report["reward"])
+        self.assertLess(reward, 1.0)
 
     @posix_only
     def test_collect_hook_replaces_a_planted_marker(self):
@@ -364,6 +568,58 @@ class FixtureScriptTests(unittest.TestCase):
         self.assertEqual(probe["private_bytes"], "")
         # The attack must still run, after the measurement.
         self.assertTrue((agent / "tests/grade.py").is_file())
+
+
+class TestShFallbackTests(unittest.TestCase):
+    @posix_only
+    def test_a_grader_that_never_runs_leaves_an_infrastructure_verdict(self):
+        """Class (g): if no grader process can start (or it is killed), test.sh writes
+        an infrastructure verdict with shell builtins. Simulated with a missing
+        interpreter; a real process-table exhaustion was not reproduced."""
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / "logs/verifier").mkdir(parents=True)
+        script = rooted((TASK / "tests/test.sh").read_text(encoding="utf-8"), root)
+        script = script.replace("/usr/local/bin/python3", str(root / "missing/python3"))
+        (root / "test.sh").write_text(script, encoding="utf-8")
+        subprocess.run(["bash", str(root / "test.sh")], check=True)
+        report = json.loads((root / "logs/verifier/report.json").read_text(encoding="utf-8"))
+        self.assertEqual((report["refusal"], report["fault"]), ("verifier_unavailable", "infrastructure"))
+        reward = json.loads((root / "logs/verifier/reward.json").read_text(encoding="utf-8"))
+        metric = load_module("harbor_metric_fallback", METRIC_PATH)
+        self.assertEqual(metric.classify_reward(reward)[0], metric.INFRASTRUCTURE)
+        self.assertEqual(metric.classify_report(report)[0], metric.INFRASTRUCTURE)
+
+
+class TaskNetworkTests(unittest.TestCase):
+    def test_both_containers_request_no_network(self):
+        """Class (h). Harbor 0.23.0 refuses a no-network task on a provider that
+        cannot enforce it, so this is fail closed; whether egress is actually blocked
+        is a container result, recorded by the network_egress fixture."""
+        task = tomllib.loads((TASK / "task.toml").read_text(encoding="utf-8"))
+        self.assertEqual(task["environment"].get("network_mode"), "no-network")
+        self.assertEqual(task["verifier"]["environment"].get("network_mode"), "no-network")
+
+
+class TaskImageTests(unittest.TestCase):
+    def test_every_task_dockerfile_pins_its_base_by_digest(self):
+        """An unpinned FROM lets the base image change under a fixed task."""
+        dockerfiles = sorted(HARBOR.glob("tasks/*/environment/Dockerfile")) + sorted(
+            HARBOR.glob("tasks/*/tests/Dockerfile")
+        )
+        self.assertTrue(dockerfiles)
+        pinned = re.compile(r"^FROM\s+\S+@sha256:[0-9a-f]{64}(\s+AS\s+\S+)?\s*$", re.IGNORECASE)
+        for dockerfile in dockerfiles:
+            froms = [
+                line.strip()
+                for line in dockerfile.read_text(encoding="utf-8").splitlines()
+                if line.strip().upper().startswith("FROM")
+            ]
+            with self.subTest(dockerfile=str(dockerfile.relative_to(HARBOR))):
+                self.assertTrue(froms)
+                for line in froms:
+                    self.assertRegex(line, pinned)
 
 
 if __name__ == "__main__":

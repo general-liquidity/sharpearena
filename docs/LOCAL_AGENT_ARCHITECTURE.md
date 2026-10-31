@@ -44,11 +44,20 @@ graph acyclic while making the two products operationally interdependent.
 
 `sharpearena.local_agents` supplies:
 
-- a scaffold-neutral, stateless prompt renderer;
+- a scaffold-neutral, stateless prompt renderer, bound to its label: a model entry's
+  `scaffold` must name a renderer in `SCAFFOLD_RENDERERS`, an unknown label is refused
+  when the entry is built, and each record's `scaffold` block names the renderer class
+  that ran and a `render_probe_sha256` digest of the messages it renders for a fixed
+  probe, so a renderer that frames the prompt differently cannot pass under the label;
 - a loopback-only Ollama client with redirect refusal and the published Decision JSON
   Schema as its constrained-output format;
 - native `VecTradingEnv` batch stepping;
-- a Cartesian scheduler over model, dataset/tier, seed, and repetition;
+- a Cartesian scheduler over model, dataset/tier, seed, and repetition, run in an
+  interleaved order: each (dataset, repetition) round runs every model once, in a
+  permutation drawn from the plan's `order_seed`, so no model arm runs as one block and
+  drift in the serving host or a remote model spreads across arms. The rule
+  (`CELL_ORDER_RULE`) and the seed are part of the plan hash. Order moves when a cell
+  runs, never what it scores;
 - stable cell ordinals and hashes, deterministic sharding, and append-only resume;
 - exact native process events, canonical decisions, observation/response hashes,
   return series, and per-cell score diagnostics. Model identity also records the
@@ -77,7 +86,9 @@ python -m sharpearena.local_field_cli \
 ```
 
 Shards use the same plan hash. Change only `shard_index` and `shard_count`, write each
-shard to a separate journal, then compile all journals together:
+shard to a separate journal, then compile all journals together. Shard membership is the
+Cartesian cell ordinal modulo `shard_count`, independent of `order_seed`, so every cell is
+in exactly one shard, and each shard runs its cells in the field's interleaved order:
 
 ```bash
 python -m sharpearena.bench_bridge \

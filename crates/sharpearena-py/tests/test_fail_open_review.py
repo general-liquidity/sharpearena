@@ -309,6 +309,41 @@ def test_evaluate_seeds_still_scores_a_series_the_kernel_can_read():
     assert isinstance(row["deflated_sharpe"], float)
 
 
+def _passing_or_short_env(seed):
+    """Seed 0 ends after one bar, so the kernel cannot score it. Every other seed
+    yields 60 dispersed positive returns that pass the kernel's pass^k gate."""
+
+    class _Env:
+        def __init__(self):
+            self._i = 0
+
+        def reset(self):
+            self._i = 0
+            return {"closes": np.array([1.0, 1.0])}, {}
+
+        def step(self, _action):
+            self._i += 1
+            reward = 0.01 + 0.002 * np.sin(self._i + seed)
+            done = seed == 0 or self._i >= 60
+            return {"closes": np.array([1.0, 1.0])}, float(reward), done, False, {}
+
+    return _Env()
+
+
+def test_unscorable_seed_stays_in_the_pass_rate_denominator():
+    """Regression (2026-10-31 bench2 review): a seed with fewer than two returns was
+    dropped from the ``passed_k_rate`` denominator while its return stayed in the
+    pooled score, so breaking one seed's evaluation raised the pass rate from 2/3 to
+    2/2. The seed now counts as not passed, and the counts are reported beside the
+    rate."""
+    from sharpearena.generalization import evaluate_seeds
+
+    row = evaluate_seeds(_passing_or_short_env, [0, 1, 2], max_steps=80)
+    assert row["n_seeds"] == 3
+    assert (row["n_seeds_passed"], row["n_seeds_scored"], row["n_seeds_unscorable"]) == (2, 2, 1)
+    assert row["passed_k_rate"] == 2 / 3
+
+
 def test_a_gap_against_an_unavailable_split_stays_unavailable():
     """The consequence the refusal buys: an unscored split can no longer be
     differenced against a scored one to produce a generalization gap. Isolation: the

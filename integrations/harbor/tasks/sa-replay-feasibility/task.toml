@@ -5,12 +5,21 @@ tags = ["sharpearena", "int-09", "feasibility"]
 
 # Agent-side environment. The agent never receives the tests/ directory in
 # separate-verifier mode, so private evaluator inputs live there and not here.
-# network_mode is intentionally left at the Harbor default here. The intended
-# setting is "no-network"; the Docker provider refuses it on this host because
-# the WSL2 kernel lacks CONFIG_NFT_FIB_INET, so its egress-control sidecar is
-# unavailable. See docs/integrations/INT-09-harbor-local-feasibility.md.
+# network_mode = "no-network" fails closed: Harbor 0.23.0 rejects the task
+# (validate_network_policy_support) on a provider that cannot enforce it, rather
+# than running it with egress open. Its Docker provider enforces it only when the
+# engine kernel has nftables fib inet support; this WSL2 host lacks it, so INT-09
+# jobs are refused here until they run on a host that has it.
 [environment]
 build_timeout_sec = 600.0
+network_mode = "no-network"
+# Bounds on what an agent can exhaust. Harbor 0.23.0's Docker provider applies cpus
+# and memory_mb only (resource_capabilities: cpu_limit, memory_limit). It ignores
+# storage_mb and has no pids field, so storage_mb is not set here: an unenforced
+# limit would read as a bound. A fork bomb or a disk fill is not bounded; the
+# verifier reports one that reaches it as infrastructure-unavailable, never a score.
+cpus = 1
+memory_mb = 2048
 
 [agent]
 timeout_sec = 300.0
@@ -22,12 +31,17 @@ environment_mode = "separate"
 
 # Built from tests/Dockerfile, not from the agent's environment/ context.
 [verifier.environment]
+network_mode = "no-network"
+cpus = 1
+memory_mb = 1024
 
 # Runs in the agent container after the agent phase and before Harbor collects
 # /logs/artifacts. A dangling symlink otherwise crashes Harbor's host-to-verifier
 # re-upload before grade.py runs (INT-09 section 5), so non-regular entries are
-# counted, removed and reported for the grader to refuse by reason code. Inline on
-# purpose: a script file would live in the image the agent can write to. The hook
+# counted, removed and reported for the grader to refuse by reason code. A regular
+# file over 1 MiB is removed too and counted as oversized, so a huge or sparse file
+# never reaches Harbor's transfer or the verifier's disk. Inline on purpose: a
+# script file would live in the image the agent can write to. The hook
 # is best effort in Harbor, and an agent process that outlives the agent phase can
 # recreate an entry after it runs; both cases leave the crash, which metric.py
 # counts as crashed, never as a score.
@@ -39,9 +53,11 @@ marker="$root/.sa-transfer-check.json"
 rm -rf -- "$marker"
 unsafe=$(find -P "$root" ! -type f ! -type d -print | wc -l)
 find -P "$root" ! -type f ! -type d -delete
+oversized=$(find -P "$root" -type f -size +1024k -print | wc -l)
+find -P "$root" -type f -size +1024k -delete
 mkdir -p "$root"
-printf '{"version": 1, "removed": %s}
-' "$unsafe" > "$marker"
+printf '{"version": 2, "removed": %s, "oversized": %s}
+' "$unsafe" "$oversized" > "$marker"
 '''
 
 # No explicit [[artifacts]] entry: Harbor always collects the agent convention

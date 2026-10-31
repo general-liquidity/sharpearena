@@ -372,3 +372,25 @@ def test_forecast_curve_refuses_a_withheld_kernel_score(monkeypatch):
     with pytest.raises(KernelScoreUnavailable) as caught:
         forecast_mod.forecast_skill_curve(lambda s: None, [1], None, r2_grid=(0.5,))
     assert caught.value.reason == reason
+
+
+def test_seed_pass_tally_counts_unscorable_seeds_as_not_passed():
+    """A withheld seed composite is in the denominator and is not a pass; with no
+    scorable seed the rate is the first reason, never 0.0."""
+    from sharpearena.kernel_score import NO_SEED_OBSERVATIONS, seed_pass_tally
+
+    passed = {"deflated_sharpe": 0.99, "passed_k": True}
+    failed = {"deflated_sharpe": 0.10, "passed_k": False}
+    # A refused seed still carries passed_k=False and the no-skill floor.
+    refused = {"deflated_sharpe": 0.0, "passed_k": False, "bootstrap_error": "too short"}
+    tally = seed_pass_tally([passed, refused, failed, passed])
+    assert tally == {
+        "passed_k_rate": 0.5,
+        "n_seeds_passed": 2,
+        "n_seeds_scored": 3,
+        "n_seeds_unscorable": 1,
+    }
+    only_refused = seed_pass_tally([refused])
+    assert "too short" in only_refused["passed_k_rate"]
+    assert only_refused["n_seeds_unscorable"] == 1
+    assert seed_pass_tally([])["passed_k_rate"] == NO_SEED_OBSERVATIONS

@@ -36,7 +36,11 @@ from .confidence import (
 )
 from .effective_config import check_env_effective_config
 from .gym import SharpeArenaEnv
-from .kernel_score import is_kernel_score_unavailable, kernel_score_or_unavailable
+from .kernel_score import (
+    is_kernel_score_unavailable,
+    kernel_score_or_unavailable,
+    seed_pass_tally,
+)
 from .sharpearena_py import score_run
 
 Policy = Callable[[dict], np.ndarray]
@@ -488,7 +492,11 @@ def run_baselines(
 
     For each policy we record one episode's return series per seed, pool the series,
     and score the pool with the real ``score_run`` kernel for an aggregate deflated
-    Sharpe; ``passed_k_rate`` is the fraction of seeds whose own series passes pass^k.
+    Sharpe; ``passed_k_rate`` is the fraction of all ``seeds`` whose own series passes
+    pass^k, with ``n_seeds_passed``, ``n_seeds_scored`` and ``n_seeds_unscorable``
+    beside it. A seed the kernel cannot score counts as not passed and stays in the
+    denominator; with no scorable seed the rate is the kernel's reason string
+    (:func:`~sharpearena.kernel_score.seed_pass_tally`).
     ``n_trials`` defaults to the number of baseline policies — the honest declared
     in-sample search breadth, which deflates the Sharpe for multiple-comparison luck.
 
@@ -511,7 +519,8 @@ def run_baselines(
     :class:`~sharpearena.effective_config.EffectiveConfigError` before any number is
     scored rather than after it is published.
 
-    Returns one row per policy: ``{policy, deflated_sharpe, passed_k_rate, mean_return}``
+    Returns one row per policy: ``{policy, deflated_sharpe, passed_k_rate,
+    n_seeds_passed, n_seeds_scored, n_seeds_unscorable, mean_return}``.
     With confidence enabled, also returns ``deflated_sharpe_ci`` (the interval or
     ``None``), ``confidence_status``, ``arena_deflated_sharpe_ci`` and
     ``per_seed_returns``.
@@ -523,7 +532,7 @@ def run_baselines(
     rows: list[dict] = []
     for name, factory in BASELINE_POLICIES:
         pooled: list[float] = []
-        passed: list[float | str] = []
+        seed_composites: list[dict] = []
         per_seed: list[list[float]] = []
         for s in seeds:
             policy = factory()
@@ -542,18 +551,14 @@ def run_baselines(
             returns = _rollout_returns(env, policy, max_steps)
             per_seed.append(returns)
             pooled.extend(returns)
-            comp = json.loads(score_run(returns, trials)) if len(returns) >= 2 else {}
-            seed_score = kernel_score_or_unavailable(comp)
-            passed.append(seed_score if is_kernel_score_unavailable(seed_score)
-                          else float(bool(comp.get("passed_k", False))))
+            # Every seed is scored, including one too short for the kernel to read,
+            # so an unscorable seed stays in the pass-rate denominator.
+            seed_composites.append(json.loads(score_run(returns, trials)))
         composite = json.loads(score_run(pooled, trials)) if len(pooled) >= 2 else {}
-        passed_error = next((v for v in passed if is_kernel_score_unavailable(v)), None)
         row = {
             "policy": name,
             "deflated_sharpe": kernel_score_or_unavailable(composite),
-            "passed_k_rate": passed_error if passed_error is not None else (
-                float(np.mean(passed)) if passed else "unavailable: no seed observations"
-            ),
+            **seed_pass_tally(seed_composites),
             "mean_return": float(np.mean(pooled)) if pooled else 0.0,
         }
         if confidence:
@@ -672,7 +677,12 @@ def leaderboard_markdown(rows: Sequence[dict], *, show_ci: bool = False) -> str:
                     raise ValueError("deflated-Sharpe interval bounds must lie in [0, 1]")
                 cells.append(f"{100 * confidence:.6g}% [{lo:.4f}, {hi:.4f}]")
         rate = r.get("passed_k_rate", 0.0)
-        cells.append(rate if isinstance(rate, str) else f"{float(rate):.2f}")
+        rate_cell = rate if isinstance(rate, str) else f"{float(rate):.2f}"
+        unscorable = r.get("n_seeds_unscorable", 0)
+        if not isinstance(rate, str) and unscorable:
+            # The rate counts these seeds as not passed; say so beside the number.
+            rate_cell += f" ({unscorable} unscorable)"
+        cells.append(rate_cell)
         cells.append("{:.6f}".format(float(r.get("mean_return", 0.0))))
         lines.append("| " + " | ".join(cells) + " |")
     if marked:

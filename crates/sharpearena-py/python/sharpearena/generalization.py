@@ -17,7 +17,11 @@ from typing import Any, Callable, Optional, Sequence
 
 import numpy as np
 
-from .kernel_score import kernel_score_difference, kernel_score_or_unavailable
+from .kernel_score import (
+    kernel_score_difference,
+    kernel_score_or_unavailable,
+    seed_pass_tally,
+)
 from .sharpearena_py import score_run
 
 MakeEnv = Callable[[int], object]
@@ -98,18 +102,26 @@ def evaluate_seeds(
     for a pooled series too short to score (an empty ``seeds`` list, or every episode
     ending before its second bar): the kernel is asked and its refusal is recorded,
     rather than the row reporting a scored ``0.0`` for an evaluation with no evidence in
-    it. ``passed_k_rate`` and ``mean_return`` are plain tallies over whatever was
-    observed and stay ``0.0`` on an empty one.
+    it.
+
+    ``passed_k_rate`` is computed over every seed in ``seeds`` by
+    :func:`~sharpearena.kernel_score.seed_pass_tally`. A seed the kernel cannot score
+    (fewer than two returns, a constant track, a non-finite return) counts as not
+    passed instead of leaving the denominator, and ``n_seeds_passed``,
+    ``n_seeds_scored`` and ``n_seeds_unscorable`` are reported beside the rate. With no
+    scorable seed the rate is the kernel's reason string, not ``0.0``. ``mean_return``
+    is a plain tally over whatever was observed and stays ``0.0`` on an empty one.
     """
     policy = policy or _equal_weight_policy
+    seeds = list(seeds)
     pooled: list[float] = []
-    passed: list[float] = []
+    per_seed: list[dict] = []
     for s in seeds:
         returns = _rollout_returns(make_env_for_seed(s), policy, max_steps)
         pooled.extend(returns)
-        if len(returns) >= 2:
-            comp = json.loads(score_run(returns, n_trials))
-            passed.append(1.0 if comp.get("passed_k", False) else 0.0)
+        # Every seed is scored, including one too short for the kernel to read: its
+        # typed refusal keeps it in the pass-rate denominator as an unscorable seed.
+        per_seed.append(json.loads(score_run(returns, n_trials)))
     # No length bypass. The kernel already refuses a series it cannot score: fewer than
     # two observations sets `bootstrap_error` and `deflation_error` while
     # `deflated_sharpe` reads the no-skill 0.0, which is exactly the floor the kernel
@@ -119,9 +131,9 @@ def evaluate_seeds(
     # kernel and record what it says.
     composite = json.loads(score_run(pooled, n_trials))
     return {
-        "n_seeds": len(list(seeds)),
+        "n_seeds": len(seeds),
         "deflated_sharpe": kernel_score_or_unavailable(composite),
-        "passed_k_rate": float(np.mean(passed)) if passed else 0.0,
+        **seed_pass_tally(per_seed),
         "mean_return": float(np.mean(pooled)) if pooled else 0.0,
     }
 

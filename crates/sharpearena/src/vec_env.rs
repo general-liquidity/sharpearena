@@ -12,8 +12,14 @@
 //!
 //! Determinism is structural: every lane owns its own seeded book/RNG, dataset, and
 //! cursor, with no cross-lane shared mutable state, so the rayon-parallel step is
-//! byte-identical to a serial step (asserted by `parallel_matches_serial`). On
-//! `wasm32`, where threads do not build, the same loop runs serially.
+//! byte-identical to a serial step (asserted by `parallel_matches_serial` and
+//! `every_dispatch_produces_the_same_trajectory`). On `wasm32`, where threads do not
+//! build, the same loop runs serially.
+//!
+//! Scheduling is therefore a pure cost decision. One transition is microseconds of work,
+//! and a Rayon fork-join costs more the larger the pool it wakes, so a batch only goes
+//! parallel when its estimated work pays for a fork on the current pool (see
+//! `Dispatch`). The estimate reads lane, symbol and thread counts, never a clock.
 
 #[cfg(not(target_arch = "wasm32"))]
 use rayon::prelude::*;
@@ -312,10 +318,70 @@ impl BatchStep {
     }
 }
 
+/// Fork-join cost per squared pool thread. A batch on a `T`-thread pool goes parallel only
+/// when its estimated work is at least `T * T` times this. A native-only tuning value: it
+/// picks a schedule and cannot reach a result, because every schedule yields the same
+/// bytes.
+///
+/// Measured on a contended 64-core host over 1 to 64 threads and 8 to 256 lanes, the
+/// break-even work grows faster than linearly in the pool size: one-lane tasks beat the
+/// serial loop at 24 us of work on 4 threads, need well over 100 us on 8, and lose at
+/// 768 us on 32 and 64. Splitting lanes into pool-sized chunks lost to one-lane tasks at
+/// every small pool measured, so a parallel batch keeps Rayon's own splitting.
+#[cfg(not(target_arch = "wasm32"))]
+const FORK_NS_PER_THREAD_SQ: u64 = 2_000;
+
+/// Estimated nanoseconds to step one lane of `n_symbols`. A line fitted to measured
+/// release-build transitions from 1 to 64 symbols, floored at the small-panel cost. It
+/// only has to be right about orders of magnitude.
+#[cfg(not(target_arch = "wasm32"))]
+fn lane_cost_ns(n_symbols: usize) -> u64 {
+    (n_symbols as u64)
+        .saturating_mul(2_000)
+        .saturating_sub(5_000)
+        .max(1_000)
+}
+
+/// How one `step_batch` call schedules its lanes. Every variant produces the same bytes;
+/// the choice only moves wall time.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Dispatch {
+    /// Loop on the calling thread, with no fork-join.
+    Serial,
+    /// Rayon with at least `min_lanes` lanes per task.
+    #[cfg(not(target_arch = "wasm32"))]
+    Parallel { min_lanes: NonZeroUsize },
+}
+
+/// Pick the schedule for `lanes` lanes costing `work_ns` in total on a `threads`-sized
+/// pool. A batch that cannot pay for a fork-join on this pool stays serial; one that can
+/// runs one lane per Rayon task, as before this planner existed.
+#[cfg(not(target_arch = "wasm32"))]
+fn plan_dispatch(lanes: usize, work_ns: u64, threads: usize) -> Dispatch {
+    if threads <= 1 || lanes <= 1 || work_ns < fork_break_even_ns(threads) {
+        return Dispatch::Serial;
+    }
+    Dispatch::Parallel {
+        min_lanes: NonZeroUsize::MIN,
+    }
+}
+
+/// The estimated work at which a fork-join on a `threads`-sized pool pays for itself.
+#[cfg(not(target_arch = "wasm32"))]
+fn fork_break_even_ns(threads: usize) -> u64 {
+    let threads = u64::try_from(threads).unwrap_or(u64::MAX);
+    threads
+        .saturating_mul(threads)
+        .saturating_mul(FORK_NS_PER_THREAD_SQ)
+}
+
 /// A batch of `B` independent [`TradingEnv`] lanes stepped together.
 pub struct VecTradingEnv {
     envs: Vec<TradingEnv>,
     seeds: Vec<u64>,
+    /// Symbols per lane, read only by the scheduling estimate. `from_envs` cannot see a
+    /// built lane's panel, so its entries stay zero until `reset_batch` observes them.
+    lane_symbols: Vec<usize>,
     mode: AutoresetMode,
     pending_reset: Vec<bool>,
     elapsed_steps: Vec<usize>,
@@ -329,12 +395,14 @@ impl VecTradingEnv {
     pub fn from_configs(configs: &[LaneConfig]) -> Self {
         let envs: Vec<TradingEnv> = configs.iter().map(LaneConfig::build).collect();
         let seeds = configs.iter().map(|c| c.seed).collect();
+        let lane_symbols = configs.iter().map(|c| c.n_symbols).collect();
         let pending_reset = vec![false; envs.len()];
         let elapsed_steps = vec![0; envs.len()];
         let capped_final = vec![None; envs.len()];
         VecTradingEnv {
             envs,
             seeds,
+            lane_symbols,
             mode: AutoresetMode::default(),
             pending_reset,
             elapsed_steps,
@@ -352,12 +420,14 @@ impl VecTradingEnv {
             seeds.len(),
             "envs and seeds must have equal length"
         );
+        let lane_symbols = vec![0; envs.len()];
         let pending_reset = vec![false; envs.len()];
         let elapsed_steps = vec![0; envs.len()];
         let capped_final = vec![None; envs.len()];
         VecTradingEnv {
             envs,
             seeds,
+            lane_symbols,
             mode: AutoresetMode::default(),
             pending_reset,
             elapsed_steps,
@@ -452,12 +522,35 @@ impl VecTradingEnv {
         self.pending_reset.iter_mut().for_each(|p| *p = false);
         self.elapsed_steps.fill(0);
         self.capped_final.fill(None);
-        self.envs.iter_mut().map(TradingEnv::reset).collect()
+        let observations: Vec<MarketObservation> =
+            self.envs.iter_mut().map(TradingEnv::reset).collect();
+        self.lane_symbols = observations.iter().map(|o| o.symbols.len()).collect();
+        observations
     }
 
     /// Step every lane with its decision (`decisions[i]` drives lane `i`) and apply
     /// the selected auto-reset mode. `decisions.len()` must equal the lane count.
     pub fn step_batch(&mut self, decisions: &[Decision]) -> BatchStep {
+        self.step_batch_with(decisions, self.dispatch())
+    }
+
+    /// The schedule the next `step_batch` will use on the ambient Rayon pool.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn dispatch(&self) -> Dispatch {
+        let work_ns = self
+            .lane_symbols
+            .iter()
+            .fold(0u64, |sum, &s| sum.saturating_add(lane_cost_ns(s)));
+        plan_dispatch(self.envs.len(), work_ns, rayon::current_num_threads())
+    }
+
+    /// The schedule on `wasm32`, where there are no threads to dispatch to.
+    #[cfg(target_arch = "wasm32")]
+    fn dispatch(&self) -> Dispatch {
+        Dispatch::Serial
+    }
+
+    fn step_batch_with(&mut self, decisions: &[Decision], dispatch: Dispatch) -> BatchStep {
         assert_eq!(
             decisions.len(),
             self.envs.len(),
@@ -467,31 +560,32 @@ impl VecTradingEnv {
         let mode = self.mode;
         let limit = self.episode_limit;
 
-        #[cfg(not(target_arch = "wasm32"))]
-        let outcomes: Vec<LaneOutcome> = self
-            .envs
-            .par_iter_mut()
-            .zip(decisions.par_iter())
-            .zip(self.pending_reset.par_iter_mut())
-            .zip(self.elapsed_steps.par_iter_mut())
-            .zip(self.capped_final.par_iter_mut())
-            .map(|((((env, decision), pending), elapsed), final_state)| {
-                step_lane(env, decision, pending, mode, elapsed, final_state, limit)
-            })
-            .collect();
-
-        #[cfg(target_arch = "wasm32")]
-        let outcomes: Vec<LaneOutcome> = self
-            .envs
-            .iter_mut()
-            .zip(decisions.iter())
-            .zip(self.pending_reset.iter_mut())
-            .zip(self.elapsed_steps.iter_mut())
-            .zip(self.capped_final.iter_mut())
-            .map(|((((env, decision), pending), elapsed), final_state)| {
-                step_lane(env, decision, pending, mode, elapsed, final_state, limit)
-            })
-            .collect();
+        let outcomes: Vec<LaneOutcome> = match dispatch {
+            Dispatch::Serial => self
+                .envs
+                .iter_mut()
+                .zip(decisions.iter())
+                .zip(self.pending_reset.iter_mut())
+                .zip(self.elapsed_steps.iter_mut())
+                .zip(self.capped_final.iter_mut())
+                .map(|((((env, decision), pending), elapsed), final_state)| {
+                    step_lane(env, decision, pending, mode, elapsed, final_state, limit)
+                })
+                .collect(),
+            #[cfg(not(target_arch = "wasm32"))]
+            Dispatch::Parallel { min_lanes } => self
+                .envs
+                .par_iter_mut()
+                .zip(decisions.par_iter())
+                .zip(self.pending_reset.par_iter_mut())
+                .zip(self.elapsed_steps.par_iter_mut())
+                .zip(self.capped_final.par_iter_mut())
+                .with_min_len(min_lanes.get())
+                .map(|((((env, decision), pending), elapsed), final_state)| {
+                    step_lane(env, decision, pending, mode, elapsed, final_state, limit)
+                })
+                .collect(),
+        };
 
         let mut step = BatchStep::from_outcomes(outcomes);
         self.redraw_recycled(&mut step);
@@ -645,6 +739,172 @@ mod tests {
             }
             par_obs = par_step.observations;
         }
+    }
+
+    /// Every observable byte of one batched step, floats by bit pattern.
+    fn fingerprint(step: &BatchStep) -> String {
+        let info = |i: &StepInfo| {
+            format!(
+                "{:x}/{:x}/{}",
+                i.nav.to_bits(),
+                i.carry.to_bits(),
+                serde_json::to_string(&i.events).unwrap()
+            )
+        };
+        format!(
+            "{}|{:x?}|{:?}|{:?}|{:?}|{:?}|{}|{:?}",
+            serde_json::to_string(&step.observations).unwrap(),
+            step.rewards.iter().map(|r| r.to_bits()).collect::<Vec<_>>(),
+            step.terminated,
+            step.truncated,
+            step.first,
+            step.infos.iter().map(info).collect::<Vec<_>>(),
+            serde_json::to_string(&step.final_obs).unwrap(),
+            step.final_info
+                .iter()
+                .map(|i| i.as_ref().map(info))
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    /// Lanes that differ in panel width, horizon, distribution and execution seed, so a
+    /// schedule that swaps or reorders lanes cannot go unnoticed.
+    fn mixed_configs() -> Vec<LaneConfig> {
+        (0..9u64)
+            .map(|i| LaneConfig {
+                exec_seed: (i % 2 == 0).then_some(1_000 + i),
+                distribution_mode: if i % 3 == 0 {
+                    DistributionMode::Hard
+                } else {
+                    DistributionMode::Calm
+                },
+                ..LaneConfig::new(2 + (i as usize % 4), 22 + 3 * i as usize, 40 + i)
+            })
+            .collect()
+    }
+
+    /// Drive `cfgs` under `dispatch` (`None` is the public `step_batch` and its plan),
+    /// across a mid-run `reset_batch`, and record each step's fingerprint.
+    fn trajectory(
+        cfgs: &[LaneConfig],
+        mode: AutoresetMode,
+        limit: Option<NonZeroUsize>,
+        dispatch: Option<Dispatch>,
+    ) -> Vec<String> {
+        let mut env = VecTradingEnv::from_configs(cfgs).with_autoreset_mode(mode);
+        if let Some(limit) = limit {
+            env = env.with_episode_limit(limit);
+        }
+        let mut prints = Vec::new();
+        for steps in [90, 30] {
+            let mut obs = env.reset_batch();
+            for t in 0..steps {
+                let weight = [0.0, 0.3, 0.9, 0.5][t % 4];
+                let decs = decisions_for(&obs, weight);
+                let step = match dispatch {
+                    Some(dispatch) => env.step_batch_with(&decs, dispatch),
+                    None => env.step_batch(&decs),
+                };
+                prints.push(fingerprint(&step));
+                obs = step.observations;
+            }
+        }
+        prints
+    }
+
+    #[test]
+    fn every_dispatch_produces_the_same_trajectory() {
+        // A real multi-thread pool, so the parallel arms split even on a small runner.
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(4)
+            .build()
+            .unwrap();
+        let cfgs = mixed_configs();
+        for mode in [
+            AutoresetMode::NextStep,
+            AutoresetMode::SameStep,
+            AutoresetMode::Disabled,
+        ] {
+            for limit in [None, NonZeroUsize::new(7)] {
+                let serial = trajectory(&cfgs, mode, limit, Some(Dispatch::Serial));
+                for min_lanes in [1, 2, 4, 9, 100] {
+                    let dispatch = Dispatch::Parallel {
+                        min_lanes: NonZeroUsize::new(min_lanes).unwrap(),
+                    };
+                    let parallel = pool.install(|| trajectory(&cfgs, mode, limit, Some(dispatch)));
+                    assert_eq!(serial, parallel, "{mode:?} {limit:?} {dispatch:?}");
+                }
+                let planned = pool.install(|| trajectory(&cfgs, mode, limit, None));
+                assert_eq!(serial, planned, "{mode:?} {limit:?} planned");
+            }
+        }
+    }
+
+    #[test]
+    fn dispatch_plan_stays_serial_until_the_work_pays_for_a_fork() {
+        let one = Dispatch::Parallel {
+            min_lanes: NonZeroUsize::MIN,
+        };
+        for threads in [2, 4, 8, 16, 64] {
+            let even = fork_break_even_ns(threads);
+            assert_eq!(plan_dispatch(64, even - 1, threads), Dispatch::Serial);
+            assert_eq!(plan_dispatch(64, even, threads), one, "{threads}");
+        }
+        assert_eq!(plan_dispatch(1, u64::MAX, 64), Dispatch::Serial);
+        assert_eq!(plan_dispatch(0, 0, 64), Dispatch::Serial);
+        assert_eq!(plan_dispatch(512, u64::MAX, 1), Dispatch::Serial);
+        assert_eq!(plan_dispatch(usize::MAX, u64::MAX, usize::MAX), one);
+    }
+
+    #[test]
+    fn break_even_grows_with_the_square_of_the_pool() {
+        assert_eq!(fork_break_even_ns(1), 2_000);
+        assert_eq!(fork_break_even_ns(4), 32_000);
+        assert_eq!(fork_break_even_ns(8), 128_000);
+        assert_eq!(fork_break_even_ns(64), 8_192_000);
+        assert_eq!(fork_break_even_ns(usize::MAX), u64::MAX);
+    }
+
+    #[test]
+    fn lane_cost_grows_with_the_panel_and_keeps_a_floor() {
+        assert_eq!(lane_cost_ns(0), 1_000);
+        assert_eq!(lane_cost_ns(1), 1_000);
+        assert_eq!(lane_cost_ns(8), 11_000);
+        assert_eq!(lane_cost_ns(64), 123_000);
+        assert_eq!(lane_cost_ns(usize::MAX), u64::MAX - 5_000);
+    }
+
+    #[test]
+    fn dispatch_reads_the_pool_and_the_lane_panels() {
+        let pool = |threads| {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()
+                .unwrap()
+        };
+        let (small, large) = (pool(4), pool(64));
+        // The INT-13 workload at 256 lanes: worth a fork on 4 threads, not on 64.
+        let narrow = VecTradingEnv::from_configs(&vec![LaneConfig::new(4, 30, 1); 256]);
+        assert!(matches!(
+            small.install(|| narrow.dispatch()),
+            Dispatch::Parallel { .. }
+        ));
+        assert_eq!(large.install(|| narrow.dispatch()), Dispatch::Serial);
+        // Same lane count, wide panels: the work pays for a fork on 64 threads too.
+        let wide = VecTradingEnv::from_configs(&vec![LaneConfig::new(64, 30, 1); 256]);
+        assert!(matches!(
+            large.install(|| wide.dispatch()),
+            Dispatch::Parallel { .. }
+        ));
+        // `from_envs` cannot see a panel until the first reset reports it.
+        let envs: Vec<TradingEnv> = (0..4).map(|_| LaneConfig::new(64, 30, 1).build()).collect();
+        let mut built = VecTradingEnv::from_envs(envs, vec![1; 4]);
+        assert_eq!(small.install(|| built.dispatch()), Dispatch::Serial);
+        built.reset_batch();
+        assert!(matches!(
+            small.install(|| built.dispatch()),
+            Dispatch::Parallel { .. }
+        ));
     }
 
     #[test]

@@ -213,8 +213,12 @@ from .local_agents import (
     OllamaClient,
     OpenAICompatibleClient,
     PromptRenderer,
+    SCAFFOLD_RENDERERS,
     SamplingConfig,
     load_identity_manifest,
+    renderer_for_scaffold,
+    renderer_identity,
+    CELL_ORDER_RULE,
 )
 from .lookahead_guard import LookaheadGuard, LookaheadViolation, guarded, wrap_policy
 from .mandate import (
@@ -444,8 +448,12 @@ __all__ = [
     "OllamaClient",
     "OpenAICompatibleClient",
     "PromptRenderer",
+    "SCAFFOLD_RENDERERS",
     "SamplingConfig",
     "load_identity_manifest",
+    "renderer_for_scaffold",
+    "renderer_identity",
+    "CELL_ORDER_RULE",
     "DeclaredCandidateLineage",
     "IdeaProvenance",
     "bind_idea_source",

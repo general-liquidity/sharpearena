@@ -282,6 +282,56 @@ prediction until a job runs.
   real `UvScript` ran the file on sample rewards with no job behind them. The script
   needs `uv`.
 
+**Task-package changes, 2026-10-31, not rerun in a container.** Docker was not running
+and Harbor was not installed on the host, so these changes ran only through
+`scripts/test_harbor_grader.py` on local roots under WSL2. Each statement about a
+Harbor job is a prediction until a job runs.
+
+- Metric. The headline is `mean_reward_all_trials`: every accepted and agent-fault trial,
+  with each agent fault scored 0. The grader labels each refusal an agent fault or an
+  evaluator fault; only `private_input_missing` and `private_input_unreadable` are
+  evaluator faults, because the agent cannot reach `/tests`. Evaluator faults leave the
+  denominator and are counted. `mean_reward_accepted_only` is reported as a labelled
+  secondary. Any crash makes the headline unavailable and adds
+  `mean_reward_crashes_as_zero`. `--job-dir` groups trials by `agent_info`, the resolved
+  trial `config` (less `trial_name`, `trials_dir` and `job_id`) and `task_checksum`, and
+  reports no job-level mean across groups. The uv-script path receives one Harbor evals
+  key (agent name, model, dataset) and cannot see agent version or job configuration.
+- Grader. `actions.jsonl` must end with a close of size exactly 0, as `instruction.md`
+  states (`final_close_size_nonzero`). Agent files are opened once with `O_NOFOLLOW` and
+  `O_NONBLOCK`, checked with `fstat` on that descriptor, and read with a bound from it.
+- `test.sh` runs `/usr/local/bin/python3 -I -S` under `env -i` with a fixed `PATH`, from
+  `/`, under a 240 s `timeout`.
+- Images. Both task Dockerfiles pin `python:3.12-slim` by index digest
+  `sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159`, resolved
+  2026-10-31 with `docker buildx imagetools inspect`. The harness fails on an unpinned FROM.
+- Hook. Regular files over 1 MiB are removed and counted as `oversized` (marker version
+  2), refused as `artifact_transfer_oversized`. `task.toml` sets `cpus` and `memory_mb`
+  for both containers.
+
+Reward-hack classes from Karotte's `docs/why-karotte.md`, compared with the fixtures:
+
+| Class | Fixture | Evidence | Outcome on a local root |
+|---|---|---|---|
+| (a) artifact is a symlink to a private file | `path_traversal` (existing) | hook removes it; grader opens with `O_NOFOLLOW` | `artifact_tree_unsafe` |
+| (b) artifact is a FIFO | `fifo_artifact` | hook removes it; grader opens with `O_NONBLOCK` and checks `fstat` | `artifact_tree_unsafe`; without the hook `artifact_not_regular_file`; without both the grader blocks |
+| (c) symlink to `/dev/zero` or a huge sparse file | `sparse_artifact` (8 GiB); `/dev/zero` link tested at the grader | hook size bound; bounded read; `fstat` refuses a device | `artifact_transfer_oversized` |
+| (d) a lingering process swaps the artifact after the check | `lingering_swap` | one descriptor, checks on it, one read | `artifact_not_regular_file` |
+| (e) planted `sitecustomize.py` or binary on a path | `planted_interpreter` | `test.sh` run with the artifact dir on `PATH` and `PYTHONPATH` and as cwd | planted code does not run; honest score |
+| (f) background process left running | `lingering_swap` | as (d) | as (d) |
+| (g) exhaust memory, processes or disk | `sparse_artifact` covers disk through the transfer; harness tests for low verifier disk and for a grader that never starts | `cpus` and `memory_mb` set. Harbor 0.23.0's Docker provider declares only `cpu_limit` and `memory_limit`, ignores `storage_mb` and has no pids field. The grader refuses below 1 MiB free as `verifier_resources_exhausted`; `test.sh` writes `verifier_unavailable` with shell builtins when the grader leaves no verdict | **limit, not closed**: a fork bomb or disk fill is not bounded. A verifier that notices reports `infrastructure`, which makes the headline unavailable; one that cannot write at all leaves no reward, which counts as a crash |
+| (h) agent reaches the network | `network_egress` (records TCP and DNS attempts in `egress.json`) | `network_mode = "no-network"` on both containers; Harbor refuses the task where the provider cannot enforce it | closed by configuration, fail closed. On this host Harbor refuses the job (no nftables fib inet), so no container has shown blocked egress; the shell harness only checks the setting |
+
+Infrastructure verdicts are not evaluator faults. An agent can cause the exhaustion,
+so dropping those trials from the denominator would let it dodge a 0; scoring them
+would charge it for a host failure. The metric reports them and withholds the headline.
+Every outcome in this table comes from the shell harness under WSL2, not from a
+container run.
+
+In a real job the verifier runs in its own container, so (d) to (f) can only act in the
+agent container before collection. The fixtures model that order on one filesystem and
+do not show what Harbor's transfer does with a swapped or special file.
+
 ## 6. Reference-doc drift confirmed against the installed package
 
 - **`schema_version`**: the reference doc's "follow the reference, not the
