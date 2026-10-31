@@ -12,6 +12,11 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ### Fixed
 
+- Register checker: every status entry records `recorded_by` and `independent`
+  (history migrated as unknown, with the count printed), empty artifacts are
+  refused unless declared empty, and a missing manuscript label source fails
+  coverage, with `\input` followed transitively (ported from SharpeBench). The
+  three register scripts are the shared copies SharpeBench takes byte for byte.
 - RLlib configs run on the declared scenario seed; an EnvRunner's first reset no
   longer replaces a held-out seed. Contradictory `seed=` and
   `seed_per_worker=False` are refused.
