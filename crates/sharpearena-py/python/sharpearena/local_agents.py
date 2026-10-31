@@ -199,6 +199,11 @@ class ModelRunConfig:
     def __post_init__(self) -> None:
         if not self.model.strip():
             raise ValueError("model must be non-empty")
+        if self.scaffold not in SCAFFOLD_RENDERERS:
+            raise ValueError(
+                f"unknown scaffold {self.scaffold!r}: the label must name a registered "
+                f"renderer ({', '.join(sorted(SCAFFOLD_RENDERERS))})"
+            )
         if self.decision_cadence <= 0:
             raise ValueError("decision_cadence must be positive")
         if self.precommitted_n_trials <= 0:
@@ -453,6 +458,14 @@ class DatasetSpec:
         return record
 
 
+#: The rule that orders a field's cells for execution, recorded in the plan
+#: digest beside ``FieldPlan.order_seed``. A round is one (dataset, repetition)
+#: pair; every model runs once per round, in a permutation drawn from the seed,
+#: so no model arm runs as one contiguous block and drift in the serving host
+#: or in a remote model spreads across arms instead of landing on one of them.
+CELL_ORDER_RULE = "sharpearena.cell-order.round-permuted-models.v1"
+
+
 @dataclass(frozen=True)
 class FieldPlan:
     """Precommitted Cartesian field and its reproducibility controls."""
@@ -465,8 +478,17 @@ class FieldPlan:
     parallel_requests: int = 4
     shard_index: int = 0
     shard_count: int = 1
+    # Seed of the interleaved execution order (see ``CELL_ORDER_RULE``). It
+    # decides when a cell runs, never which cells run or what they score.
+    order_seed: int = 0
 
     def __post_init__(self) -> None:
+        if (
+            isinstance(self.order_seed, bool)
+            or not isinstance(self.order_seed, int)
+            or not 0 <= self.order_seed < 2**64
+        ):
+            raise ValueError("order_seed must be an unsigned 64-bit integer")
         if not self.models or not self.datasets or not self.seeds:
             raise ValueError("models, datasets, and seeds must be non-empty")
         if self.repetitions <= 0 or self.parallel_requests <= 0:
@@ -508,6 +530,7 @@ class FieldPlan:
                 "repetitions": self.repetitions,
                 "max_steps": self.max_steps,
                 "parallel_requests": self.parallel_requests,
+                "cell_order": {"rule": CELL_ORDER_RULE, "seed": self.order_seed},
             }
         )
 
@@ -643,7 +666,16 @@ def _timed_attempt(
 
 
 class PromptRenderer:
-    """Scaffold-neutral, stateless conversion from observation to model messages."""
+    """Scaffold-neutral, stateless conversion from observation to model messages.
+
+    ``scaffold`` is the label this renderer answers to in
+    :data:`SCAFFOLD_RENDERERS`. A subclass that changes what the model sees
+    must register under its own label: the record names the renderer that ran
+    and digests what it renders, so a reused label shows up as a different
+    ``render_probe_sha256`` rather than passing as the registered scaffold.
+    """
+
+    scaffold = "minimal-stateless-v1"
 
     system_prompt = (
         "You are an evaluated trading policy. Use only the supplied point-in-time "
@@ -672,6 +704,73 @@ class PromptRenderer:
                 "content": json.dumps(payload, sort_keys=True, separators=(",", ":")),
             },
         ]
+
+
+#: Every scaffold label a model entry may declare, bound to the renderer that
+#: implements it. A label outside this registry is refused when the entry is
+#: built, so the recorded ``scaffold.name`` always names code that exists.
+SCAFFOLD_RENDERERS: dict[str, type[PromptRenderer]] = {
+    PromptRenderer.scaffold: PromptRenderer,
+}
+
+# A fixed input the renderer identity is measured on. It exercises every field
+# ``messages`` reads, so two renderers that would present a model with
+# different messages for it get different digests.
+_RENDER_PROBE_OBSERVATION: dict[str, Any] = {
+    "date": "2000-01-03",
+    "cash": 1000.0,
+    "symbols": [
+        {
+            "symbol": "PROBE",
+            "close_history": [100.0, 101.0],
+            "volume_history": [10.0, 11.0],
+        }
+    ],
+    "portfolio": [{"symbol": "PROBE", "weight": 0.25}],
+}
+_RENDER_PROBE_MANDATE: dict[str, Any] = {"probe": True}
+_RENDER_PROBE_CADENCE = 2
+
+
+def renderer_for_scaffold(label: str) -> PromptRenderer:
+    """The registered renderer for ``label``; an unknown label is refused."""
+
+    renderer_type = SCAFFOLD_RENDERERS.get(label)
+    if renderer_type is None:
+        raise LocalAgentError(
+            f"unknown scaffold {label!r}: no renderer is registered under it"
+        )
+    return renderer_type()
+
+
+def renderer_identity(renderer: PromptRenderer) -> dict[str, str]:
+    """What the record says about the renderer that actually ran.
+
+    ``renderer`` is the implementing class; ``render_probe_sha256`` digests the
+    messages it produces for a fixed probe, with and without a mandate, so it
+    moves whenever the bytes a model would be shown move, whether the change is
+    in the system prompt or in how the payload is framed.
+    """
+
+    probe = [
+        renderer.messages(
+            _RENDER_PROBE_OBSERVATION, cadence=_RENDER_PROBE_CADENCE
+        ),
+        renderer.messages(
+            _RENDER_PROBE_OBSERVATION,
+            mandate=_RENDER_PROBE_MANDATE,
+            cadence=_RENDER_PROBE_CADENCE,
+        ),
+    ]
+    renderer_type = type(renderer)
+    return {
+        "name": renderer.scaffold,
+        "renderer": f"{renderer_type.__module__}.{renderer_type.__qualname__}",
+        "system_prompt_sha256": sha256(
+            renderer.system_prompt.encode("utf-8")
+        ).hexdigest(),
+        "render_probe_sha256": _digest(probe),
+    }
 
 
 class DecisionModel(Protocol):
@@ -1285,21 +1384,71 @@ class LocalFieldRunner:
         renderer: Optional[PromptRenderer] = None,
     ) -> None:
         self.model_client = model_client
-        self.renderer = renderer or PromptRenderer()
+        # An explicit renderer serves only the scaffold it answers to; without
+        # one, each model entry gets the renderer registered for its label.
+        self.renderer = renderer
+
+    def renderer_for(self, model: ModelRunConfig) -> PromptRenderer:
+        """The renderer that runs ``model``, bound to its scaffold label."""
+
+        if self.renderer is None:
+            return renderer_for_scaffold(model.scaffold)
+        if self.renderer.scaffold != model.scaffold:
+            raise LocalAgentError(
+                f"model {model.model!r} declares scaffold {model.scaffold!r} but the "
+                f"runner's renderer implements {self.renderer.scaffold!r}"
+            )
+        return self.renderer
+
+    @staticmethod
+    def execution_order(plan: FieldPlan) -> list[FieldCell]:
+        """Every cell of the unsharded field, in the order ``CELL_ORDER_RULE`` runs it.
+
+        Rounds go dataset by dataset, repetition by repetition. Within a round
+        the models are permuted by the SHA-256 of the rule, ``order_seed``, the
+        round and the model index, a permutation that depends on nothing but
+        those values, and each model's seeds follow in plan order.
+        """
+
+        order: list[FieldCell] = []
+        # inv: ``order`` holds every cell of the rounds before this one, once.
+        for dataset_index in range(len(plan.datasets)):
+            for repetition in range(plan.repetitions):
+                models = sorted(
+                    range(len(plan.models)),
+                    key=lambda model_index: (
+                        _digest(
+                            [
+                                CELL_ORDER_RULE,
+                                plan.order_seed,
+                                dataset_index,
+                                repetition,
+                                model_index,
+                            ]
+                        ),
+                        model_index,
+                    ),
+                )
+                for model_index in models:
+                    order.extend(
+                        FieldCell(model_index, dataset_index, seed, repetition)
+                        for seed in plan.seeds
+                    )
+        return order
 
     @staticmethod
     def cells(plan: FieldPlan) -> list[FieldCell]:
-        cells = [
-            FieldCell(model_index, dataset_index, seed, repetition)
-            for model_index in range(len(plan.models))
-            for dataset_index in range(len(plan.datasets))
-            for seed in plan.seeds
-            for repetition in range(plan.repetitions)
-        ]
+        """This shard's cells, in execution order.
+
+        Shard membership is the Cartesian ordinal modulo ``shard_count``, which
+        the order seed does not touch: every cell lands in exactly one shard
+        whatever the seed.
+        """
+
         return [
             cell
-            for index, cell in enumerate(cells)
-            if index % plan.shard_count == plan.shard_index
+            for cell in LocalFieldRunner.execution_order(plan)
+            if cell.ordinal(plan) % plan.shard_count == plan.shard_index
         ]
 
     @staticmethod
@@ -1328,7 +1477,11 @@ class LocalFieldRunner:
         completed = journal.completed_keys()
         counts = {"completed": 0, "failed": 0, "skipped": 0}
         cells = self.cells(plan)
-        for model_index, model in enumerate(plan.models):
+        # Every arm is resolved and checked before any inference, so a
+        # mislabeled or oversized entry runs nothing, whichever round it is in.
+        arms: list[tuple[PromptRenderer, ModelIdentity]] = []
+        for model in plan.models:
+            renderer = self.renderer_for(model)
             identity = self.model_client.identity(model)
             if (
                 identity.context_length is not None
@@ -1338,22 +1491,42 @@ class LocalFieldRunner:
                     f"configured context cap {model.sampling.context_tokens} exceeds "
                     f"{model.model!r} context length {identity.context_length}"
                 )
-            for dataset_index, dataset in enumerate(plan.datasets):
-                group = [
-                    cell
-                    for cell in cells
-                    if cell.model_index == model_index
-                    and cell.dataset_index == dataset_index
-                ]
-                pending = [cell for cell in group if cell.key(plan) not in completed]
-                counts["skipped"] += len(group) - len(pending)
-                if not pending:
-                    continue
-                group_counts = self._run_group(
-                    plan, model, identity, dataset, pending, journal
-                )
-                counts["completed"] += group_counts["completed"]
-                counts["failed"] += group_counts["failed"]
+            arms.append((renderer, identity))
+        # One batch per (model, dataset, repetition) block, in the interleaved
+        # execution order. A cell's outcome depends on its own seed and sampling
+        # seed only, so how cells are batched moves when they run, not what they
+        # score.
+        blocks: list[list[FieldCell]] = []
+        # inv: ``blocks`` partitions the cells before the current one into
+        # maximal runs sharing (model, dataset, repetition).
+        for cell in cells:
+            block_key = (cell.model_index, cell.dataset_index, cell.repetition)
+            if blocks and (
+                blocks[-1][0].model_index,
+                blocks[-1][0].dataset_index,
+                blocks[-1][0].repetition,
+            ) == block_key:
+                blocks[-1].append(cell)
+            else:
+                blocks.append([cell])
+        for block in blocks:
+            pending = [cell for cell in block if cell.key(plan) not in completed]
+            counts["skipped"] += len(block) - len(pending)
+            if not pending:
+                continue
+            model = plan.models[block[0].model_index]
+            renderer, identity = arms[block[0].model_index]
+            group_counts = self._run_group(
+                plan,
+                model,
+                identity,
+                plan.datasets[block[0].dataset_index],
+                pending,
+                journal,
+                renderer,
+            )
+            counts["completed"] += group_counts["completed"]
+            counts["failed"] += group_counts["failed"]
         return counts
 
     def _run_group(
@@ -1364,7 +1537,9 @@ class LocalFieldRunner:
         dataset: DatasetSpec,
         cells: Sequence[FieldCell],
         journal: EvidenceJournal,
+        renderer: PromptRenderer,
     ) -> dict[str, int]:
+        scaffold = renderer_identity(renderer)
         env = self._build_env(dataset, [cell.seed for cell in cells])
         observations = json.loads(env.reset_batch())["observations"]
         active = [True] * len(cells)
@@ -1412,7 +1587,7 @@ class LocalFieldRunner:
                 inference_outcomes = self.model_client.decide_many(
                     [observations[index] for index in infer_indices],
                     model,
-                    self.renderer,
+                    renderer,
                     max_workers=plan.parallel_requests,
                     sampling_seeds=[
                         model.sampling.seed + cells[index].repetition
@@ -1686,10 +1861,7 @@ class LocalFieldRunner:
                 "cost_unit": "usd-self-reported",
                 "local_compute_cost_included": False,
                 "scaffold": {
-                    "name": model.scaffold,
-                    "system_prompt_sha256": sha256(
-                        self.renderer.system_prompt.encode("utf-8")
-                    ).hexdigest(),
+                    **scaffold,
                     "decision_schema_sha256": _digest(
                         json.loads(decision_schema_json())
                     ),
@@ -1739,6 +1911,7 @@ class LocalFieldRunner:
 
 
 __all__ = [
+    "CELL_ORDER_RULE",
     "DURATION_SOURCES",
     "DURATION_UNIT_NS",
     "FINISH_REASONS",
@@ -1760,7 +1933,10 @@ __all__ = [
     "OllamaClient",
     "OpenAICompatibleClient",
     "PromptRenderer",
+    "SCAFFOLD_RENDERERS",
     "SamplingConfig",
     "classify_finish_reason",
     "load_identity_manifest",
+    "renderer_for_scaffold",
+    "renderer_identity",
 ]

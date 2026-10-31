@@ -34,6 +34,7 @@ _PLAN_FIELDS = {
     "parallel_requests",
     "shard_index",
     "shard_count",
+    "order_seed",
 }
 _MODEL_FIELDS = {
     "model",
@@ -151,6 +152,7 @@ def load_plan(path: Path) -> FieldPlan:
         parallel_requests=int(payload.get("parallel_requests", 4)),
         shard_index=int(payload.get("shard_index", 0)),
         shard_count=int(payload.get("shard_count", 1)),
+        order_seed=int(payload.get("order_seed", 0)),
     )
 
 
