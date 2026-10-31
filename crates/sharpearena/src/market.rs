@@ -67,9 +67,12 @@
 //! and the permanent multiplier update, while the Almgren-Chriss own-size term `eta * q_i`
 //! stays linear and divided by `V`. `exponent = 1.0` uses the exact legacy expression
 //! `(lambda * Q + eta * q_i) / V`, so the arithmetic is byte-identical to
-//! [`clear_bar`] / [`clear_bar_robust`]. Exponents below one make permanent impact concave
-//! in flow, the square-root-law regime under which Huberman-Stanzl predict manipulation
-//! can become profitable.
+//! [`clear_bar`] / [`clear_bar_robust`]. Exponents below one make each bar's permanent
+//! increment concave in that bar's flow, the nonlinear specification under which
+//! Huberman-Stanzl predict manipulation can become profitable. This is not the square-root
+//! law of meta-order impact: the multiplier compounds every bar and never decays, so a
+//! meta-order's impact grows about linearly in executed quantity at every exponent when
+//! per-bar increments are small, and nothing relaxes after execution ends.
 //!
 //! Like the uncertainty set, the exponent is **opt-in and gated outside the golden-hash
 //! path**: [`clear_bar`] and [`MarketClearing::step`] never touch it, and a general power
