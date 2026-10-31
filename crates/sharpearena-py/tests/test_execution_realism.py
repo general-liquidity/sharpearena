@@ -4,13 +4,14 @@ import json
 import math
 from dataclasses import replace
 
+import numpy as np
 import pytest
 from sharpearena import MarketExecution, manipulation
 from sharpearena.impact_diagnostics import (
     ImpactDiagnosticError,
     meta_order_impact_shape,
 )
-from sharpearena.sharpearena_py import PyMarketClearing, TradingEnv
+from sharpearena.sharpearena_py import PyMarketClearing, TradingEnv, _array_decision_pair
 
 
 def transient(shape="square_root", decay=0.99, coefficient=0.1, **kwargs):
@@ -386,3 +387,24 @@ def test_the_reference_arm_keeps_timing_and_drops_only_the_displacement():
     assert execution.without_impact().fixed_delay_bars == 1
     assert execution.without_impact().settlement == "cash_liquidation"
     assert MarketExecution().without_impact() == MarketExecution()
+
+
+@pytest.mark.parametrize("bars", [1, 2])
+def test_step_array_holds_a_declared_delay_like_the_json_step(bars):
+    weights = [0.5, -0.1, 0.9, 0.0, 0.7, -0.2, 0.6, 0.4]
+    by_array = _env(fixed_delay_bars=bars)
+    by_json = _env(fixed_delay_bars=bars)
+    first = by_array.reset()
+    assert first == by_json.reset()
+    symbols = [row["symbol"] for row in json.loads(first)["symbols"]]
+    closes = np.zeros(1)
+    positions = np.zeros(1)
+    cash = np.zeros(1)
+    for weight in weights:
+        wire, _ = _array_decision_pair(symbols, [weight], "", HOLD)
+        reward_a, done_a, nav_a = by_array.step_array(np.array([weight]), closes, positions, cash)
+        _, reward_j, done_j, info_j = by_json.step(wire)
+        assert (reward_a, done_a, nav_a) == (reward_j, done_j, json.loads(info_j)["nav"])
+        assert by_array.clone_state() == by_json.clone_state()
+    # The queue is live on the binary path: the first decisions filled nothing.
+    assert json.loads(by_array.clone_state())["delayed_decisions"]
