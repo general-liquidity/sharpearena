@@ -16,6 +16,16 @@ when the computed standard deviation underflows), ``deflated_sharpe`` and ``psr`
 ``composite["deflated_sharpe"]`` past such a key publishes the floor as a score,
 which is the flattering substitution the kernel refused to make.
 
+Keys are classified by explicit allowlists, never by suffix alone (the convention is
+written up in ``docs/kernel-field-convention.md``). :data:`KERNEL_UNAVAILABILITY_KEYS`
+withhold the score as unavailable. :data:`KERNEL_REFUSAL_KEYS`
+(``standard_error_refusal`` and ``exposure_path_error``, which SharpeBench main emits
+after 0.28.0) are gate refusals: the kernel computed the track and declined to rank
+it, so the score is withheld as :class:`KernelScoreRefused` and recorded as
+``refused_scoring_kernel_gate: <key>: <message>``. Any other top-level key ending in
+``_error`` or ``_refusal`` raises :class:`KernelFieldUnrecognized`, which is never
+recorded as a reason: the reader must be taught the key before it reads the composite.
+
 Every consumer of ``score_run`` reads the ranked numbers through this module. A
 consumer that must stop (a paper producer, a selection step) calls
 :func:`kernel_deflated_sharpe` or :func:`kernel_psr` and lets
@@ -33,47 +43,151 @@ from typing import Any, Mapping, Optional, Sequence, Union
 
 UNAVAILABLE_KERNEL_ERROR = "unavailable_scoring_kernel_error"
 UNAVAILABLE_KERNEL_VALUE = "unavailable_scoring_kernel_value"
+REFUSED_KERNEL_GATE = "refused_scoring_kernel_gate"
+
+#: Top-level ``CompositeScore`` keys that say the kernel could not compute a figure
+#: (SharpeBench main ``crates/sharpebench-core/src/composite.rs``). When one is
+#: present the ranked numbers beside it are the no-skill floor or a sentinel.
+KERNEL_UNAVAILABILITY_KEYS = frozenset({"bootstrap_error", "deflation_error", "selection_error"})
+
+#: Top-level ``CompositeScore`` keys that say the kernel computed the track and a gate
+#: refused it: ``standard_error_refusal`` (the standard-error certification, with the
+#: ``NOT_CERTIFIED_UNDER_SERIAL_CORRELATION`` and ``NOT_CERTIFIED_WITHOUT_MOMENT_CREDIT``
+#: messages) and ``exposure_path_error`` (the exposure-path gate,
+#: ``EXPOSURE_PATH_UNPROVEN``). The deflated Sharpe beside one is an estimate, but the
+#: kernel did not rank it, so Arena does not publish it as a score either.
+KERNEL_REFUSAL_KEYS = frozenset({"exposure_path_error", "standard_error_refusal"})
+
+#: Suffixes that mark a key as part of the kernel's withholding vocabulary. A key with
+#: one of these suffixes that neither allowlist names is a field this reader does not
+#: know, and the composite is not read at all.
+KERNEL_WITHHOLDING_SUFFIXES = ("_error", "_refusal")
 
 KernelScore = Union[float, str]
 
 
-class KernelScoreUnavailable(ValueError):
-    """The kernel withheld the requested score.
+class KernelScoreWithheld(ValueError):
+    """The kernel did not give the requested score.
 
-    ``reason`` is the full unavailability string (``unavailable_scoring_kernel_error:
-    ...`` naming every typed error key the composite carries, or
-    ``unavailable_scoring_kernel_value: ...`` when the composite carries no typed error
-    but the requested field is absent or non-finite). ``errors`` maps each typed error
-    key present to its message; it is empty for the value case.
+    ``reason`` is the full recorded string. ``errors`` maps each unavailability key
+    present to its message and ``refusals`` maps each refusal key present to its
+    message; both are empty for the value case. Catch this base class where any
+    non-scored outcome is handled the same way.
     """
 
-    def __init__(self, reason: str, errors: Mapping[str, str]) -> None:
+    def __init__(
+        self,
+        reason: str,
+        errors: Mapping[str, str],
+        refusals: Optional[Mapping[str, str]] = None,
+    ) -> None:
         super().__init__(reason)
         self.reason = reason
         self.errors = dict(errors)
+        self.refusals = dict(refusals or {})
+
+
+class KernelScoreUnavailable(KernelScoreWithheld):
+    """The kernel withheld the requested score because it could not compute it.
+
+    ``reason`` is ``unavailable_scoring_kernel_error: ...`` naming every typed key the
+    composite carries (unavailability keys first decide the class; any refusal key
+    present is named too and kept in ``refusals``), or
+    ``unavailable_scoring_kernel_value: ...`` when the composite carries no typed key
+    but the requested field is absent or non-finite.
+    """
+
+
+class KernelScoreRefused(KernelScoreWithheld):
+    """A kernel gate refused the track: a typed, non-scored outcome.
+
+    ``reason`` is ``refused_scoring_kernel_gate: ...`` naming every refusal key
+    present; ``refusals`` maps them to their messages and ``errors`` is empty.
+    """
+
+
+class KernelFieldUnrecognized(ValueError):
+    """The composite carries a withholding key this reader does not know.
+
+    Raised, never recorded: an unknown ``*_error`` or ``*_refusal`` key means the
+    kernel's vocabulary moved past this module, so guessing whether it withholds the
+    score would be the silent substitution the typed keys exist to prevent. ``keys``
+    lists the unrecognized keys in sorted order.
+    """
+
+    def __init__(self, keys: Sequence[str]) -> None:
+        self.keys = sorted(keys)
+        super().__init__(
+            "unrecognized_scoring_kernel_field: "
+            + ", ".join(self.keys)
+            + " is not a known unavailability or refusal key; classify it in"
+            " sharpearena.kernel_score before reading this composite"
+        )
+
+
+def _is_present(value: Any) -> bool:
+    return value not in (None, "")
+
+
+def kernel_fields(composite: Mapping[str, Any]) -> tuple[dict[str, str], dict[str, str]]:
+    """``(errors, refusals)``: the unavailability and refusal keys the composite carries.
+
+    A key with an empty or null value carries no claim and is left out. Raises
+    :class:`KernelFieldUnrecognized` when any top-level key ending in ``_error`` or
+    ``_refusal`` is in neither allowlist, whatever its value.
+    """
+    unknown = [
+        str(key)
+        for key in composite
+        if str(key).endswith(KERNEL_WITHHOLDING_SUFFIXES)
+        and str(key) not in KERNEL_UNAVAILABILITY_KEYS
+        and str(key) not in KERNEL_REFUSAL_KEYS
+    ]
+    if unknown:
+        raise KernelFieldUnrecognized(unknown)
+    errors = {
+        str(key): str(value)
+        for key, value in composite.items()
+        if str(key) in KERNEL_UNAVAILABILITY_KEYS and _is_present(value)
+    }
+    refusals = {
+        str(key): str(value)
+        for key, value in composite.items()
+        if str(key) in KERNEL_REFUSAL_KEYS and _is_present(value)
+    }
+    return errors, refusals
 
 
 def kernel_errors(composite: Mapping[str, Any]) -> dict[str, str]:
-    """Every typed error the composite carries, keyed by field name.
+    """The unavailability keys the composite carries, keyed by field name.
 
-    Matches any top-level ``*_error`` key with a non-empty value, so the three keys a
-    0.28.0 ``CompositeScore`` can carry (``deflation_error``, ``bootstrap_error``,
-    ``selection_error``) and the keys nested reports use elsewhere in SharpeBench
-    (``statistics_error``, ``snooping_error``, ``pbo_error``, ``inference_error``)
-    are all recognized if a future kernel surfaces them at the top level.
+    Only :data:`KERNEL_UNAVAILABILITY_KEYS` count; refusals are in
+    :func:`kernel_refusals`. Raises :class:`KernelFieldUnrecognized` on an unknown
+    ``*_error`` or ``*_refusal`` key.
     """
-    return {
-        str(key): str(value)
-        for key, value in composite.items()
-        if str(key).endswith("_error") and value not in (None, "")
-    }
+    return kernel_fields(composite)[0]
+
+
+def kernel_refusals(composite: Mapping[str, Any]) -> dict[str, str]:
+    """The refusal keys the composite carries, keyed by field name.
+
+    Raises :class:`KernelFieldUnrecognized` on an unknown key, as :func:`kernel_errors`.
+    """
+    return kernel_fields(composite)[1]
+
+
+def _detail(fields: Mapping[str, str]) -> str:
+    return "; ".join(f"{name}: {message}" for name, message in sorted(fields.items()))
 
 
 def _kernel_value(composite: Mapping[str, Any], key: str) -> float:
-    errors = kernel_errors(composite)
+    errors, refusals = kernel_fields(composite)
     if errors:
-        detail = "; ".join(f"{name}: {message}" for name, message in sorted(errors.items()))
-        raise KernelScoreUnavailable(f"{UNAVAILABLE_KERNEL_ERROR}: {detail}", errors)
+        raise KernelScoreUnavailable(
+            f"{UNAVAILABLE_KERNEL_ERROR}: {_detail({**errors, **refusals})}", errors, refusals
+        )
+    if refusals:
+        raise KernelScoreRefused(f"{REFUSED_KERNEL_GATE}: {_detail(refusals)}", {}, refusals)
     value = composite.get(key)
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise KernelScoreUnavailable(
@@ -104,16 +218,37 @@ def kernel_score_or_unavailable(
 
     For rows that must be recorded rather than abandoned. The string form is never a
     number, so arithmetic or a sort over it fails loudly instead of ranking the floor.
+
+    A refusal is recorded as its ``refused_scoring_kernel_gate: ...`` reason, so it
+    is a non-score like an unavailability but stays distinguishable from one. A
+    :class:`KernelFieldUnrecognized` is not recorded: it propagates.
     """
     try:
         return _kernel_value(composite, key)
-    except KernelScoreUnavailable as unavailable:
-        return unavailable.reason
+    except KernelScoreWithheld as withheld:
+        return withheld.reason
 
 
 def is_kernel_score_unavailable(value: Any) -> bool:
-    """True when ``value`` is a recorded unavailability reason rather than a score."""
+    """True when ``value`` is a recorded reason (unavailable or refused), not a score."""
     return isinstance(value, str)
+
+
+def is_kernel_score_refused(value: Any) -> bool:
+    """True when ``value`` is a recorded gate refusal rather than a score."""
+    return isinstance(value, str) and value.startswith(f"{REFUSED_KERNEL_GATE}:")
+
+
+def kernel_withheld_from_reason(reason: str) -> KernelScoreWithheld:
+    """The exception a recorded ``reason`` stands for, to re-raise it at a rank input.
+
+    A refusal reason gives :class:`KernelScoreRefused`; every other reason gives
+    :class:`KernelScoreUnavailable`. The per-key maps are not recoverable from the
+    string and are empty.
+    """
+    if is_kernel_score_refused(reason):
+        return KernelScoreRefused(reason, {})
+    return KernelScoreUnavailable(reason, {})
 
 
 def kernel_score_difference(left: KernelScore, right: KernelScore) -> KernelScore:
@@ -136,8 +271,9 @@ def seed_pass_tally(composites: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     """The pass^k rate over every evaluated seed, with the counts behind it.
 
     ``composites`` holds one ``score_run`` composite per seed, in seed order, for every
-    seed that was evaluated. A seed whose composite the kernel withheld (any typed
-    ``*_error``, or no finite ``deflated_sharpe``) is *unscorable*: it stays in the
+    seed that was evaluated. A seed whose composite the kernel withheld (an
+    unavailability or refusal key, or no finite ``deflated_sharpe``) is *unscorable*:
+    it stays in the
     denominator and counts as not passed. Dropping it would let a policy that breaks a
     seed's evaluation raise its own pass rate, because the rate would then be computed
     over the seeds it did not break.
@@ -178,15 +314,26 @@ def seed_pass_tally(composites: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
 
 
 __all__ = [
+    "KERNEL_REFUSAL_KEYS",
+    "KERNEL_UNAVAILABILITY_KEYS",
+    "KERNEL_WITHHOLDING_SUFFIXES",
+    "KernelFieldUnrecognized",
     "KernelScore",
+    "KernelScoreRefused",
     "KernelScoreUnavailable",
+    "KernelScoreWithheld",
+    "REFUSED_KERNEL_GATE",
     "UNAVAILABLE_KERNEL_ERROR",
     "UNAVAILABLE_KERNEL_VALUE",
     "NO_SEED_OBSERVATIONS",
+    "is_kernel_score_refused",
     "is_kernel_score_unavailable",
     "kernel_deflated_sharpe",
     "kernel_errors",
+    "kernel_fields",
     "kernel_psr",
+    "kernel_refusals",
+    "kernel_withheld_from_reason",
     "kernel_score_difference",
     "kernel_score_or_unavailable",
     "seed_pass_tally",

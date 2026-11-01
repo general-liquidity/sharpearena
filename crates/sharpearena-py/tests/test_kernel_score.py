@@ -20,11 +20,20 @@ import pytest
 from sharpearena.kernel_score import (
     UNAVAILABLE_KERNEL_ERROR,
     UNAVAILABLE_KERNEL_VALUE,
+    KERNEL_REFUSAL_KEYS,
+    KERNEL_UNAVAILABILITY_KEYS,
+    REFUSED_KERNEL_GATE,
+    KernelFieldUnrecognized,
+    KernelScoreRefused,
     KernelScoreUnavailable,
+    KernelScoreWithheld,
+    is_kernel_score_refused,
     is_kernel_score_unavailable,
     kernel_deflated_sharpe,
     kernel_errors,
     kernel_psr,
+    kernel_refusals,
+    kernel_withheld_from_reason,
     kernel_score_difference,
     kernel_score_or_unavailable,
 )
@@ -36,15 +45,8 @@ requires_binding = pytest.mark.skipif(
 
 REASON = "observation 1 must be finite"
 VALID = {"deflated_sharpe": 0.61, "psr": 0.73, "passed_k": True, "bootstrap_p": 0.02}
-ERROR_KEYS = (
-    "deflation_error",
-    "bootstrap_error",
-    "selection_error",
-    "statistics_error",
-    "snooping_error",
-    "pbo_error",
-    "inference_error",
-)
+ERROR_KEYS = ("deflation_error", "bootstrap_error", "selection_error")
+REFUSAL_KEYS = ("standard_error_refusal", "exposure_path_error")
 
 
 def _floored(*keys: str) -> dict:
@@ -94,6 +96,89 @@ def test_each_typed_error_key_withholds_the_score(key):
     assert is_kernel_score_unavailable(recorded)
     assert recorded == info.value.reason
 
+
+
+def test_allowlists_match_the_bench_main_composite_score_keys():
+    # The withholding keys of CompositeScore on SharpeBench main (composite.rs). A
+    # key moving between classes, or a new one, must be a reviewed change here.
+    assert KERNEL_UNAVAILABILITY_KEYS == frozenset(ERROR_KEYS)
+    assert KERNEL_REFUSAL_KEYS == frozenset(REFUSAL_KEYS)
+    assert not KERNEL_UNAVAILABILITY_KEYS & KERNEL_REFUSAL_KEYS
+
+
+@pytest.mark.parametrize("key", REFUSAL_KEYS)
+def test_each_refusal_key_withholds_the_estimate_as_a_refusal(key):
+    # Bench reports a refusal beside a real estimate with rank_eligible false; the
+    # estimate must not be read as a score, and the outcome is not "unavailable".
+    comp = {**VALID, "rank_eligible": False, key: REASON}
+    assert kernel_errors(comp) == {}
+    assert kernel_refusals(comp) == {key: REASON}
+    with pytest.raises(KernelScoreRefused) as info:
+        kernel_deflated_sharpe(comp)
+    assert not isinstance(info.value, KernelScoreUnavailable)
+    assert isinstance(info.value, KernelScoreWithheld)
+    assert info.value.reason == f"{REFUSED_KERNEL_GATE}: {key}: {REASON}"
+    assert info.value.refusals == {key: REASON}
+    assert info.value.errors == {}
+    with pytest.raises(KernelScoreRefused):
+        kernel_psr(comp)
+    recorded = kernel_score_or_unavailable(comp)
+    assert recorded == info.value.reason
+    assert is_kernel_score_unavailable(recorded)
+    assert is_kernel_score_refused(recorded)
+    assert isinstance(kernel_withheld_from_reason(recorded), KernelScoreRefused)
+
+
+def test_unavailability_outranks_a_refusal_and_both_are_named():
+    comp = {**VALID, "selection_error": REASON, "standard_error_refusal": "not certified"}
+    with pytest.raises(KernelScoreUnavailable) as info:
+        kernel_deflated_sharpe(comp)
+    assert info.value.errors == {"selection_error": REASON}
+    assert info.value.refusals == {"standard_error_refusal": "not certified"}
+    assert info.value.reason == (
+        f"{UNAVAILABLE_KERNEL_ERROR}: selection_error: {REASON}; "
+        "standard_error_refusal: not certified"
+    )
+    recorded = kernel_score_or_unavailable(comp)
+    assert not is_kernel_score_refused(recorded)
+    assert isinstance(kernel_withheld_from_reason(recorded), KernelScoreUnavailable)
+
+
+@pytest.mark.parametrize(
+    "key, value",
+    [
+        ("statistics_error", REASON),
+        ("pbo_error", REASON),
+        ("degenerate_track_refusal", REASON),
+        ("future_error", None),
+        ("future_refusal", ""),
+    ],
+)
+def test_unknown_withholding_key_fails_closed_and_is_never_recorded(key, value):
+    # An unknown *_error or *_refusal key means the kernel vocabulary moved; even a
+    # finite estimate beside it, or a null value, must not be read or recorded.
+    comp = {**VALID, key: value}
+    for read in (kernel_deflated_sharpe, kernel_psr, kernel_score_or_unavailable,
+                 kernel_errors, kernel_refusals):
+        with pytest.raises(KernelFieldUnrecognized) as info:
+            read(comp)
+        assert info.value.keys == [key]
+        assert key in str(info.value)
+    assert not isinstance(info.value, KernelScoreWithheld)
+
+
+def test_unknown_keys_are_all_named_beside_known_ones():
+    comp = {**_floored("deflation_error"), "z_error": "a", "a_refusal": "b"}
+    with pytest.raises(KernelFieldUnrecognized) as info:
+        kernel_deflated_sharpe(comp)
+    assert info.value.keys == ["a_refusal", "z_error"]
+    assert "deflation_error" not in str(info.value)
+
+
+def test_non_withholding_keys_with_similar_names_are_read_normally():
+    # Suffix matching is exact: these CompositeScore-like keys do not withhold.
+    comp = {**VALID, "dsr_se": 0.1, "error_count": 3, "refusal_note": "x"}
+    assert kernel_deflated_sharpe(comp) == 0.61
 
 def test_every_present_error_key_is_named_in_the_reason():
     comp = _floored("deflation_error", "bootstrap_error")
@@ -357,11 +442,19 @@ def test_strategy_selection_refuses_a_withheld_validation_score(tmp_path, monkey
     assert "deflation_error" in rows[-1]["failure"]["detail"]
 
 
-def test_forecast_curve_refuses_a_withheld_kernel_score(monkeypatch):
+@pytest.mark.parametrize(
+    "reason, expected",
+    [
+        (
+            "unavailable_scoring_kernel_error: deflation_error: observation 1 must be finite",
+            KernelScoreUnavailable,
+        ),
+        ("refused_scoring_kernel_gate: exposure_path_error: must clear", KernelScoreRefused),
+    ],
+)
+def test_forecast_curve_refuses_a_withheld_kernel_score(monkeypatch, reason, expected):
     from sharpearena import forecast as forecast_mod
-    from sharpearena.kernel_score import KernelScoreUnavailable
 
-    reason = "unavailable_scoring_kernel_error: deflation_error: observation 1 must be finite"
     monkeypatch.setattr(
         forecast_mod,
         "evaluate_seeds",
@@ -369,8 +462,9 @@ def test_forecast_curve_refuses_a_withheld_kernel_score(monkeypatch):
     )
     import pytest
 
-    with pytest.raises(KernelScoreUnavailable) as caught:
+    with pytest.raises(expected) as caught:
         forecast_mod.forecast_skill_curve(lambda s: None, [1], None, r2_grid=(0.5,))
+    assert type(caught.value) is expected
     assert caught.value.reason == reason
 
 
@@ -390,6 +484,19 @@ def test_seed_pass_tally_counts_unscorable_seeds_as_not_passed():
         "n_seeds_scored": 3,
         "n_seeds_unscorable": 1,
     }
+    # A gate refusal beside a real estimate is not scored and not passed either.
+    gate_refused = {"deflated_sharpe": 0.9, "passed_k": True,
+                    "exposure_path_error": "must clear the risk"}
+    tally = seed_pass_tally([passed, gate_refused])
+    assert tally == {
+        "passed_k_rate": 0.5,
+        "n_seeds_passed": 1,
+        "n_seeds_scored": 1,
+        "n_seeds_unscorable": 1,
+    }
+    assert seed_pass_tally([gate_refused])["passed_k_rate"].startswith(REFUSED_KERNEL_GATE)
+    with pytest.raises(KernelFieldUnrecognized):
+        seed_pass_tally([passed, {**passed, "new_refusal": "x"}])
     only_refused = seed_pass_tally([refused])
     assert "too short" in only_refused["passed_k_rate"]
     assert only_refused["n_seeds_unscorable"] == 1

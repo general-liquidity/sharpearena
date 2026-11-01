@@ -89,15 +89,22 @@ value equality, not a volatility tolerance, so a dispersed track keeps its score
 `sharpearena.kernel_score` is the one place a consumer reads the ranked numbers:
 
 - `kernel_deflated_sharpe(composite)` and `kernel_psr(composite)` return the
-  finite value or raise `KernelScoreUnavailable(reason, errors)` naming every
-  typed error key present. Selection, ranking inputs and the paper producers use
-  these and stop.
+  finite value or raise. An unavailability key (`deflation_error`,
+  `bootstrap_error`, `selection_error`) raises `KernelScoreUnavailable`; a gate
+  refusal key (`standard_error_refusal`, `exposure_path_error`) raises
+  `KernelScoreRefused`; both derive from `KernelScoreWithheld` and name every key
+  present. Any other `*_error` or `*_refusal` key raises
+  `KernelFieldUnrecognized` and is never recorded. Selection, ranking inputs and
+  the paper producers use these and stop. The
+  [kernel field convention](../../docs/kernel-field-convention.md) lists the
+  allowlists.
 - `kernel_score_or_unavailable(composite, key="deflated_sharpe")` returns the
   float or the reason string `unavailable_scoring_kernel_error: <key>: <message>`
-  for rows that must be recorded (eval-seed snapshots, generalization and regime
+  (or `refused_scoring_kernel_gate: <key>: <message>` for a refusal) for rows that must be recorded (eval-seed snapshots, generalization and regime
   rows, the PettingZoo leaderboard, trace `meta`, the local-field journal).
   `kernel_score_difference` makes a gap unavailable when either side is;
-  `is_kernel_score_unavailable` tests a recorded cell.
+  `is_kernel_score_unavailable` tests a recorded cell and
+  `is_kernel_score_refused` picks out a recorded refusal.
 
 Every `score_run` consumer in this package goes through these helpers; none
 substitutes a default. The multi-agent ranking places an unscorable agent after
