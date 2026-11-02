@@ -54,8 +54,17 @@ python scripts/bump-bench-pin.py --to 0.29.0
 python -m pytest -q crates/sharpearena-py/tests   # after maturin develop
 ```
 
+Before anything else, a pin move applies every patch in `scripts/release-patches/`
+to the staged copy and refuses the bump if one does not apply cleanly. These patches
+hold source edits that the next SharpeBench needs but the current pin cannot take
+without moving `SPEC_HASH`. `bench-next-market-marks.patch` builds a `market.rs` test
+helper through serde, so the `Dataset.marks` field SharpeBench adds after 0.28.0 does
+not break it. A real run deletes each patch it applied, so the release commit carries
+the edit and drops the patch. The patch files are not spec-hash inputs: `build.rs`
+hashes only its listed files under `crates/sharpearena/src` and the exact pins.
+
 `--to` equal to the current pin recomputes `SPEC_HASH` and rebinds its copies, which
-is what an edit to a spec-hash source file needs. Moving the pin moves `SPEC_HASH`
+is what an edit to a spec-hash source file needs. It does not apply release patches. Moving the pin moves `SPEC_HASH`
 every time, because the exact pins are an input of the hash.
 
 ## Why the checked driver owns the tag
