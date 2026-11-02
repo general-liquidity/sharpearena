@@ -54,7 +54,8 @@ mod tests {
             doc["spec_hash"].as_str().expect("record needs spec_hash"),
             SPEC_HASH_HEX,
             "spec files changed: rebind spec-hash.json + the npm/python wrapper pins \
-             and rebuild the committed wasm bundle"
+             and rebuild the committed wasm bundle (python scripts/bump-bench-pin.py \
+             --to <current SharpeBench pin> does all three)"
         );
         // The recorded inputs and epoch must equal what build.rs actually folded into
         // the value. Both come from the build script itself: `SHARPEARENA_SPEC_INPUTS`

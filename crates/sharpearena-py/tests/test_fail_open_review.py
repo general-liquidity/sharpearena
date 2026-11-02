@@ -302,7 +302,10 @@ def test_evaluate_seeds_still_scores_a_series_the_kernel_can_read():
 
         def step(self, _action):
             self._i += 1
-            return {"closes": np.array([1.0, 1.0])}, 0.01 * self._i, self._i >= 4, False, {}
+            # Two of the four bars are losses: SharpeBench after 0.28.0 refuses a track
+            # with no observed risk, which is not the property this test is about.
+            reward = 0.01 * self._i * (1.0 if self._i % 2 else -0.5)
+            return {"closes": np.array([1.0, 1.0])}, reward, self._i >= 4, False, {}
 
     row = evaluate_seeds(lambda _s: _Env(), [0], max_steps=8)
     assert not is_kernel_score_unavailable(row["deflated_sharpe"]), row
@@ -311,7 +314,9 @@ def test_evaluate_seeds_still_scores_a_series_the_kernel_can_read():
 
 def _passing_or_short_env(seed):
     """Seed 0 ends after one bar, so the kernel cannot score it. Every other seed
-    yields 60 dispersed positive returns that pass the kernel's pass^k gate."""
+    yields 60 dispersed returns with a positive mean that pass the kernel's pass^k gate.
+    About a third of them are losses, so the track shows observed risk, which
+    SharpeBench after 0.28.0 requires before it scores one."""
 
     class _Env:
         def __init__(self):
@@ -323,7 +328,7 @@ def _passing_or_short_env(seed):
 
         def step(self, _action):
             self._i += 1
-            reward = 0.01 + 0.002 * np.sin(self._i + seed)
+            reward = 0.01 + 0.02 * np.sin(self._i + seed)
             done = seed == 0 or self._i >= 60
             return {"closes": np.array([1.0, 1.0])}, float(reward), done, False, {}
 

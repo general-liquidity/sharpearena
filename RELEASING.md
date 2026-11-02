@@ -23,6 +23,41 @@ python scripts/release.py execute patch
 `release.toml` sets `publish = false`: the local machine never publishes. The `v*`
 tag triggers CI, which publishes via **OIDC Trusted Publishing** (no stored tokens).
 
+## Moving the SharpeBench pin
+
+Arena depends only on SharpeBench releases already on crates.io, and main stays on the
+current exact pin until the owner approves a move. Two scripts keep that pin movable
+without ever committing a path or git dependency:
+
+- `scripts/check-against-bench-main.py --bench <checkout>` (run nightly and on every
+  pull request by `.github/workflows/bench-main.yml`) builds and tests Arena with a
+  Bench checkout overlaid through `--config patch.crates-io...` flags. It first fails
+  on any `CompositeScore` key ending in `_error` or `_refusal` that
+  `sharpearena.kernel_score` has not classified, and it restores both lockfiles byte
+  for byte afterwards, because a patched build rewrites them with path sources.
+- `scripts/bump-bench-pin.py --to <version>` makes the whole pin move once the Bench
+  version is published: the exact pins in both manifests, both lockfiles, the kernel
+  key audit against the new `sharpebench-core`, the new `SPEC_HASH` read from the
+  build script, the three committed copies of it (`spec-hash.json`, `specHash.ts`,
+  `_spec_hash.py`), the spec-hash tests, the pyo3 crate check, and the wasm bundle
+  rebuild held to `scripts/check-wasm-bundle.mjs`. It stages the change in a copy of
+  the tree, so a failure changes nothing here, and a real run refuses a version
+  crates.io does not serve unyanked. It does not commit, edit the changelog, or
+  rewrite prose; it lists the remaining mentions of the old version for review.
+
+```bash
+# Preview against a local Bench checkout at the new version. Nothing here changes.
+python scripts/bump-bench-pin.py --to 0.29.0 --dry-run --bench-source ../sharpebench
+
+# After the Bench release is published.
+python scripts/bump-bench-pin.py --to 0.29.0
+python -m pytest -q crates/sharpearena-py/tests   # after maturin develop
+```
+
+`--to` equal to the current pin recomputes `SPEC_HASH` and rebinds its copies, which
+is what an edit to a spec-hash source file needs. Moving the pin moves `SPEC_HASH`
+every time, because the exact pins are an input of the hash.
+
 ## Why the checked driver owns the tag
 
 `release.toml` sets both `tag = false` and `push = false`. Running cargo-release

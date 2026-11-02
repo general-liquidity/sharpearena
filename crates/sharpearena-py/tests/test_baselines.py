@@ -7,6 +7,7 @@ checked directly.
 """
 
 import importlib
+import json
 
 import pytest
 
@@ -33,10 +34,22 @@ requires_binding = pytest.mark.skipif(
 )
 
 # `flat` never trades: its track is constant, has no Sharpe ratio, and is withheld.
-FLAT_WITHHELD = (
-    "unavailable_scoring_kernel_error: deflation_error: "
-    "returns must not be constant: a constant series has no Sharpe ratio"
-)
+FLAT_REASON = "returns must not be constant: a constant series has no Sharpe ratio"
+
+
+def _flat_key() -> str:
+    """The key the built kernel withholds a constant track under: ``deflation_refusal``
+    on SharpeBench after 0.28.0, ``deflation_error`` (Arena's own boundary) before."""
+    from sharpearena.sharpearena_py import score_run
+
+    probe = json.loads(score_run([0.0, 0.0], 0))
+    return "deflation_refusal" if "deflation_refusal" in probe else "deflation_error"
+
+
+def _flat_withheld() -> str:
+    if _flat_key() == "deflation_refusal":
+        return f"refused_scoring_kernel_gate: deflation_refusal: {FLAT_REASON}"
+    return f"unavailable_scoring_kernel_error: deflation_error: {FLAT_REASON}"
 
 
 # -- logic that needs no native binding -------------------------------------
@@ -154,7 +167,7 @@ def test_run_baselines_returns_scored_rows():
         }
         assert np.isfinite(r["mean_return"])
         if r["policy"] == "flat":
-            assert r["deflated_sharpe"] == r["passed_k_rate"] == FLAT_WITHHELD
+            assert r["deflated_sharpe"] == r["passed_k_rate"] == _flat_withheld()
             continue
         assert np.isfinite(r["deflated_sharpe"])
         assert 0.0 <= r["passed_k_rate"] <= 1.0
@@ -165,7 +178,7 @@ def test_run_baselines_attaches_confidence_the_kernel_reproduces_bit_for_bit():
     rows = run_baselines(n_symbols=3, n_days=40, seeds=range(4))
     flat = next(r for r in rows if r["policy"] == "flat")
     assert flat["deflated_sharpe_ci"] is None and flat["arena_deflated_sharpe_ci"] is None
-    assert flat["confidence_status"] == FLAT_WITHHELD
+    assert flat["confidence_status"] == _flat_withheld()
     rows = [r for r in rows if r is not flat]
     for r in rows:
         assert "per_seed_returns" in r
@@ -202,7 +215,7 @@ def test_run_baselines_withholds_confidence_when_the_kernel_disagrees(monkeypatc
     rows = baselines.run_baselines(n_symbols=3, n_days=40, seeds=range(2))
     flat = next(r for r in rows if r["policy"] == "flat")
     assert flat["deflated_sharpe_ci"] is None
-    assert flat["confidence_status"] == FLAT_WITHHELD
+    assert flat["confidence_status"] == _flat_withheld()
     rows = [r for r in rows if r is not flat]
     for r in rows:
         assert r["deflated_sharpe_ci"] is None
@@ -229,9 +242,12 @@ def test_run_baselines_withholds_confidence_when_the_kernel_reports_a_typed_erro
     rows = baselines.run_baselines(n_symbols=3, n_days=40, seeds=range(2))
     for r in rows:
         assert r["deflated_sharpe_ci"] is None
-        assert r["confidence_status"] == (
-            "unavailable_scoring_kernel_error: deflation_error: observation 1 must be finite"
-        )
+        expected = "unavailable_scoring_kernel_error: deflation_error: observation 1 must be finite"
+        if r["policy"] == "flat" and _flat_key() == "deflation_refusal":
+            # The kernel's own refusal of the constant track stays beside the stamped
+            # error, and the reason names both.
+            expected += f"; deflation_refusal: {FLAT_REASON}"
+        assert r["confidence_status"] == expected
     assert all(line.startswith("| - |") for line in leaderboard_markdown(rows, show_ci=True).splitlines()[2:])
 
 
@@ -274,7 +290,7 @@ def test_absent_confidence_is_not_rendered_as_a_zero_width_interval():
 def test_a_single_seed_keeps_its_point_but_withholds_between_seed_confidence():
     rows = run_baselines(n_symbols=2, n_days=12, seeds=[0])
     flat = next(r for r in rows if r["policy"] == "flat")
-    assert flat["deflated_sharpe"] == flat["confidence_status"] == FLAT_WITHHELD
+    assert flat["deflated_sharpe"] == flat["confidence_status"] == _flat_withheld()
     assert flat["deflated_sharpe_ci"] is None and flat["arena_deflated_sharpe_ci"] is None
     for row in (r for r in rows if r is not flat):
         assert isinstance(row["deflated_sharpe"], float)

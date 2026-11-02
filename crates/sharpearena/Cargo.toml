@@ -13,6 +13,9 @@ sharpebench-sim = "=0.28.0"
 sharpebench-protocol = "=0.28.0"
 sharpebench-core = "=0.28.0"
 serde = { version = "1", features = ["derive"] }
+# Reads a CompositeScore key by name where the pinned struct has no such field
+# (kernel_score.rs). Already in the graph through sharpebench-core.
+serde_json = "1"
 
 # rayon parallelizes the batched step on native targets. Gated out of wasm32 (no
 # threads there); the engine falls back to a serial loop with identical results.

@@ -20,6 +20,13 @@
 //! makes the behaviour Arena's own rather than a property of whichever kernel is
 //! pinned, and because it would fire again on a pin that lost the refusal.
 //!
+//! SharpeBench after `0.28.0` moves the shape refusals, the constant track among them,
+//! from `deflation_error` to `deflation_refusal`. A kernel withholding under either key
+//! counts as having refused first, so Arena does not stamp a `deflation_error` beside
+//! the kernel's `deflation_refusal` and a consumer reads one reason, in the kernel's
+//! class: on such a kernel a constant track is recorded as
+//! `refused_scoring_kernel_gate: deflation_refusal: <reason>`.
+//!
 //! The Python `sharpearena.kernel_score` helpers read `deflation_error` as
 //! unavailability (it is in their allowlist of unavailability keys, beside
 //! `bootstrap_error` and `selection_error`), so every consumer that reads a ranked
@@ -42,15 +49,16 @@ use crate::leaderboard_ci::check_sharpe_defined;
 /// every bar. With one run and one execution seed per window, the pooled track and the
 /// only per-run track are both `returns`.
 ///
-/// When the kernel recorded no `deflation_error` and [`check_sharpe_defined`] refuses
+/// When the kernel recorded neither a `deflation_error` nor a `deflation_refusal` and
+/// [`check_sharpe_defined`] refuses
 /// `returns`, the score is withheld: `deflation_error` carries the refusal (for a constant
 /// track, [`crate::leaderboard_ci::CONSTANT_TRACK_REFUSAL`]); `deflated_sharpe`, `psr`,
 /// `deflation_bar_per_period`, `deflation_bar_annualized_equivalent` and `composite` read
 /// the 0.0 floor; `dsr_ci_low`, `dsr_ci_high`, `dsr_se`, `dsr_per_cost`, `dsr_percentile`,
 /// `rolling_min_sharpe` and `rolling_frac_positive` are absent; and `passed_k` and
 /// `rank_eligible` are false, because a run with no Sharpe ratio clears no per-run PSR
-/// bar. A `deflation_error` the kernel recorded itself is kept, since it names the input
-/// the kernel refused first. Every other field is the kernel's, and a track with a Sharpe
+/// bar. A `deflation_error` or `deflation_refusal` the kernel recorded itself is kept,
+/// since it names the input the kernel refused first. Every other field is the kernel's, and a track with a Sharpe
 /// ratio is returned exactly as the kernel scored it.
 ///
 /// Under the `=0.28.0` pin the first condition never holds: the kernel refuses every
@@ -79,7 +87,7 @@ pub fn score_returns(returns: Vec<f64>, n_trials: u32, periods_per_year: f64) ->
         &submission,
         &ScoreConfig::for_periods_per_year(periods_per_year),
     );
-    if let (Some(refusal), None) = (refusal, &score.deflation_error) {
+    if let (Some(refusal), false) = (refusal, kernel_withheld_deflation(&score)) {
         score.deflation_error = Some(refusal.to_string());
         score.deflated_sharpe = 0.0;
         score.psr = 0.0;
@@ -97,6 +105,23 @@ pub fn score_returns(returns: Vec<f64>, n_trials: u32, periods_per_year: f64) ->
         score.rank_eligible = false;
     }
     score
+}
+
+/// Whether the kernel itself withheld the deflated Sharpe: a `deflation_error`, or a
+/// `deflation_refusal` (SharpeBench after `0.28.0` refuses a track for its shape there,
+/// a constant one included, instead of in `deflation_error`). Either names the input
+/// the kernel refused first, so Arena's boundary leaves the score as the kernel wrote
+/// it rather than stamping a second key beside the first.
+///
+/// `deflation_refusal` is read from the serialized score, by key, because the pinned
+/// `CompositeScore` has no such field; on a kernel that does not emit it the key is
+/// absent and only `deflation_error` decides.
+fn kernel_withheld_deflation(score: &CompositeScore) -> bool {
+    score.deflation_error.is_some()
+        || serde_json::to_value(score)
+            .ok()
+            .and_then(|json| json.get("deflation_refusal").cloned())
+            .is_some_and(|refusal| !refusal.is_null())
 }
 
 #[cfg(test)]
@@ -138,6 +163,9 @@ mod tests {
     /// `score` with every field the refusal withholds set to what the refusal writes, so
     /// a comparison against it isolates those fields from everything the kernel reports.
     fn withheld(mut score: CompositeScore, reason: &str) -> CompositeScore {
+        if kernel_withheld_deflation(&score) {
+            return score;
+        }
         score.deflation_error = Some(reason.to_string());
         score.deflated_sharpe = 0.0;
         score.psr = 0.0;
@@ -170,8 +198,8 @@ mod tests {
                 let score = score_returns(track.clone(), n_trials, 252.0);
                 let label = format!("value {value} len {len}");
                 assert_eq!(
-                    score.deflation_error.as_deref(),
-                    Some(CONSTANT_TRACK_REFUSAL),
+                    withholding_reason(&score),
+                    CONSTANT_TRACK_REFUSAL,
                     "{label}"
                 );
                 assert_eq!(
@@ -180,7 +208,6 @@ mod tests {
                     "{label}"
                 );
                 let json = serde_json::to_value(&score).unwrap();
-                assert_eq!(json["deflation_error"], CONSTANT_TRACK_REFUSAL, "{label}");
                 for absent in ["dsr_ci_low", "dsr_ci_high", "dsr_se"] {
                     assert!(json.get(absent).is_none(), "{label} {absent}");
                 }
@@ -195,6 +222,32 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The one key that withholds the deflated Sharpe and its reason: the kernel's own
+    /// `deflation_refusal` where it emits one, else `deflation_error`. Exactly one is
+    /// present, so a consumer never reads two reasons for one track.
+    fn withholding_reason(score: &CompositeScore) -> String {
+        let json = serde_json::to_value(score).unwrap();
+        let keys: Vec<&str> = ["deflation_error", "deflation_refusal"]
+            .into_iter()
+            .filter(|key| json.get(*key).is_some_and(|v| !v.is_null()))
+            .collect();
+        assert_eq!(keys.len(), 1, "exactly one withholding key, found {keys:?}");
+        json[keys[0]].as_str().unwrap().to_string()
+    }
+
+    /// A score that names no withholding key is not withheld by either boundary.
+    #[test]
+    fn a_scored_track_is_not_read_as_withheld() {
+        let dispersed: Vec<f64> = (0..120)
+            .map(|i| 0.001 + 0.02 * (i as f64 * 0.9 + 1.0).sin())
+            .collect();
+        let score = kernel(&dispersed, 6);
+        assert!(!kernel_withheld_deflation(&score));
+        let mut errored = score.clone();
+        errored.deflation_error = Some("x".to_string());
+        assert!(kernel_withheld_deflation(&errored));
     }
 
     /// A return track states no confidence, so `score_run` reports no calibration. It
@@ -220,9 +273,7 @@ mod tests {
             assert_eq!(filled.calibration_brier, Some(0.25), "{track:?}");
             assert_eq!(filled.calibration_observations, track.len());
             if let Some(refusal) = check_sharpe_defined(&track).err() {
-                if filled.deflation_error.is_none() {
-                    filled = withheld(filled, &refusal.to_string());
-                }
+                filled = withheld(filled, &refusal.to_string());
             }
             filled.calibration_brier = None;
             filled.calibration_observations = 0;
@@ -240,10 +291,7 @@ mod tests {
     fn an_underflowing_track_is_withheld_as_a_non_finite_sharpe() {
         let track: Vec<f64> = (0..60).map(|i| (i % 2) as f64 * 1e-170).collect();
         let score = score_returns(track.clone(), 6, 252.0);
-        assert_eq!(
-            score.deflation_error.as_deref(),
-            Some(NON_FINITE_SHARPE_REFUSAL)
-        );
+        assert_eq!(withholding_reason(&score), NON_FINITE_SHARPE_REFUSAL);
         assert_eq!(
             score,
             withheld(kernel(&track, 6), NON_FINITE_SHARPE_REFUSAL)
