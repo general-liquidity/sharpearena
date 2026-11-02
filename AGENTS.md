@@ -73,7 +73,8 @@ convenience:
   four are exact-pinned, which is a manifest-hygiene check, not hash coverage.
   The committed record's `note` names the three. A local Bench repair does not
   reach Arena without a Bench release and a pin bump here; record the pending
-  propagation instead of claiming parity.
+  propagation instead of claiming parity. `scripts/bump-bench-pin.py` makes the
+  bump and the rebind (RELEASING.md, "Moving the SharpeBench pin").
 - Bind provenance on a clean candidate before pushing: `python
   paper/src/check-provenance.py`. The clean-tree check intentionally counts the
   modified manifest, so bind after committing.
