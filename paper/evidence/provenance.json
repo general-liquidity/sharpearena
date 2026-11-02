@@ -220,7 +220,7 @@
     }
   ],
   "digest_convention": "sha256 over file bytes with CRLF collapsed to LF; files containing a NUL byte are hashed verbatim",
-  "generated_at_head": "c7eadd1ff84d1fb7ed6de5108caa98b51864e451",
+  "generated_at_head": "2e6d1762571cdd0ae0f393fc36ce90858ecfd35a",
   "generated_at_head_dirty": false,
   "model_artifact_scope": [
     "paper/evidence/model-artifacts/*.json"
@@ -270,7 +270,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/__init__.py",
-      "sha256": "bddaec1b046bf0f3c7c80966374e1bed88ba09854c57583d114c8446fe0b8f5f"
+      "sha256": "87d2ce2cd995e7b4c6786ac17c7d47eca0fe8203493c76a89211a6f9ccf6bcda"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/_action_validation.py",
@@ -386,7 +386,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/forecast.py",
-      "sha256": "9c26f4a3af02e0371d6a2729e010236cfcdbf0fa22d57419fcd27537b4cc6bc3"
+      "sha256": "c346411150e1f8fc1347295f299cfdd69db3cf2c12ee182fcc496f3bddadc385"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/forecast_contract.py",
@@ -430,7 +430,7 @@
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/kernel_score.py",
-      "sha256": "fab268933eb4e57ad221af1ba7a25f37fff1048953d8fe2378b4251e67bd4fc4"
+      "sha256": "338948fce6b139244359f94eca60da87a859a7dde40e3956bed890bd30dbbb79"
     },
     {
       "path": "crates/sharpearena-py/python/sharpearena/lob_env.py",
@@ -666,7 +666,7 @@
     },
     {
       "path": "crates/sharpearena/src/kernel_score.rs",
-      "sha256": "3886088c56b6560e12174588629c4bf5503c6c4a1421442ea42be1459eb51239"
+      "sha256": "fbbfdeae5e89627ecc3d07bf5c5acd7d4557c88f2bb0a5d4f89ea9d733ed768d"
     },
     {
       "path": "crates/sharpearena/src/leaderboard_ci.rs",
@@ -1046,6 +1046,6 @@
     "paper/refs.bib"
   ],
   "source_snapshot_scope_note": "Globs are expanded from the repository root; any path with a component in source_snapshot_excludes is skipped, so build outputs and virtual environments are not part of the source snapshot.",
-  "source_snapshot_sha256": "fe97876c85d397da46a49cfb0f7d97b97c9a2ef27a36fac044f24da6f671db85",
+  "source_snapshot_sha256": "48370204d36b131577b458b60697ce8174284107de95f1813abb5e5127047c3a",
   "validator": "paper/src/check-provenance.py"
 }
