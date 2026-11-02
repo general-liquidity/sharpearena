@@ -16,6 +16,7 @@ from typing import Optional, Sequence
 from .local_agents import (
     DatasetSpec,
     EvidenceJournal,
+    FieldMatrix,
     FieldPlan,
     LocalFieldRunner,
     ModelRunConfig,
@@ -35,7 +36,9 @@ _PLAN_FIELDS = {
     "shard_index",
     "shard_count",
     "order_seed",
+    "matrix",
 }
+_MATRIX_FIELDS = {"models", "harnesses", "conditions"}
 _MODEL_FIELDS = {
     "model",
     "sampling",
@@ -143,6 +146,18 @@ def load_plan(path: Path) -> FieldPlan:
             resolved = _resolve_csv_path(path.parent, csv_path)
             item["csv_text"] = resolved.read_text(encoding="utf-8")
         datasets.append(DatasetSpec(**item))
+    matrix = None
+    if "matrix" in payload:
+        matrix_payload = payload["matrix"]
+        if not isinstance(matrix_payload, dict):
+            raise ValueError("matrix must be an object")
+        _reject_unknown(matrix_payload, _MATRIX_FIELDS, "matrix")
+        for name in sorted(_MATRIX_FIELDS):
+            if not isinstance(matrix_payload.get(name), list):
+                raise ValueError(f"matrix.{name} must be an array of level names")
+        matrix = FieldMatrix(
+            **{name: tuple(matrix_payload[name]) for name in _MATRIX_FIELDS}
+        )
     return FieldPlan(
         models=tuple(models),
         datasets=tuple(datasets),
@@ -153,6 +168,7 @@ def load_plan(path: Path) -> FieldPlan:
         shard_index=int(payload.get("shard_index", 0)),
         shard_count=int(payload.get("shard_count", 1)),
         order_seed=int(payload.get("order_seed", 0)),
+        matrix=matrix,
     )
 
 
@@ -190,6 +206,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     "cells_in_shard": len(LocalFieldRunner.cells(plan)),
                     "models": [asdict(model) for model in plan.models],
                     "datasets": [dataset.public_record() for dataset in plan.datasets],
+                    **(
+                        {"matrix": plan.matrix.record()}
+                        if plan.matrix is not None
+                        else {}
+                    ),
                 },
                 sort_keys=True,
                 indent=2,
