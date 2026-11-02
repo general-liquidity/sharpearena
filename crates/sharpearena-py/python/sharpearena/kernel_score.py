@@ -19,10 +19,14 @@ which is the flattering substitution the kernel refused to make.
 Keys are classified by explicit allowlists, never by suffix alone (the convention is
 written up in ``docs/kernel-field-convention.md``). :data:`KERNEL_UNAVAILABILITY_KEYS`
 withhold the score as unavailable. :data:`KERNEL_REFUSAL_KEYS`
-(``standard_error_refusal`` and ``exposure_path_error``, which SharpeBench main emits
-after 0.28.0) are gate refusals: the kernel computed the track and declined to rank
-it, so the score is withheld as :class:`KernelScoreRefused` and recorded as
-``refused_scoring_kernel_gate: <key>: <message>``. Any other top-level key ending in
+(``standard_error_refusal``, ``deflation_refusal`` and ``exposure_path_refusal``,
+which SharpeBench emits after 0.28.0) are gate refusals: the kernel computed the
+track and declined to rank it, so the score is withheld as
+:class:`KernelScoreRefused` and recorded as
+``refused_scoring_kernel_gate: <key>: <message>``. ``exposure_path_error`` is
+unavailability, except that a message exactly equal to the exposure-path refusal
+requirement (:data:`LEGACY_REFUSAL_MESSAGES`, the meaning Bench main gives it before
+``exposure_path_refusal`` exists) is read as a refusal. Any other top-level key ending in
 ``_error`` or ``_refusal`` raises :class:`KernelFieldUnrecognized`, which is never
 recorded as a reason: the reader must be taught the key before it reads the composite.
 
@@ -45,18 +49,52 @@ UNAVAILABLE_KERNEL_ERROR = "unavailable_scoring_kernel_error"
 UNAVAILABLE_KERNEL_VALUE = "unavailable_scoring_kernel_value"
 REFUSED_KERNEL_GATE = "refused_scoring_kernel_gate"
 
-#: Top-level ``CompositeScore`` keys that say the kernel could not compute a figure
-#: (SharpeBench main ``crates/sharpebench-core/src/composite.rs``). When one is
-#: present the ranked numbers beside it are the no-skill floor or a sentinel.
-KERNEL_UNAVAILABILITY_KEYS = frozenset({"bootstrap_error", "deflation_error", "selection_error"})
+#: Top-level ``CompositeScore`` keys that say the kernel could not compute a figure.
+#: ``bootstrap_error``, ``deflation_error`` and ``selection_error`` are on SharpeBench
+#: main; ``dsr_ci_error`` (the deflated Sharpe interval could not be estimated) and
+#: ``exposure_path_error`` in its narrowed meaning (the exposure-path statistic could not
+#: be computed) come with the refusal taxonomy. When one is present the ranked numbers
+#: beside it are the no-skill floor or a sentinel.
+KERNEL_UNAVAILABILITY_KEYS = frozenset(
+    {
+        "bootstrap_error",
+        "deflation_error",
+        "dsr_ci_error",
+        "exposure_path_error",
+        "selection_error",
+    }
+)
 
 #: Top-level ``CompositeScore`` keys that say the kernel computed the track and a gate
 #: refused it: ``standard_error_refusal`` (the standard-error certification, with the
 #: ``NOT_CERTIFIED_UNDER_SERIAL_CORRELATION`` and ``NOT_CERTIFIED_WITHOUT_MOMENT_CREDIT``
-#: messages) and ``exposure_path_error`` (the exposure-path gate,
-#: ``EXPOSURE_PATH_UNPROVEN``). The deflated Sharpe beside one is an estimate, but the
-#: kernel did not rank it, so Arena does not publish it as a score either.
-KERNEL_REFUSAL_KEYS = frozenset({"exposure_path_error", "standard_error_refusal"})
+#: messages), ``deflation_refusal`` (a track refused for its shape) and
+#: ``exposure_path_refusal`` (the exposure-path gate, :data:`EXPOSURE_PATH_UNPROVEN`).
+#: The deflated Sharpe beside one is an estimate, but the kernel did not rank it, so
+#: Arena does not publish it as a score either.
+KERNEL_REFUSAL_KEYS = frozenset(
+    {"deflation_refusal", "exposure_path_refusal", "standard_error_refusal"}
+)
+
+#: SharpeBench ``sharpebench_stats::exposure_path::EXPOSURE_PATH_UNPROVEN``, the
+#: requirement text of the exposure-path gate's refusal.
+EXPOSURE_PATH_UNPROVEN = (
+    "must clear the risk its exposure history implies: the profit, charged at the largest "
+    "exposure rate any window showed after its first quarter for the whole window, does not "
+    "clear the reflection-principle bound at alpha / 2, so stopping or de-risking once ahead, "
+    "or raising exposure after losses, could have produced it"
+)
+
+#: Unavailability keys that SharpeBench main also used for a refusal, and the exact
+#: messages that mark that older meaning. Before the refusal taxonomy, main wrote the
+#: exposure-path gate's refusal into ``exposure_path_error`` as the rendered
+#: ``StatisticalError`` (``returns <requirement>``). Only an exact match is a refusal;
+#: any other message under the key is unavailability.
+LEGACY_REFUSAL_MESSAGES: Mapping[str, frozenset] = {
+    "exposure_path_error": frozenset(
+        {EXPOSURE_PATH_UNPROVEN, f"returns {EXPOSURE_PATH_UNPROVEN}"}
+    ),
+}
 
 #: Suffixes that mark a key as part of the kernel's withholding vocabulary. A key with
 #: one of these suffixes that neither allowlist names is a field this reader does not
@@ -145,16 +183,20 @@ def kernel_fields(composite: Mapping[str, Any]) -> tuple[dict[str, str], dict[st
     ]
     if unknown:
         raise KernelFieldUnrecognized(unknown)
-    errors = {
-        str(key): str(value)
-        for key, value in composite.items()
-        if str(key) in KERNEL_UNAVAILABILITY_KEYS and _is_present(value)
-    }
-    refusals = {
-        str(key): str(value)
-        for key, value in composite.items()
-        if str(key) in KERNEL_REFUSAL_KEYS and _is_present(value)
-    }
+    errors: dict[str, str] = {}
+    refusals: dict[str, str] = {}
+    # inv: every present known key read so far is in exactly one of errors, refusals.
+    for key, value in composite.items():
+        name = str(key)
+        if not _is_present(value):
+            continue
+        message = str(value)
+        if name in KERNEL_REFUSAL_KEYS or message in LEGACY_REFUSAL_MESSAGES.get(
+            name, frozenset()
+        ):
+            refusals[name] = message
+        elif name in KERNEL_UNAVAILABILITY_KEYS:
+            errors[name] = message
     return errors, refusals
 
 
@@ -314,7 +356,9 @@ def seed_pass_tally(composites: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
 
 
 __all__ = [
+    "EXPOSURE_PATH_UNPROVEN",
     "KERNEL_REFUSAL_KEYS",
+    "LEGACY_REFUSAL_MESSAGES",
     "KERNEL_UNAVAILABILITY_KEYS",
     "KERNEL_WITHHOLDING_SUFFIXES",
     "KernelFieldUnrecognized",

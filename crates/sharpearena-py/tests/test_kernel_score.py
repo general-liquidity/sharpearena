@@ -20,6 +20,7 @@ import pytest
 from sharpearena.kernel_score import (
     UNAVAILABLE_KERNEL_ERROR,
     UNAVAILABLE_KERNEL_VALUE,
+    EXPOSURE_PATH_UNPROVEN,
     KERNEL_REFUSAL_KEYS,
     KERNEL_UNAVAILABILITY_KEYS,
     REFUSED_KERNEL_GATE,
@@ -31,6 +32,7 @@ from sharpearena.kernel_score import (
     is_kernel_score_unavailable,
     kernel_deflated_sharpe,
     kernel_errors,
+    kernel_fields,
     kernel_psr,
     kernel_refusals,
     kernel_withheld_from_reason,
@@ -45,8 +47,14 @@ requires_binding = pytest.mark.skipif(
 
 REASON = "observation 1 must be finite"
 VALID = {"deflated_sharpe": 0.61, "psr": 0.73, "passed_k": True, "bootstrap_p": 0.02}
-ERROR_KEYS = ("deflation_error", "bootstrap_error", "selection_error")
-REFUSAL_KEYS = ("standard_error_refusal", "exposure_path_error")
+ERROR_KEYS = (
+    "deflation_error",
+    "bootstrap_error",
+    "selection_error",
+    "dsr_ci_error",
+    "exposure_path_error",
+)
+REFUSAL_KEYS = ("standard_error_refusal", "deflation_refusal", "exposure_path_refusal")
 
 
 def _floored(*keys: str) -> dict:
@@ -128,6 +136,49 @@ def test_each_refusal_key_withholds_the_estimate_as_a_refusal(key):
     assert is_kernel_score_refused(recorded)
     assert isinstance(kernel_withheld_from_reason(recorded), KernelScoreRefused)
 
+
+
+@pytest.mark.parametrize(
+    "message, refused",
+    [
+        # Bench main before the refusal taxonomy: the gate's refusal, rendered as the
+        # StatisticalError Display (`returns <requirement>`), or the bare requirement.
+        (f"returns {EXPOSURE_PATH_UNPROVEN}", True),
+        (EXPOSURE_PATH_UNPROVEN, True),
+        # The taxonomy branch: exposure_path_error is only genuine unavailability.
+        ("forgone-risk statistic is not finite", False),
+        ("alpha must be a number", False),
+        # Near misses of the requirement text are not the refusal.
+        (f"returns {EXPOSURE_PATH_UNPROVEN} ", False),
+        (EXPOSURE_PATH_UNPROVEN[:-1], False),
+    ],
+)
+def test_exposure_path_error_is_a_refusal_only_for_the_exact_requirement(message, refused):
+    comp = {**VALID, "rank_eligible": False, "exposure_path_error": message}
+    errors, refusals = kernel_fields(comp)
+    expected = KernelScoreRefused if refused else KernelScoreUnavailable
+    with pytest.raises(expected) as info:
+        kernel_deflated_sharpe(comp)
+    assert type(info.value) is expected
+    if refused:
+        assert (errors, refusals) == ({}, {"exposure_path_error": message})
+        assert info.value.reason == f"{REFUSED_KERNEL_GATE}: exposure_path_error: {message}"
+    else:
+        assert (errors, refusals) == ({"exposure_path_error": message}, {})
+        assert info.value.reason == f"{UNAVAILABLE_KERNEL_ERROR}: exposure_path_error: {message}"
+
+
+def test_new_exposure_path_refusal_beside_old_style_error_is_unavailable():
+    # The taxonomy branch can report both: the refusal and a separate numerical failure.
+    comp = {
+        **VALID,
+        "exposure_path_refusal": f"returns {EXPOSURE_PATH_UNPROVEN}",
+        "exposure_path_error": "forgone-risk statistic is not finite",
+    }
+    with pytest.raises(KernelScoreUnavailable) as info:
+        kernel_deflated_sharpe(comp)
+    assert info.value.errors == {"exposure_path_error": "forgone-risk statistic is not finite"}
+    assert info.value.refusals == {"exposure_path_refusal": f"returns {EXPOSURE_PATH_UNPROVEN}"}
 
 def test_unavailability_outranks_a_refusal_and_both_are_named():
     comp = {**VALID, "selection_error": REASON, "standard_error_refusal": "not certified"}
@@ -486,7 +537,7 @@ def test_seed_pass_tally_counts_unscorable_seeds_as_not_passed():
     }
     # A gate refusal beside a real estimate is not scored and not passed either.
     gate_refused = {"deflated_sharpe": 0.9, "passed_k": True,
-                    "exposure_path_error": "must clear the risk"}
+                    "exposure_path_refusal": "must clear the risk"}
     tally = seed_pass_tally([passed, gate_refused])
     assert tally == {
         "passed_k_rate": 0.5,

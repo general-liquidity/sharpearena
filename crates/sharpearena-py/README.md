@@ -90,9 +90,10 @@ value equality, not a volatility tolerance, so a dispersed track keeps its score
 
 - `kernel_deflated_sharpe(composite)` and `kernel_psr(composite)` return the
   finite value or raise. An unavailability key (`deflation_error`,
-  `bootstrap_error`, `selection_error`) raises `KernelScoreUnavailable`; a gate
-  refusal key (`standard_error_refusal`, `exposure_path_error`) raises
-  `KernelScoreRefused`; both derive from `KernelScoreWithheld` and name every key
+  `bootstrap_error`, `selection_error`, `dsr_ci_error`, `exposure_path_error`)
+  raises `KernelScoreUnavailable`; a gate refusal key (`standard_error_refusal`,
+  `deflation_refusal`, `exposure_path_refusal`, or `exposure_path_error` holding
+  exactly the exposure-path refusal requirement) raises `KernelScoreRefused`; both derive from `KernelScoreWithheld` and name every key
   present. Any other `*_error` or `*_refusal` key raises
   `KernelFieldUnrecognized` and is never recorded. Selection, ranking inputs and
   the paper producers use these and stop. The
