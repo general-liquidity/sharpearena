@@ -48,7 +48,7 @@ import gymnasium as gym
 from gymnasium import spaces
 
 from .generalization import evaluate_seeds
-from .kernel_score import KernelScoreUnavailable, is_kernel_score_unavailable
+from .kernel_score import is_kernel_score_unavailable, kernel_withheld_from_reason
 
 MakeEnv = Callable[[int], gym.Env]
 Policy = Callable[[dict], np.ndarray]
@@ -268,7 +268,7 @@ def forecast_skill_curve(
         if is_kernel_score_unavailable(value):
             # A curve point is a rank input; a withheld kernel score is refused,
             # never plotted at its floor.
-            raise KernelScoreUnavailable(str(value), {})
+            raise kernel_withheld_from_reason(str(value))
         curve[float(r2)] = float(value)
     return curve
 

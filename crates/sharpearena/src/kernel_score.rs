@@ -20,9 +20,13 @@
 //! makes the behaviour Arena's own rather than a property of whichever kernel is
 //! pinned, and because it would fire again on a pin that lost the refusal.
 //!
-//! The Python `sharpearena.kernel_score` helpers read any `*_error` key as
-//! unavailability, so every consumer that reads a ranked number through them records
-//! the reason instead, whichever of the two boundaries wrote it.
+//! The Python `sharpearena.kernel_score` helpers read `deflation_error` as
+//! unavailability (it is in their allowlist of unavailability keys, beside
+//! `bootstrap_error` and `selection_error`), so every consumer that reads a ranked
+//! number through them records the reason instead, whichever of the two boundaries
+//! wrote it. They classify refusal keys separately and refuse to read a composite that
+//! carries an unknown `*_error` or `*_refusal` key; `docs/kernel-field-convention.md`
+//! states the convention.
 
 use sharpebench_core::{score_agent, AgentSubmission, CompositeScore, Run, ScoreConfig, Trace};
 

@@ -29,6 +29,7 @@ not schedules.
 | Compare supported local model runtimes | [Local model matrix](LOCAL_MODEL_MATRIX_2026.md) |
 | Commit forecasts now and score them after resolution | [Prospective forecast evidence](forecast-evidence.md) |
 | Interpret baseline scores, unavailable estimates and intervals | [Statistical confidence](statistical-confidence.md) |
+| Tell an unavailable kernel score from a refused one, or classify a new kernel key | [Kernel field convention](kernel-field-convention.md) |
 | Add a framework adapter, or check one against the engine | [Integration contracts](integrations/contracts.md) and [inventory](integrations/inventory.md) |
 | See what's tested, specified, or ruled out per interface | [Support status](integrations/support-status.md) |
 | Check the current CleanRL, native-bridge and HUD/Harbor scope decisions | [Integration dispositions](integrations/current-dispositions.md) |

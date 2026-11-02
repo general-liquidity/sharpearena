@@ -185,11 +185,16 @@ from .generalization import (
 from .gym import SharpeArenaEnv
 from .indicators import DEFAULT_INDICATORS, INDICATORS, CausalIndicatorObservation
 from .kernel_score import (
+    KernelFieldUnrecognized,
+    KernelScoreRefused,
     KernelScoreUnavailable,
+    KernelScoreWithheld,
+    is_kernel_score_refused,
     is_kernel_score_unavailable,
     kernel_deflated_sharpe,
     kernel_errors,
     kernel_psr,
+    kernel_refusals,
     kernel_score_difference,
     kernel_score_or_unavailable,
 )
@@ -419,7 +424,12 @@ __all__ = [
     "EXPECTED_SPEC_HASH",
     "check_spec_hash",
     "score_run",
+    "KernelFieldUnrecognized",
+    "KernelScoreRefused",
     "KernelScoreUnavailable",
+    "KernelScoreWithheld",
+    "is_kernel_score_refused",
+    "kernel_refusals",
     "is_kernel_score_unavailable",
     "kernel_deflated_sharpe",
     "kernel_errors",

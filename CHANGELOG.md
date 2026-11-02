@@ -12,6 +12,16 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ### Fixed
 
+- py: `sharpearena.kernel_score` classifies kernel keys by explicit lists
+  instead of the `*_error` suffix. `deflation_error`, `bootstrap_error`,
+  `selection_error`, `dsr_ci_error` and `exposure_path_error` are
+  unavailability; `standard_error_refusal`, `deflation_refusal` and
+  `exposure_path_refusal` are gate refusals, raised as `KernelScoreRefused` and
+  recorded as `refused_scoring_kernel_gate: ...`. An `exposure_path_error`
+  whose message equals the exposure-path refusal requirement, SharpeBench
+  main's older meaning, is read as a refusal. Any other top-level `*_error` or
+  `*_refusal` key raises `KernelFieldUnrecognized` and is never recorded. The
+  convention is in `docs/kernel-field-convention.md`.
 - Register checker: every status entry records `recorded_by` and `independent`
   (history migrated as unknown, with the count printed), empty artifacts are
   refused unless declared empty, and a missing manuscript label source fails
