@@ -4,6 +4,9 @@
 Arena pins every `sharpebench-*` crate at one exact published version. Moving it is
 one change set, and this script makes all of it:
 
+0. applies every release patch in `scripts/release-patches/` (source edits the new
+   SharpeBench needs but the current pin cannot take, such as a struct literal that a
+   new `Dataset` field breaks), refusing the bump if any patch does not apply cleanly;
 1. rewrites `=OLD` to `=NEW` on every SharpeBench dependency in
    `crates/sharpearena/Cargo.toml` and `crates/sharpearena-py/Cargo.toml`;
 2. re-resolves both lockfiles (`Cargo.lock`, `crates/sharpearena-py/Cargo.lock`);
@@ -19,7 +22,7 @@ one change set, and this script makes all of it:
 7. rebuilds the committed wasm bundle with `scripts/build-sharpearena-wasm.sh` and
    holds it to `scripts/check-wasm-bundle.mjs`.
 
-Steps 1 to 6 run in a staged copy of the tree, so a failure leaves the checkout
+Steps 0 to 6 run in a staged copy of the tree, so a failure leaves the checkout
 untouched. Only when all pass are the changed files copied back, and only then is
 the wasm bundle rebuilt in place.
 
@@ -31,7 +34,9 @@ the wasm bundle rebuilt in place.
     python scripts/bump-bench-pin.py --to 0.29.0
 
 `--to` equal to the current pin is a rebind: it recomputes SPEC_HASH from the tree
-and rebinds the copies, which is the step a spec-source edit needs. A real run
+and rebinds the copies, which is the step a spec-source edit needs. A rebind does not
+apply release patches; they are held for the next pin move. A real move deletes each
+patch it applied, so the release commit carries the edit and drops the patch. A real run
 refuses `--bench-source` and refuses a version crates.io does not serve unyanked,
 so the script cannot leave a path or unpublished dependency behind. It does not
 commit, edit CHANGELOG.md or prose, or bump Arena's own version; it lists the
@@ -83,6 +88,10 @@ VERSION = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
 CRATES_IO = "registry+https://github.com/rust-lang/crates.io-index"
 SPEC_HASH_ENV = "SHARPEARENA_SPEC_HASH"
 HASH = re.compile(r"^[0-9a-f]{16}$")
+#: Source edits held for the next pin move. Not a spec-hash input: `build.rs` hashes
+#: only files under `crates/sharpearena/src` and the suite-dependency pins.
+RELEASE_PATCHES = "scripts/release-patches"
+PATCH_TARGET = re.compile(r"^\+\+\+ b/(?P<path>\S+)$", re.MULTILINE)
 #: Where an old version may still be named on purpose (history, frozen records and
 #: their register), or is rewritten by this script already.
 MENTION_EXCLUDES = (
@@ -206,6 +215,41 @@ def lock_problems(lock_text: str, version: str, *, require_registry: bool) -> li
     return problems
 
 
+def release_patches(root: Path) -> list[Path]:
+    """The release patches held for the next pin move, in name order."""
+    folder = root / RELEASE_PATCHES
+    return sorted(folder.glob("*.patch")) if folder.is_dir() else []
+
+
+def patched_paths(patch_text: str) -> list[str]:
+    """The files a unified diff edits, from its `+++ b/` lines; refuse creations and deletions."""
+    paths = PATCH_TARGET.findall(patch_text)
+    if not paths or "/dev/null" in patch_text:
+        raise BumpError("a release patch must edit existing files and nothing else")
+    for path in paths:
+        if path.startswith("/") or ".." in Path(path).parts:
+            raise BumpError(f"a release patch names a path outside the tree: {path}")
+    return paths
+
+
+def apply_release_patches(tree: Path, patches: list[Path]) -> list[str]:
+    """Apply each patch inside `tree`, checking it first; refuse one that does not apply."""
+    touched: list[str] = []
+    for patch in patches:
+        paths = patched_paths(patch.read_text(encoding="utf-8"))
+        check = subprocess.run(
+            ["git", "apply", "--check", str(patch)], cwd=tree, text=True, encoding="utf-8",
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False,
+        )
+        if check.returncode != 0:
+            raise BumpError(
+                f"release patch {patch.name} does not apply cleanly; refresh or remove it:\n{check.stdout.strip()}"
+            )
+        run(["git", "apply", str(patch)], tree)
+        touched += [path for path in paths if path not in touched]
+    return touched
+
+
 def run(command: list[str], cwd: Path, *, capture: bool = False) -> str:
     print("+", " ".join(command), f"  (in {cwd})", flush=True)
     result = subprocess.run(
@@ -244,8 +288,11 @@ def registry_problems(crates: list[str], version: str) -> list[str]:
     return problems
 
 
-def bump_in(tree: Path, old: str, new: str, flags: list[str], *, registry: bool) -> dict[str, str]:
+def bump_in(
+    tree: Path, old: str, new: str, flags: list[str], *, registry: bool, patches: list[Path]
+) -> dict[str, str]:
     """Make the whole change set inside `tree`; return the old and new spec hash."""
+    apply_release_patches(tree, patches)
     for path in PIN_MANIFESTS:
         manifest = tree / path
         manifest.write_text(rewrite_pins(manifest.read_text(encoding="utf-8"), old, new), encoding="utf-8", newline="")
@@ -284,8 +331,8 @@ def bump_in(tree: Path, old: str, new: str, flags: list[str], *, registry: bool)
     return {"old": old_hash, "new": new_hash}
 
 
-def changed_files(root: Path, tree: Path) -> list[str]:
-    candidates = [*PIN_MANIFESTS, *LOCKFILES, *SPEC_HASH_COPIES]
+def changed_files(root: Path, tree: Path, patched: list[str]) -> list[str]:
+    candidates = [*PIN_MANIFESTS, *LOCKFILES, *SPEC_HASH_COPIES, *patched]
     return [p for p in candidates if (root / p).read_bytes() != (tree / p).read_bytes()]
 
 
@@ -327,6 +374,8 @@ def main(argv: list[str] | None = None) -> int:
         old = current_pin(ROOT)
         if version_key(args.to) < version_key(old):
             raise BumpError(f"--to {args.to} is older than the current pin {old}")
+        patches = release_patches(ROOT) if args.to != old else []
+        patched = [path for patch in patches for path in patched_paths(patch.read_text(encoding="utf-8"))]
         flags: list[str] = []
         if args.bench_source is not None:
             if not args.dry_run:
@@ -342,7 +391,7 @@ def main(argv: list[str] | None = None) -> int:
             if problems:
                 raise BumpError("; ".join(problems))
             dirty = subprocess.run(
-                ["git", "status", "--porcelain", "--", *PIN_MANIFESTS, *LOCKFILES, *SPEC_HASH_COPIES, "npm/sharpearena/pkg"],
+                ["git", "status", "--porcelain", "--", *PIN_MANIFESTS, *LOCKFILES, *SPEC_HASH_COPIES, *patched, "npm/sharpearena/pkg"],
                 cwd=ROOT, text=True, stdout=subprocess.PIPE, check=True,
             ).stdout.strip()
             if dirty:
@@ -351,8 +400,10 @@ def main(argv: list[str] | None = None) -> int:
         with tempfile.TemporaryDirectory(prefix="arena-pin-") as staging:
             tree = Path(staging)
             stage(ROOT, tree)
-            hashes = bump_in(tree, old, args.to, flags, registry=not flags)
-            changed = changed_files(ROOT, tree)
+            hashes = bump_in(tree, old, args.to, flags, registry=not flags, patches=patches)
+            changed = changed_files(ROOT, tree, patched)
+            for patch in patches:
+                print(f"release patch applied: {RELEASE_PATCHES}/{patch.name}")
             print(f"\nSharpeBench pin ={old} -> ={args.to}; SPEC_HASH {hashes['old']} -> {hashes['new']}")
             report(ROOT, tree, changed, overridden=bool(flags))
             if args.dry_run:
@@ -360,7 +411,9 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 for path in changed:
                     shutil.copyfile(tree / path, ROOT / path)
-                print(f"\nwrote {len(changed)} files")
+                for patch in patches:
+                    patch.unlink()
+                print(f"\nwrote {len(changed)} files; removed {len(patches)} applied release patches")
         wasm_moves = hashes["old"] != hashes["new"]
         if args.dry_run or args.skip_wasm:
             if wasm_moves:

@@ -1,0 +1,33 @@
+diff --git a/crates/sharpearena/src/market.rs b/crates/sharpearena/src/market.rs
+index c2c56da..be84ef5 100644
+--- a/crates/sharpearena/src/market.rs
++++ b/crates/sharpearena/src/market.rs
+@@ -1984,15 +1984,20 @@ mod tests {
+     }
+ 
+     /// A single-symbol dataset over a handcrafted close path (for calm-vs-volatile tests).
++    /// Built through the serialized form rather than a struct literal: optional
++    /// `Dataset` fields default when absent, so a field SharpeBench adds (such as
++    /// the mark sheet after 0.28.0) does not break this helper across a pin bump.
+     fn dataset_from_closes(closes: Vec<f64>) -> Dataset {
+-        let dates = (0..closes.len()).map(|i| format!("t{i}")).collect();
+-        let mut map = BTreeMap::new();
+-        map.insert("AAA".to_string(), closes);
+-        Dataset {
+-            dates,
+-            closes: map,
+-            dividends: BTreeMap::new(),
+-        }
++        let dates: Vec<String> = (0..closes.len()).map(|i| format!("t{i}")).collect();
++        let data: Dataset = serde_json::from_value(
++            serde_json::json!({ "dates": dates, "closes": { "AAA": closes } }),
++        )
++        .expect("a dates-and-closes dataset deserializes");
++        assert!(
++            data.dividends.is_empty(),
++            "no corporate actions in the helper"
++        );
++        data
+     }
+ 
+     #[test]

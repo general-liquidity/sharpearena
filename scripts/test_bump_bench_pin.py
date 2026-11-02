@@ -242,6 +242,61 @@ class KernelKeys(unittest.TestCase):
         self.assertIn("'carry_error'", problems[0])
 
 
+class ReleasePatches(unittest.TestCase):
+    def stage_targets(self, tree, patches):
+        for patch in patches:
+            for path in bump.patched_paths(patch.read_text(encoding="utf-8")):
+                (tree / path).parent.mkdir(parents=True, exist_ok=True)
+                (tree / path).write_bytes((ROOT / path).read_bytes())
+
+    def test_the_committed_patches_apply_cleanly_to_the_committed_tree(self):
+        patches = bump.release_patches(ROOT)
+        self.assertIn("bench-next-market-marks.patch", [p.name for p in patches])
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = pathlib.Path(tmp)
+            self.stage_targets(tree, patches)
+            touched = bump.apply_release_patches(tree, patches)
+            self.assertIn("crates/sharpearena/src/market.rs", touched)
+            market = (tree / "crates/sharpearena/src/market.rs").read_text(encoding="utf-8")
+        self.assertIn("serde_json::from_value", market)
+        self.assertNotIn("dividends: BTreeMap::new(),\n        }\n    }", market)
+
+    def test_a_patch_that_does_not_apply_is_refused(self):
+        patch_text = (ROOT / bump.RELEASE_PATCHES / "bench-next-market-marks.patch").read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = pathlib.Path(tmp) / "tree"
+            stale = pathlib.Path(tmp) / "stale.patch"
+            stale.write_text(patch_text.replace("map.insert(\"AAA\"", "map.insert(\"BBB\""), encoding="utf-8")
+            self.stage_targets(tree, [stale])
+            before = (tree / "crates/sharpearena/src/market.rs").read_bytes()
+            with self.assertRaises(bump.BumpError) as caught:
+                bump.apply_release_patches(tree, [stale])
+            self.assertIn("does not apply cleanly", str(caught.exception))
+            self.assertEqual((tree / "crates/sharpearena/src/market.rs").read_bytes(), before)
+
+    def test_a_patch_that_creates_deletes_or_escapes_is_refused(self):
+        for text in (
+            "--- /dev/null\n+++ b/new.rs\n@@ -0,0 +1 @@\n+x\n",
+            "--- a/old.rs\n+++ /dev/null\n@@ -1 +0,0 @@\n-x\n",
+            "--- a/../x.rs\n+++ b/../x.rs\n@@ -1 +1 @@\n-x\n+y\n",
+            "no diff here\n",
+        ):
+            with self.assertRaises(bump.BumpError):
+                bump.patched_paths(text)
+
+    def test_release_patches_are_not_a_spec_hash_input(self):
+        # build.rs hashes the SPEC_FILES under crates/sharpearena and the dependency
+        # pins; a patch file held under scripts/ cannot move SPEC_HASH by existing.
+        build = (ROOT / "crates/sharpearena/build.rs").read_text(encoding="utf-8")
+        listed = build.split("const SPEC_FILES", 1)[1].split("];", 1)[0]
+        files = [line.strip().strip('",') for line in listed.splitlines()[1:] if line.strip().startswith('"')]
+        self.assertTrue(files)
+        for name in files:
+            self.assertTrue(name.startswith("src/") and name.endswith(".rs"), name)
+        self.assertNotIn("release-patches", build)
+        self.assertNotIn(".patch", build)
+
+
 class Arguments(unittest.TestCase):
     def run_main(self, *argv):
         err = io.StringIO()
