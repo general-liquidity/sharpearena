@@ -199,11 +199,15 @@ class ModelRunConfig:
     def __post_init__(self) -> None:
         if not self.model.strip():
             raise ValueError("model must be non-empty")
-        if self.scaffold not in SCAFFOLD_RENDERERS:
+        try:
+            scaffold_coordinates(self.scaffold)
+        except LocalAgentError as error:
             raise ValueError(
                 f"unknown scaffold {self.scaffold!r}: the label must name a registered "
-                f"renderer ({', '.join(sorted(SCAFFOLD_RENDERERS))})"
-            )
+                f"renderer ({', '.join(sorted(SCAFFOLD_RENDERERS))}), optionally "
+                f"followed by '+' and a registered prompt variant "
+                f"({', '.join(sorted(PROMPT_VARIANTS))}); {error}"
+            ) from None
         if self.decision_cadence <= 0:
             raise ValueError("decision_cadence must be positive")
         if self.precommitted_n_trials <= 0:
@@ -465,6 +469,157 @@ class DatasetSpec:
 #: or in a remote model spreads across arms instead of landing on one of them.
 CELL_ORDER_RULE = "sharpearena.cell-order.round-permuted-models.v1"
 
+#: The three factors of a field matrix, in the axis order of every report.
+MATRIX_FACTORS = ("model", "harness", "condition")
+#: What a matrix condition level is. Prompt variants are the one condition kind
+#: the local field resolves to code: a level names a registered
+#: ``PROMPT_VARIANTS`` entry, or ``DEFAULT_PROMPT_VARIANT``.
+MATRIX_CONDITION_FACTOR = "prompt-variant"
+
+
+@dataclass(frozen=True)
+class FieldMatrix:
+    """A declared model x harness x condition factorial over a field's arms.
+
+    ``models`` are model names, ``harnesses`` are scaffold labels registered in
+    :data:`SCAFFOLD_RENDERERS`, and ``conditions`` are prompt variants (the
+    harness default or a :data:`PROMPT_VARIANTS` label). The first condition is
+    the reference the condition contrasts are taken against.
+
+    A plan that declares a matrix must hold exactly one arm per cell of the
+    product, and an arm's other settings may not vary with its harness or
+    condition: within one model the arms differ by scaffold label only, and the
+    decision cadence and precommitted trial count are shared by every arm.
+    Otherwise a harness or prompt contrast would also carry a sampling or
+    protocol change, and its effect could not be told apart from that change.
+    """
+
+    models: tuple[str, ...]
+    harnesses: tuple[str, ...]
+    conditions: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        for name, levels in self.levels().items():
+            if not isinstance(levels, tuple) or not levels:
+                raise ValueError(f"matrix {name} levels must be a non-empty tuple")
+            if any(not isinstance(level, str) or not level.strip() for level in levels):
+                raise ValueError(f"matrix {name} levels must be non-empty strings")
+            if len(set(levels)) != len(levels):
+                raise ValueError(f"matrix {name} levels must be unique")
+        for harness in self.harnesses:
+            if harness not in SCAFFOLD_RENDERERS:
+                raise ValueError(
+                    f"matrix harness {harness!r} is not a registered scaffold "
+                    f"({', '.join(sorted(SCAFFOLD_RENDERERS))})"
+                )
+        for condition in self.conditions:
+            if condition != DEFAULT_PROMPT_VARIANT and condition not in PROMPT_VARIANTS:
+                raise ValueError(
+                    f"matrix condition {condition!r} is not a registered prompt "
+                    f"variant ({', '.join(sorted(PROMPT_VARIANTS))}) or "
+                    f"{DEFAULT_PROMPT_VARIANT!r}"
+                )
+        # A prompt variant is a treatment only if it changes what the model is
+        # shown. Two conditions that render identically under a harness would
+        # report a prompt effect that is pure noise.
+        for harness in self.harnesses:
+            rendered: dict[str, str] = {}
+            # inv: ``rendered`` maps each probe digest seen so far under this
+            # harness to the one condition that produced it.
+            for condition in self.conditions:
+                probe = renderer_identity(
+                    renderer_for_scaffold(scaffold_label(harness, condition))
+                )["render_probe_sha256"]
+                if probe in rendered:
+                    raise ValueError(
+                        f"conditions {rendered[probe]!r} and {condition!r} render "
+                        f"identically under harness {harness!r}"
+                    )
+                rendered[probe] = condition
+
+    def levels(self) -> dict[str, tuple[str, ...]]:
+        """Each factor's declared levels, keyed by its name in ``MATRIX_FACTORS``."""
+
+        return {
+            "model": self.models,
+            "harness": self.harnesses,
+            "condition": self.conditions,
+        }
+
+    def cells(self) -> list[tuple[str, str, str]]:
+        """Every (model, harness, condition) cell, model-major."""
+
+        return [
+            (model, harness, condition)
+            for model in self.models
+            for harness in self.harnesses
+            for condition in self.conditions
+        ]
+
+    @staticmethod
+    def coordinates(model: ModelRunConfig) -> tuple[str, str, str]:
+        """The matrix cell an arm occupies, read from its own name and scaffold."""
+
+        harness, condition = scaffold_coordinates(model.scaffold)
+        return (model.model, harness, condition)
+
+    def arm_indices(
+        self, models: Sequence[ModelRunConfig]
+    ) -> dict[tuple[str, str, str], int]:
+        """The arm index of every cell; refuses a plan that is not the full product."""
+
+        cells = set(self.cells())
+        seen: dict[tuple[str, str, str], int] = {}
+        # inv: ``seen`` maps the cell of each arm before ``index`` to that arm,
+        # and holds no cell twice.
+        for index, model in enumerate(models):
+            cell = self.coordinates(model)
+            if cell not in cells:
+                raise ValueError(
+                    f"models[{index}] occupies {cell}, which is outside the declared matrix"
+                )
+            if cell in seen:
+                raise ValueError(
+                    f"models[{index}] and models[{seen[cell]}] both occupy matrix cell {cell}"
+                )
+            seen[cell] = index
+        missing = [cell for cell in self.cells() if cell not in seen]
+        if missing:
+            raise ValueError(f"the matrix has no arm for cells {missing}")
+        return seen
+
+    def check_arms(self, models: Sequence[ModelRunConfig]) -> None:
+        """Refuse arms that do not form the declared, unconfounded factorial."""
+
+        self.arm_indices(models)
+        protocol = {
+            (model.decision_cadence, model.precommitted_n_trials) for model in models
+        }
+        if len(protocol) != 1:
+            raise ValueError(
+                "matrix arms must share one decision_cadence and precommitted_n_trials"
+            )
+        by_model: dict[str, dict[str, Any]] = {}
+        for model in models:
+            settings = asdict(model)
+            settings.pop("scaffold")
+            reference = by_model.setdefault(model.model, settings)
+            if settings != reference:
+                raise ValueError(
+                    f"matrix arms of model {model.model!r} differ in more than their "
+                    "scaffold label, so a harness or condition contrast would carry "
+                    "that difference too"
+                )
+
+    def record(self) -> dict[str, Any]:
+        """The design as it enters the plan digest."""
+
+        return {
+            "factors": {name: list(levels) for name, levels in self.levels().items()},
+            "condition_factor": MATRIX_CONDITION_FACTOR,
+            "reference_condition": self.conditions[0],
+        }
+
 
 @dataclass(frozen=True)
 class FieldPlan:
@@ -481,6 +636,10 @@ class FieldPlan:
     # Seed of the interleaved execution order (see ``CELL_ORDER_RULE``). It
     # decides when a cell runs, never which cells run or what they score.
     order_seed: int = 0
+    # The declared factorial design, when the field is a model x harness x
+    # condition matrix (see ``FieldMatrix``). ``None`` is a plain field, whose
+    # plan digest is unchanged by this field's existence.
+    matrix: Optional[FieldMatrix] = None
 
     def __post_init__(self) -> None:
         if (
@@ -510,6 +669,8 @@ class FieldPlan:
             raise ValueError(
                 "duplicate model configurations are not distinct field arms"
             )
+        if self.matrix is not None:
+            self.matrix.check_arms(self.models)
         dataset_ids = [dataset.dataset_id for dataset in self.datasets]
         if len(set(dataset_ids)) != len(dataset_ids):
             raise ValueError("dataset_id values must be unique within a field")
@@ -522,17 +683,20 @@ class FieldPlan:
 
     @property
     def plan_sha256(self) -> str:
-        return _digest(
-            {
-                "models": [asdict(model) for model in self.models],
-                "datasets": [dataset.public_record() for dataset in self.datasets],
-                "seeds": self.seeds,
-                "repetitions": self.repetitions,
-                "max_steps": self.max_steps,
-                "parallel_requests": self.parallel_requests,
-                "cell_order": {"rule": CELL_ORDER_RULE, "seed": self.order_seed},
-            }
-        )
+        record: dict[str, Any] = {
+            "models": [asdict(model) for model in self.models],
+            "datasets": [dataset.public_record() for dataset in self.datasets],
+            "seeds": self.seeds,
+            "repetitions": self.repetitions,
+            "max_steps": self.max_steps,
+            "parallel_requests": self.parallel_requests,
+            "cell_order": {"rule": CELL_ORDER_RULE, "seed": self.order_seed},
+        }
+        # Additive: a plain field digests exactly as it did before matrices
+        # existed, and a matrix field binds its declared design.
+        if self.matrix is not None:
+            record["matrix"] = self.matrix.record()
+        return _digest(record)
 
 
 @dataclass(frozen=True)
@@ -676,6 +840,9 @@ class PromptRenderer:
     """
 
     scaffold = "minimal-stateless-v1"
+    # The prompt variant this renderer carries: the harness's own system prompt
+    # unless ``renderer_for_scaffold`` built it for a ``+variant`` label.
+    prompt_variant = "default"
 
     system_prompt = (
         "You are an evaluated trading policy. Use only the supplied point-in-time "
@@ -713,6 +880,62 @@ SCAFFOLD_RENDERERS: dict[str, type[PromptRenderer]] = {
     PromptRenderer.scaffold: PromptRenderer,
 }
 
+#: The condition level that keeps a harness's own system prompt. It is named
+#: by the bare harness label, never as ``harness+default``.
+DEFAULT_PROMPT_VARIANT = PromptRenderer.prompt_variant
+
+#: Versioned system prompts for the prompt-specificity ablation, ordered from
+#: least to most specific around the default. A variant replaces only the
+#: system prompt: the harness code, the observation payload and the decision
+#: schema stay identical, so a variant's effect is the instruction text alone.
+#: A label is immutable once published. Changing a text means a new ``-vN``
+#: label, and the tests pin each text's digest so an edit in place fails.
+PROMPT_VARIANTS: dict[str, str] = {
+    "terse-v1": (
+        "You are an evaluated trading policy. Return one JSON object matching the "
+        "provided Decision schema."
+    ),
+    "explicit-v1": (
+        PromptRenderer.system_prompt
+        + " Each order names one symbol from the observation, an action label "
+        "(buy, sell, hold or close) and a target_weight: the signed target "
+        "portfolio weight for that symbol, negative for a short. Sizing is carried "
+        "by target_weight, not by the action label. Confidence is optional; state "
+        "it in [0, 1] only when you hold a conviction, because a stated confidence "
+        "is scored for calibration."
+    ),
+}
+
+
+def scaffold_label(harness: str, condition: str) -> str:
+    """The scaffold label of a harness run under a prompt-variant condition."""
+
+    if condition == DEFAULT_PROMPT_VARIANT:
+        return harness
+    return f"{harness}+{condition}"
+
+
+def scaffold_coordinates(label: str) -> tuple[str, str]:
+    """``(harness, prompt variant)`` of a scaffold label; an unknown part is refused.
+
+    The harness part must name a renderer in :data:`SCAFFOLD_RENDERERS`, and a
+    ``+variant`` suffix must name a :data:`PROMPT_VARIANTS` entry.
+    """
+
+    harness, plus, variant = label.partition("+")
+    if harness not in SCAFFOLD_RENDERERS:
+        raise LocalAgentError(
+            f"unknown scaffold {label!r}: no renderer is registered under {harness!r}"
+        )
+    if not plus:
+        return harness, DEFAULT_PROMPT_VARIANT
+    if variant not in PROMPT_VARIANTS:
+        raise LocalAgentError(
+            f"unknown scaffold {label!r}: no prompt variant is registered under "
+            f"{variant!r}"
+        )
+    return harness, variant
+
 # A fixed input the renderer identity is measured on. It exercises every field
 # ``messages`` reads, so two renderers that would present a model with
 # different messages for it get different digests.
@@ -733,14 +956,20 @@ _RENDER_PROBE_CADENCE = 2
 
 
 def renderer_for_scaffold(label: str) -> PromptRenderer:
-    """The registered renderer for ``label``; an unknown label is refused."""
+    """The registered renderer for ``label``; an unknown label is refused.
 
-    renderer_type = SCAFFOLD_RENDERERS.get(label)
-    if renderer_type is None:
-        raise LocalAgentError(
-            f"unknown scaffold {label!r}: no renderer is registered under it"
-        )
-    return renderer_type()
+    A ``harness+variant`` label runs the harness's renderer with the variant's
+    system prompt and answers to the full label, so the record names the
+    variant and its ``render_probe_sha256`` digests the variant's text.
+    """
+
+    harness, variant = scaffold_coordinates(label)
+    renderer = SCAFFOLD_RENDERERS[harness]()
+    if variant != DEFAULT_PROMPT_VARIANT:
+        renderer.scaffold = label
+        renderer.prompt_variant = variant
+        renderer.system_prompt = PROMPT_VARIANTS[variant]
+    return renderer
 
 
 def renderer_identity(renderer: PromptRenderer) -> dict[str, str]:
@@ -1912,6 +2141,13 @@ class LocalFieldRunner:
 
 __all__ = [
     "CELL_ORDER_RULE",
+    "DEFAULT_PROMPT_VARIANT",
+    "MATRIX_CONDITION_FACTOR",
+    "MATRIX_FACTORS",
+    "PROMPT_VARIANTS",
+    "FieldMatrix",
+    "scaffold_coordinates",
+    "scaffold_label",
     "DURATION_SOURCES",
     "DURATION_UNIT_NS",
     "FINISH_REASONS",

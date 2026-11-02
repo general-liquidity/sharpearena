@@ -49,6 +49,10 @@ graph acyclic while making the two products operationally interdependent.
   when the entry is built, and each record's `scaffold` block names the renderer class
   that ran and a `render_probe_sha256` digest of the messages it renders for a fixed
   probe, so a renderer that frames the prompt differently cannot pass under the label;
+- versioned prompt variants (`PROMPT_VARIANTS`): a `harness+variant` scaffold label,
+  such as `minimal-stateless-v1+terse-v1`, runs the harness's renderer with only its
+  system prompt replaced, so the variant's record carries its own label and its own
+  `render_probe_sha256`;
 - a loopback-only Ollama client with redirect refusal and the published Decision JSON
   Schema as its constrained-output format;
 - native `VecTradingEnv` batch stepping;
@@ -130,6 +134,64 @@ record written before they existed from a current one they were removed from, an
 `unrecorded` does not claim to tell those apart. It counts what is absent, not why.
 These fields support operational diagnosis and capacity planning; they cannot alter the
 score submission emitted beside the manifest.
+
+## Model x harness x condition matrix
+
+A field plan may declare a `matrix` block naming three factors: `models` (model names),
+`harnesses` (scaffold labels registered in `SCAFFOLD_RENDERERS`) and `conditions`
+(prompt variants: `default`, the harness's own system prompt, or a `PROMPT_VARIANTS`
+label). The first condition is the reference. The plan must then hold exactly one arm per
+cell of the product, with each arm's scaffold label `harness` or `harness+variant`.
+Within one model the arms may differ by scaffold label only, and every arm shares one
+decision cadence and one precommitted trial count. A plan that is incomplete, holds a
+cell twice, varies sampling with the harness, or declares two conditions that render
+identically under a harness is refused before inference.
+
+```json
+"matrix": {
+  "models": ["model-a", "model-b"],
+  "harnesses": ["minimal-stateless-v1"],
+  "conditions": ["default", "terse-v1", "explicit-v1"]
+}
+```
+
+The arms are ordinary field arms, so the cell order rule interleaves every (model,
+harness, condition) cell within each (dataset, repetition) round from the plan's
+`order_seed`. The declared design enters `plan_sha256`; a plan without a `matrix` block
+digests exactly as it did before matrices existed.
+
+The prompt variants form a specificity ladder over identical code and data: `terse-v1`
+asks only for a Decision object, `default` adds the point-in-time and target-weight
+rules, and `explicit-v1` adds the order fields and the calibration consequence of a
+stated confidence, all taken from the Decision schema. A published variant text never
+changes; a new text takes a new `-vN` label, and a test pins each text's digest.
+
+`python -m sharpearena.field_matrix --plan plan.json shard-0.jsonl shard-1.jsonl`
+reads the journals of a matrix field and prints a rank-neutral report:
+
+- the main effect of each factor and every interaction between factors with two or
+  more levels, as sum-to-zero deviations from the grand mean, each with a two-sided
+  Student-t interval. A model's main effect is averaged over harnesses and conditions,
+  and its dependence on the harness is reported separately as the model:harness
+  interaction;
+- each term's share of the between-cell sum of squares;
+- the contrast of every prompt variant against the reference, overall and within each
+  model and harness;
+- decision sensitivity to the prompt variant: on the steps where the reference arm and
+  the variant arm were shown the identical observation, how often their orders
+  (symbol, action, target weight) agree. Steps after their portfolios diverge are not
+  compared, because the two arms no longer saw the same input.
+
+The outcome is the mean per-bar return (`--metric mean_return`, the default) or the
+recorded deflated Sharpe (`--metric deflated_sharpe`). The unit of replication is one
+(dataset, seed) pair, and its repetitions are averaged inside it because they share a
+market path. A unit enters the estimates only when every arm has every repetition
+scored on it. A missing, failed or unscored cell excludes the unit, the report lists
+why, and nothing is imputed. A completed retry supersedes a failed attempt; records
+from another plan, with a `cell_id` that does not match their coordinates, or two
+conflicting completions of one cell are refused. The intervals are unadjusted for the
+number of effects reported. With one harness registered, the harness factor has one
+level until another scaffold is registered.
 
 ## Stdio compatibility path
 

@@ -224,7 +224,13 @@ from .local_agents import (
     renderer_for_scaffold,
     renderer_identity,
     CELL_ORDER_RULE,
+    DEFAULT_PROMPT_VARIANT,
+    FieldMatrix,
+    PROMPT_VARIANTS,
+    scaffold_coordinates,
+    scaffold_label,
 )
+from .field_matrix import FieldMatrixError, field_matrix_report
 from .lookahead_guard import LookaheadGuard, LookaheadViolation, guarded, wrap_policy
 from .mandate import (
     Mandate,
@@ -464,6 +470,13 @@ __all__ = [
     "renderer_for_scaffold",
     "renderer_identity",
     "CELL_ORDER_RULE",
+    "DEFAULT_PROMPT_VARIANT",
+    "FieldMatrix",
+    "FieldMatrixError",
+    "PROMPT_VARIANTS",
+    "field_matrix_report",
+    "scaffold_coordinates",
+    "scaffold_label",
     "DeclaredCandidateLineage",
     "IdeaProvenance",
     "bind_idea_source",
