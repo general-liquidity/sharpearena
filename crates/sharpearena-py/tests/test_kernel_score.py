@@ -21,6 +21,7 @@ from sharpearena.kernel_score import (
     UNAVAILABLE_KERNEL_ERROR,
     UNAVAILABLE_KERNEL_VALUE,
     EXPOSURE_PATH_UNPROVEN,
+    KERNEL_NON_WITHHOLDING_KEYS,
     KERNEL_REFUSAL_KEYS,
     KERNEL_UNAVAILABILITY_KEYS,
     REFUSED_KERNEL_GATE,
@@ -55,6 +56,7 @@ ERROR_KEYS = (
     "exposure_path_error",
 )
 REFUSAL_KEYS = ("standard_error_refusal", "deflation_refusal", "exposure_path_refusal")
+NON_WITHHOLDING_KEYS = ("psr_standard_error",)
 
 
 def _floored(*keys: str) -> dict:
@@ -111,7 +113,9 @@ def test_allowlists_match_the_bench_main_composite_score_keys():
     # key moving between classes, or a new one, must be a reviewed change here.
     assert KERNEL_UNAVAILABILITY_KEYS == frozenset(ERROR_KEYS)
     assert KERNEL_REFUSAL_KEYS == frozenset(REFUSAL_KEYS)
+    assert KERNEL_NON_WITHHOLDING_KEYS == frozenset(NON_WITHHOLDING_KEYS)
     assert not KERNEL_UNAVAILABILITY_KEYS & KERNEL_REFUSAL_KEYS
+    assert not (KERNEL_UNAVAILABILITY_KEYS | KERNEL_REFUSAL_KEYS) & KERNEL_NON_WITHHOLDING_KEYS
 
 
 @pytest.mark.parametrize("key", REFUSAL_KEYS)
@@ -224,6 +228,27 @@ def test_unknown_keys_are_all_named_beside_known_ones():
         kernel_deflated_sharpe(comp)
     assert info.value.keys == ["a_refusal", "z_error"]
     assert "deflation_error" not in str(info.value)
+
+
+def test_psr_standard_error_is_a_methodology_label_not_a_withholding_key():
+    # SharpeBench main writes psr_standard_error = "benchmark" beside a computed score
+    # when the opt-in null-evaluated standard error is used. It names a convention, so
+    # the score beside it is read, and it never becomes a recorded reason.
+    comp = {**VALID, "psr_standard_error": "benchmark"}
+    assert kernel_fields(comp) == ({}, {})
+    assert kernel_deflated_sharpe(comp) == 0.61
+    assert kernel_psr(comp) == 0.73
+    assert kernel_score_or_unavailable(comp) == 0.61
+    # Beside a real withholding key it stays out of the reason.
+    floored = {**_floored("deflation_error"), "psr_standard_error": "benchmark"}
+    with pytest.raises(KernelScoreUnavailable) as info:
+        kernel_deflated_sharpe(floored)
+    assert info.value.errors == {"deflation_error": REASON}
+    assert "psr_standard_error" not in info.value.reason
+    # The exemption is by exact name: a near miss still fails closed.
+    with pytest.raises(KernelFieldUnrecognized) as unknown:
+        kernel_deflated_sharpe({**VALID, "psr_standard_errors_error": "benchmark"})
+    assert unknown.value.keys == ["psr_standard_errors_error"]
 
 
 def test_non_withholding_keys_with_similar_names_are_read_normally():

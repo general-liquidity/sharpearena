@@ -11,27 +11,31 @@ name from an explicit allowlist. A key's suffix alone decides nothing.
 |---|---|---|---|
 | Unavailable | `deflation_error`, `bootstrap_error`, `selection_error`, `dsr_ci_error`, `exposure_path_error` | Could not compute a figure. The ranked numbers beside the key are the no-skill floor or a sentinel. | Raises `KernelScoreUnavailable`; a recorded row reads `unavailable_scoring_kernel_error: <key>: <message>`. |
 | Refused | `standard_error_refusal`, `deflation_refusal`, `exposure_path_refusal` | Computed the track and a gate declined to rank it. The deflated Sharpe beside the key is an estimate, and `rank_eligible` is false. | Raises `KernelScoreRefused`; a recorded row reads `refused_scoring_kernel_gate: <key>: <message>`. |
+| Not withholding | `psr_standard_error` | Scored the track and labels a methodology choice: `"benchmark"` when the opt-in null-evaluated PSR standard error was used, absent for the default. | Reads the composite as if the key were absent; the key is never a reason. |
 | Unrecognized | any other top-level key ending in `_error` or `_refusal` | Unknown to this reader. | Raises `KernelFieldUnrecognized` naming the keys. It is never recorded as a reason, and no number is read from the composite. |
 
 The allowlists come from the `CompositeScore` struct in
-`crates/sharpebench-core/src/composite.rs`, on SharpeBench main and on the
-refusal-taxonomy change that follows it. Main carries `deflation_error`,
-`bootstrap_error`, `selection_error`, `standard_error_refusal` and
-`exposure_path_error`. The taxonomy change adds `deflation_refusal` (a track
-refused for its shape: no window that varies, no resolved motion, no observed
-loss, or no Sharpe ratio), `exposure_path_refusal` (the exposure-path gate) and
-`dsr_ci_error` (the DSR interval could not be estimated, which main folds into
-`deflation_error`). `standard_error_refusal` holds
-`NOT_CERTIFIED_UNDER_SERIAL_CORRELATION` or
+`crates/sharpebench-core/src/composite.rs`. SharpeBench main (checked at
+2969abc) carries all nine suffixed keys in the table: the refusal taxonomy adds
+`deflation_refusal` (a track refused for its shape: constant, every window flat,
+no window with observed risk, or no bar a loss), `exposure_path_refusal` (the
+exposure-path gate) and `dsr_ci_error` (the DSR interval could not be
+estimated) to `deflation_error`, `bootstrap_error`, `selection_error`,
+`standard_error_refusal` and `exposure_path_error`, and the opt-in PSR
+standard-error convention adds `psr_standard_error`. `standard_error_refusal`
+holds `NOT_CERTIFIED_UNDER_SERIAL_CORRELATION` or
 `NOT_CERTIFIED_WITHOUT_MOMENT_CREDIT`. The pinned `=0.28.0` kernel emits only
 `deflation_error`, `bootstrap_error` and `selection_error`.
+`scripts/check-against-bench-main.py` reads the struct on the Bench checkout it
+overlays and fails when a suffixed key is in none of the three lists, so the
+nightly job names a new key before a pin bump has to.
 
 ### The two meanings of `exposure_path_error`
 
-On SharpeBench main, `exposure_path_error` carries both the exposure-path
-gate's refusal and its rare numerical failures. On the taxonomy change it
-carries only the failures, and the refusal moves to `exposure_path_refusal`.
-Arena accepts both: `exposure_path_error` is unavailability unless its message
+Before the refusal taxonomy, `exposure_path_error` carried both the
+exposure-path gate's refusal and its rare numerical failures. On SharpeBench
+main it carries only the failures, and the refusal moves to
+`exposure_path_refusal`. Arena accepts both: `exposure_path_error` is unavailability unless its message
 is exactly the gate's refusal requirement, `EXPOSURE_PATH_UNPROVEN`, either bare
 or in the `returns <requirement>` form main renders. That message is read as a
 refusal. Matching is exact; any other text, including a near miss, stays
@@ -52,12 +56,24 @@ unavailability. The accepted messages are in `LEGACY_REFUSAL_MESSAGES`.
 - `seed_pass_tally` counts a refused seed as unscorable and not passed, the same
   as an unavailable one, so the tally's keys are unchanged.
 
+### The constant track under each kernel
+
+`score_run` withholds a track with no Sharpe ratio. The pinned `=0.28.0` kernel
+does so itself under `deflation_error`, and Arena's own boundary writes the same
+key and reason on a kernel that does not. SharpeBench main refuses such a track
+under `deflation_refusal`; Arena then adds nothing beside it, so a constant
+track is recorded as `refused_scoring_kernel_gate: deflation_refusal: returns
+must not be constant: a constant series has no Sharpe ratio` once the pin moves.
+SharpeBench main also refuses a track with no bar that is a loss ("returns must
+show observed risk"), which the pinned kernel scores.
+
 ## Known limits
 
-Against a SharpeBench main kernel, `deflation_error` also carries the shape
-refusals that the taxonomy change moves to `deflation_refusal`. Arena cannot
-tell those from a numerical failure without matching message text, so on such a
-kernel it reports them as unavailable. `selection_error` is advisory in
+Against a kernel from before the refusal taxonomy, including the pinned
+`=0.28.0`, `deflation_error` also carries the shape refusals that SharpeBench
+main moves to `deflation_refusal`. Arena cannot tell those from a numerical
+failure without matching message text, so on such a kernel it reports them as
+unavailable. `selection_error` is advisory in
 SharpeBench (it does not remove rank eligibility), and Arena still withholds the
 deflated Sharpe beside it, as it did before this convention was written.
 
@@ -65,7 +81,9 @@ deflated Sharpe beside it, as it did before this convention was written.
 
 Before the SharpeBench pin moves, list the new release's top-level
 `CompositeScore` keys that end in `_error` or `_refusal`, and add each to one
-allowlist with a test in `crates/sharpearena-py/tests/test_kernel_score.py`. A
+list with a test in `crates/sharpearena-py/tests/test_kernel_score.py`.
+`scripts/bump-bench-pin.py` runs that listing against the new release's source
+and refuses to bump while a key is unclassified. A
 missed key makes every read of an affected composite raise
 `KernelFieldUnrecognized` rather than publish a guess. A withholding field whose
 name ends in neither suffix is invisible to this check, so name new kernel

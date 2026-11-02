@@ -108,9 +108,14 @@ class Refusals(unittest.TestCase):
         row = RESCORE.rescore_policy(
             "flat", [[0.0] * 20, [0.0] * 20], 6, n_boot=20, resample_seed=1, alpha=0.05
         )
-        reason = "unavailable_scoring_kernel_error: deflation_error:"
-        self.assertTrue(row["deflated_sharpe"].startswith(reason), row)
-        self.assertTrue(row["passed_k_rate"].startswith(reason), row)
+        # The pinned kernel withholds a constant track as unavailability under
+        # deflation_error; SharpeBench after 0.28.0 refuses it under deflation_refusal.
+        reasons = (
+            "unavailable_scoring_kernel_error: deflation_error: returns must not be constant",
+            "refused_scoring_kernel_gate: deflation_refusal: returns must not be constant",
+        )
+        self.assertTrue(row["deflated_sharpe"].startswith(reasons), row)
+        self.assertTrue(row["passed_k_rate"].startswith(reasons), row)
         self.assertIsNone(row["deflated_sharpe_ci"])
         self.assertEqual(row["confidence_status"], row["deflated_sharpe"])
 

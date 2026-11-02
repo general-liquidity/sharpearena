@@ -13,6 +13,12 @@ reports that reason instead of a number.
 Each regression asserts the exact reason, because a floor, a missing interval or an
 ineligible row also follow from other causes. The controls pin that a dispersed track,
 however low its volatility, scores as it did before.
+
+SharpeBench after 0.28.0 refuses such a track itself under ``deflation_refusal`` rather
+than ``deflation_error``, and Arena's boundary then leaves the kernel's key alone, so the
+recorded form is ``refused_scoring_kernel_gate: deflation_refusal: <reason>``.
+:func:`_withheld` picks the form the built kernel writes, so this suite holds the exact
+reason under the pinned release and under SharpeBench main.
 """
 
 from __future__ import annotations
@@ -24,7 +30,7 @@ import math
 import pytest
 
 from sharpearena.kernel_score import (
-    KernelScoreUnavailable,
+    KernelScoreWithheld,
     kernel_deflated_sharpe,
     kernel_psr,
     kernel_score_or_unavailable,
@@ -35,7 +41,25 @@ pytestmark = pytest.mark.skipif(not _HAVE_BINDING, reason="native sharpearena bi
 
 CONSTANT = "returns must not be constant: a constant series has no Sharpe ratio"
 NON_FINITE = "Sharpe ratio is not finite"
-WITHHELD = f"unavailable_scoring_kernel_error: deflation_error: {CONSTANT}"
+#: SharpeBench after 0.28.0 refuses a track with no bar that is a loss; this is the
+#: start of that requirement text.
+NO_OBSERVED_RISK = "returns must show observed risk"
+
+
+def _kernel_refuses_shapes() -> bool:
+    """Whether the built kernel writes shape refusals to ``deflation_refusal``."""
+    return "deflation_refusal" in _score([0.0, 0.0])
+
+
+def _withheld_key() -> str:
+    return "deflation_refusal" if _kernel_refuses_shapes() else "deflation_error"
+
+
+def _withheld(reason: str = CONSTANT) -> str:
+    """The recorded form of a constant track's withheld score under the built kernel."""
+    if _kernel_refuses_shapes():
+        return f"refused_scoring_kernel_gate: deflation_refusal: {reason}"
+    return f"unavailable_scoring_kernel_error: deflation_error: {reason}"
 
 
 def _sine(n: int, drift: float, amp: float, phase: float = 0.0) -> list[float]:
@@ -52,12 +76,16 @@ def _score(returns, n_trials=6):
 @pytest.mark.parametrize("length", [2, 120, 408])
 def test_score_run_withholds_a_constant_track_with_the_constant_track_reason(value, length):
     composite = _score([value] * length)
-    assert composite["deflation_error"] == CONSTANT
+    key = _withheld_key()
+    assert composite[key] == CONSTANT
+    # One key carries the reason: Arena does not stamp a second beside the kernel's.
+    other = {"deflation_error", "deflation_refusal"} - {key}
+    assert not other & composite.keys()
     assert "bootstrap_error" not in composite
-    assert kernel_score_or_unavailable(composite) == WITHHELD
-    assert kernel_score_or_unavailable(composite, "psr") == WITHHELD
+    assert kernel_score_or_unavailable(composite) == _withheld()
+    assert kernel_score_or_unavailable(composite, "psr") == _withheld()
     for read in (kernel_deflated_sharpe, kernel_psr):
-        with pytest.raises(KernelScoreUnavailable, match=CONSTANT):
+        with pytest.raises(KernelScoreWithheld, match=CONSTANT):
             read(composite)
     assert composite["passed_k"] is False and composite["rank_eligible"] is False
     assert (composite["deflated_sharpe"], composite["psr"], composite["composite"]) == (0.0, 0.0, 0.0)
@@ -70,8 +98,8 @@ def test_score_run_withholds_the_committed_f1_flat_track():
     # The pooled F1 `flat` track: 16 seeds of 120 zero returns, six declared trials.
     # The committed evidence prints 0.000686601376451601 for it.
     composite = _score([0.0] * 1920)
-    assert composite["deflation_error"] == CONSTANT
-    assert kernel_score_or_unavailable(composite) == WITHHELD
+    assert composite[_withheld_key()] == CONSTANT
+    assert kernel_score_or_unavailable(composite) == _withheld()
 
 
 def test_score_run_withholds_an_underflowing_track_as_a_non_finite_sharpe():
@@ -85,20 +113,32 @@ def test_score_run_withholds_an_underflowing_track_as_a_non_finite_sharpe():
 def test_a_track_with_a_sharpe_ratio_keeps_its_recorded_score():
     # Recorded from SharpeArena 0.29.0 before this change, on Windows; compared within a
     # few ULPs, as platform libm results differ in the last bits.
-    for track, dsr, psr in (
-        (_sine(120, 0.001, 0.02, 1.0), 0.5469037468423354, 0.8195866610339282),
-        ([0.0] * 119 + [1e-9], 0.6527889836061004, 0.9754070893697193),
-    ):
-        composite = _score(track)
-        assert "deflation_error" not in composite
-        assert math.isclose(kernel_deflated_sharpe(composite), dsr, rel_tol=1e-14, abs_tol=0.0)
-        assert math.isclose(kernel_psr(composite), psr, rel_tol=1e-14, abs_tol=0.0)
+    composite = _score(_sine(120, 0.001, 0.02, 1.0))
+    assert "deflation_error" not in composite and "deflation_refusal" not in composite
+    assert math.isclose(
+        kernel_deflated_sharpe(composite), 0.5469037468423354, rel_tol=1e-14, abs_tol=0.0
+    )
+    assert math.isclose(kernel_psr(composite), 0.8195866610339282, rel_tol=1e-14, abs_tol=0.0)
     # Low volatility is not constancy: the same track scaled by 1e-9 is still scored.
     scaled = _score([r * 1e-9 for r in _sine(120, 0.001, 0.02, 1.0)])
     assert "deflation_error" not in scaled
     assert math.isclose(kernel_deflated_sharpe(scaled), 0.5469037468423354, rel_tol=1e-9)
+    # A sparse track and a tiny-noise one have a Sharpe ratio, so Arena's boundary never
+    # withholds them. Neither has a bar that is a loss, which SharpeBench after 0.28.0
+    # refuses under its own key; the pinned kernel scores them as recorded.
+    sparse = _score([0.0] * 119 + [1e-9])
     tiny = _score([0.001 + 1e-12 * ((i % 5) - 2) for i in range(250)])
-    assert "deflation_error" not in tiny and kernel_deflated_sharpe(tiny) == 1.0
+    for track in (sparse, tiny):
+        assert "deflation_error" not in track
+    if _kernel_refuses_shapes():
+        for track in (sparse, tiny):
+            assert track["deflation_refusal"].startswith(NO_OBSERVED_RISK)
+    else:
+        assert math.isclose(
+            kernel_deflated_sharpe(sparse), 0.6527889836061004, rel_tol=1e-14, abs_tol=0.0
+        )
+        assert math.isclose(kernel_psr(sparse), 0.9754070893697193, rel_tol=1e-14, abs_tol=0.0)
+        assert kernel_deflated_sharpe(tiny) == 1.0
 
 
 def test_run_baselines_withholds_flat_and_leaves_every_other_row():
@@ -107,9 +147,10 @@ def test_run_baselines_withholds_flat_and_leaves_every_other_row():
 
     rows = {r["policy"]: r for r in run_baselines(seeds=range(4), n_boot=200)}
     flat = rows["flat"]
-    assert flat["deflated_sharpe"] == WITHHELD
-    assert flat["passed_k_rate"] == WITHHELD
-    assert flat["confidence_status"] == WITHHELD
+    withheld = _withheld()
+    assert flat["deflated_sharpe"] == withheld
+    assert flat["passed_k_rate"] == withheld
+    assert flat["confidence_status"] == withheld
     assert flat["deflated_sharpe_ci"] is None and flat["arena_deflated_sharpe_ci"] is None
     assert flat["mean_return"] == 0.0
     # Recorded from SharpeArena 0.29.0 before this change (same seeds, n_boot=200).
@@ -129,7 +170,7 @@ def test_run_baselines_withholds_flat_and_leaves_every_other_row():
     body = [line for line in table.splitlines()[2:] if line.startswith("| ")]
     flat_line = body[-1]
     assert "| flat |" in flat_line, table
-    assert flat_line.count(WITHHELD) == 2 and "| unavailable |" in flat_line
+    assert flat_line.count(withheld) == 2 and "| unavailable |" in flat_line
     comparisons = pairwise_significance(list(rows.values()), n_boot=50)
     assert comparisons and all("flat" not in (c["a"], c["b"]) for c in comparisons)
 
@@ -161,10 +202,10 @@ def test_generalization_rows_record_the_constant_track_reason():
     result = evaluate_seeds(
         lambda seed: SharpeArenaEnv(n_symbols=3, n_days=60, seed=seed), [0, 1], FlatPolicy()
     )
-    assert result["deflated_sharpe"] == WITHHELD
+    assert result["deflated_sharpe"] == _withheld()
     # Every seed is a constant track the kernel withholds, so no seed was scored and
     # the rate is the kernel's reason rather than a 0.0 over no evidence.
-    assert result["passed_k_rate"] == WITHHELD
+    assert result["passed_k_rate"] == _withheld()
     assert (result["n_seeds_passed"], result["n_seeds_scored"], result["n_seeds_unscorable"]) == (
         0,
         0,
@@ -176,7 +217,7 @@ def test_verifiers_rewards_and_trace_meta_withhold_a_constant_rollout():
     from sharpearena import trace, verifiers_env
 
     state = {"returns": [0.0] * 12}
-    with pytest.raises(KernelScoreUnavailable, match=CONSTANT):
+    with pytest.raises(KernelScoreWithheld, match=CONSTANT):
         verifiers_env.deflated_sharpe_reward(state=state)
     assert verifiers_env.pass_k_reward(state=state) == 0.0
 
@@ -184,5 +225,5 @@ def test_verifiers_rewards_and_trace_meta_withhold_a_constant_rollout():
     for t in range(5):
         writer.record_step(step=t, observation={"x": t}, decision=[0.0], reward=0.001)
     meta = writer.finalize()
-    assert meta["scores"]["deflation_error"] == CONSTANT
-    assert meta["deflated_sharpe"] == WITHHELD
+    assert meta["scores"][_withheld_key()] == CONSTANT
+    assert meta["deflated_sharpe"] == _withheld()
