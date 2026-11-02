@@ -12,6 +12,11 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ### Fixed
 
+- `score_run` leaves a kernel `deflation_refusal` alone instead of adding a
+  second withholding key beside it.
+- py: `psr_standard_error` is classified as a non-withholding key
+  (`KERNEL_NON_WITHHOLDING_KEYS`), a methodology label that is read past rather
+  than raised as `KernelFieldUnrecognized`.
 - py: `sharpearena.kernel_score` classifies kernel keys by explicit lists
   instead of the `*_error` suffix. `deflation_error`, `bootstrap_error`,
   `selection_error`, `dsr_ci_error` and `exposure_path_error` are
@@ -165,6 +170,21 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ### Added
 
+- local-agents: local field plans can declare a model x harness x condition
+  `matrix` (a full unconfounded factorial, or refused), bound into
+  `plan_sha256` (unchanged for plans without one).
+- local-agents: versioned prompt variants (`terse-v1`, `explicit-v1`) via
+  `harness+variant` scaffold labels, each with its own render-probe digest.
+- py: `sharpearena.field_matrix`, a rank-neutral report of main effects and
+  interactions with Student-t intervals over (dataset, seed) units,
+  prompt-variant contrasts and decision agreement on identical observations.
+- scripts: `scripts/bump-bench-pin.py`, a pin bump with a dry-run mode that
+  rewrites the pins and lockfiles, audits kernel keys, rebinds the SPEC_HASH
+  records and rebuilds the wasm bundle, staged in a copy of the tree. It first
+  applies the release patches held in `scripts/release-patches/` and refuses if
+  one does not apply cleanly; the first one adapts a `market.rs` test helper to
+  SharpeBench's new `Dataset.marks` field. The Bench-main overlay now audits
+  kernel keys and restores both lockfiles.
 - Lean model: CI pins every theorem's elaborated statement in
   `formal/statements.txt`, refuses extra axioms and `sorryAx` with a repo-owned
   check, and runs negative controls that plant a sorry, an axiom, an undeclared

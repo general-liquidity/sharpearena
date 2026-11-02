@@ -234,6 +234,8 @@ jobs:
       # are byte-identical, and bench-main.yml holds them so.
       - name: The register's own rules hold
         run: python -m unittest scripts/test_check_evidence_register.py
+      - name: The SharpeBench pin bump and overlay helpers hold
+        run: python -m unittest scripts/test_bump_bench_pin.py
       - name: Every claim maps to an artifact and carries a disposition
         run: python scripts/check-evidence-register.py
       - name: check-provenance (manifest matches the tree)

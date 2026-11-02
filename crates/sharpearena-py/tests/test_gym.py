@@ -182,7 +182,9 @@ def test_verifiers_import_guarded():
 
     assert hasattr(verifiers_env, "load_environment")
     # Reward functions are pure and runnable without verifiers installed.
-    state = {"returns": [0.01, -0.02, 0.03, 0.01]}
+    # More than one loss bar: SharpeBench after 0.28.0 refuses a track whose only
+    # loss is its single most distant bar.
+    state = {"returns": [0.01, -0.02, 0.03, -0.01, 0.02, -0.005]}
     assert math.isfinite(verifiers_env.deflated_sharpe_reward(state=state))
     assert verifiers_env.pass_k_reward(state=state) in (0.0, 1.0)
     assert verifiers_env.process_check_reward(state={"events": []}) == 1.0

@@ -3,7 +3,11 @@
 
 Arena pins exact published SharpeBench crates, so its own CI cannot see a change
 on Bench main until a release. This overlays a Bench checkout with Cargo
-`[patch.crates-io]` config on the command line and edits no tracked file.
+`[patch.crates-io]` config on the command line. The patched build rewrites both
+lockfiles, so they are restored byte for byte when the run ends, pass or fail.
+Before building, it checks that every top-level `CompositeScore` key of the
+checkout that ends in `_error` or `_refusal` is classified by Arena's kernel
+reader, so a new kernel field is named here rather than at the pin bump.
 
     python scripts/check-against-bench-main.py --bench ../sharpebench
 """
@@ -13,30 +17,18 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from bench_compat import (  # noqa: E402
+    kernel_key_problems,
+    lockfiles_preserved,
+    patch_flags,
+    published_crates,
+)
+
 ROOT = Path(__file__).resolve().parent.parent
-
-
-def published_crates(bench: Path) -> dict[str, Path]:
-    """Every SharpeBench library crate a patch can stand in for."""
-    crates: dict[str, Path] = {}
-    for manifest in sorted((bench / "crates").glob("*/Cargo.toml")):
-        package = tomllib.loads(manifest.read_text(encoding="utf-8")).get("package", {})
-        name = package.get("name", "")
-        if name.startswith("sharpebench") and name != "sharpebench-py":
-            crates[name] = manifest.parent.resolve()
-    if "sharpebench-sim" not in crates:
-        raise SystemExit(f"{bench} does not look like a SharpeBench checkout")
-    return crates
-
-
-def patch_flags(crates: dict[str, Path]) -> list[str]:
-    flags: list[str] = []
-    for name, path in crates.items():
-        flags += ["--config", f'patch.crates-io.{name}.path="{path.as_posix()}"']
-    return flags
 
 
 def run(command: list[str], cwd: Path) -> None:
@@ -49,12 +41,20 @@ def main() -> int:
     parser.add_argument("--bench", type=Path, required=True)
     parser.add_argument("--skip-tests", action="store_true", help="compile only")
     args = parser.parse_args()
-    flags = patch_flags(published_crates(args.bench.resolve()))
+    bench = args.bench.resolve()
+    crates = published_crates(bench)
+    problems = kernel_key_problems(crates["sharpebench-core"] / "src" / "composite.rs")
+    for problem in problems:
+        print(f"error: {problem}", file=sys.stderr)
+    if problems:
+        return 1
+    flags = patch_flags(crates)
     python_crate = ROOT / "crates" / "sharpearena-py"
-    run(["cargo", "check", *flags, "--workspace", "--all-targets"], ROOT)
-    run(["cargo", "check", *flags, "--all-targets"], python_crate)
-    if not args.skip_tests:
-        run(["cargo", "test", *flags, "--workspace"], ROOT)
+    with lockfiles_preserved(ROOT):
+        run(["cargo", "check", *flags, "--workspace", "--all-targets"], ROOT)
+        run(["cargo", "check", *flags, "--all-targets"], python_crate)
+        if not args.skip_tests:
+            run(["cargo", "test", *flags, "--workspace"], ROOT)
     return 0
 
 

@@ -29,6 +29,8 @@ requirement (:data:`LEGACY_REFUSAL_MESSAGES`, the meaning Bench main gives it be
 ``exposure_path_refusal`` exists) is read as a refusal. Any other top-level key ending in
 ``_error`` or ``_refusal`` raises :class:`KernelFieldUnrecognized`, which is never
 recorded as a reason: the reader must be taught the key before it reads the composite.
+:data:`KERNEL_NON_WITHHOLDING_KEYS` (``psr_standard_error``, a methodology label) end
+in a withholding suffix but withhold nothing, so they are read past.
 
 Every consumer of ``score_run`` reads the ranked numbers through this module. A
 consumer that must stop (a paper producer, a selection step) calls
@@ -100,6 +102,12 @@ LEGACY_REFUSAL_MESSAGES: Mapping[str, frozenset] = {
 #: one of these suffixes that neither allowlist names is a field this reader does not
 #: know, and the composite is not read at all.
 KERNEL_WITHHOLDING_SUFFIXES = ("_error", "_refusal")
+
+#: Top-level ``CompositeScore`` keys that end in a withholding suffix but withhold
+#: nothing. ``psr_standard_error`` names where the PSR standard error was evaluated
+#: (``"benchmark"``; absent for the default ``"observed"``), a methodology label
+#: SharpeBench writes beside a computed score. It is read past, never as a reason.
+KERNEL_NON_WITHHOLDING_KEYS = frozenset({"psr_standard_error"})
 
 KernelScore = Union[float, str]
 
@@ -180,6 +188,7 @@ def kernel_fields(composite: Mapping[str, Any]) -> tuple[dict[str, str], dict[st
         if str(key).endswith(KERNEL_WITHHOLDING_SUFFIXES)
         and str(key) not in KERNEL_UNAVAILABILITY_KEYS
         and str(key) not in KERNEL_REFUSAL_KEYS
+        and str(key) not in KERNEL_NON_WITHHOLDING_KEYS
     ]
     if unknown:
         raise KernelFieldUnrecognized(unknown)
@@ -357,6 +366,7 @@ def seed_pass_tally(composites: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
 
 __all__ = [
     "EXPOSURE_PATH_UNPROVEN",
+    "KERNEL_NON_WITHHOLDING_KEYS",
     "KERNEL_REFUSAL_KEYS",
     "LEGACY_REFUSAL_MESSAGES",
     "KERNEL_UNAVAILABILITY_KEYS",

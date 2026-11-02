@@ -35,8 +35,13 @@ requires_binding = pytest.mark.skipif(
 
 
 def _steady_seed(offset: int, n: int) -> list[float]:
-    """A low-vol, positive-drift deterministic track (stable, high deflated Sharpe)."""
-    return [0.001 + 0.0002 * (((i + offset) % 7) - 3) for i in range(n)]
+    """A low-vol, positive-drift deterministic track (stable, high deflated Sharpe).
+
+    One bar in seven is a small loss. SharpeBench after 0.28.0 refuses a track with no
+    loss bar as showing no observed risk, so a track that only ever gains would test
+    that refusal rather than the saturation this fixture exists for.
+    """
+    return [0.001 + 0.0004 * (((i + offset) % 7) - 3) for i in range(n)]
 
 
 def _sharpe_series(target: float, n: int, phase: float) -> list[float]:
