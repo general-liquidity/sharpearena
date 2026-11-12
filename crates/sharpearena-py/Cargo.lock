@@ -333,9 +333,9 @@ dependencies = [
 
 [[package]]
 name = "sharpebench-core"
-version = "0.28.0"
+version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1675f60afd4b2e90a9fbc26e767d4679997646dc233e509f8d7bad91d329d706"
+checksum = "b1ac75ff107a8b75a40d3a2f79c86d51dd7a07bebac98fa6312db8820ea733e1"
 dependencies = [
  "serde",
  "serde_json",
@@ -346,9 +346,9 @@ dependencies = [
 
 [[package]]
 name = "sharpebench-protocol"
-version = "0.28.0"
+version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6575f135b2b2ac583f26e165eaca55516edf984ce00810a0aa5235a4d456a8ba"
+checksum = "4b31fbeab736970f55e7b4c0bd7d1b83b75f57079e761631b22b43784f9faf5c"
 dependencies = [
  "serde",
  "serde_json",
@@ -356,9 +356,9 @@ dependencies = [
 
 [[package]]
 name = "sharpebench-sim"
-version = "0.28.0"
+version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d509004bd014acb47b46b441d3c79aa68a56a25ec904501fcecec57aff8f7eb5"
+checksum = "bb2ad1df69defabe475cbf477b9bb57a580756232bccde12305c8f90ae3ce549"
 dependencies = [
  "serde",
  "serde_json",
@@ -369,9 +369,9 @@ dependencies = [
 
 [[package]]
 name = "sharpebench-stats"
-version = "0.28.0"
+version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9db781e8f19839b442a48405bf88b6a9ecdd5b2cf20121dd8eab418ca84da095"
+checksum = "2eb1949e1a0099acccaae3798d6704ba432175bb9cc84f10297ced133f760304"
 
 [[package]]
 name = "syn"

@@ -15,7 +15,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 sharpearena = { path = "../sharpearena", version = "0.31.0" }
-sharpebench-core = "=0.28.0"
+sharpebench-core = "=0.29.0"
 serde_json = { version = "1", features = ["float_roundtrip"] }
 
 [dependencies.pyo3]
