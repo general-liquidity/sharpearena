@@ -119,6 +119,14 @@ def _bench_lock(version: str = BENCH_VERSION, checksum: str = BENCH_CHECKSUM) ->
     )
 
 
+def _py_lock(version: str) -> str:
+    """The pyo3 crate's own lockfile: SharpeBench plus the two in-tree path packages."""
+    return _bench_lock() + "".join(
+        f'\n[[package]]\nname = "{name}"\nversion = "{version}"\n'
+        for name in ("sharpearena", "sharpearena-py")
+    )
+
+
 def _write_bench_index(
     directory: Path,
     *,
@@ -137,7 +145,7 @@ def _write_versions(root: Path, version: str) -> None:
     files = {
         "crates/sharpearena/Cargo.toml": '[package]\nname = "sharpearena"\n' + pin,
         "Cargo.lock": _bench_lock(),
-        "crates/sharpearena-py/Cargo.lock": _bench_lock(),
+        "crates/sharpearena-py/Cargo.lock": _py_lock(version),
         "Cargo.toml": f'[workspace]\n[workspace.package]\nversion = "{version}"\n',
         "crates/sharpearena-wasm/Cargo.toml": (
             '[package]\nname = "sharpearena-wasm"\nversion.workspace = true\n'
@@ -538,6 +546,125 @@ def test_verify_tag_rejects_an_npm_lockfile_version_drift(release_tree: Path) ->
         "npm/sharpearena/package-lock.json root package reports 0.19.0"
         in checked.stdout
     )
+
+
+def test_verify_tag_rejects_a_pyo3_lockfile_left_at_the_previous_version(
+    release_tree: Path,
+) -> None:
+    """The v0.32.0 shape: every manifest bumped, the pyo3 lockfile left behind.
+
+    crates/sharpearena-py keeps its own lockfile outside the workspace, so the bump
+    moved its manifests to the new version while the lockfile kept locking the old
+    path packages, and `maturin build --locked` refused to build the wheel.
+    """
+    _release_commit(release_tree)
+    lock = release_tree / "crates/sharpearena-py/Cargo.lock"
+    lock.write_text(_py_lock("0.19.0"), encoding="utf-8")
+    _git(release_tree, "add", lock.relative_to(release_tree).as_posix())
+    _git(release_tree, "commit", "--quiet", "--amend", "--no-edit")
+    _bind_and_tag(release_tree, _git(release_tree, "rev-parse", "HEAD"))
+
+    checked = _run(release_tree, "verify-tag", "v0.20.0")
+
+    assert checked.returncode == 1
+    assert (
+        "crates/sharpearena-py/Cargo.lock locks sharpearena 0.19.0, "
+        "the release requires 0.20.0" in checked.stdout
+    )
+    assert "locks sharpearena-py 0.19.0" in checked.stdout
+
+
+def test_the_real_pyo3_lockfile_locks_the_workspace_version() -> None:
+    module = _release_module("release_driver_py_lock_real_tree")
+    version = module.workspace_version(REPO)
+
+    assert module.py_lock_problems((REPO / module.PY_LOCK).read_bytes(), version) == []
+
+
+def test_a_pyo3_lockfile_missing_a_path_package_is_refused() -> None:
+    module = _release_module("release_driver_py_lock_missing")
+
+    problems = module.py_lock_problems(_bench_lock().encode(), "0.20.0")
+
+    assert problems == [
+        "crates/sharpearena-py/Cargo.lock must lock the path package sharpearena "
+        "exactly once, found 0",
+        "crates/sharpearena-py/Cargo.lock must lock the path package sharpearena-py "
+        "exactly once, found 0",
+    ]
+
+
+def _fake_cargo_update(module, lock_text: str, *, stray: Path | None = None) -> list:
+    calls: list[tuple[str, ...]] = []
+    real_run = module.run
+
+    def fake_run(root: Path, *args: str, **kwargs):
+        if args[:2] == ("cargo", "update"):
+            calls.append(args)
+            (root / module.PY_LOCK).write_text(lock_text, encoding="utf-8")
+            if stray is not None:
+                stray.write_text("drift\n", encoding="utf-8")
+            return subprocess.CompletedProcess(list(args), 0, "", "")
+        return real_run(root, *args, **kwargs)
+
+    module.run = fake_run
+    return calls
+
+
+def test_the_version_bump_folds_the_resolved_pyo3_lockfile_into_its_commit(
+    release_tree: Path,
+) -> None:
+    module = _release_module("release_driver_py_lock_resync")
+    release_commit = _release_commit(release_tree)
+    lock = release_tree / "crates/sharpearena-py/Cargo.lock"
+    lock.write_text(_py_lock("0.19.0"), encoding="utf-8")
+    _git(release_tree, "add", lock.relative_to(release_tree).as_posix())
+    _git(release_tree, "commit", "--quiet", "--amend", "--no-edit")
+    calls = _fake_cargo_update(module, _py_lock("0.20.0"))
+
+    module.resync_py_lockfile(release_tree, "0.20.0")
+
+    assert calls == [
+        (
+            "cargo",
+            "update",
+            "--manifest-path",
+            "crates/sharpearena-py/Cargo.toml",
+            "-p",
+            "sharpearena",
+        )
+    ]
+    assert _git(release_tree, "status", "--porcelain") == ""
+    assert _git(release_tree, "log", "-1", "--format=%s") == "release: v0.20.0"
+    assert _git(release_tree, "rev-parse", "HEAD~1") == _git(
+        release_tree, "rev-parse", f"{release_commit}~1"
+    )
+    committed = _git(release_tree, "show", "HEAD:crates/sharpearena-py/Cargo.lock")
+    assert module.py_lock_problems(committed.encode(), "0.20.0") == []
+
+
+def test_the_pyo3_lockfile_resync_refuses_a_lock_still_at_the_old_version(
+    release_tree: Path,
+) -> None:
+    module = _release_module("release_driver_py_lock_resync_stale")
+    _fake_cargo_update(module, _py_lock("0.19.0"))
+
+    with pytest.raises(module.ReleaseError, match="locks sharpearena 0.19.0"):
+        module.resync_py_lockfile(release_tree, "0.20.0")
+
+
+def test_the_pyo3_lockfile_resync_refuses_to_amend_any_other_change(
+    release_tree: Path,
+) -> None:
+    module = _release_module("release_driver_py_lock_resync_stray")
+    head = _git(release_tree, "rev-parse", "HEAD")
+    _fake_cargo_update(
+        module, _py_lock("0.20.0"), stray=release_tree / "crates/demo/src/lib.rs"
+    )
+
+    with pytest.raises(module.ReleaseError, match="other than the lockfile"):
+        module.resync_py_lockfile(release_tree, "0.20.0")
+    assert _git(release_tree, "rev-parse", "HEAD") == head
 
 
 def test_verify_tag_rejects_an_unrecorded_nested_source(release_tree: Path) -> None:
