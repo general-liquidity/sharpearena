@@ -47,7 +47,13 @@ BENCH_PIN_MANIFESTS = (
     "crates/sharpearena/Cargo.toml",
     "crates/sharpearena-py/Cargo.toml",
 )
-BENCH_LOCKS = ("Cargo.lock", "crates/sharpearena-py/Cargo.lock")
+PY_MANIFEST = "crates/sharpearena-py/Cargo.toml"
+PY_LOCK = "crates/sharpearena-py/Cargo.lock"
+# The path packages the pyo3 crate's own lockfile records. Their versions come from
+# manifests the version bump rewrites, so a bump that does not re-resolve this lockfile
+# leaves it naming the previous release, and `maturin build --locked` then refuses it.
+PY_LOCK_PATH_PACKAGES = ("sharpearena", "sharpearena-py")
+BENCH_LOCKS = ("Cargo.lock", PY_LOCK)
 BENCH_PIN_RE = re.compile(r"=(?P<version>[0-9]+\.[0-9]+\.[0-9]+)")
 BENCH_INDEX_ENV = "SHARPEARENA_BENCH_INDEX"
 CRATES_IO_SOURCE = "registry+https://github.com/rust-lang/crates.io-index"
@@ -201,7 +207,65 @@ def version_problems(root: Path, commit: str, expected: str) -> list[str]:
             problems.append(f"{path} has no literal sharpearena dependency version")
         else:
             compare(f"{path} sharpearena dependency", matched.group("version"))
+
+    problems += py_lock_problems(git_bytes(root, f"{commit}:{PY_LOCK}"), expected)
     return problems
+
+
+def py_lock_problems(lock_bytes: bytes, expected: str) -> list[str]:
+    """Refuse a pyo3 lockfile that locks the in-tree crates at another version.
+
+    crates/sharpearena-py is excluded from the Cargo workspace and keeps its own
+    lockfile, so neither cargo-release nor the workspace lockfile moves it. v0.32.0
+    shipped with this lockfile still locking sharpearena 0.31.0, and every CI job that
+    builds the wheel with ``--locked`` failed on main. Each path package must appear
+    exactly once, at the release version.
+    """
+    lock = tomllib.loads(lock_bytes.decode("utf-8"))
+    problems: list[str] = []
+    for name in PY_LOCK_PATH_PACKAGES:
+        entries = [
+            package
+            for package in lock.get("package", [])
+            if package.get("name") == name and "source" not in package
+        ]
+        if len(entries) != 1:
+            problems.append(
+                f"{PY_LOCK} must lock the path package {name} exactly once, "
+                f"found {len(entries)}"
+            )
+            continue
+        locked = entries[0].get("version")
+        if locked != expected:
+            problems.append(
+                f"{PY_LOCK} locks {name} {locked}, the release requires {expected}; "
+                "`maturin build --locked` refuses this lockfile"
+            )
+    return problems
+
+
+def resync_py_lockfile(root: Path, target: str) -> None:
+    """Re-resolve the pyo3 crate's lockfile and fold it into the version-bump commit.
+
+    cargo-release rewrites the pyo3 manifests through pre-release-replacements but never
+    resolves this crate, because it is outside the workspace. Updating only
+    ``sharpearena`` moves the two path packages (the root package always re-resolves)
+    and leaves every registry dependency where it was locked.
+    """
+    run(root, "cargo", "update", "--manifest-path", PY_MANIFEST, "-p", "sharpearena")
+    problems = py_lock_problems((root / PY_LOCK).read_bytes(), target)
+    if problems:
+        raise ReleaseError("pyo3 lockfile re-resolution failed:\n" + "\n".join(problems))
+    changed = run(root, "git", "status", "--porcelain").stdout.splitlines()
+    if not changed:
+        return
+    if [line[3:] for line in changed] != [PY_LOCK]:
+        raise ReleaseError(
+            "pyo3 lockfile re-resolution changed something other than the lockfile:\n"
+            + "\n".join(changed)
+        )
+    run(root, "git", "add", "--", PY_LOCK)
+    run(root, "git", "commit", "--amend", "--no-edit")
 
 
 def fetch_bench_index(crate: str) -> str | None:
@@ -947,6 +1011,7 @@ def cut_release(
         release_branch,
     )
     require_clean(root)
+    resync_py_lockfile(root, target)
     rebuild_committed_bundle(root, target)
     release_commit = git(root, "rev-parse", "HEAD")
     version = workspace_version(root)

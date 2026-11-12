@@ -10,6 +10,19 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ## [Unreleased]
 
+### Fixed
+
+- release: the version bump now re-resolves `crates/sharpearena-py/Cargo.lock`,
+  which sits outside the Cargo workspace, and folds it into the version-bump
+  commit. The v0.32.0 bump left that lockfile locking `sharpearena` 0.31.0, so
+  every `maturin build --locked` job on main failed. `release.py verify-tag`
+  now refuses a release tree whose pyo3 lockfile locks `sharpearena` or
+  `sharpearena-py` at a version other than the release version. The committed
+  lockfile is re-resolved to 0.32.0; only those two path packages moved. The
+  published 0.32.0 wheels and sdist are unaffected: the release workflow builds
+  without `--locked`, compiled `sharpearena` 0.32.0 from the tagged tree, and
+  the sdist ships a lockfile at 0.32.0.
+
 ## [0.32.0] - 2026-11-12
 
 ### Fixed
