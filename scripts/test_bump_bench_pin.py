@@ -242,6 +242,24 @@ class KernelKeys(unittest.TestCase):
         self.assertIn("'carry_error'", problems[0])
 
 
+# A release patch exists only between pin moves: a real move applies it and
+# deletes it. These tests carry their own file and patch instead of reading one
+# from scripts/release-patches/, so they hold whether or not a patch is held.
+FIXTURE_PATH = "crates/sharpearena/src/fixture.rs"
+FIXTURE_BEFORE = "fn helper() -> u32 {\n    let value = 1;\n    value\n}\n"
+FIXTURE_PATCH = (
+    "diff --git a/crates/sharpearena/src/fixture.rs b/crates/sharpearena/src/fixture.rs\n"
+    "--- a/crates/sharpearena/src/fixture.rs\n"
+    "+++ b/crates/sharpearena/src/fixture.rs\n"
+    "@@ -1,4 +1,4 @@\n"
+    " fn helper() -> u32 {\n"
+    "-    let value = 1;\n"
+    "+    let value = 2;\n"
+    "     value\n"
+    " }\n"
+)
+
+
 class ReleasePatches(unittest.TestCase):
     def stage_targets(self, tree, patches):
         for patch in patches:
@@ -249,30 +267,45 @@ class ReleasePatches(unittest.TestCase):
                 (tree / path).parent.mkdir(parents=True, exist_ok=True)
                 (tree / path).write_bytes((ROOT / path).read_bytes())
 
-    def test_the_committed_patches_apply_cleanly_to_the_committed_tree(self):
+    def fixture_tree(self, tmp):
+        tree = pathlib.Path(tmp) / "tree"
+        (tree / FIXTURE_PATH).parent.mkdir(parents=True)
+        (tree / FIXTURE_PATH).write_bytes(FIXTURE_BEFORE.encode("utf-8"))
+        return tree
+
+    def test_every_committed_patch_applies_cleanly_to_the_committed_tree(self):
+        # Vacuous right after a pin move deletes the last patch; any patch held
+        # for the next move is checked against the tree it will be applied to.
         patches = bump.release_patches(ROOT)
-        self.assertIn("bench-next-market-marks.patch", [p.name for p in patches])
         with tempfile.TemporaryDirectory() as tmp:
             tree = pathlib.Path(tmp)
             self.stage_targets(tree, patches)
             touched = bump.apply_release_patches(tree, patches)
-            self.assertIn("crates/sharpearena/src/market.rs", touched)
-            market = (tree / "crates/sharpearena/src/market.rs").read_text(encoding="utf-8")
-        self.assertIn("serde_json::from_value", market)
-        self.assertNotIn("dividends: BTreeMap::new(),\n        }\n    }", market)
+        for patch in patches:
+            for path in bump.patched_paths(patch.read_text(encoding="utf-8")):
+                self.assertIn(path, touched)
+
+    def test_a_patch_that_applies_edits_its_target(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = self.fixture_tree(tmp)
+            patch = pathlib.Path(tmp) / "good.patch"
+            patch.write_bytes(FIXTURE_PATCH.encode("utf-8"))
+            touched = bump.apply_release_patches(tree, [patch])
+            after = (tree / FIXTURE_PATH).read_text(encoding="utf-8")
+        self.assertEqual(touched, [FIXTURE_PATH])
+        self.assertIn("let value = 2;", after)
+        self.assertNotIn("let value = 1;", after)
 
     def test_a_patch_that_does_not_apply_is_refused(self):
-        patch_text = (ROOT / bump.RELEASE_PATCHES / "bench-next-market-marks.patch").read_text(encoding="utf-8")
         with tempfile.TemporaryDirectory() as tmp:
-            tree = pathlib.Path(tmp) / "tree"
+            tree = self.fixture_tree(tmp)
             stale = pathlib.Path(tmp) / "stale.patch"
-            stale.write_text(patch_text.replace("map.insert(\"AAA\"", "map.insert(\"BBB\""), encoding="utf-8")
-            self.stage_targets(tree, [stale])
-            before = (tree / "crates/sharpearena/src/market.rs").read_bytes()
+            stale.write_bytes(FIXTURE_PATCH.replace("-    let value = 1;", "-    let value = 9;").encode("utf-8"))
+            before = (tree / FIXTURE_PATH).read_bytes()
             with self.assertRaises(bump.BumpError) as caught:
                 bump.apply_release_patches(tree, [stale])
             self.assertIn("does not apply cleanly", str(caught.exception))
-            self.assertEqual((tree / "crates/sharpearena/src/market.rs").read_bytes(), before)
+            self.assertEqual((tree / FIXTURE_PATH).read_bytes(), before)
 
     def test_a_patch_that_creates_deletes_or_escapes_is_refused(self):
         for text in (
