@@ -306,6 +306,11 @@ def release_tree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         newline="\n",
     )
     _git(root, "init", "--quiet", "--initial-branch=main")
+    # The release driver runs git itself, without the identity `_git` injects.
+    # A repo-local identity keeps its commits working on CI runners that have
+    # no global git config.
+    _git(root, "config", "user.name", "release test")
+    _git(root, "config", "user.email", "release@example.com")
     _git(root, "add", "-A")
     _git(root, "commit", "--quiet", "-m", "initial sources")
     initial = _git(root, "rev-parse", "HEAD")
