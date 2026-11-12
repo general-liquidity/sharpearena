@@ -560,7 +560,7 @@ dependencies = [
 
 [[package]]
 name = "sharpearena"
-version = "0.31.0"
+version = "0.32.0"
 dependencies = [
  "rayon",
  "serde",
@@ -574,7 +574,7 @@ dependencies = [
 
 [[package]]
 name = "sharpearena-wasm"
-version = "0.31.0"
+version = "0.32.0"
 dependencies = [
  "serde",
  "serde_json",
