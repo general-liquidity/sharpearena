@@ -304,6 +304,7 @@ contract has stayed at `CONTRACT_VERSION` 1.0 throughout.
 
 ### Changed
 
+- deps: the exact SharpeBench pin moves from `=0.28.0` to `=0.29.0` across `sharpebench-core`, `sharpebench-sim`, `sharpebench-protocol` and the `sharpebench-attest` dev-dependency. Both lockfiles move the five sharpebench crates and nothing else. `SPEC_HASH` moves from `c5cdeccb4e3c9cfe` to `2b41019e7a2c2fcc` with no `SPEC_EPOCH` change, and the attestation record, `_spec_hash.py`, `specHash.ts` and the committed wasm bundle are rebound together. The release patch for the mark sheet `Dataset` field is applied to the `market.rs` test helper and dropped. Scoring follows 0.29.0: a constant track, a track that shows no observed risk and a track with no losing bar are refused under `deflation_refusal`, and `docs/kernel-field-convention.md` describes the pinned kernel.
 - local-agents: field cells run in a seeded, round-permuted interleaved order
   across models (`order_seed`, recorded in `plan_sha256`); shard membership and
   scored outcomes are unchanged. Because `plan_sha256` changes, field journals

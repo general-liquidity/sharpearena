@@ -58,20 +58,22 @@ unavailability. The accepted messages are in `LEGACY_REFUSAL_MESSAGES`.
 
 ### The constant track under each kernel
 
-`score_run` withholds a track with no Sharpe ratio. The pinned `=0.28.0` kernel
-does so itself under `deflation_error`, and Arena's own boundary writes the same
-key and reason on a kernel that does not. SharpeBench main refuses such a track
-under `deflation_refusal`; Arena then adds nothing beside it, so a constant
-track is recorded as `refused_scoring_kernel_gate: deflation_refusal: returns
-must not be constant: a constant series has no Sharpe ratio` once the pin moves.
-SharpeBench main also refuses a track with no bar that is a loss ("returns must
-show observed risk"), which the pinned kernel scores.
+`score_run` withholds a track with no Sharpe ratio. The pinned `=0.29.0` kernel
+refuses such a track under `deflation_refusal`, and Arena adds nothing beside it,
+so a constant track is recorded as `refused_scoring_kernel_gate:
+deflation_refusal: returns must not be constant: a constant series has no Sharpe
+ratio`. On a kernel from before 0.29.0, which withholds it under
+`deflation_error` or not at all, Arena's own boundary writes the same key and
+reason. The pinned kernel also refuses two shapes that 0.28.0 and earlier
+scored: a track whose moments show no risk in any window ("must show observed
+risk"), and a track with no losing bar in any window ("returns must show an
+observed loss").
 
 ## Known limits
 
-Against a kernel from before the refusal taxonomy, including the pinned
-`=0.28.0`, `deflation_error` also carries the shape refusals that SharpeBench
-main moves to `deflation_refusal`. Arena cannot tell those from a numerical
+Against a kernel from before the refusal taxonomy, 0.28.0 and earlier,
+`deflation_error` also carries the shape refusals that 0.29.0 moves to
+`deflation_refusal`. Arena cannot tell those from a numerical
 failure without matching message text, so on such a kernel it reports them as
 unavailable. `selection_error` is advisory in
 SharpeBench (it does not remove rank eligibility), and Arena still withholds the

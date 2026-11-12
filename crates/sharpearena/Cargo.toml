@@ -9,9 +9,9 @@ keywords = ["trading", "reinforcement", "environment", "backtest", "agent"]
 categories = ["science", "finance", "simulation"]
 
 [dependencies]
-sharpebench-sim = "=0.28.0"
-sharpebench-protocol = "=0.28.0"
-sharpebench-core = "=0.28.0"
+sharpebench-sim = "=0.29.0"
+sharpebench-protocol = "=0.29.0"
+sharpebench-core = "=0.29.0"
 serde = { version = "1", features = ["derive"] }
 # Reads a CompositeScore key by name where the pinned struct has no such field
 # (kernel_score.rs). Already in the graph through sharpebench-core.
@@ -25,7 +25,7 @@ rayon = "1"
 [dev-dependencies]
 toml = "1.1"
 serde_json = { version = "1", features = ["float_roundtrip"] }
-sharpebench-attest = "=0.28.0"
+sharpebench-attest = "=0.29.0"
 
 [build-dependencies]
 toml = "1.1"
