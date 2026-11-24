@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SharpeArena: A Deterministic Point-in-Time Evaluation Sandbox and Reinforcement-Learning Environment for Trading Agents</title>
+  <meta name="citation_title" content="SharpeArena: A Deterministic Point-in-Time Evaluation Sandbox and Reinforcement-Learning Environment for Trading Agents">
+  <meta name="citation_author" content="Tiberiu Toca">
+  <meta name="citation_publication_date" content="2026">
+  <meta name="citation_pdf_url" content="__PAPER_URL__main.pdf">
+  <link rel="canonical" href="__PAPER_URL__">
+  <style>
+    body {
+      margin: 0;
+      background: #f8fafc;
+      color: #162532;
+      font: 1rem/1.7 system-ui, sans-serif;
+    }
+    main {
+      width: min(45rem, calc(100% - 2.5rem));
+      margin-inline: auto;
+      padding-block: clamp(2rem, 8vw, 5rem);
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(1.8rem, 5vw, 2.8rem);
+      line-height: 1.2;
+      letter-spacing: -0.025em;
+    }
+    h2 { margin: 2.5rem 0 0.5rem; font-size: 1.25rem; }
+    .byline { color: #465b69; }
+    nav { display: flex; flex-wrap: wrap; gap: 0.5rem 1.4rem; }
+    a { color: #075467; text-underline-offset: 0.2em; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>SharpeArena: A Deterministic Point-in-Time Evaluation Sandbox and Reinforcement-Learning Environment for Trading Agents</h1>
+    <p class="byline">Tiberiu Toca · General Liquidity · 2026</p>
+    <nav aria-label="Paper resources">
+      <a href="main.pdf">Read the PDF</a>
+      <a href="https://github.com/general-liquidity/sharpearena">GitHub repository</a>
+    </nav>
+    <section aria-labelledby="abstract">
+      <h2 id="abstract">Abstract</h2>
+      <p>Reinforcement-learning results in trading are produced by the party being evaluated, on an environment that party controls and defends as realistic on the strength of its frictions: transaction costs, slippage, position limits. Frictions constrain the agent, and say nothing about whether the simulated world behaves like a market or about whether the trajectory the environment emitted is the one it ran. We present SharpeArena, a deterministic point-in-time evaluation sandbox and reinforcement-learning environment for trading agents. It excludes three failures at the interface rather than discouraging them: no data-layer operation returns a bar past the engine's cursor, committed canonical fixtures and fingerprints pin the determinism-critical core across tested surfaces, and replay recomputes performance from recorded decisions and frozen engine inputs, so a doctored decision stream produces a different run. Agents are external programs, language models included, that reach the engine through a governed JSON contract. A host-side parser enforces episode semantics, and the checked scoring paths record a wire fault as a typed failed cell rather than as a hold. Around that loop the environment adds a strategy-generation path over a closed non-executable candidate language, a forward paper-trading arm, and prospective forecast contracts that freeze the target, information boundary, deadline, resolution rule and score before submission. Forecast revisions remain append-only, and the producer exports raw evidence for the separate SharpeBench kernel to score without affecting trading rank. Selected deadline, revision, binding and fixed-point Brier rules are modeled in Lean; separate executable tests check the same rules against the implementation, and nothing mechanically links the model to the code. We calibrate the environment's diagnostics with fixed reference policies: nothing is trained and no admitted result is a claim about model quality. The generalization protocol is therefore demonstrated rather than exercised, and the obstacle is a learner's training cost rather than environment time, since the slowest shipped surface runs ten million steps in about twelve minutes. The committed F1–F8 artifacts were produced before most current engineering guards, F7 alone having been regenerated for release 0.29.0, and a superseded convenience-sample protocol pilot produced no admitted model-validation result. We find that the canonical generator fails its own realism diagnostic on 23 of 24 seeded panels, that a predeclared sweep of its volatility-clustering knobs finds no Calm setting that survives, that no reference policy is rank-eligible, and that a single-seed reading of the ecology probe does not survive replication. We offer a producer whose current guarantees are properties of committed code rather than of its authors' good faith, and diagnostics that report where its historical tape is not yet market-like.</p>
+    </section>
+  </main>
+</body>
+</html>

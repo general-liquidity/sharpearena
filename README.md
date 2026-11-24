@@ -16,7 +16,7 @@ Node, or connect an agent in any language through the JSON contract.
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue?style=flat-square)](LICENSE-MIT)
 [![Unsafe](https://img.shields.io/badge/unsafe-forbidden-success?style=flat-square)](docs/architecture.md)
 
-**[Quick start](#quick-start) · [Surfaces](#choose-a-surface) · [How the suite fits](#how-the-sharpe-suite-fits) · [Guarantees](#what-the-environment-guarantees) · [Documentation](#documentation)**
+**[Quick start](#quick-start) · [Surfaces](#choose-a-surface) · [How the suite fits](#how-the-sharpe-suite-fits) · [Guarantees](#what-the-environment-guarantees) · [Paper](https://general-liquidity.github.io/sharpearena/paper/) · [PDF](paper/main.pdf) · [Documentation](#documentation)**
 
 </div>
 
